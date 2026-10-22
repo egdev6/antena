@@ -202,6 +202,11 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .form-col{display:grid;gap:20px;min-width:0}
 .preview-col{display:grid;gap:20px;min-width:0;align-content:start}
 .preview-col>.hint{margin-top:-10px}
+/* páginas de widgets (O3.3): fuente + configuración a la izquierda, vista previa a la derecha, columnas iguales */
+.editor.widget-layout{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.widget-layout .browser-source .overlay-url{margin:0}
+.widget-layout .browser-source .overlay-url code{min-width:0;overflow-wrap:anywhere;white-space:normal}
+@media (max-width:1180px){.editor.widget-layout{grid-template-columns:1fr}}
 /* StageFrame */
 .preview{position:relative;aspect-ratio:16/9;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--color-border-default);
   background-color:var(--color-primitive-neutral-950);
@@ -320,7 +325,6 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .sub-h{margin:4px 0 8px;font:800 14px var(--font-display);text-transform:uppercase;color:var(--text);letter-spacing:.02em}
 .wprev{background-color:var(--color-primitive-neutral-950)}
 .wprev iframe{position:absolute;left:0;top:0;border:0;transform-origin:0 0;pointer-events:none}
-.goal-card .editor{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .goal-card .goal-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
 .goal-card .goal-card-head h2{font-size:20px;overflow-wrap:anywhere;min-width:0}
 .goal-card .check{display:flex;align-items:center;gap:8px;align-self:center}
@@ -333,9 +337,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .goal-card .goal-adjust .row{flex-wrap:wrap;gap:6px}
 .goal-card .goal-set-value{width:90px;min-width:0;margin:0}
 .goal-card .goal-css summary{cursor:pointer;color:var(--grey);padding:10px 0}
-.goal-card .overlay-url{flex-wrap:wrap}
-.goal-card .overlay-url code{min-width:0;overflow-wrap:anywhere;white-space:normal}
-@media (max-width:1180px){.goal-card .editor{grid-template-columns:1fr}}
+.goal-card .form-col>.panel{display:grid;gap:20px}
 @media (max-width:600px){.goal-card .goal-fields{grid-template-columns:1fr}}
 
 .steps{margin:0 0 14px;padding-left:20px;color:var(--grey);display:grid;gap:6px}

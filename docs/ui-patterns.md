@@ -18,6 +18,26 @@ Every view starts with `ViewHead`, so all headers share the same order:
 
 The live dashboard (`Directo`) is the one exception: its crumb shows the stream state and clock.
 
+## Widget pages
+
+Every page of the «Widgets» sidebar group (Preguntas, Teleprompter, Tier list, Sorteo, Chat en pantalla,
+Objetivos, Últimos y ticker, Créditos) uses one layout, `WidgetLayout`, below the header (and below the
+`ItemTabs` when the page has them):
+
+- Two columns: the left one is everything you configure or operate, the right one is the preview. Below
+  1180 px they stack and the preview goes first.
+- The left column always starts with `BrowserSource`: a section titled «Fuente de navegador en Meld» with
+  the URL (`CopyUrl`), its size and a usage hint (default «En Meld: + › Browser…»; pass `hint` for
+  widget-specific parameters such as `?nocount`). Never build this block by hand or give it another name.
+  A page with two widgets lists both URLs in the same block with a `label` each (Últimos y ticker); a page
+  with one source per object renders the block inside each object's tab (Objetivos).
+- The right column holds only previews, each one a `Stage` (or the same `figure.eg-stage` markup when it
+  needs its own toolbar, as in Teleprompter) with an eyebrow: «Vista previa» for example data or the object
+  being edited, «En pantalla» for what the widget shows right now. Status or the data source goes in the
+  caption `aside` («Datos de ejemplo», «Con los datos reales del directo»), not in a `p.hint` below.
+- Every widget page has a preview. When there is no object to show (Tier list on «+ Nueva»), use the
+  widget's `?demo` mode.
+
 ## Sections and hints
 
 - A view is made of sections: `Sec` for new code; `Panel` is the legacy wrapper and is styled the same

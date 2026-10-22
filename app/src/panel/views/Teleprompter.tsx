@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { confirmDelete, copy, cx, guard, Icon, IconBtn, ItemTabs, LazyInput, mmss, ScaledFrame, Sec, Seg, Switch, ViewHead } from '../../lib/ui';
+import { BrowserSource, confirmDelete, cx, guard, Icon, IconBtn, ItemTabs, LazyInput, mmss, ScaledFrame, Sec, Switch, ViewHead, WidgetLayout } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { isDesktop, listMonitors, openTeleprompter, type Monitor } from '../../lib/desktop';
 import type { TeleprompterState, TpBlock, TpCompiled, TpCompiledBlock } from '../../lib/types';
@@ -33,7 +33,6 @@ function usePosition(tp?: TeleprompterState) {
 export function Teleprompter() {
   const tp = useLive(s => s.teleprompter);
   const [editing, setEditing] = useState<string | null>(null);
-  const [where, setWhere] = useState<'window' | 'meld'>('window');
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const desk = isDesktop();
   useEffect(() => { if (desk) listMonitors().then(m => setMonitors(m ?? [])).catch(() => {}); }, [desk]);
@@ -92,10 +91,10 @@ export function Teleprompter() {
         {playBtn('eg-btn eg-btn--primary eg-btn--sm')}
       </>} />
     <ItemTabs label="Guiones" items={tp.scripts.map(s => ({ id: s.id, label: s.title }))} selected={tp.activeId} onSelect={id => { if (id !== tp.activeId) pickScript(id); }} onNew={newScript} newLabel="+ Nuevo guion" />
-    <div className="cols cols--q tp">
-      <div className="stack">
-        <figure className="eg-stage">
-          <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista del teleprompter</span><span className="eg-stage__spacer" /><span aria-live="polite">{status}</span></figcaption>
+    <WidgetLayout className="tp"
+      source={<BrowserSource url={url} size="1280×720" hint="En Meld: + › Browser, en una escena que no se emita." />}
+      preview={<figure className="eg-stage">
+          <figcaption className="eg-stage__bar"><span className="eg-eyebrow">En pantalla</span><span className="eg-stage__spacer" /><span aria-live="polite">{status}</span></figcaption>
           <ScaledFrame src="/widget/teleprompter?embed" w={1280} h={720} className="preview wprev tp-frame" title="Vista del teleprompter" />
           <div className="eg-stage__bar">
             <div role="toolbar" aria-label="Control del teleprompter" className="tp-tools">
@@ -107,7 +106,7 @@ export function Teleprompter() {
             <span className="eg-stage__spacer" />
             <span className="mono tp-left">{sc.blocks.length ? `Bloque ${cur + 1} de ${sc.blocks.length} · quedan ${mmss(left)}` : 'Sin bloques'}</span>
           </div>
-        </figure>
+        </figure>}>
 
         {script && <Sec flat title="Guion" id="h-guion" aside={<span className="hint">{mmss(sc.total / st.wpm * 60)} a {st.wpm} palabras/min</span>}>
           <div className="row tight">
@@ -141,9 +140,7 @@ export function Teleprompter() {
             <p className="hint">Lo que va entre [corchetes] sale en amarillo y no se lee en voz alta: son notas para ti.</p>
           </div>}
         </Sec>}
-      </div>
 
-      <div className="stack">
         <section className="eg-module-card eg-module-card--banded tp-card" aria-labelledby="h-lec">
           <div className="eg-module-card__head"><h2 id="h-lec" className="eg-module-card__name">Lectura</h2><Switch checked={st.mirror} onChange={x => guard(() => settings({ mirror: x }))()}>Espejo</Switch></div>
           <div className="eg-module-card__body">
@@ -173,22 +170,17 @@ export function Teleprompter() {
           <p className="hint">Funcionan aquí y en la ventana del teleprompter. En el Stream Deck: <code>/sd/teleprompter</code>, <code>/sd/teleprompter-siguiente</code>, <code>/sd/teleprompter-anterior</code> y <code>/sd/teleprompter-inicio</code>.</p>
         </Sec>
 
-        <Sec title="Dónde se ve" id="h-url">
-          <Seg wide value={where} onChange={setWhere} options={[['window', 'Ventana propia'], ['meld', 'Capa de Meld']]} />
-          {where === 'window' ? <>
-            {desk && <label>Pantalla
-              <select value={st.monitor || ''} onChange={e => guard(() => settings({ monitor: e.target.value }))()}>
-                <option value="">La principal</option>
-                {monitors.map(m => <option key={m.name} value={m.name}>{m.name} · {m.width}×{m.height}{m.primary ? ' · principal' : ''}</option>)}
-              </select></label>}
-            <div className="row tight"><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={openWindow}><Icon d={IC.external} className="eg-btn__icon" />Abrir en ventana</button>
-              <span className="hint">{desk ? 'Se abre a pantalla completa en esa pantalla; «La principal» es el monitor primario.' : 'Arrástrala al monitor de la cámara y pulsa F11.'}</span></div>
-          </> : <div className="row tight"><label className="sr-only" htmlFor="tp-url">URL del teleprompter</label><input id="tp-url" className="grow mono" value={url} readOnly onFocus={e => e.target.select()} />
-            <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(url)}>Copiar</button></div>}
+        <Sec title="Ventana propia" id="h-url">
+          {desk && <label>Pantalla
+            <select value={st.monitor || ''} onChange={e => guard(() => settings({ monitor: e.target.value }))()}>
+              <option value="">La principal</option>
+              {monitors.map(m => <option key={m.name} value={m.name}>{m.name} · {m.width}×{m.height}{m.primary ? ' · principal' : ''}</option>)}
+            </select></label>}
+          <div className="row tight"><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={openWindow}><Icon d={IC.external} className="eg-btn__icon" />Abrir en ventana</button>
+            <span className="hint">{desk ? 'Se abre a pantalla completa en esa pantalla; «La principal» es el monitor primario.' : 'Arrástrala al monitor de la cámara y pulsa F11.'}</span></div>
           <div className="eg-notice eg-notice--info eg-notice--sm"><Icon d={IC.monitor} /><span className="eg-notice__text">No sale en el directo: ábrelo en el monitor que tienes junto a la cámara, o en una escena de Meld que no se emita.</span></div>
         </Sec>
-      </div>
-    </div>
+    </WidgetLayout>
   </>;
 }
 

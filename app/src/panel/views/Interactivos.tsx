@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { useLive } from '../../lib/live';
 import { patchIx } from '../../lib/patch';
-import { codeTab, confirmDelete, cx, EmptyState, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec, ViewHead } from '../../lib/ui';
+import { BrowserSource, codeTab, confirmDelete, cx, EmptyState, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, ViewHead, WidgetLayout } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { PERMS } from './Editor';
 import type { Question, TierListItem, TierListTier } from '../../lib/types';
@@ -41,10 +41,10 @@ export function Preguntas() {
       <IxField k="questions.enabled" label="Activas" type="switch" />
       <button className="eg-btn eg-btn--primary eg-btn--sm" disabled={!pend.length} onClick={guard(() => post('/api/questions/next'))}><Icon d={IC.arrowRight} className="eg-btn__icon" />Siguiente pregunta</button>
     </Head>
-    <div className="cols cols--q">
-      <div className="stack">
-        <Stage eyebrow="En pantalla" src="/widget/question?debug"
-          aside={<>{qs.current ? <span>{qs.current.user} · {PF[qs.current.platform] || 'Twitch'}</span> : <span>Ninguna</span>}<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!qs.current} onClick={guard(() => post('/api/questions/hide'))}>Ocultar</button></>} />
+    <WidgetLayout
+      source={<BrowserSource url={origin() + '/widget/question'} size="1920×1080" hint={<>En Meld: + › Browser. Con <code>?nocount</code> se oculta el contador. El CSS propio del widget gana a los estilos de serie.</>} />}
+      preview={<Stage eyebrow="En pantalla" src="/widget/question?debug"
+        aside={<>{qs.current ? <span>{qs.current.user} · {PF[qs.current.platform] || 'Twitch'}</span> : <span>Ninguna</span>}<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!qs.current} onClick={guard(() => post('/api/questions/hide'))}>Ocultar</button></>} />}>
         <Sec flat title="Cola" id="h-cola" aside={<span className="hint">{pend.length} {pend.length === 1 ? 'pregunta' : 'preguntas'} · llegan con <span className="eg-timeline__cmd">{c.command}</span></span>}>
           <div className="rows">{pend.length ? pend.map((q: Question, i: number) => <article key={q.id} className={cx('eg-post eg-post--row', i === 0 && 'eg-post--new')}>
             <div className="eg-post__content"><b>{q.text}</b><span className="eg-post__meta">{q.user} · {PF[q.platform] || 'Twitch'} · {ago(q.at)}</span></div>
@@ -61,8 +61,6 @@ export function Preguntas() {
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post(`/api/questions/${q.id}/status`, { status: 'pending' }))}>Devolver a la cola</button>
           </article>) : <EmptyState>Nada todavía.</EmptyState>}</div>
         </Sec>
-      </div>
-      <div className="stack">
         <Sec title="Ajustes" id="h-aj">
           <IxField k="questions.command" label="Comando" className="mono" />
           <div className="row2">
@@ -75,9 +73,7 @@ export function Preguntas() {
           <IxField k="questions.css" label="CSS del widget" type="css" placeholder=".text { font-size: 50px; }" />
           <p className="css-help">Clases: <code>.q</code> <code>.text</code> <code>.who</code> <code>.count</code></p>
         </Sec>
-        <UrlSec url={origin() + '/widget/question'} size="1920×1080"><p className="hint">En Meld: + › Browser. Con <code>?nocount</code> se oculta el contador. El CSS propio del widget gana a los estilos de serie.</p></UrlSec>
-      </div>
-    </div>
+    </WidgetLayout>
   </>;
 }
 
@@ -134,19 +130,18 @@ export function TierList() {
       {v ? <Status tone="warning" icon={IC.play}>Votando</Status> : null}
     </Head>
     <ItemTabs label="Tier lists" items={lists.map(x => ({ id: x.id, label: x.title, badge: I.shownTierlist === x.id ? 'en pantalla' : undefined }))} selected={l?.id ?? null} onSelect={setSel} onNew={() => setSel(null)} newLabel="+ Nueva" />
-    <div className="cols cols--q">
-      <div className="stack">{main}</div>
-      <div className="stack">
-        {l && <Stage key={l.id} eyebrow="Vista previa" src={`/widget/tierlist?id=${enc(l.id)}&debug`} aside={<span>{I.shownTierlist === l.id ? 'En pantalla' : 'No está en pantalla'}</span>} />}
+    <WidgetLayout
+      source={<BrowserSource url={origin() + '/widget/tierlist'} size="1920×1080" hint="En Meld: + › Browser. Muestra la lista que pongas «en pantalla»." />}
+      preview={l ? <Stage key={l.id} eyebrow="Vista previa" src={`/widget/tierlist?id=${enc(l.id)}&debug`} aside={<span>{I.shownTierlist === l.id ? 'En pantalla' : 'No está en pantalla'}</span>} />
+        : <Stage key="demo" eyebrow="Vista previa" src="/widget/tierlist?demo" aside={<span>Datos de ejemplo</span>} />}>
+        {main}
         <Sec title="Ajustes de la votación" id="h-vaj">
           <div className="row2"><IxField k="tierlist.command" label="Comando" className="mono" /><IxField k="tierlist.voteSeconds" label="Cierre automático (s, 0 = a mano)" type="number" min={0} /></div>
           <IxField k="tierlist.acceptBare" label="Vale escribir solo la letra («S», «A»…)" type="switch" />
           <IxField k="tierlist.css" label="CSS del widget" type="css" placeholder=".chip { font-size: 30px; }" />
           <p className="css-help">Clases: <code>.board</code> <code>.row</code> <code>.tier</code> <code>.chip</code> <code>.vote</code> <code>.bar</code> <code>.pool</code></p>
         </Sec>
-        <UrlSec url={origin() + '/widget/tierlist'} size="1920×1080"><p className="hint">En Meld: + › Browser. Muestra la lista que pongas «en pantalla».</p></UrlSec>
-      </div>
-    </div>
+    </WidgetLayout>
   </>;
 }
 
@@ -163,8 +158,7 @@ export function Sorteo() {
       <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { if (confirm('¿Vaciar participantes y ganadores?')) await post('/api/giveaway/reset'); })}>Vaciar</button>
       <button className="eg-btn eg-btn--primary eg-btn--sm" disabled={!g.count} onClick={guard(async () => { const r = await post<{ winner: string; pool: number }>('/api/giveaway/draw'); toast(`Ganador: ${r.winner} (entre ${r.pool})`); })}><Icon d={IC.gift} className="eg-btn__icon" />Sortear</button>
     </Head>
-    <div className="cols cols--q">
-      <div className="stack">
+    <WidgetLayout source={<BrowserSource url={origin() + '/widget/giveaway'} size="1920×1080" />} preview={<Stage eyebrow="En pantalla" src="/widget/giveaway?debug" />}>
         <div className="stats stats--3">
           <div className="eg-stat"><span className="eg-stat__label">Participantes</span><span className="eg-stat__value">{g.count}</span><span className="eg-stat__delta">{g.open ? 'inscripción abierta' : 'inscripción cerrada'}</span></div>
           <div className={cx('eg-stat', last && 'eg-stat--flash')}><span className="eg-stat__label">Último ganador</span><span className="eg-stat__value stat-name">{last ? last.user : '—'}</span><span className="eg-stat__delta">{last ? fmtTime(last.at) : 'aún no se ha sorteado'}</span></div>
@@ -182,9 +176,6 @@ export function Sorteo() {
         <Sec flat title="Sorteos anteriores" id="h-past">
           <div className="rows">{(g.history || []).length ? (g.history || []).slice(0, 8).map((h: any) => <article key={h.at} className="eg-post eg-post--row eg-post--sent"><div className="eg-post__content"><b>{h.winner}</b><span className="eg-post__meta">{fmtDate(h.at)} · {h.title}{h.prize ? ' · ' + h.prize : ''} · {h.entries} part.</span></div></article>) : <EmptyState>Sin sorteos anteriores.</EmptyState>}</div>
         </Sec>
-      </div>
-      <div className="stack">
-        <Stage eyebrow="En pantalla" src="/widget/giveaway?debug" />
         <Sec title="Ajustes" id="h-gaj">
           <div className="row2">
             <IxField k="giveaway.title" label="Título" />
@@ -206,8 +197,6 @@ export function Sorteo() {
           <IxField k="giveaway.css" label="CSS del widget" type="css" placeholder=".prize { color: #FF8FA6; }" />
           <p className="css-help">Clases: <code>.g</code> <code>.prize</code> <code>.join</code> <code>.count</code> <code>.reel</code> <code>.name</code></p>
         </Sec>
-        <UrlSec url={origin() + '/widget/giveaway'} size="1920×1080" />
-      </div>
-    </div>
+    </WidgetLayout>
   </>;
 }

@@ -2,7 +2,7 @@
 import { enc, post, put, del } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { patchWidgets } from '../../lib/patch';
-import { codeTab, confirmDelete, CopyUrl, EmptyState, guard, ItemTabs, LazyInput, Panel, PfIcon, ScaledFrame, Switch, ViewHead } from '../../lib/ui';
+import { BrowserSource, codeTab, confirmDelete, EmptyState, guard, ItemTabs, LazyInput, Panel, PfIcon, Stage, Switch, ViewHead, WidgetLayout } from '../../lib/ui';
 import { useState, type ReactNode } from 'react';
 import type { GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
 
@@ -58,15 +58,13 @@ export function Widget({ name }: { name: string }) {
     <WField w="latest" f="css" label="CSS de «últimos»" type="css" placeholder=".item .big { font-size: 34px; }" />
     <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.item</code> <code>.item-{'<tipo>'}</code> <code>.item.empty</code> <code>.item.flash</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p>
     <h3 className="sub-h">Ticker</h3>
-    <CopyUrl url={origin() + '/widget/ticker'}><span className="hint">1920×64</span></CopyUrl>
     <div className="row3">
       <WField w="ticker" f="label" label="Etiqueta" />
       <WField w="ticker" f="count" label="Eventos" type="number" min={1} max={30} />
       <WField w="ticker" f="speed" label="Velocidad (px/s)" type="number" min={10} max={300} />
     </div>
     <WField w="ticker" f="css" label="CSS del ticker" type="css" placeholder=".band { border-top-color: #fff; }" />
-    <p className="css-help">Clases: <code>.root</code> <code>.band</code> <code>.label</code> <code>.track</code> <code>.run</code> <code>.it</code> <code>.it b</code> <code>.k</code></p>
-    <ScaledFrame src="/widget/ticker?demo" w={1920} h={120} /></>;
+    <p className="css-help">Clases: <code>.root</code> <code>.band</code> <code>.label</code> <code>.track</code> <code>.run</code> <code>.it</code> <code>.it b</code> <code>.k</code></p></>;
   if (name === 'credits') form = <>
     <div className="row2"><WField w="credits" f="title" label="Título" /><WField w="credits" f="speed" label="Velocidad (px/s)" type="number" min={10} max={300} /></div>
     <WField w="credits" f="subtitle" label="Línea final" />
@@ -76,13 +74,14 @@ export function Widget({ name }: { name: string }) {
     <p className="hint mt">Parámetros: <code>?transparent</code> (sin fondo) · <code>?autoplay</code> · <code>?loop</code>. Se lanzan desde aquí, desde el MCP, con una acción o con un atajo del Stream Deck.</p></>;
   return <>
     <ViewHead crumb={<>Widgets › {info.title}</>} title={info.title} hint={info.desc} />
-    <div className="editor">
-      <div className="form-col">
-        <Panel title="Fuente de navegador en Meld" aside={<span className="hint">{info.size}</span>}><CopyUrl url={origin() + info.path} /></Panel>
-        <Panel>{form}</Panel>
-      </div>
-      <div className="preview-col"><ScaledFrame src={q(info.path, 'demo')} w={info.w} h={info.h} /><p className="hint">Vista previa con datos de ejemplo.</p></div>
-    </div>
+    <WidgetLayout
+      source={<BrowserSource url={origin() + info.path} size={info.size} label={name === 'latest' ? 'Últimos' : undefined} also={name === 'latest' ? [{ url: origin() + '/widget/ticker', size: '1920×64', label: 'Ticker' }] : []} />}
+      preview={<>
+        <Stage eyebrow={name === 'latest' ? 'Vista previa · Últimos' : 'Vista previa'} aside={<span>Datos de ejemplo</span>} src={q(info.path, 'demo')} w={info.w} h={info.h} />
+        {name === 'latest' && <Stage eyebrow="Vista previa · Ticker" aside={<span>Datos de ejemplo</span>} src="/widget/ticker?demo" w={1920} h={120} />}
+      </>}>
+      <Panel>{form}</Panel>
+    </WidgetLayout>
   </>;
 }
 
@@ -121,10 +120,13 @@ function Goals() {
       const vs = values.find(x => x.id === g.id);
       const visibleBars = g.visible === false ? 0 : g.bars.filter(b => b.visible !== false).length;
       const previewHeight = 210 + 60 * visibleBars;
-      return <article className="panel goal-card" key={g.id} data-tour="goals-editor">
+      return <article className="goal-card" key={g.id} data-tour="goals-editor">
         <header className="goal-card-head"><h2>{g.title}</h2><span className="hint">{visibleBars} barras visibles · {g.visible === false ? 'Caja oculta' : 'En pantalla'}</span></header>
-        <div className="editor">
-        <div className="form-col">
+        <WidgetLayout
+          source={<BrowserSource url={`${origin()}/widget/goal?id=${enc(g.id)}`} size={`1000×${previewHeight}`} hint="En Meld: + › Browser. Cada caja de objetivos es una fuente propia." />}
+          /* O1.5: la preview se vuelve a montar al cambiar la config de la caja (no con cada valor) */
+          preview={<Stage key={JSON.stringify(g)} eyebrow="Vista previa" aside={<span>{visibleBars ? 'Con los datos reales del directo' : 'Sin barras visibles en el overlay'}</span>} src={`/widget/goal?id=${enc(g.id)}&debug`} w={1000} h={previewHeight} />}>
+        <Panel>
           <div className="row2">
             <label>Título <LazyInput value={g.title} onCommit={x => saveGoal(g.id, { title: x })} /></label>
             <Switch checked={g.visible !== false} onChange={guard((x: boolean) => saveGoal(g.id, { visible: x }))}>Visible</Switch>
@@ -156,12 +158,9 @@ function Goals() {
           <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const d = await post<{ bar: GoalBar }>(`/api/goals/${enc(g.id)}/bars`, { platform: 'twitch', metric: 'follows', target: 10 }); reloadGoals(goals.map(x => (x.id === g.id ? { ...x, bars: [...x.bars, d.bar] } : x))); })}>+ Añadir barra</button>
           <details className="goal-css"><summary>CSS personalizado</summary><label>CSS <LazyInput as="textarea" className="code" spellCheck={false} style={{ minHeight: 70 }} placeholder=".title { color: #FF8FA6; }" value={g.css || ''} onCommit={x => saveGoal(g.id, { css: x })} /></label>
             <p className="css-help">Clases: <code>.goal</code> <code>.goal.done</code> <code>.kick</code> <code>.title</code> <code>.bar</code> <code>.bar.pf-twitch</code> <code>.bar.pf-youtube</code> <code>.fill</code> <code>.pf-ico</code> <code>.metric</code> <code>.pct</code></p></details>
-          <CopyUrl url={`${origin()}/widget/goal?id=${enc(g.id)}`}><span className="hint">1000×{previewHeight}</span></CopyUrl>
           <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(g.title, 'este objetivo')) return; const d = await del<{ goals: GoalConfig[] }>('/api/goals/' + enc(g.id)); reloadGoals(d.goals); })}>Borrar objetivo</button>
-        </div>
-        {/* O1.5: la preview se vuelve a montar al cambiar la config de la caja (no con cada valor) */}
-        <div className="preview-col"><ScaledFrame key={JSON.stringify(g)} src={`/widget/goal?id=${enc(g.id)}&debug`} w={1000} h={previewHeight} /><p className="hint">{visibleBars ? 'Con los datos reales del directo.' : 'Sin barras visibles en el overlay.'}</p></div>
-      </div></article>;
+        </Panel>
+        </WidgetLayout></article>;
     })() : <EmptyState>Sin objetivos.</EmptyState>}
   </>;
 }

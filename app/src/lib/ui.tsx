@@ -172,11 +172,19 @@ export function Stage({ eyebrow, aside, src, w = 1920, h = 1080, foot, frameRef 
     {foot && <div className="eg-stage__bar">{foot}</div>}
   </figure>;
 }
-/** Sección «Capa de navegador»: la URL para Meld, su tamaño y cómo añadirla. */
-export function UrlSec({ url, size, children, title = 'Capa de navegador' }: { url: string; size?: string; children?: ReactNode; title?: ReactNode }) {
-  return <Sec title={title} aside={size ? <span className="hint">{size}</span> : undefined}>
-    <div className="row tight"><label className="sr-only" htmlFor={'u-' + url}>URL de la capa</label><input id={'u-' + url} className="grow mono" value={url} readOnly onFocus={e => e.target.select()} />
-      <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(url)}>Copiar</button></div>
-    {children ?? <p className="hint">En Meld: + › Browser. El CSS propio del widget gana a los estilos de serie.</p>}
+/** Una URL de fuente de navegador: dirección, tamaño y, si la página tiene varias, su nombre. */
+export type SourceUrl = { url: string; size: string; label?: string };
+/** Bloque «Fuente de navegador en Meld» (O3.3): siempre el primero de la columna izquierda de una página de widget. */
+export function BrowserSource({ url, size, label, also = [], hint }: SourceUrl & { also?: SourceUrl[]; hint?: ReactNode }) {
+  return <Sec title="Fuente de navegador en Meld" className="browser-source">
+    {[{ url, size, label }, ...also].map(s => <CopyUrl key={s.url} url={s.url}><span className="hint">{s.label ? `${s.label} · ` : ''}{s.size}</span></CopyUrl>)}
+    <p className="hint">{hint ?? 'En Meld: + › Browser. El CSS propio del widget gana a los estilos de serie.'}</p>
   </Sec>;
+}
+/** Esqueleto de una página de widget (O3.3): a la izquierda la fuente y la configuración, a la derecha la vista previa. */
+export function WidgetLayout({ source, preview, children, className }: { source: ReactNode; preview: ReactNode; children?: ReactNode; className?: string }) {
+  return <div className={cx('editor widget-layout', className)}>
+    <div className="form-col">{source}{children}</div>
+    <div className="preview-col">{preview}</div>
+  </div>;
 }
