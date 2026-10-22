@@ -147,7 +147,7 @@ export function Directo() {
         <button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(async () => { if (!confirm('Se archiva el directo actual y todo vuelve a cero (objetivos, créditos, últimos). ¿Seguir?')) return; await post('/api/session/new', { title: '' }); await load(); })}>Nuevo directo</button>
       </div></header>
     <Connections />
-    <div className="stats" data-tour="directo-stats">{Object.entries(s.metrics || {}).filter(([k]) => k !== 'events').map(([k, m]) => <div className="eg-stat" key={k}>
+    <div className="stats stats--directo" data-tour="directo-stats">{Object.entries(s.metrics || {}).filter(([k]) => k !== 'events').map(([k, m]) => <div className="eg-stat" key={k}>
       <span className="eg-stat__label">{m.label}</span><span className="eg-stat__value">{(t[k] ?? 0).toLocaleString('es-ES')}</span><span className="eg-stat__delta">{source(m.types as string[])}</span></div>)}</div>
     <div className="cols">
       <div className="stack">
