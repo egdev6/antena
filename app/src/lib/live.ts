@@ -20,6 +20,11 @@ export function deepMerge<T>(a: T | undefined, b: unknown): T {
   return o as T;
 }
 
+/** Slices that every update replaces whole (no partial patches, unlike status or widgets):
+ *  the local copy received during a load is at least as new as that load's snapshot.
+ *  meld is not here: its SSE event only brings the session, so only the session is kept. */
+const WHOLE: (keyof AppState)[] = ['teleprompter', 'interactive', 'timers', 'viewers', 'history', 'theme'];
+
 class Live {
   state: AppState | null = null;
   timeline: Timeline = { items: [], pending: 0 };
@@ -44,6 +49,10 @@ class Live {
    *  añadir una barra a un objetivo en el panel) es más nueva que cualquier snapshot de
    *  /api/state pedido antes, así que ese snapshot no debe revertirla al aplicarse. */
   private cfgTouch = 0;
+  /** Same epoch for the slices that arrive whole (POST replies and SSE events): a script
+   *  picked in the teleprompter while the SSE 'open' snapshot is in flight is newer than
+   *  that snapshot, which must not bring the previous script back. */
+  private touched: Partial<Record<keyof AppState, number>> = {};
   private cfgPending: Record<string, unknown> = {};
   private cfgTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -63,6 +72,7 @@ class Live {
     const patch = fn(s);
     // Un cambio local de config marca época: los snapshots pedidos antes de él quedan obsoletos.
     if (patch.config) this.cfgTouch++;
+    for (const k of Object.keys(patch) as (keyof AppState)[]) if (WHOLE.includes(k) || k === 'meld') this.touched[k] = (this.touched[k] ?? 0) + 1;
     this.state = { ...s, ...patch };
     this.emit();
   }
@@ -78,6 +88,7 @@ class Live {
     // esta carga (ediciones optimistas o un evento 'config' más nuevo), el snapshot llegó
     // a ser viejo y no debe pisarla.
     const cfgAtStart = this.cfgTouch;
+    const touchedAtStart = { ...this.touched };
     // ids que llegan por SSE mientras ESTA petición está en curso: cada carga concurrente
     // registra el suyo (la del llamador y la del primer open solapan); solo esos ids se
     // fusionan con el snapshot al aplicarlo (lo local más viejo o borrado no vuelve a entrar).
@@ -99,7 +110,11 @@ class Live {
       // entre la edición y su guardado revertía la UI hasta la siguiente carga (fallo
       // intermitente de goals-browser en CI: el bloque Goals volvía a 2 barras).
       const config = this.cfgTouch === cfgAtStart ? snap.config : (this.state?.config ?? snap.config);
-      this.state = { ...snap, config, widgets: { ...snap.widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } };
+      const prev = this.state;
+      const kept: Partial<AppState> = prev ? Object.fromEntries(WHOLE.filter(k => this.touched[k] !== touchedAtStart[k]).map(k => [k, prev[k]])) : {};
+      // meld: only the session arrives by SSE; the rest (commands, events) comes from the snapshot.
+      if (prev && this.touched.meld !== touchedAtStart.meld) kept.meld = { ...snap.meld, session: prev.meld?.session };
+      this.state = { ...snap, ...kept, config, widgets: { ...snap.widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } };
     } finally { this.inflightChat.delete(inFlight); this.inflightRemoved.delete(removed); }
     try {
       const tl = await api<Timeline>('GET', '/api/timeline');
