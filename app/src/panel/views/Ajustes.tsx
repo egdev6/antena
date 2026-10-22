@@ -158,6 +158,7 @@ export function PrompterAjustes() {
         <label>Pista del micro en Meld (avisa en grande si está silenciado)
           <select value={pr.micTrack || ''} onChange={e => P({ micTrack: e.target.value })}><option value="">Automática (la que se llame «mic…»)</option>{tracks.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></label>
         <label>CSS propio de la vista <textarea className="code" spellCheck={false} value={pr.css || ''} onKeyDown={codeTab} onChange={e => P({ css: e.target.value })} placeholder=":root { --fs: 24px; --red: #00E0FF; }" /></label>
+        <p className="css-help">Clases: <code>.pr</code> <code>.pr-top</code> <code>.pr-main</code> <code>.pr-chat</code> <code>.eg-timeline__item</code> <code>.pr-send</code> <code>.pr-side</code> <code>.pr-pane</code> <code>.pr-row</code> <code>.pr-tierbtn</code></p>
         <p className="hint">Los botones del Stream Deck para el prompter (cambiar de pestaña, marcar…) están en <a href="#/atajos">Atajos y Stream Deck</a>.</p>
       </Panel>
     </div>

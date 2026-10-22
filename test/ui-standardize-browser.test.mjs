@@ -244,7 +244,20 @@ test('O3.2 css-help: cada campo de CSS lista las clases de su widget', { timeout
     await dom(chrome, `document.querySelector('#tb-css').click()`);
     await waitDom(chrome.cdp, `!document.querySelector('#tp-css').hidden && !!document.querySelector('#tp-css .css-help')`, { timeoutMs: 12000 });
     eq(await dom(chrome, `['.alert', '.alert-box', '.alert-title', '.alert-name', '.alert-sub'].every(c => document.querySelector('#tp-css .css-help').textContent.includes(c))`), true);
+    // #15: el CSS propio del prompter también lista sus clases, justo debajo de su campo
+    await dom(chrome, `location.hash = '#/prompter'`);
+    const prHelp = `document.querySelector('main textarea.code')?.closest('label')?.nextElementSibling`;
+    await waitDom(chrome.cdp, `${prHelp}?.classList.contains('css-help') === true`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `['.pr', '.pr-top', '.pr-main', '.pr-chat', '.eg-timeline__item', '.pr-send', '.pr-side', '.pr-pane', '.pr-tierbtn'].every(c => ${prHelp}.textContent.includes(c))`), true);
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
+test('#15 la espera de Espectadores es un Status neutro, no un p.hint suelto', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(fileURLToPath(new URL('../app/src/panel/views/Espectadores.tsx', import.meta.url)), 'utf8');
+  const wait = src.split('\n').find(l => l.includes('El servidor no ha mandado aún el estado de espectadores.')) ?? '';
+  eq(/<Status tone="neutral"[^>]*>El servidor no ha mandado aún el estado de espectadores\.<\/Status>/.test(wait), true);
+  eq(wait.includes('className="hint"'), false);
 });
 
 test('O3.2 esqueleto común: cabecera con miga «grupo › vista» igual que la barra lateral, interruptores y sin márgenes en línea', { timeout: 180000 }, async t => {
