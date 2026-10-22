@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { del, enc, post, put, get } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { AlertConfig, AlertVariation, CommandConfig, Config, SendResult, TimerConfig } from '../../lib/types';
-import { codeTab, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, Switch, toast, fmtTime } from '../../lib/ui';
+import { codeTab, confirmDelete, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, Switch, toast, fmtTime } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { go } from '../router';
 import { useUploader, UploadBar } from './General';
@@ -282,7 +282,7 @@ export function Editor({ target }: { target: Target }) {
       <Switch checked={v.enabled !== false} onChange={x => set('enabled', x)}>Activa</Switch>
       <a className="eg-btn eg-btn--ghost eg-btn--sm" href={`#/alerta/${type}`}>Volver a la alerta</a>
       <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => {
-        if (!confirm('¿Borrar esta variación?')) return;
+        if (!confirmDelete(v.name, 'esta variación')) return;
         const d = await del<{ variations: AlertVariation[] }>(`/api/alerts/${type}/variations/${enc(v.id)}`);
         live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: d.variations } } } }));
         go(`#/alerta/${type}`);
@@ -293,14 +293,14 @@ export function Editor({ target }: { target: Target }) {
       <input className="title-input" value={item.name} aria-label="Nombre del mensaje" onChange={e => set('name', e.target.value)} /></div>
     <div className="actions">
       <Switch checked={item.enabled !== false} onChange={x => set('enabled', x)}>Activo</Switch>
-      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm('¿Borrar este mensaje programado?')) return; const d = await del<{ timers: TimerConfig[] }>(`/api/timers/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, timers: d.timers } })); go('#/mensajes'); })}>Borrar</button>
+      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.name, 'este mensaje programado')) return; const d = await del<{ timers: TimerConfig[] }>(`/api/timers/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, timers: d.timers } })); go('#/mensajes'); })}>Borrar</button>
       <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await ed.flush(); await fireTimer(item.id, (text, err) => setFireMsg({ text, err: !!err })); })}>Enviar ahora</button>
     </div></> : <>
     <div><span className="crumb"><a href="#/comandos">Comandos de chat</a> › Comando</span>
       <input className="title-input" value={item.trigger} aria-label="Disparador" onChange={e => set('trigger', e.target.value.trim())} /></div>
     <div className="actions">
       <Switch checked={item.enabled !== false} onChange={x => set('enabled', x)}>Activo</Switch>
-      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm('¿Borrar este comando?')) return; const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar</button>
+      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.trigger, 'este comando')) return; const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar</button>
       <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await ed.flush(); await post('/api/test', testBody(target, 'live')); }, 'Enviado al directo')}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>
     </div></>;
 

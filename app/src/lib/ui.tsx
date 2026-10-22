@@ -20,6 +20,8 @@ export function Toaster({ className = 'toast' }: { className?: string }) {
 export const guard = <A extends any[]>(fn: (...a: A) => any, ok?: string) => async (...a: A) => {
   try { const r = await fn(...a); if (ok) toast(ok); return r; } catch (e: any) { toast(e?.message || String(e), true); }
 };
+/** Confirmación nativa de borrado con la misma redacción en todo el panel: «¿Borrar «nombre»?» o, sin nombre, «¿Borrar este …?». */
+export const confirmDelete = (name: string | null | undefined, fallback: string) => confirm(name?.trim() ? `¿Borrar «${name.trim()}»?` : `¿Borrar ${fallback}?`);
 export const copy = (text: string) => navigator.clipboard.writeText(text).then(() => toast('Copiado'), () => toast(text));
 
 // ---------- formato ----------

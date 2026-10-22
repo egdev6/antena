@@ -91,6 +91,7 @@ test('O3.2 teleprompter: pestañas por guion, + Nuevo guion y el último no se b
     await dom(chrome, acceptConfirms);
     await dom(chrome, `${buttonByText('Borrar guion')}.click()`);
     await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3 && ${selectedTab(L)} === ${JSON.stringify(first.title)} && ${title} === ${JSON.stringify(first.title)}`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `window.__confirms[0]`), '¿Borrar «Nuevo guion»?');
 
     // el último guion no se puede borrar
     await dom(chrome, `${tabsOf(L)}[1].click()`);
@@ -144,6 +145,7 @@ test('O3.2 atajos: pestañas por atajo, + Nuevo atajo, pasos con subir/bajar y b
     await dom(chrome, `Array.from(${card}.querySelectorAll('button')).find(b => b.textContent.trim() === 'Borrar').click()`);
     await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3 && ${selectedTab(L)} === 'Uno' && ${name} === 'Uno'`, { timeoutMs: 12000 });
     eq(app.store.config.shortcuts.map(x => x.name).join('|'), 'Uno|Dos');
+    eq(await dom(chrome, `window.__confirms[0]`), '¿Borrar «Tres»?');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 

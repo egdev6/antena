@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { useLive } from '../../lib/live';
 import { patchIx } from '../../lib/patch';
-import { codeTab, cx, EmptyState, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec } from '../../lib/ui';
+import { codeTab, confirmDelete, cx, EmptyState, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { PERMS } from './Editor';
 import type { Question, TierListItem, TierListTier } from '../../lib/types';
@@ -127,7 +127,7 @@ export function TierList() {
       </div>
       <div className="row tight">
         <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { if (confirm('¿Dejar todos los elementos sin colocar?')) await post(T + '/reset'); })}>Quitar todas las colocaciones</button>
-        <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (confirm(`¿Borrar «${l.title}»?`)) { await del(T); setSel(null); } })}>Borrar lista</button>
+        <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (confirmDelete(l.title, 'esta tier list')) { await del(T); setSel(null); } })}>Borrar lista</button>
       </div>
     </Sec></>;
   return <>

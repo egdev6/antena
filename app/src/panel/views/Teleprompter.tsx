@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { copy, cx, guard, Icon, IconBtn, ItemTabs, LazyInput, mmss, ScaledFrame, Sec, Seg, Switch } from '../../lib/ui';
+import { confirmDelete, copy, cx, guard, Icon, IconBtn, ItemTabs, LazyInput, mmss, ScaledFrame, Sec, Seg, Switch } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { isDesktop, listMonitors, openTeleprompter, type Monitor } from '../../lib/desktop';
 import type { TeleprompterState, TpBlock, TpCompiled, TpCompiledBlock } from '../../lib/types';
@@ -117,7 +117,7 @@ export function Teleprompter() {
             <label className="sr-only" htmlFor="tp-title">Título del guion</label>
             <LazyInput id="tp-title" className="grow" style={{ margin: 0 }} value={script.title} onCommit={v => guard(() => saveScript(script, { title: v }))()} />
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={tp.scripts.length < 2} title={tp.scripts.length < 2 ? 'Es el único guion' : undefined} onClick={guard(async () => {
-              if (!confirm(`¿Borrar el guion «${script.title}»?`)) return;
+              if (!confirmDelete(script.title, 'este guion')) return;
               const d = await del<TeleprompterState>(`/api/teleprompter/scripts/${enc(String(script.id))}`); live.update(() => ({ teleprompter: d })); setEditing(null);
             })}>Borrar guion</button>
           </div>
@@ -131,7 +131,7 @@ export function Teleprompter() {
                 <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={guard(() => moveBlock(i, -1))} />
                 <IconBtn icon={IC.down} label="Bajar" disabled={i === script.blocks.length - 1} onClick={guard(() => moveBlock(i, 1))} />
                 <IconBtn icon={IC.x} label="Quitar bloque" disabled={script.blocks.length < 2} onClick={guard(async () => {
-                  if (b.text.trim() && !confirm(`¿Quitar el bloque «${b.title}»?`)) return;
+                  if (b.text.trim() && !confirm(b.title?.trim() ? `¿Quitar «${b.title.trim()}»?` : '¿Quitar este bloque?')) return;
                   await saveScript(script, { blocks: script.blocks.filter(x => x.id !== b.id) });
                 })} />
               </article>;

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { del, enc, get, post, put } from '../../lib/api';
 import { live } from '../../lib/live';
-import { copy, cx, EmptyState, guard, IconBtn, ItemTabs, LazyInput, Panel, toast } from '../../lib/ui';
+import { confirmDelete, copy, cx, EmptyState, guard, IconBtn, ItemTabs, LazyInput, Panel, toast } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { ACTIONS, ActionFields } from './Editor';
 
@@ -74,7 +74,7 @@ function ShortcutCard({ sc, info, base, hidden, onSaved, onDeleted, onDirty }: {
       <LazyInput className="title-input sm" aria-label="Nombre del atajo" value={sc.name} onCommit={v => save({ name: v }).catch(e => toast(e.message, true))} />
       <div className="row tight">
         <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={run}>Probar</button>
-        <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm(`¿Borrar el atajo «${sc.name}»?`)) return; await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar</button>
+        <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(sc.name, 'este atajo')) return; await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar</button>
       </div>
     </header>
     <div className="overlay-url"><code>{url}</code><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(url)}>Copiar</button></div>

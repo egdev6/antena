@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { post, upload, enc } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { Access, MediaItem } from '../../lib/types';
-import { CopyUrl, guard, Panel, Range, Switch, toast } from '../../lib/ui';
+import { confirmDelete, CopyUrl, guard, Panel, Range, Switch, toast } from '../../lib/ui';
 import type { UploadResult } from '../../lib/types';
 
 export function UploadBar({ name, progress }: { name: string; progress: number }) {
@@ -78,7 +78,7 @@ export function General() {
     <Panel title="Archivos" aside={<label className="eg-btn eg-btn--ghost upload">Subir archivos<input type="file" multiple accept="video/*,image/*,audio/*,.woff2,.woff,.ttf,.otf" hidden onChange={guard(async e => { await up.run([...(e.target.files || [])]); e.target.value = ''; })} /></label>}>
       <p className="hint">Vídeos (webm con transparencia, mp4), imágenes (gif, png, webp) y sonidos (mp3, ogg, wav). Se guardan en la carpeta <code>media/</code> de la app{media.length > 0 ? <> · total: <b>{formatBytes(media.reduce((s: number, m: MediaItem) => s + (m.size || 0), 0))}</b></> : null}.</p>
       <ul className="files">{media.map(m => <li key={m.name}><div className="thumb"><MediaThumb m={m} /></div>
-        <div className="meta"><span title={m.name}>{m.name}{m.size ? <> · {formatBytes(m.size)}</> : null}</span><button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm(`¿Borrar ${m.name}?`)) return; const d = await post<{ media: MediaItem[] }>('/api/media/delete', { name: m.name }); live.update(() => ({ media: d.media })); })}>Borrar</button></div></li>)}</ul>
+        <div className="meta"><span title={m.name}>{m.name}{m.size ? <> · {formatBytes(m.size)}</> : null}</span><button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(m.name, 'este archivo')) return; const d = await post<{ media: MediaItem[] }>('/api/media/delete', { name: m.name }); live.update(() => ({ media: d.media })); })}>Borrar</button></div></li>)}</ul>
     </Panel>
     <UploadBar name={up.name} progress={up.progress} />
   </>;

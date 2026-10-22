@@ -2,7 +2,7 @@
 import { enc, post, put, del } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { patchWidgets } from '../../lib/patch';
-import { codeTab, CopyUrl, EmptyState, guard, ItemTabs, LazyInput, Panel, PfIcon, ScaledFrame } from '../../lib/ui';
+import { codeTab, confirmDelete, CopyUrl, EmptyState, guard, ItemTabs, LazyInput, Panel, PfIcon, ScaledFrame } from '../../lib/ui';
 import { useState, type ReactNode } from 'react';
 import type { GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
 
@@ -150,14 +150,14 @@ function Goals() {
                     <input type="number" aria-label={`Fijar valor de ${b.platform} · ${b.metric}`} placeholder="Valor" className="goal-set-value" value={setVal[b.id] ?? ''} onChange={e => setSetVal({ ...setVal, [b.id]: e.target.value })} />
                     <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const d = await post<{ value: number }>(`/api/goals/${enc(g.id)}/bars/${enc(b.id)}/set`, { value: Number(setVal[b.id] || 0) }); setValue(g.id, b.id, d.value); })}>Fijar</button>
                   </div></div>
-              <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm('¿Borrar esta barra?')) return; const d = await del<{ bars: GoalBar[] }>(`/api/goals/${enc(g.id)}/bars/${enc(b.id)}`); reloadGoals(goals.map(x => (x.id === g.id ? { ...x, bars: d.bars } : x))); })}>Borrar barra</button>
+              <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(null, 'esta barra')) return; const d = await del<{ bars: GoalBar[] }>(`/api/goals/${enc(g.id)}/bars/${enc(b.id)}`); reloadGoals(goals.map(x => (x.id === g.id ? { ...x, bars: d.bars } : x))); })}>Borrar barra</button>
             </fieldset>;
           })}
           <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const d = await post<{ bar: GoalBar }>(`/api/goals/${enc(g.id)}/bars`, { platform: 'twitch', metric: 'follows', target: 10 }); reloadGoals(goals.map(x => (x.id === g.id ? { ...x, bars: [...x.bars, d.bar] } : x))); })}>+ Añadir barra</button>
           <details className="goal-css"><summary>CSS personalizado</summary><label>CSS <LazyInput as="textarea" className="code" spellCheck={false} style={{ minHeight: 70 }} placeholder=".title { color: #FF8FA6; }" value={g.css || ''} onCommit={x => saveGoal(g.id, { css: x })} /></label>
             <p className="css-help">Clases: <code>.goal</code> <code>.goal.done</code> <code>.kick</code> <code>.title</code> <code>.bar</code> <code>.bar.pf-twitch</code> <code>.bar.pf-youtube</code> <code>.fill</code> <code>.pf-ico</code> <code>.metric</code> <code>.pct</code></p></details>
           <CopyUrl url={`${origin()}/widget/goal?id=${enc(g.id)}`}><span className="hint">1000×{previewHeight}</span></CopyUrl>
-          <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm('¿Borrar este objetivo?')) return; const d = await del<{ goals: GoalConfig[] }>('/api/goals/' + enc(g.id)); reloadGoals(d.goals); })}>Borrar objetivo</button>
+          <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(g.title, 'este objetivo')) return; const d = await del<{ goals: GoalConfig[] }>('/api/goals/' + enc(g.id)); reloadGoals(d.goals); })}>Borrar objetivo</button>
         </div>
         {/* O1.5: la preview se vuelve a montar al cambiar la config de la caja (no con cada valor) */}
         <div className="preview-col"><ScaledFrame key={JSON.stringify(g)} src={`/widget/goal?id=${enc(g.id)}&debug`} w={1000} h={previewHeight} /><p className="hint">{visibleBars ? 'Con los datos reales del directo.' : 'Sin barras visibles en el overlay.'}</p></div>
