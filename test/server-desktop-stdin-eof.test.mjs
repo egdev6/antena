@@ -48,7 +48,7 @@ async function lanzarServidor(t, { desktop }) {
   const listo = await Promise.race([
     new Promise(resolve => {
       const timer = setInterval(() => {
-        if ((out + err).includes('EGDEV live en marcha')) { clearInterval(timer); resolve(true); }
+        if ((out + err).includes('antena en marcha')) { clearInterval(timer); resolve(true); }
       }, 50);
       setTimeout(() => { clearInterval(timer); resolve(false); }, 10000);
     }),

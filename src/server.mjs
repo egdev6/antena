@@ -1034,7 +1034,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
     });
   };
   if (!quiet) {
-    log(`\n  EGDEV live en marcha${host === '0.0.0.0' ? ' (también desde la red local)' : ''}`);
+    log(`\n  antena en marcha${host === '0.0.0.0' ? ' (también desde la red local)' : ''}`);
     log(`  Panel:   http://127.0.0.1:${port}/`);
     log(`  Overlay: http://127.0.0.1:${port}/overlay   ← pégalo en Meld como capa de navegador`);
     log(`  Widgets: http://127.0.0.1:${port}/widget/{chat,goal,latest,ticker,credits}`);
