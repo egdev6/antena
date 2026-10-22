@@ -50,11 +50,11 @@ export function Icon({ d, className = 'eg-icon' }: { d: string; className?: stri
 
 // ---------- controles ----------
 /** Cabecera de una vista: miga (grupo › vista, o enlace a la vista padre), título, explicación opcional y acciones a la derecha. */
-export function ViewHead({ crumb, title, hint, actions }: { crumb: ReactNode; title: ReactNode; hint?: ReactNode; actions?: ReactNode }) {
-  return <header className="view-head"><div><span className="crumb">{crumb}</span><h1>{title}</h1>{hint && <p className="hint">{hint}</p>}</div>{actions && <div className="actions">{actions}</div>}</header>;
+export function ViewHead({ crumb, title, hint, actions, tour }: { crumb: ReactNode; title: ReactNode; hint?: ReactNode; actions?: ReactNode; tour?: string }) {
+  return <header className="view-head" data-tour={tour}><div><span className="crumb">{crumb}</span><h1>{title}</h1>{hint && <p className="hint">{hint}</p>}</div>{actions && <div className="actions">{actions}</div>}</header>;
 }
-export function Panel({ title, aside, children, className }: { title?: ReactNode; aside?: ReactNode; children?: ReactNode; className?: string }) {
-  return <article className={cx('panel', className)}>{(title || aside) && <header>{title && <h2>{title}</h2>}{aside}</header>}{children}</article>;
+export function Panel({ title, aside, children, className, tour }: { title?: ReactNode; aside?: ReactNode; children?: ReactNode; className?: string; tour?: string }) {
+  return <article className={cx('panel', className)} data-tour={tour}>{(title || aside) && <header>{title && <h2>{title}</h2>}{aside}</header>}{children}</article>;
 }
 export function Switch({ checked, onChange, children, title }: { checked: boolean; onChange: (v: boolean) => void; children?: ReactNode; title?: string }) {
   return <label className="switch" title={title}><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} /><i></i>{children}</label>;
@@ -84,8 +84,8 @@ export function EmptyState({ children }: { children: ReactNode }) {
 }
 
 /** Pestañas de una sección con varios objetos (patrón de las tier lists): una por elemento y la última para crear uno nuevo. */
-export function ItemTabs({ items, selected, onSelect, onNew, newLabel, label }: { items: { id: string; label: ReactNode; badge?: ReactNode }[]; selected: string | null | undefined; onSelect: (id: string) => void; onNew: () => void; newLabel: ReactNode; label?: string }) {
-  return <div className="eg-tabs eg-tabs--segmented eg-tabs--sm list-tabs" role="tablist" aria-label={label}>
+export function ItemTabs({ items, selected, onSelect, onNew, newLabel, label, tour }: { items: { id: string; label: ReactNode; badge?: ReactNode }[]; selected: string | null | undefined; onSelect: (id: string) => void; onNew: () => void; newLabel: ReactNode; label?: string; tour?: string }) {
+  return <div className="eg-tabs eg-tabs--segmented eg-tabs--sm list-tabs" role="tablist" aria-label={label} data-tour={tour}>
     {items.map(x => <button key={x.id} type="button" role="tab" className="eg-tabs__item" aria-selected={x.id === selected} onClick={() => onSelect(x.id)}>{x.label}{x.badge ? <span className="eg-tabs__count">{x.badge}</span> : null}</button>)}
     <button type="button" role="tab" className="eg-tabs__item" aria-selected={selected == null} onClick={onNew}>{newLabel}</button>
   </div>;
@@ -153,8 +153,8 @@ export function Progress({ p, lg, label, style }: { p: number; lg?: boolean; lab
   return <span className={cx('eg-progress', lg && 'eg-progress--lg')} role="progressbar" aria-label={label} aria-valuenow={Math.round(v * 100)} aria-valuemin={0} aria-valuemax={100} style={{ ['--p' as any]: v, ...style }}><span className="eg-progress__bar" /></span>;
 }
 /** Sección del lienzo: tarjeta con cabecera (título display y acciones), contenido y pie opcional (#127). */
-export function Sec({ title, aside, children, foot, footRight, flat, className, id }: { title: ReactNode; aside?: ReactNode; children?: ReactNode; foot?: ReactNode; footRight?: ReactNode; flat?: boolean; className?: string; id?: string }) {
-  return <section className={cx('sec', flat && 'sec--flat', className)} aria-labelledby={id}>
+export function Sec({ title, aside, children, foot, footRight, flat, className, id, tour }: { title: ReactNode; aside?: ReactNode; children?: ReactNode; foot?: ReactNode; footRight?: ReactNode; flat?: boolean; className?: string; id?: string; tour?: string }) {
+  return <section className={cx('sec', flat && 'sec--flat', className)} aria-labelledby={id} data-tour={tour}>
     <div className="sec-h"><h2 id={id}>{title}</h2>{aside}</div>
     {children}
     {(foot || footRight) && <footer className="sec-foot"><span className="sec-foot__l">{foot}</span><span className="sec-foot__r">{footRight}</span></footer>}

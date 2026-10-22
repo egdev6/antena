@@ -1,0 +1,51 @@
+/* Tour guiado (O5): saludo de bienvenida y popover de driver.js con los tokens de EGDEV.
+   El CSS base de driver.js (driver.js/dist/driver.css) se importa antes que este archivo. */
+
+/* ---------- saludo «¿Te enseño cómo funciona?» ---------- */
+.tour-greet{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
+.tour-greet__box{width:min(460px,100%);display:grid;justify-items:start;gap:6px;background:var(--surface);box-shadow:var(--shadow-edge),var(--shadow-elev-3);border:1px solid var(--line2);border-radius:14px;padding:24px 24px 20px;
+  animation:tour-greet-in var(--duration-reveal) var(--ease-out)}
+.tour-greet__mark{width:44px;height:44px;margin-bottom:6px}
+.tour-greet__box h1{font-size:28px;margin:0}
+.tour-greet__box .hint{font-size:13.5px;line-height:1.5;max-width:46ch}
+.tour-greet__actions{justify-self:stretch;display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+@keyframes tour-greet-in{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+
+/* ---------- popover de driver.js ---------- */
+.driver-popover.antena-tour{--tour-bg:var(--color-surface-2);
+  font-family:var(--font-sans);color:var(--text);background:var(--gradient-sheen),var(--tour-bg);
+  border:1px solid var(--line2);border-radius:var(--radius-lg);box-shadow:var(--shadow-edge),var(--shadow-elev-3);
+  min-width:280px;max-width:340px;padding:16px 16px 14px}
+.antena-tour .driver-popover-title{font:800 18px/1.15 var(--font-display);letter-spacing:.04em;text-transform:uppercase;padding-right:28px}
+.antena-tour .driver-popover-title::before{content:"";display:inline-block;width:8px;height:8px;margin:0 10px 2px 0;background:var(--red);transform:rotate(45deg)}
+.antena-tour .driver-popover-description{margin-top:6px;color:var(--grey);font:500 13.5px/1.5 var(--font-sans)}
+.antena-tour .driver-popover-close-btn{color:var(--muted);border-radius:var(--radius-md);top:6px;right:6px;width:28px;height:28px}
+.antena-tour .driver-popover-close-btn:hover{color:var(--text)}
+.antena-tour .driver-popover-close-btn:focus-visible{color:var(--text);box-shadow:var(--shadow-focus)}
+.antena-tour .driver-popover-footer{margin-top:16px;gap:10px}
+.antena-tour .driver-popover-progress-text{color:var(--muted);font:600 12px/1 var(--font-sans);font-variant-numeric:tabular-nums}
+.antena-tour .driver-popover-navigation-btns{gap:6px}
+.antena-tour .driver-popover-navigation-btns button+button{margin-left:0}
+/* botones: secundario (Anterior) y primario (Siguiente / Terminar) como eg-btn --sm */
+.antena-tour .driver-popover-footer-btn{display:inline-flex;align-items:center;min-height:28px;padding:4px 11px;border-radius:var(--radius-md);
+  font:700 12.5px/1 var(--font-sans);text-shadow:none;cursor:pointer;color:var(--grey);
+  background:var(--gradient-sheen),var(--s2);border:1px solid var(--line2);box-shadow:var(--shadow-edge),var(--shadow-elev-1);
+  transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out)}
+.antena-tour .driver-popover-footer-btn:hover{background:var(--gradient-sheen),var(--s3);color:var(--text)}
+.antena-tour .driver-popover-footer-btn:focus-visible{box-shadow:var(--shadow-focus)}
+.antena-tour .driver-popover-next-btn{color:var(--color-action-primary-solid-fg);background:var(--gradient-btn-primary);border-color:color-mix(in srgb,var(--logo-red-shade) 70%,transparent);box-shadow:var(--shadow-btn-primary)}
+.antena-tour .driver-popover-next-btn:hover{color:var(--color-action-primary-solid-fg);background:var(--gradient-btn-primary-hover);box-shadow:var(--shadow-btn-primary-hover)}
+/* flecha del color del popover */
+.antena-tour .driver-popover-arrow{border-color:transparent}
+.antena-tour .driver-popover-arrow-side-left{border-left-color:var(--tour-bg)}
+.antena-tour .driver-popover-arrow-side-right{border-right-color:var(--tour-bg)}
+.antena-tour .driver-popover-arrow-side-top{border-top-color:var(--tour-bg)}
+.antena-tour .driver-popover-arrow-side-bottom{border-bottom-color:var(--tour-bg)}
+
+/* zona resaltada: un filo rojo de marca además del recorte del overlay */
+.driver-active .driver-active-element{outline:2px solid var(--color-border-brand-strong);outline-offset:4px}
+
+@media (prefers-reduced-motion:reduce){
+  .tour-greet__box{animation:none}
+  .driver-fade .driver-overlay,.driver-fade .driver-popover{animation:none}
+}

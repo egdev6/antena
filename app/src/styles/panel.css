@@ -663,18 +663,6 @@ svg.pf-ico path{stroke:none}
 .ap-emoji{width:56px;margin:0;text-align:center}
 @media (max-width:1100px){.app .cols.ap{grid-template-columns:1fr}.ap-preview{position:static;order:-1}}
 
-/* Onboarding: bienvenida del panel con tarjetas por área (se relanza desde General). */
-.onboarding{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
-.onboarding__box{width:min(860px,100%);max-height:min(92vh,760px);overflow:auto;background:var(--surface);box-shadow:var(--surface-shadow);border:1px solid var(--line2);border-radius:14px;padding:22px 22px 18px}
-.onboarding__head h1{font-size:24px;margin:2px 0 6px}
-.onboarding__head .hint{max-width:60ch}
-.onboarding__grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin:16px 0 14px}
-.onboarding__card{display:grid;gap:4px;align-content:start;text-decoration:none;color:var(--text);background:var(--color-surface-2);border:1px solid var(--line);border-radius:10px;padding:12px;transition:border-color .15s ease,transform .15s ease}
-.onboarding__card:hover{border-color:var(--color-border-brand-strong);color:var(--text);transform:translateY(-1px)}
-.onboarding__card b{font:800 14px/1.2 var(--font-display);letter-spacing:.05em;text-transform:uppercase}
-.onboarding__card span{color:var(--grey);font-size:12.5px;line-height:1.45}
-.onboarding__foot{display:flex;justify-content:flex-end}
-
 /* ---------- esqueleto común de las vistas (docs/ui-patterns.md) ---------- */
 /* Panel y Sec se ven igual: misma superficie y cabecera con filete */
 .app .panel{background:var(--gradient-sheen),var(--color-surface-1);border-color:var(--color-border-hairline);box-shadow:var(--shadow-edge),var(--shadow-elev-1)}

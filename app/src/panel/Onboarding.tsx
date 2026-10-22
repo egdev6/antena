@@ -1,41 +1,28 @@
-// Bienvenida del panel: modal con tarjetas, una por grupo del sidebar. Se muestra la
-// primera vez (config.panel.onboardingDone) y se puede relanzar desde General y Ajustes;
-// cerrarla o entrar en un área la marca como vista (patchConfig persiste en config.json).
-import { live, useLive } from '../lib/live';
-
-const AREAS: { href: string; title: string; text: string }[] = [
-  { href: '#/directo', title: 'Directo', text: 'El mando del directo: conexiones, cronología, alertas en cola y métricas al momento.' },
-  { href: '#/chat', title: 'Chat', text: 'Lee y escribe en Twitch y YouTube desde un solo sitio, con filtros y comandos ocultos.' },
-  { href: '#/historial', title: 'Historial', text: 'Cada sesión se archiva con su resumen: mensajes, eventos y clips.' },
-  { href: '#/comandos', title: 'Comandos y programados', text: 'Comandos de chat con permisos y mensajes que se repiten solos durante el directo.' },
-  { href: '#/widget/questions', title: 'Interactivos', text: 'Preguntas, tier list y sorteos con colas, votos y anuncios en pantalla.' },
-  { href: '#/widget/chat', title: 'Widgets en pantalla', text: 'Chat, objetivos, últimos y ticker, créditos: copia la URL como fuente de navegador en Meld.' },
-  { href: '#/meld', title: 'Meld Studio', text: 'Fuentes y capas de Meld controladas desde antena, con sesión automática al abrir el directo.' },
-  { href: '#/atajos', title: 'Atajos y Stream Deck', text: 'Botones que lanzan varias acciones a la vez; también desde el Stream Deck, el móvil o el MCP.' },
-  { href: '#/general', title: 'Ajustes', text: 'Apariencia, filtros y voz, conexiones (Twitch, YouTube, Meld) y tus archivos.' },
-];
-
-/** Marca la bienvenida como vista y la guarda en el servidor. */
-const marcarVista = () => live.patchConfig({ panel: { onboardingDone: true } });
+// Bienvenida del panel: la primera vez (config.panel.onboardingDone) un saludo corto ofrece
+// el tour guiado. «Ahora no» lo marca como visto; terminar o cerrar el tour, también.
+// «General y archivos» relanza el tour directamente, sin pasar por aquí.
+import { useEffect, useRef, useState } from 'react';
+import { useLive } from '../lib/live';
+import { launchTour, markOnboardingDone } from './tour';
 
 export function Onboarding() {
   const done = useLive(s => s.config?.panel?.onboardingDone);
-  if (done !== false) return null;   // true (ya vista) o undefined (estado aún sin cargar)
-  return <div className="onboarding" role="dialog" aria-modal="true" aria-labelledby="onb-t">
-    <div className="onboarding__box">
-      <header className="onboarding__head">
-        <span className="kicker">Bienvenido a antena</span>
-        <h1 id="onb-t">Todo lo que hace, en una pantalla</h1>
-        <p className="hint">Nueve áreas para preparar, lanzar y disfrutar el directo. Entra en la que quieras conocer o cierra y explora por tu cuenta; puedes volver a abrir esta bienvenida desde <b>General y archivos</b>.</p>
-      </header>
-      <div className="onboarding__grid">
-        {AREAS.map(a => <a key={a.href} className="onboarding__card" href={a.href} onClick={marcarVista}>
-          <b>{a.title}</b><span>{a.text}</span>
-        </a>)}
+  const [touring, setTouring] = useState(false);
+  const startBtn = useRef<HTMLButtonElement>(null);
+  const open = done === false && !touring;   // undefined = estado aún sin cargar
+  useEffect(() => { if (open) startBtn.current?.focus(); }, [open]);
+  if (!open) return null;
+  const start = () => { setTouring(true); launchTour(); };
+  return <div className="tour-greet" role="dialog" aria-modal="true" aria-labelledby="tour-greet-t" aria-describedby="tour-greet-d" onKeyDown={e => { if (e.key === 'Escape') markOnboardingDone(); }}>
+    <div className="tour-greet__box">
+      <img className="tour-greet__mark" src="/brand/logo.png" alt="" aria-hidden="true" />
+      <span className="kicker">Bienvenido a antena</span>
+      <h1 id="tour-greet-t">¿Te enseño cómo funciona?</h1>
+      <p id="tour-greet-d" className="hint">Un tour corto por el panel: el directo, el chat, los objetivos, Meld, los atajos y las conexiones. Puedes repetirlo cuando quieras desde <b>General y archivos</b>.</p>
+      <div className="tour-greet__actions">
+        <button type="button" className="eg-btn eg-btn--ghost" onClick={markOnboardingDone}>Ahora no</button>
+        <button type="button" ref={startBtn} className="eg-btn eg-btn--primary" onClick={start}>Empezar el tour</button>
       </div>
-      <footer className="onboarding__foot">
-        <button className="btn" onClick={marcarVista}>Empezar</button>
-      </footer>
     </div>
   </div>;
 }

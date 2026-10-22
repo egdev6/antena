@@ -4,6 +4,7 @@ import { live, useLive } from '../../lib/live';
 import type { Access, MediaItem } from '../../lib/types';
 import { confirmDelete, CopyUrl, guard, Panel, Range, Switch, toast, ViewHead } from '../../lib/ui';
 import type { UploadResult } from '../../lib/types';
+import { launchTour } from '../tour';
 
 export function UploadBar({ name, progress }: { name: string; progress: number }) {
   if (!name) return null;
@@ -52,10 +53,10 @@ export function General() {
   const up = useUploader();
   const setAccess = (a: Access) => live.update(() => ({ access: a }));
   return <>
-    <ViewHead crumb="Ajustes › General y archivos" title="General y archivos" />
-    <Panel title="Bienvenida">
-      <p className="hint">La bienvenida explica, en nueve tarjetas, qué hace cada área de antena. Si la cerraste y quieres volver a verla:</p>
-      <button className="eg-btn eg-btn--ghost" onClick={() => live.patchConfig({ panel: { onboardingDone: false } })}>Ver la bienvenida de nuevo</button>
+    <ViewHead tour="general-head" crumb="Ajustes › General y archivos" title="General y archivos" />
+    <Panel title="Tour guiado" tour="general-tour">
+      <p className="hint">Un recorrido paso a paso que señala para qué sirve cada zona: el directo, el chat, los objetivos, Meld, los atajos y las conexiones.</p>
+      <button className="eg-btn eg-btn--ghost" onClick={launchTour}>Ver el tour de nuevo</button>
     </Panel>
     <Panel title="Capa de alertas">
       <CopyUrl url={`${location.origin}/overlay`} />
