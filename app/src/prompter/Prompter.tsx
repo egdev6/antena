@@ -127,7 +127,7 @@ function Chat() {
     </ol>
     {unseen > 0 && <button type="button" className="eg-timeline__more" onClick={() => { stick.current = true; scrollEnd(); }}>{unseen} {unseen === 1 ? 'mensaje nuevo' : 'mensajes nuevos'}</button>}
     <form className="pr-send" onSubmit={send}>
-      <div className="eg-tabs eg-tabs--segmented eg-tabs--sm" role="radiogroup" aria-label="Escribir en">
+      <div className="eg-tabs" role="radiogroup" aria-label="Escribir en">
         {([['twitch', 'Solo Twitch'], ['youtube', 'Solo YouTube'], ['both', 'Twitch y YouTube']] as const).map(([k, title]) =>
           <button key={k} type="button" role="radio" title={title} aria-label={k === 'both' ? undefined : title} aria-checked={to === k} aria-selected={to === k} className={cx('eg-tabs__item', k !== 'twitch' && !ytOk && 'warn-yt')}
             onClick={guard(async () => { live.update(s => ({ config: { ...s.config, chat: { ...s.config.chat, sendTo: k } } })); await put('/api/config', { chat: { sendTo: k } }); })}>
@@ -263,7 +263,7 @@ function Cronologia({ filter, setFilter }: { filter: string; setFilter: (f: stri
       startEdit(marker);
       toast(marker.twitchError ? 'Marca guardada (Twitch: ' + marker.twitchError + ')' : 'Marca creada');
     })}><Icon d={IC.clapper} className="eg-btn__icon" />Marca de short</button>
-    <div className="eg-tabs eg-tabs--segmented eg-tabs--sm pr-filters" role="tablist" aria-label="Filtrar cronología">{Object.entries(FILTERS).map(([k, v]) => <button key={k} type="button" role="tab" className="eg-tabs__item" aria-selected={filter === k} onClick={() => setFilter(k)}>{v}{k === 'pend' && tl.pending ? <span className="eg-tabs__count">{tl.pending}</span> : null}</button>)}</div>
+    <div className="eg-tabs pr-filters" role="tablist" aria-label="Filtrar cronología">{Object.entries(FILTERS).map(([k, v]) => <button key={k} type="button" role="tab" className="eg-tabs__item" aria-selected={filter === k} onClick={() => setFilter(k)}>{v}{k === 'pend' && tl.pending ? <span className="eg-tabs__count">{tl.pending}</span> : null}</button>)}</div>
     {items.length ? <ol className="eg-timeline eg-timeline--lg pr-tl">{items.slice(0, 150).map((i, _n) => {
       const ev = i.kind === 'event';
       const [noteLabel, noteIcon] = NOTE[i.kind] || [i.kind, IC.bookmark];

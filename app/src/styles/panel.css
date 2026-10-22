@@ -141,14 +141,8 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .btn:focus-visible{box-shadow:var(--shadow-focus)}
 .upload{margin:0}
 
-/* Tabs --segmented */
-.seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--s0);box-shadow:var(--shadow-well)}
-.seg button{all:unset;cursor:pointer;min-height:28px;padding:0 10px;display:inline-flex;align-items:center;border-radius:calc(var(--radius-md) - 3px);font:600 12.5px/1 var(--font-sans);color:var(--grey);
-  transition:color var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out)}
-.seg button:hover{color:var(--text)}
-.seg button.on{background:var(--gradient-sheen),var(--s3);color:var(--text);box-shadow:var(--shadow-edge-strong),var(--shadow-elev-1)}
-.seg button:focus-visible{box-shadow:var(--shadow-focus)}
-.seg.wide{display:flex}.seg.wide button{flex:1;justify-content:center}
+/* Selectores de valor (Seg): las mismas pestañas subrayadas que el editor de alertas */
+.choice-tabs--wide .eg-tabs__item{flex:1;justify-content:center}
 
 /* Check --switch */
 .switch{position:relative;display:inline-flex;align-items:center;gap:10px;margin:0;cursor:pointer;color:var(--grey);font:500 13.5px/1.3 var(--font-sans);letter-spacing:0;text-transform:none}
@@ -288,7 +282,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .check input:checked::after{content:"";width:9px;height:5px;margin-top:-2px;border:2px solid var(--color-action-primary-solid-fg);border-top:0;border-right:0;transform:rotate(-45deg)}
 .unset{all:unset;cursor:pointer;margin-left:6px;color:var(--pink);font-size:13px;font-weight:600}
 .unset[hidden]{display:none}
-.ovr>input,.ovr>select,.ovr>.picker select,.ovr .seg{border-color:var(--color-border-brand)}
+.ovr>input,.ovr>select,.ovr>.picker select,.ovr .choice-tabs{border-color:var(--color-border-brand)}
 [data-field].ovr{color:var(--text)}
 [data-field].ovr::before{content:"● ";color:var(--red)}
 
@@ -435,7 +429,6 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 
 /* ---------- editor de CSS (Field --code) ---------- */
 textarea.code{min-height:200px;font:500 13px/1.55 var(--font-mono);tab-size:2;white-space:pre;overflow:auto}
-.css-panel .seg button{min-height:30px;padding:0 10px;font-size:13px}
 .snippets{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0 4px}
 .snippets .hint{margin-right:2px}
 .css-ref{margin-top:12px;font-size:13px;color:var(--grey)}
@@ -458,7 +451,9 @@ textarea.code{min-height:200px;font:500 13px/1.55 var(--font-mono);tab-size:2;wh
 .chatlog li.own span:last-child{color:var(--muted)}
 .chatlog .tagm{vertical-align:1px}
 .send-to button{min-width:40px;justify-content:center}
-.send-to button svg{width:16px;height:16px}
+.send-to button svg{width:16px;height:16px;transition:opacity var(--duration-fast) var(--ease-out)}
+/* icon-only options: the short underline alone does not show the pick, so unpicked logos dim */
+.send-to .eg-tabs__item:not([aria-selected="true"]) svg{opacity:.45}
 .chat-send{align-items:center}
 .sub-h.mt{margin-top:18px}
 .btn[hidden]{display:none}
@@ -529,7 +524,6 @@ textarea.code{min-height:200px;font:500 13px/1.55 var(--font-mono);tab-size:2;wh
 .app .eg-stage__bar{font-size:12px}
 .app .eg-eyebrow{font-size:12px}
 .app .eg-tabs__item{min-height:38px;font-size:13.5px}
-.app .eg-tabs--segmented .eg-tabs__item,.app .eg-tabs--sm .eg-tabs__item{min-height:28px;font-size:12.5px}
 .app .eg-tabs__count{min-width:18px;height:18px;font-size:11px}
 .app .eg-field{gap:4px}
 .app .eg-field__label{font-size:12.5px}

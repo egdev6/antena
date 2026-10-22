@@ -62,9 +62,11 @@ export function Switch({ checked, onChange, children, title }: { checked: boolea
 export function Check({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children?: ReactNode }) {
   return <label className="check"><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} /> {children}</label>;
 }
+/** Selector de un valor entre pocas opciones: aspecto de pestañas subrayadas (como el editor de
+ *  alertas) y semántica de radio para que se anuncie como un ajuste, no como navegación. */
 export function Seg<T extends string>({ value, options, onChange, wide, className }: { value: T; options: [T, ReactNode][]; onChange: (v: T) => void; wide?: boolean; className?: string }) {
-  return <div className={cx('seg', wide && 'wide', className)} role="radiogroup">
-    {options.map(([v, l]) => <button type="button" key={v} role="radio" aria-checked={v === value} className={v === value ? 'on' : ''} onClick={() => onChange(v)}>{l}</button>)}
+  return <div className={cx('eg-tabs choice-tabs', wide && 'choice-tabs--wide', className)} role="radiogroup">
+    {options.map(([v, l]) => <button type="button" key={v} role="radio" className="eg-tabs__item" aria-checked={v === value} aria-selected={v === value} onClick={() => onChange(v)}>{l}</button>)}
   </div>;
 }
 export function Range({ label, value, min, max, step = 1, unit = '', onChange, extra }: { label: ReactNode; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void; extra?: ReactNode }) {

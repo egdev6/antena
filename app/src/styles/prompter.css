@@ -72,6 +72,8 @@ button{font:inherit;color:inherit}
 .pr-send{display:flex;align-items:center;gap:8px;padding:8px;border-top:1px solid var(--color-border-hairline);background:var(--gradient-sheen),var(--color-surface-1)}
 .pr-send .eg-tabs{flex:none;border:0}
 .pr-send .eg-tabs__item .eg-icon{width:18px;height:18px}
+/* icon-only options: the short underline alone does not show the pick, so unpicked logos dim */
+.pr-send .eg-tabs__item:not([aria-selected="true"]) svg{opacity:.45}
 .pr-send .eg-tabs__item.warn-yt{color:var(--color-status-warning)}
 .pr-send .eg-field{flex:1;min-width:0}
 .pr-send .eg-field__control{min-height:44px;font-size:calc(var(--fs)*.77)}

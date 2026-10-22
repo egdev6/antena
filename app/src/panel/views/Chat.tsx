@@ -11,7 +11,7 @@ export function sendResultText(r: any) {
 
 export function SendTo({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const opts: [string, React.ReactNode, string][] = [['twitch', <PfIcon platform="twitch" />, 'Solo Twitch'], ['youtube', <PfIcon platform="youtube" />, 'Solo YouTube'], ['both', 'Ambos', 'Twitch y YouTube']];
-  return <div className="eg-tabs eg-tabs--segmented eg-tabs--sm send-to" role="radiogroup" aria-label="Escribir en">
+  return <div className="eg-tabs send-to" role="radiogroup" aria-label="Escribir en">
     {opts.map(([v, l, t]) => <button key={v} type="button" role="radio" className="eg-tabs__item" aria-checked={v === value} aria-selected={v === value} title={t} aria-label={t} onClick={() => onChange(v)}>{l}</button>)}
   </div>;
 }

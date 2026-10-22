@@ -247,3 +247,38 @@ test('O3.2 esqueleto común: cabecera con miga «grupo › vista» igual que la 
 });
 
 function eq(actual, expected) { if (actual !== expected) throw new Error(`esperaba ${JSON.stringify(expected)}, hubo ${JSON.stringify(actual)}`); }
+
+// Un solo estilo de pestaña en toda la interfaz: el subrayado del editor de alertas. Ni las
+// pestañas (Chat, Prompter) ni los selectores de valor (Seg) usan el estilo segmentado.
+test('pestañas y selectores usan el estilo subrayado del editor, nunca el segmentado', { timeout: 90000 }, async t => {
+  const { readdir, readFile } = await import('node:fs/promises');
+  const src = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'app', 'src');
+  const files = (await readdir(src, { recursive: true })).filter(f => /\.(tsx?|css)$/.test(f));
+  const offenders = [];
+  for (const f of files) {
+    const text = await readFile(path.join(src, f), 'utf8');
+    if (/eg-tabs--segmented|eg-tabs--sm|\.seg\b|'seg'/.test(text)) offenders.push(f);
+  }
+  eq(offenders.join(', '), '');
+
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, base, close } = ctx;
+  let chrome;
+  try {
+    chrome = await openChromePage(bin, `${base}/#/apariencia`);
+    const group = `document.querySelector('[role=radiogroup]:not(.send-to)')`;
+    await waitDom(chrome.cdp, `!!${group}`, { timeoutMs: 12000 });
+    // el selector de valor conserva su semántica de radio, con el aspecto de pestañas
+    eq(await dom(chrome, `[...${group}.classList].filter(c => c.startsWith('eg-tabs')).join(' ')`), 'eg-tabs');
+    eq(await dom(chrome, `[...${group}.children].every(b => b.classList.contains('eg-tabs__item') && b.getAttribute('role') === 'radio')`), true);
+    eq(await dom(chrome, `[...${group}.children].filter(b => b.getAttribute('aria-checked') === 'true' && b.getAttribute('aria-selected') === 'true').length`), 1);
+    // elegir otra opción la marca como activa
+    await dom(chrome, `[...${group}.children].find(b => b.getAttribute('aria-checked') !== 'true').click()`);
+    await waitDom(chrome.cdp, `[...${group}.children].filter(b => b.getAttribute('aria-selected') === 'true').length === 1`, { timeoutMs: 12000 });
+
+    await dom(chrome, `location.hash = '#/chat'`);
+    await waitDom(chrome.cdp, `!!document.querySelector('.send-to')`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `[...document.querySelector('.send-to').classList].filter(c => c.startsWith('eg-tabs')).join(' ')`), 'eg-tabs');
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
