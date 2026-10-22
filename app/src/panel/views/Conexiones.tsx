@@ -1,6 +1,6 @@
 import { post } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { cx, fmtTime, guard, LazyInput, toast } from '../../lib/ui';
+import { cx, fmtTime, guard, LazyInput, toast, ViewHead } from '../../lib/ui';
 
 export function stateClass(s?: string) {
   if (s && ['conectado', 'escuchando'].includes(s)) return 'ok';
@@ -15,7 +15,7 @@ export function Conexiones() {
   const tw = st.twitch || {}, yt = st.youtube || {};
   const yset = (k: string) => (v: string) => live.patchConfig({ youtube: { [k]: v.trim() } });
   return <>
-    <header className="view-head"><div><span className="crumb">Ajustes › Conexiones</span><h1>Conexiones</h1><p className="hint">Conecta tus cuentas una vez; la sesión se guarda en tu PC.</p></div></header>
+    <ViewHead crumb="Ajustes › Conexiones" title="Conexiones" hint="Conecta tus cuentas una vez; la sesión se guarda en tu PC." />
     <div className="grid2">
       <article className="panel" id="twitch">
         <header><h2>Twitch</h2><span className={cx('state', stateClass(tw.state))}>{tw.state}</span></header>
@@ -30,9 +30,9 @@ export function Conexiones() {
         {!!tw.subscriptions?.length && <ul className="chips">{tw.subscriptions.map((x: string) => <li key={x}>{x.replace('channel.', '')}</li>)}</ul>}
         {!!tw.errors?.length && <ul className="errors">{tw.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}</ul>}
         <div className="row">
-          <button className="btn" onClick={guard(async () => { await live.flushConfig(); await post('/api/twitch/connect'); })}>{tw.user ? 'Volver a conectar' : 'Conectar'}</button>
-          <button className="btn ghost" onClick={guard(() => post('/api/twitch/restart'))}>Reconectar</button>
-          <button className="btn ghost danger" onClick={guard(() => post('/api/twitch/disconnect'))}>Cerrar sesión</button>
+          <button className="eg-btn eg-btn--primary" onClick={guard(async () => { await live.flushConfig(); await post('/api/twitch/connect'); })}>{tw.user ? 'Volver a conectar' : 'Conectar'}</button>
+          <button className="eg-btn eg-btn--ghost" onClick={guard(() => post('/api/twitch/restart'))}>Reconectar</button>
+          <button className="eg-btn eg-btn--ghost danger" onClick={guard(() => post('/api/twitch/disconnect'))}>Cerrar sesión</button>
         </div>
       </article>
       <article className="panel" id="youtube">
@@ -48,8 +48,8 @@ export function Conexiones() {
         {yt.notice && <p className="hint">{yt.notice}{yt.retryAt ? ` · reintento a las ${fmtTime(yt.retryAt)}` : ''}</p>}
         {!!yt.errors?.length && <ul className="errors">{yt.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}</ul>}
         <div className="row">
-          <button className="btn" onClick={guard(async () => { await live.flushConfig(); await post('/api/youtube/start', { video: c.youtube.video || undefined }); })}>Escuchar el chat</button>
-          <button className="btn ghost" onClick={guard(() => post('/api/youtube/stop'))}>Parar</button>
+          <button className="eg-btn eg-btn--primary" onClick={guard(async () => { await live.flushConfig(); await post('/api/youtube/start', { video: c.youtube.video || undefined }); })}>Escuchar el chat</button>
+          <button className="eg-btn eg-btn--ghost" onClick={guard(() => post('/api/youtube/stop'))}>Parar</button>
         </div>
         <h3 className="sub-h mt">Tu cuenta, para escribir en el chat</h3>
         <p className="who">{yt.account ? <>Conectada: <b>{yt.account}</b>{yt.liveChatId ? ' · puedes escribir en el chat' : ' · pon a escuchar el chat para poder escribir'}</> : 'Sin conectar: solo se lee el chat.'}</p>
@@ -63,8 +63,8 @@ export function Conexiones() {
           <li>Credenciales › Crear ID de cliente de OAuth › tipo <b>App de escritorio</b>. Copia aquí el Client ID y el Client secret.</li>
           <li>Pulsa «Conectar cuenta», elige la cuenta del canal y acepta. Escribir un mensaje gasta unas 50 unidades de cuota.</li></ol></details>
         <div className="row">
-          <button className="btn" onClick={guard(async () => { await live.flushConfig(); const { url } = await post<{ url: string }>('/api/youtube/auth'); window.open(url, '_blank', 'noopener'); toast('Acepta el permiso en la pestaña de Google'); })}>{yt.account ? 'Volver a conectar' : 'Conectar cuenta'}</button>
-          {yt.account && <button className="btn ghost danger" onClick={guard(() => post('/api/youtube/logout'), 'Permiso de YouTube quitado')}>Quitar permiso</button>}
+          <button className="eg-btn eg-btn--primary" onClick={guard(async () => { await live.flushConfig(); const { url } = await post<{ url: string }>('/api/youtube/auth'); window.open(url, '_blank', 'noopener'); toast('Acepta el permiso en la pestaña de Google'); })}>{yt.account ? 'Volver a conectar' : 'Conectar cuenta'}</button>
+          {yt.account && <button className="eg-btn eg-btn--ghost danger" onClick={guard(() => post('/api/youtube/logout'), 'Permiso de YouTube quitado')}>Quitar permiso</button>}
         </div>
       </article>
     </div>

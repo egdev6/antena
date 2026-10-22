@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { del, enc, post, put, get } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { AlertConfig, AlertVariation, CommandConfig, Config, SendResult, TimerConfig } from '../../lib/types';
-import { codeTab, cx, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, Switch, toast, fmtTime } from '../../lib/ui';
+import { codeTab, confirmDelete, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, Switch, toast, fmtTime } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { go } from '../router';
 import { useUploader, UploadBar } from './General';
@@ -182,7 +182,7 @@ export function ActionsEditor({ list, onChange }: { list: any[]; onChange: (l: a
     {list.map((act, i) => <div className="action" key={i}>
       <select value={act.kind} onChange={e => repl(i, { kind: e.target.value, delaySec: act.delaySec })}>{Object.entries(ACTIONS).map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select>
       <ActionFields act={act} uid={'a' + i} onChange={a => repl(i, a)} />
-      <button className="btn ghost sm danger" title="Quitar" onClick={() => { const l = [...list]; l.splice(i, 1); onChange(l); }}>✕</button>
+      <IconBtn icon={IC.x} label="Quitar acción" onClick={() => { const l = [...list]; l.splice(i, 1); onChange(l); }} />
     </div>)}
   </div>;
 }
@@ -282,7 +282,7 @@ export function Editor({ target }: { target: Target }) {
       <Switch checked={v.enabled !== false} onChange={x => set('enabled', x)}>Activa</Switch>
       <a className="eg-btn eg-btn--ghost eg-btn--sm" href={`#/alerta/${type}`}>Volver a la alerta</a>
       <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => {
-        if (!confirm('¿Borrar esta variación?')) return;
+        if (!confirmDelete(v.name, 'esta variación')) return;
         const d = await del<{ variations: AlertVariation[] }>(`/api/alerts/${type}/variations/${enc(v.id)}`);
         live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: d.variations } } } }));
         go(`#/alerta/${type}`);
@@ -293,14 +293,14 @@ export function Editor({ target }: { target: Target }) {
       <input className="title-input" value={item.name} aria-label="Nombre del mensaje" onChange={e => set('name', e.target.value)} /></div>
     <div className="actions">
       <Switch checked={item.enabled !== false} onChange={x => set('enabled', x)}>Activo</Switch>
-      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm('¿Borrar este mensaje programado?')) return; const d = await del<{ timers: TimerConfig[] }>(`/api/timers/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, timers: d.timers } })); go('#/mensajes'); })}>Borrar</button>
+      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.name, 'este mensaje programado')) return; const d = await del<{ timers: TimerConfig[] }>(`/api/timers/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, timers: d.timers } })); go('#/mensajes'); })}>Borrar</button>
       <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await ed.flush(); await fireTimer(item.id, (text, err) => setFireMsg({ text, err: !!err })); })}>Enviar ahora</button>
     </div></> : <>
     <div><span className="crumb"><a href="#/comandos">Comandos de chat</a> › Comando</span>
       <input className="title-input" value={item.trigger} aria-label="Disparador" onChange={e => set('trigger', e.target.value.trim())} /></div>
     <div className="actions">
       <Switch checked={item.enabled !== false} onChange={x => set('enabled', x)}>Activo</Switch>
-      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm('¿Borrar este comando?')) return; const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar</button>
+      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.trigger, 'este comando')) return; const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar</button>
       <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await ed.flush(); await post('/api/test', testBody(target, 'live')); }, 'Enviado al directo')}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>
     </div></>;
 
@@ -347,7 +347,7 @@ export function Editor({ target }: { target: Target }) {
         {kind === 'command' && pane('cmd', <>
           <div className="row2">
             <label>Quién puede usarlo <select value={item.permission} onChange={e => set('permission', e.target.value)}>{PERMS.map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></label>
-            <div className="lbl">Plataformas<div className="row" style={{ marginTop: 8 }}>
+            <div className="lbl">Plataformas<div className="row field-ctl">
               {['twitch', 'youtube'].map(p => <label className="check" key={p}><input type="checkbox" checked={item.platforms?.includes(p)} onChange={e => set('platforms', e.target.checked ? [...new Set([...(item.platforms || []), p])] : (item.platforms || []).filter((x: string) => x !== p))} /> {PLATFORM_NAMES[p]}</label>)}
             </div></div>
             <label>Espera entre usos (s) <input type="number" min={0} value={item.cooldownSec} onChange={e => set('cooldownSec', Number(e.target.value) || 0)} /></label>
@@ -398,7 +398,7 @@ export function Editor({ target }: { target: Target }) {
               </div>
               <div className="row2">{R('mediaSize', 'Tamaño', 10, 200, 1, '%')}{when.video && R('mediaVolume', 'Volumen del vídeo', 0, 100, 1, '%')}</div>
             </>}
-            {when.video && <div className="lbl">Duración<div style={{ marginTop: 6 }}><Seg value={a.durationMode} onChange={x => set('durationMode', x)} options={[['media', 'Lo que dure el vídeo'], ['fixed', 'Tiempo fijo']]} /></div></div>}
+            {when.video && <div className="lbl">Duración<div className="field-ctl"><Seg value={a.durationMode} onChange={x => set('durationMode', x)} options={[['media', 'Lo que dure el vídeo'], ['fixed', 'Tiempo fijo']]} /></div></div>}
             <div className="row2">
               {when.fixed && R('durationMs', 'Duración', 1, 30, 0.5, 's', true)}
               {when.media && F('animIn', 'Animación de entrada', <><select value={a.animIn} onChange={e => set('animIn', e.target.value)}>{ANIM_IN.map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></>)}
@@ -443,7 +443,7 @@ export function Editor({ target }: { target: Target }) {
           </>)}
 
           {pane('actions', <>
-            <div className="row" style={{ alignItems: 'center' }}>
+            <div className="row middle">
               <p className="hint grow">Se ejecutan cuando la alerta aparece en pantalla: cambiar de escena en Meld, mostrar una capa, lanzar confeti, escribir en el chat…{s.status.meld?.state !== 'conectado' && <> <b>Meld no está conectado</b>: puedes prepararlas igualmente.</>}</p>
               <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => set('actions', [...structuredClone(a.actions || []), { kind: 'layer', scene: '', layer: '', seconds: 8, delaySec: 0 }])}><Icon d={IC.plus} className="eg-btn__icon" />Añadir acción</button>
             </div>
@@ -452,7 +452,7 @@ export function Editor({ target }: { target: Target }) {
           </>)}
 
           {kind === 'alert' && pane('vars', <>
-            <div className="row" style={{ alignItems: 'center' }}>
+            <div className="row middle">
               <p className="hint grow">Solo guardan lo que cambia (otro vídeo, sonido o texto) según la cantidad, el tier, el usuario o el mensaje. Gana la primera que encaja.</p>
               <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => {
                 await ed.flush();
@@ -474,19 +474,19 @@ export function Editor({ target }: { target: Target }) {
               })} /><i></i></label>
               <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" title={`Probar ${x.name}`} onClick={guard(() => post('/api/test', { type, variationId: x.id, target: 'preview' }))}><Icon d={IC.play} className="eg-btn__icon" />Probar</button>
               <a className="eg-btn eg-btn--ghost eg-btn--sm" href={`#/alerta/${type}/v/${x.id}`}>Editar</a>
-            </article>) : <div className="eg-post eg-post--empty">Sin variaciones.</div>}</div>
+            </article>) : <EmptyState>Sin variaciones.</EmptyState>}</div>
           </>)}
 
           {pane('css', <>
-            <div className="row" style={{ alignItems: 'center' }}><Seg value={cssTab} onChange={setCssTab} options={[['own', kind === 'variation' ? 'Esta variación' : kind === 'alert' ? 'Esta alerta' : 'Este'], ['global', 'Todas las alertas']]} /><span className="hint">· gana siempre a los estilos de serie</span></div>
+            <div className="row middle"><Seg value={cssTab} onChange={setCssTab} options={[['own', kind === 'variation' ? 'Esta variación' : kind === 'alert' ? 'Esta alerta' : 'Este'], ['global', 'Todas las alertas']]} /><span className="hint">· gana siempre a los estilos de serie</span></div>
             {cssTab === 'own'
               ? <div className={cx('lbl', kind === 'variation' && 'css' in overrides && 'ovr')} data-field="css">{unset('css')}
                 <textarea ref={cssRef} className="code" spellCheck={false} value={a.css || ''} onKeyDown={codeTab} onChange={e => set('css', e.target.value)} placeholder={'/* Tu CSS gana a los estilos de serie: no hace falta !important */\n.alert { --accent: #00E0FF; }'} /></div>
               : <><textarea ref={gcssRef} className="code" spellCheck={false} value={s.config.overlay?.css || ''} onKeyDown={codeTab} onChange={e => saveGlobalCss(e.target.value)} placeholder={"/* Se aplica a TODAS las alertas, antes que el CSS de cada una */\n.alert { --font-name: 'Barlow Condensed', sans-serif; }"} />
                 <p className="hint">Se aplica a todas las alertas, comandos y mensajes. El CSS de cada alerta va después y puede pisarlo.</p></>}
             <div className="snippets"><span className="hint">Insertar:</span>{CSS_SNIPPETS.map(([l, code]) => <button key={l} type="button" className="eg-chip" onClick={() => insertSnippet(code)}>{l}</button>)}</div>
-            <details className="css-ref"><summary>Clases y variables</summary>
-              <p><b>Clases</b>: <code>.alert</code> (raíz; también <code>.type-{kind === 'command' ? 'command' : kind === 'timer' ? 'custom' : type}</code>, <code>.alert-card</code> o <code>.alert-media-layout</code>) · <code>.alert-box</code> · <code>.alert-text</code> · <code>.alert-title</code> · <code>.alert-name</code> · <code>.alert-sub</code> · <code>.alert-sub b</code></p>
+            <p className="css-help">Clases: <code>.alert</code> (raíz; también <code>.type-{kind === 'command' ? 'command' : kind === 'timer' ? 'custom' : type}</code>, <code>.alert-card</code> o <code>.alert-media-layout</code>) <code>.alert-box</code> <code>.alert-text</code> <code>.alert-title</code> <code>.alert-name</code> <code>.alert-sub</code> <code>.alert-sub b</code></p>
+            <details className="css-ref"><summary>Más clases y variables</summary>
               <p><b>Solo tarjeta:</b> <code>.alert-icon</code> · <code>.alert-platform</code> · <code>.alert-timer</code> · <code>.alert-glow</code> · <code>.alert-dots</code> · <code>.alert-cube</code> · <code>.card</code> · <b>Solo vídeo o imagen:</b> <code>.alert-media</code></p>
               <p><b>Variables de la tarjeta</b> (en <code>.alert {'{ … }'}</code>): {CSS_VARS.map(x => <code key={x}>{x} </code>)}</p>
               <p>Animaciones: <code>.alert.on</code> mientras se ve, <code>.alert.out</code> al salir.</p>
@@ -497,7 +497,7 @@ export function Editor({ target }: { target: Target }) {
 
       {showAlert && <div className="preview-col">
         <figure className="eg-stage">
-          <figcaption className="eg-stage__bar"><span className="eg-eyebrow" style={{ margin: 0 }}>Vista previa · 1920×1080</span><span className="eg-stage__spacer" />
+          <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista previa · 1920×1080</span><span className="eg-stage__spacer" />
             {kind === 'variation' && <span>Variación: <b style={{ color: 'var(--text)' }}>{v.name}</b></span>}
             <label className="switch"><input type="checkbox" defaultChecked onChange={e => { ed.autoPreview.current = e.target.checked; }} /><i></i>Al cambiar algo</label>
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(ed.preview)}><Icon d={IC.repeat} className="eg-btn__icon" />Repetir</button>

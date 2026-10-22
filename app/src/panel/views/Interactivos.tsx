@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { useLive } from '../../lib/live';
 import { patchIx } from '../../lib/patch';
-import { codeTab, cx, fmtDate, fmtTime, guard, Icon, IconBtn, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec } from '../../lib/ui';
+import { codeTab, confirmDelete, cx, EmptyState, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec, ViewHead } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { PERMS } from './Editor';
 import type { Question, TierListItem, TierListTier } from '../../lib/types';
@@ -13,7 +13,6 @@ function IxField({ k, label, type = 'text', ...rest }: { k: string; label: React
   const [sec, f] = k.split('.');
   const val = useLive(s => s.interactive?.config?.[sec]?.[f] as string | number | boolean | undefined);
   const set = (v: string | number | boolean) => patchIx(sec, { [f]: v });
-  if (type === 'checkbox') return <label className="check"><input type="checkbox" checked={!!val} onChange={e => set(e.target.checked)} /> {label}</label>;
   if (type === 'switch') return <Switch checked={!!val} onChange={set}>{label}</Switch>;
   if (type === 'range') { const n = Number(val ?? 0), min = Number(rest.min ?? 0), max = Number(rest.max ?? 100); return <label>{label}<span className="val">{n}</span><input type="range" min={min} max={max} value={n} style={{ ['--v' as any]: ((n - min) / ((max - min) || 1)) * 100 + '%' }} onChange={e => set(Number(e.target.value))} /></label>; }
   if (type === 'perm') return <label>{label}<select value={String(val ?? '')} onChange={e => set(e.target.value)}>{PERMS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>;
@@ -22,11 +21,11 @@ function IxField({ k, label, type = 'text', ...rest }: { k: string; label: React
   return <label>{label}<input value={val === undefined ? '' : String(val)} {...rest} onChange={e => set(e.target.value)} /></label>;
 }
 const Head = ({ title, desc, children }: { title: string; desc: ReactNode; children?: ReactNode }) =>
-  <header className="view-head"><div><span className="crumb">Widgets › {title}</span><h1>{title}</h1><p className="hint">{desc}</p></div><div className="actions">{children}</div></header>;
+  <ViewHead crumb={<>Widgets › {title}</>} title={title} hint={desc} actions={children} />;
 function AddRow({ placeholder, onAdd, children }: { placeholder: string; onAdd: (v: string) => Promise<unknown>; children?: ReactNode }) {
   const [v, setV] = useState('');
   const go = guard(async () => { if (!v.trim()) return; await onAdd(v.trim()); setV(''); });
-  return <form className="row tight" onSubmit={e => { e.preventDefault(); go(); }}><input aria-label={placeholder} value={v} onChange={e => setV(e.target.value)} placeholder={placeholder} className="grow" style={{ margin: 0 }} />{children}<button type="submit" className="eg-btn eg-btn--secondary eg-btn--sm">Añadir</button></form>;
+  return <form className="row tight" onSubmit={e => { e.preventDefault(); go(); }}><input aria-label={placeholder} value={v} onChange={e => setV(e.target.value)} placeholder={placeholder} className="grow" />{children}<button type="submit" className="eg-btn eg-btn--secondary eg-btn--sm">Añadir</button></form>;
 }
 
 // ---------- Preguntas ----------
@@ -53,14 +52,14 @@ export function Preguntas() {
             <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={guard(() => post(`/api/questions/${q.id}/move`, { dir: -1 }))} />
             <IconBtn icon={IC.down} label="Bajar" disabled={i === pend.length - 1} onClick={guard(() => post(`/api/questions/${q.id}/move`, { dir: 1 }))} />
             <IconBtn icon={IC.x} label="Descartar" onClick={guard(() => post(`/api/questions/${q.id}/status`, { status: 'discarded' }))} />
-          </article>) : <div className="eg-post eg-post--empty">Aún no hay preguntas. Se envían con {c.command} tu pregunta.</div>}</div>
+          </article>) : <EmptyState>Aún no hay preguntas. Se envían con {c.command} tu pregunta.</EmptyState>}</div>
           <AddRow placeholder="Añadir una pregunta a mano…" onAdd={text => post('/api/questions', { text })} />
         </Sec>
         <Sec flat title="Respondidas" id="h-done" aside={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!done.length} onClick={guard(() => post('/api/questions/clear', {}))}>Limpiar</button>}>
           <div className="rows">{done.length ? done.map(q => <article key={q.id} className="eg-post eg-post--row eg-post--sent">
             <div className="eg-post__content"><b className="muted">{q.text}</b><span className="eg-post__meta">{q.user} · {q.status === 'discarded' ? 'descartada' : 'respondida'} {q.at ? `· ${fmtTime(q.at)}` : ''}</span></div>
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post(`/api/questions/${q.id}/status`, { status: 'pending' }))}>Devolver a la cola</button>
-          </article>) : <p className="hint">Nada todavía.</p>}</div>
+          </article>) : <EmptyState>Nada todavía.</EmptyState>}</div>
         </Sec>
       </div>
       <div className="stack">
@@ -71,7 +70,7 @@ export function Preguntas() {
             <IxField k="questions.minLength" label="Largo mínimo" type="range" min={0} max={60} />
           </div>
           <IxField k="questions.permission" label="Quién puede preguntar" type="perm" />
-          <div className="row tight"><IxField k="questions.confirmInChat" label="Confirmar en el chat al recibirla" type="checkbox" /><IxField k="questions.showUser" label="Mostrar quién pregunta" type="checkbox" /></div>
+          <div className="row tight"><IxField k="questions.confirmInChat" label="Confirmar en el chat al recibirla" type="switch" /><IxField k="questions.showUser" label="Mostrar quién pregunta" type="switch" /></div>
           <IxField k="questions.confirmText" label="Texto de confirmación ({user} {position})" />
           <IxField k="questions.css" label="CSS del widget" type="css" placeholder=".text { font-size: 50px; }" />
           <p className="css-help">Clases: <code>.q</code> <code>.text</code> <code>.who</code> <code>.count</code></p>
@@ -111,7 +110,7 @@ export function TierList() {
           <button type="button" className={cx('tbtn', !l.placements[it.id] && 'on')} title="Sin colocar" onClick={guard(() => post(T + '/place', { item: it.id, tier: '' }))}>–</button></span>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!!v} onClick={guard(() => post(T + '/vote', { item: it.id }))}>Votar en el chat</button>
         <IconBtn icon={IC.x} label={`Quitar ${it.label}`} onClick={guard(() => del(`${T}/items/${enc(it.id)}`))} />
-      </article>) : <div className="eg-post eg-post--empty">Sin elementos.</div>}</div>
+      </article>) : <EmptyState>Sin elementos.</EmptyState>}</div>
       <AddRow placeholder="Añadir elementos (separados por comas)" onAdd={x => post(T + '/items', { items: x.split(',').map(y => y.trim()).filter(Boolean) })} />
     </Sec>
     <Sec title="Lista" id="h-list" aside={<div className="row tight">
@@ -127,24 +126,21 @@ export function TierList() {
       </div>
       <div className="row tight">
         <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { if (confirm('¿Dejar todos los elementos sin colocar?')) await post(T + '/reset'); })}>Quitar todas las colocaciones</button>
-        <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (confirm(`¿Borrar «${l.title}»?`)) { await del(T); setSel(null); } })}>Borrar lista</button>
+        <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (confirmDelete(l.title, 'esta tier list')) { await del(T); setSel(null); } })}>Borrar lista</button>
       </div>
     </Sec></>;
   return <>
     <Head title="Tier list" desc="Clasifica lo que quieras y deja que el chat vote cada elemento escribiendo la letra del tier.">
       {v ? <Status tone="warning" icon={IC.play}>Votando</Status> : null}
     </Head>
-    <div className="eg-tabs eg-tabs--segmented eg-tabs--sm list-tabs" role="tablist" aria-label="Tier lists">
-      {lists.map(x => <button key={x.id} type="button" role="tab" className="eg-tabs__item" aria-selected={x.id === sel} onClick={() => setSel(x.id)}>{x.title}{I.shownTierlist === x.id ? <span className="eg-tabs__count">en pantalla</span> : null}</button>)}
-      <button type="button" role="tab" className="eg-tabs__item" aria-selected={!l} onClick={() => setSel(null)}>+ Nueva</button>
-    </div>
+    <ItemTabs label="Tier lists" items={lists.map(x => ({ id: x.id, label: x.title, badge: I.shownTierlist === x.id ? 'en pantalla' : undefined }))} selected={l?.id ?? null} onSelect={setSel} onNew={() => setSel(null)} newLabel="+ Nueva" />
     <div className="cols cols--q">
       <div className="stack">{main}</div>
       <div className="stack">
         {l && <Stage key={l.id} eyebrow="Vista previa" src={`/widget/tierlist?id=${enc(l.id)}&debug`} aside={<span>{I.shownTierlist === l.id ? 'En pantalla' : 'No está en pantalla'}</span>} />}
         <Sec title="Ajustes de la votación" id="h-vaj">
           <div className="row2"><IxField k="tierlist.command" label="Comando" className="mono" /><IxField k="tierlist.voteSeconds" label="Cierre automático (s, 0 = a mano)" type="number" min={0} /></div>
-          <IxField k="tierlist.acceptBare" label="Vale escribir solo la letra («S», «A»…)" type="checkbox" />
+          <IxField k="tierlist.acceptBare" label="Vale escribir solo la letra («S», «A»…)" type="switch" />
           <IxField k="tierlist.css" label="CSS del widget" type="css" placeholder=".chip { font-size: 30px; }" />
           <p className="css-help">Clases: <code>.board</code> <code>.row</code> <code>.tier</code> <code>.chip</code> <code>.vote</code> <code>.bar</code> <code>.pool</code></p>
         </Sec>
@@ -177,14 +173,14 @@ export function Sorteo() {
           <div className="rows">{g.entries.length ? g.entries.slice().reverse().map(e => <article key={e.user} className={cx('eg-post eg-post--row', g.winners.some(w => w.user === e.user) && 'won')}>
             <div className="eg-post__content"><b>{e.user}</b><span className="eg-post__meta">{e.member ? 'sub o miembro · ' : ''}{PF[String(e.platform)] || 'Twitch'}</span></div>
             <IconBtn icon={IC.x} label={`Quitar a ${e.user}`} onClick={guard(() => post('/api/giveaway/remove', { user: e.user }))} /></article>)
-            : <div className="eg-post eg-post--empty">Nadie todavía. {g.open ? <>Se entra con <code>{String(c.command ?? '')}</code>.</> : 'Abre el sorteo para que el chat pueda entrar.'}</div>}</div>
+            : <EmptyState>Nadie todavía. {g.open ? <>Se entra con <code>{String(c.command ?? '')}</code>.</> : 'Abre el sorteo para que el chat pueda entrar.'}</EmptyState>}</div>
           <AddRow placeholder="Añadir a alguien a mano" onAdd={user => post('/api/giveaway/join', { user, member })}><label className="check"><input type="checkbox" checked={member} onChange={e => setMember(e.target.checked)} /> sub o miembro</label></AddRow>
         </Sec>
         <Sec flat title="Ganadores" id="h-win">
-          <div className="rows">{g.winners.length ? g.winners.map(w => <article key={w.user + w.at} className="eg-post eg-post--row eg-post--new"><div className="eg-post__content"><b>{w.user}</b><span className="eg-post__meta">{fmtTime(w.at)}</span></div></article>) : <p className="hint">Aún no se ha sorteado.</p>}</div>
+          <div className="rows">{g.winners.length ? g.winners.map(w => <article key={w.user + w.at} className="eg-post eg-post--row eg-post--new"><div className="eg-post__content"><b>{w.user}</b><span className="eg-post__meta">{fmtTime(w.at)}</span></div></article>) : <EmptyState>Aún no se ha sorteado.</EmptyState>}</div>
         </Sec>
         <Sec flat title="Sorteos anteriores" id="h-past">
-          <div className="rows">{(g.history || []).length ? (g.history || []).slice(0, 8).map((h: any) => <article key={h.at} className="eg-post eg-post--row eg-post--sent"><div className="eg-post__content"><b>{h.winner}</b><span className="eg-post__meta">{fmtDate(h.at)} · {h.title}{h.prize ? ' · ' + h.prize : ''} · {h.entries} part.</span></div></article>) : <p className="hint">Sin sorteos anteriores.</p>}</div>
+          <div className="rows">{(g.history || []).length ? (g.history || []).slice(0, 8).map((h: any) => <article key={h.at} className="eg-post eg-post--row eg-post--sent"><div className="eg-post__content"><b>{h.winner}</b><span className="eg-post__meta">{fmtDate(h.at)} · {h.title}{h.prize ? ' · ' + h.prize : ''} · {h.entries} part.</span></div></article>) : <EmptyState>Sin sorteos anteriores.</EmptyState>}</div>
         </Sec>
       </div>
       <div className="stack">
@@ -199,9 +195,9 @@ export function Sorteo() {
             <IxField k="giveaway.rollSeconds" label="Duración de la ruleta (s)" type="range" min={1} max={20} />
           </div>
           <div className="row tight">
-            <IxField k="giveaway.excludeWinners" label="No repetir ganador" type="checkbox" />
-            <IxField k="giveaway.announceInChat" label="Avisar en el chat" type="checkbox" />
-            <IxField k="giveaway.meldConfetti" label="Confeti en Meld" type="checkbox" />
+            <IxField k="giveaway.excludeWinners" label="No repetir ganador" type="switch" />
+            <IxField k="giveaway.announceInChat" label="Avisar en el chat" type="switch" />
+            <IxField k="giveaway.meldConfetti" label="Confeti en Meld" type="switch" />
           </div>
           <IxField k="giveaway.openText" label="Al abrir" />
           <IxField k="giveaway.closeText" label="Al cerrar" />

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { copy, cx, guard, Icon, IconBtn, LazyInput, mmss, ScaledFrame, Sec, Seg, Switch } from '../../lib/ui';
+import { confirmDelete, copy, cx, guard, Icon, IconBtn, ItemTabs, LazyInput, mmss, ScaledFrame, Sec, Seg, Switch, ViewHead } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { isDesktop, listMonitors, openTeleprompter, type Monitor } from '../../lib/desktop';
 import type { TeleprompterState, TpBlock, TpCompiled, TpCompiledBlock } from '../../lib/types';
@@ -74,8 +74,10 @@ export function Teleprompter() {
     setEditing(id);
   });
   const pickScript = guard(async (id: string) => {
-    if (id === '__new') { const d = await post<TeleprompterState>('/api/teleprompter/scripts', { title: 'Nuevo guion' }); live.update(() => ({ teleprompter: d })); setEditing(null); return; }
     const d = await post<TeleprompterState>('/api/teleprompter/select', { id }); live.update(() => ({ teleprompter: d })); setEditing(null);
+  });
+  const newScript = guard(async () => {
+    const d = await post<TeleprompterState>('/api/teleprompter/scripts', { title: 'Nuevo guion' }); live.update(() => ({ teleprompter: d })); setEditing(null);
   });
   const openWindow = guard(async () => {
     if (desk) await openTeleprompter(st.monitor || null, true);
@@ -85,22 +87,15 @@ export function Teleprompter() {
     <Icon d={pb.playing ? IC.pause : IC.play} className="eg-btn__icon" />{pb.playing ? 'Parar' : 'Empezar'}</button>;
 
   return <>
-    <header className="view-head">
-      <div><span className="crumb">Widgets › Teleprompter · solo lo ves tú</span><h1>Teleprompter</h1></div>
-      <div className="actions">
-        <label className="sr-only" htmlFor="tp-guion">Guion</label>
-        <select id="tp-guion" className="tp-pick" value={tp.activeId || ''} onChange={e => pickScript(e.target.value)}>
-          {tp.scripts.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-          <option value="__new">Nuevo guion…</option>
-        </select>
+    <ViewHead crumb="Widgets › Teleprompter" title="Teleprompter" hint="Solo lo ves tú: el guion avanza por bloques a tu ritmo de lectura, en su propia ventana o en una capa de Meld que no se emite." actions={<>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={openWindow}><Icon d={IC.external} className="eg-btn__icon" />Abrir en ventana</button>
         {playBtn('eg-btn eg-btn--primary eg-btn--sm')}
-      </div>
-    </header>
+      </>} />
+    <ItemTabs label="Guiones" items={tp.scripts.map(s => ({ id: s.id, label: s.title }))} selected={tp.activeId} onSelect={id => { if (id !== tp.activeId) pickScript(id); }} onNew={newScript} newLabel="+ Nuevo guion" />
     <div className="cols cols--q tp">
       <div className="stack">
         <figure className="eg-stage">
-          <figcaption className="eg-stage__bar"><span className="eg-eyebrow" style={{ margin: 0 }}>Vista del teleprompter</span><span className="eg-stage__spacer" /><span aria-live="polite">{status}</span></figcaption>
+          <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista del teleprompter</span><span className="eg-stage__spacer" /><span aria-live="polite">{status}</span></figcaption>
           <ScaledFrame src="/widget/teleprompter?embed" w={1280} h={720} className="preview wprev tp-frame" title="Vista del teleprompter" />
           <div className="eg-stage__bar">
             <div role="toolbar" aria-label="Control del teleprompter" className="tp-tools">
@@ -117,9 +112,9 @@ export function Teleprompter() {
         {script && <Sec flat title="Guion" id="h-guion" aside={<span className="hint">{mmss(sc.total / st.wpm * 60)} a {st.wpm} palabras/min</span>}>
           <div className="row tight">
             <label className="sr-only" htmlFor="tp-title">Título del guion</label>
-            <LazyInput id="tp-title" className="grow" style={{ margin: 0 }} value={script.title} onCommit={v => guard(() => saveScript(script, { title: v }))()} />
+            <LazyInput id="tp-title" className="grow" value={script.title} onCommit={v => guard(() => saveScript(script, { title: v }))()} />
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={tp.scripts.length < 2} title={tp.scripts.length < 2 ? 'Es el único guion' : undefined} onClick={guard(async () => {
-              if (!confirm(`¿Borrar el guion «${script.title}»?`)) return;
+              if (!confirmDelete(script.title, 'este guion')) return;
               const d = await del<TeleprompterState>(`/api/teleprompter/scripts/${enc(String(script.id))}`); live.update(() => ({ teleprompter: d })); setEditing(null);
             })}>Borrar guion</button>
           </div>
@@ -133,7 +128,7 @@ export function Teleprompter() {
                 <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={guard(() => moveBlock(i, -1))} />
                 <IconBtn icon={IC.down} label="Bajar" disabled={i === script.blocks.length - 1} onClick={guard(() => moveBlock(i, 1))} />
                 <IconBtn icon={IC.x} label="Quitar bloque" disabled={script.blocks.length < 2} onClick={guard(async () => {
-                  if (b.text.trim() && !confirm(`¿Quitar el bloque «${b.title}»?`)) return;
+                  if (b.text.trim() && !confirm(b.title?.trim() ? `¿Quitar «${b.title.trim()}»?` : '¿Quitar este bloque?')) return;
                   await saveScript(script, { blocks: script.blocks.filter(x => x.id !== b.id) });
                 })} />
               </article>;
@@ -158,7 +153,7 @@ export function Teleprompter() {
             <Switch checked={st.pauseAtNotes} onChange={x => guard(() => settings({ pauseAtNotes: x }))()}>Pausar en los [corchetes]</Switch>
           </div>
           <div className="eg-module-card__foot">
-            <label style={{ flex: '1 1 auto', margin: 0 }}>Cuenta atrás al empezar
+            <label className="grow">Cuenta atrás al empezar
               <select value={st.countdownSec} onChange={e => guard(() => settings({ countdownSec: Number(e.target.value) }))()}>
                 <option value={3}>3 segundos</option><option value={0}>Sin cuenta atrás</option><option value={5}>5 segundos</option>
               </select></label>
@@ -188,7 +183,7 @@ export function Teleprompter() {
               </select></label>}
             <div className="row tight"><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={openWindow}><Icon d={IC.external} className="eg-btn__icon" />Abrir en ventana</button>
               <span className="hint">{desk ? 'Se abre a pantalla completa en esa pantalla; «La principal» es el monitor primario.' : 'Arrástrala al monitor de la cámara y pulsa F11.'}</span></div>
-          </> : <div className="row tight"><label className="sr-only" htmlFor="tp-url">URL del teleprompter</label><input id="tp-url" className="grow mono" value={url} readOnly onFocus={e => e.target.select()} style={{ margin: 0 }} />
+          </> : <div className="row tight"><label className="sr-only" htmlFor="tp-url">URL del teleprompter</label><input id="tp-url" className="grow mono" value={url} readOnly onFocus={e => e.target.select()} />
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(url)}>Copiar</button></div>}
           <div className="eg-notice eg-notice--info eg-notice--sm"><Icon d={IC.monitor} /><span className="eg-notice__text">No sale en el directo: ábrelo en el monitor que tienes junto a la cámara, o en una escena de Meld que no se emita.</span></div>
         </Sec>

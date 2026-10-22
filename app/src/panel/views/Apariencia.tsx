@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { copy, cx, guard, PfIcon, ScaledFrame, Sec, Seg, Switch, toast } from '../../lib/ui';
+import { copy, cx, guard, PfIcon, ScaledFrame, Sec, Seg, Switch, toast, ViewHead } from '../../lib/ui';
 import type { Theme, ThemeInfo } from '../../lib/types';
 
 const SAMPLES: [string, string][] = [['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['viewers', 'Récord']];
@@ -60,7 +60,7 @@ export function Apariencia() {
 
   const color = (k: keyof Theme, label: ReactNode, hint?: string) => <label className="ap-color" title={hint}>{label}
     <span className="row tight"><input type="color" value={String(t[k] || '#000000')} onChange={e => set({ [k]: e.target.value.toUpperCase() } as Partial<Theme>)} />
-      <input className="mono" value={String(t[k] || '')} maxLength={7} onChange={e => { const v = e.target.value; if (/^#[0-9a-f]{6}$/i.test(v)) set({ [k]: v.toUpperCase() } as Partial<Theme>); }} style={{ margin: 0 }} /></span></label>;
+      <input className="mono" value={String(t[k] || '')} maxLength={7} onChange={e => { const v = e.target.value; if (/^#[0-9a-f]{6}$/i.test(v)) set({ [k]: v.toUpperCase() } as Partial<Theme>); }} /></span></label>;
   const range = (k: keyof Theme, label: string, min: number, max: number, step: number, unit: string) => {
     const v = Number(t[k]);
     return <label>{label} <span className="val">{v} {unit}</span>
@@ -73,10 +73,7 @@ export function Apariencia() {
     </select></label>;
 
   return <>
-    <header className="view-head">
-      <div><span className="crumb">Ajustes › Apariencia</span><h1>Apariencia</h1>
-        <p className="hint">Un solo tema para todo lo que sale en el directo: alertas, chat, objetivos, ticker, preguntas, sorteo, tier list y créditos. Se guarda solo y llega al momento a Meld. El CSS propio de cada alerta o widget sigue ganando.</p></div>
-      <div className="actions">
+    <ViewHead crumb="Ajustes › Apariencia" title="Apariencia" hint="Un solo tema para todo lo que sale en el directo: alertas, chat, objetivos, ticker, preguntas, sorteo, tier list y créditos. Se guarda solo y llega al momento a Meld. El CSS propio de cada alerta o widget sigue ganando." actions={<>
         <label className="sr-only" htmlFor="ap-preset">Punto de partida</label>
         <select id="ap-preset" className="ap-preset" value="" onChange={e => { const id = e.target.value; if (!id) return; if (!confirm(`¿Empezar desde «${I.presets.find(p => p.id === id)?.label}»? Se sustituye el tema actual.`)) return; guard(async () => { cancelPending(); replace(await post<ThemeInfo>('/api/theme/preset', { id })); }, 'Tema aplicado')(); }}>
           <option value="">Punto de partida…</option>{I.presets.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
@@ -89,14 +86,13 @@ export function Apariencia() {
           replace(await post<ThemeInfo>('/api/theme/import', { theme }));
         }, 'Tema importado')}>Importar</button>
         <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={isDefault} onClick={guard(async () => { if (!confirm('¿Volver al tema de serie de EGDEV?')) return; cancelPending(); replace(await post<ThemeInfo>('/api/theme/reset')); }, 'Tema de EGDEV restaurado')}>Restaurar EGDEV</button>
-      </div>
-    </header>
+      </>} />
     <div className="cols ap">
       <div className="stack">
         <Sec title="Color" id="ap-color">
           <div className="row3">{color('accent', 'Acento')}{color('accentSoft', 'Acento suave', 'Antetítulos y detalles')}{color('surface', 'Fondo de las tarjetas')}</div>
           <div className="row3">{color('text', 'Texto principal')}{color('textSoft', 'Texto secundario')}{color('muted', 'Texto apagado')}</div>
-          <div className="lbl">Fondo<div style={{ marginTop: 6 }}><Seg wide value={t.surfaceStyle} onChange={v => set({ surfaceStyle: v })} options={[['gradient', 'Degradado'], ['solid', 'Sólido'], ['glass', 'Cristal']]} /></div></div>
+          <div className="lbl">Fondo<div className="field-ctl"><Seg wide value={t.surfaceStyle} onChange={v => set({ surfaceStyle: v })} options={[['gradient', 'Degradado'], ['solid', 'Sólido'], ['glass', 'Cristal']]} /></div></div>
           <div className="row2">{range('surfaceOpacity', 'Opacidad del fondo', 0, 100, 1, '%')}{range('glow', 'Intensidad del brillo', 0, 200, 5, '%')}</div>
           <div className="row2">
             <label>Borde
@@ -116,11 +112,11 @@ export function Apariencia() {
 
         <Sec title="Iconos" id="ap-icons">
           <div className="row2">
-            <div className="lbl">Trazo<div style={{ marginTop: 6 }}><Seg wide value={t.iconStroke} onChange={v => set({ iconStroke: v })} options={[['thin', 'Fino'], ['normal', 'Normal'], ['bold', 'Grueso']]} /></div></div>
-            <div className="lbl">Casilla<div style={{ marginTop: 6 }}><Seg wide value={t.tileShape} onChange={v => set({ tileShape: v })} options={[['square', 'Cuadrada'], ['round', 'Redonda'], ['none', 'Sin casilla']]} /></div></div>
+            <div className="lbl">Trazo<div className="field-ctl"><Seg wide value={t.iconStroke} onChange={v => set({ iconStroke: v })} options={[['thin', 'Fino'], ['normal', 'Normal'], ['bold', 'Grueso']]} /></div></div>
+            <div className="lbl">Casilla<div className="field-ctl"><Seg wide value={t.tileShape} onChange={v => set({ tileShape: v })} options={[['square', 'Cuadrada'], ['round', 'Redonda'], ['none', 'Sin casilla']]} /></div></div>
           </div>
           <div className="row2">{color('iconColor', 'Color del icono')}
-            <div className="lbl">Etiqueta de plataforma<div style={{ marginTop: 6 }}><Seg wide value={t.platformBadge} onChange={v => set({ platformBadge: v })} options={[['text', 'Texto'], ['logo', 'Logo'], ['none', 'Ninguna']]} /></div></div>
+            <div className="lbl">Etiqueta de plataforma<div className="field-ctl"><Seg wide value={t.platformBadge} onChange={v => set({ platformBadge: v })} options={[['text', 'Texto'], ['logo', 'Logo'], ['none', 'Ninguna']]} /></div></div>
           </div>
           <h3 className="subhead">Icono de cada alerta</h3>
           <div className="ap-icons">
@@ -155,11 +151,11 @@ export function Apariencia() {
 
         <Sec title="Posición y movimiento" id="ap-pos">
           <div className="row2">
-            <div className="lbl">Altura<div style={{ marginTop: 6 }}><Seg wide value={t.position} onChange={v => set({ position: v })} options={[['top', 'Arriba'], ['center', 'Centro'], ['bottom', 'Abajo']]} /></div></div>
-            <div className="lbl">Lado<div style={{ marginTop: 6 }}><Seg wide value={t.align} onChange={v => set({ align: v })} options={[['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']]} /></div></div>
+            <div className="lbl">Altura<div className="field-ctl"><Seg wide value={t.position} onChange={v => set({ position: v })} options={[['top', 'Arriba'], ['center', 'Centro'], ['bottom', 'Abajo']]} /></div></div>
+            <div className="lbl">Lado<div className="field-ctl"><Seg wide value={t.align} onChange={v => set({ align: v })} options={[['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']]} /></div></div>
           </div>
           <div className="row2">{range('offsetX', 'Ajuste horizontal', -960, 960, 10, 'px')}{range('offsetY', 'Ajuste vertical', -540, 540, 10, 'px')}</div>
-          <div className="lbl">Entrada y salida de las alertas<div style={{ marginTop: 6 }}><Seg wide value={t.animation} onChange={v => set({ animation: v })} options={[['3d', 'Giro 3D'], ['slide', 'Deslizar'], ['fade', 'Fundido'], ['pop', 'Rebote'], ['none', 'Sin animación']]} /></div></div>
+          <div className="lbl">Entrada y salida de las alertas<div className="field-ctl"><Seg wide value={t.animation} onChange={v => set({ animation: v })} options={[['3d', 'Giro 3D'], ['slide', 'Deslizar'], ['fade', 'Fundido'], ['pop', 'Rebote'], ['none', 'Sin animación']]} /></div></div>
           <p className="hint">La posición vale para el overlay de alertas; si en Meld usas <code>/overlay?pos=top</code>, manda la URL.</p>
         </Sec>
 
@@ -178,7 +174,7 @@ export function Apariencia() {
 
       <div className="stack ap-preview">
         <figure className="eg-stage">
-          <figcaption className="eg-stage__bar"><span className="eg-eyebrow" style={{ margin: 0 }}>Vista previa</span><span className="eg-stage__spacer" /><span className="hint">{isDefault ? 'Tema de EGDEV' : 'Tema propio'}</span></figcaption>
+          <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista previa</span><span className="eg-stage__spacer" /><span className="hint">{isDefault ? 'Tema de EGDEV' : 'Tema propio'}</span></figcaption>
           <div className="ap-tabs" role="tablist" aria-label="Qué ver">
             {WIDGETS.map(w => <button key={w.id} type="button" role="tab" aria-selected={view === w.id} className={cx('eg-chip', view === w.id && 'is-on')} onClick={() => setView(w.id)}>{w.label}</button>)}
           </div>

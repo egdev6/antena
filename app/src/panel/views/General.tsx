@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { post, upload, enc } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { Access, MediaItem } from '../../lib/types';
-import { CopyUrl, guard, Panel, Range, Switch, toast } from '../../lib/ui';
+import { confirmDelete, CopyUrl, guard, Panel, Range, Switch, toast, ViewHead } from '../../lib/ui';
 import type { UploadResult } from '../../lib/types';
 
 export function UploadBar({ name, progress }: { name: string; progress: number }) {
@@ -52,10 +52,10 @@ export function General() {
   const up = useUploader();
   const setAccess = (a: Access) => live.update(() => ({ access: a }));
   return <>
-    <header className="view-head"><div><span className="crumb">Ajustes › General y archivos</span><h1>General y archivos</h1></div></header>
+    <ViewHead crumb="Ajustes › General y archivos" title="General y archivos" />
     <Panel title="Bienvenida">
       <p className="hint">La bienvenida explica, en nueve tarjetas, qué hace cada área de antena. Si la cerraste y quieres volver a verla:</p>
-      <button className="btn ghost" onClick={() => live.patchConfig({ panel: { onboardingDone: false } })}>Ver la bienvenida de nuevo</button>
+      <button className="eg-btn eg-btn--ghost" onClick={() => live.patchConfig({ panel: { onboardingDone: false } })}>Ver la bienvenida de nuevo</button>
     </Panel>
     <Panel title="Capa de alertas">
       <CopyUrl url={`${location.origin}/overlay`} />
@@ -63,9 +63,9 @@ export function General() {
       <div className="row2 mt">
         <Range label="Volumen general" value={Math.round((c.overlay.volume ?? 0.6) * 100)} min={0} max={100} unit="%" onChange={v => live.patchConfig({ overlay: { volume: v / 100 } })} />
         <label>Tope de la cola del overlay <input type="number" min={0} value={c.overlay.queueMax ?? 20} onChange={e => live.patchConfig({ overlay: { queueMax: Math.max(0, Number(e.target.value) || 0) } })} /></label>
-        <div className="row" style={{ alignItems: 'end', justifyContent: 'flex-end' }}>
-          <button className="btn ghost" onClick={guard(() => post('/api/skip'))}>Saltar la actual</button>
-          <button className="btn ghost" onClick={guard(() => post('/api/clear'))}>Vaciar cola</button>
+        <div className="row to-end">
+          <button className="eg-btn eg-btn--ghost" onClick={guard(() => post('/api/skip'))}>Saltar la actual</button>
+          <button className="eg-btn eg-btn--ghost" onClick={guard(() => post('/api/clear'))}>Vaciar cola</button>
         </div>
       </div>
       <p className="hint">Con una ráfaga se agrupan los regalos del mismo donante y, si aun así se supera el tope, se descartan las más antiguas sin ver (quedan en la cronología). 0 = sin tope.</p>
@@ -73,12 +73,12 @@ export function General() {
     <Panel title="Acceso desde el móvil" aside={<Switch checked={!!access.lan} onChange={guard(async (v: boolean) => setAccess(await post<Access>('/api/access', { lan: v })))}>Activado</Switch>}>
       <p className="hint">Abre el panel desde el móvil conectado a la misma wifi para lanzar, pausar o saltar alertas durante el directo. Se protege con una clave.</p>
       <ul className="access-urls">{access.lan ? (access.urls?.length ? access.urls.map((u: string) => <li key={u}><CopyUrl url={u} /></li>) : <li className="hint">No encuentro ninguna red local.</li>) : <li className="hint">Desactivado: el panel solo se abre desde este PC.</li>}</ul>
-      <button className="btn ghost sm" onClick={guard(async () => { if (confirm('Los móviles que ya tenían acceso tendrán que abrir el enlace nuevo. ¿Seguir?')) setAccess(await post('/api/access', { regenerate: true })); })}>Generar otra clave</button>
+      <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { if (confirm('Los móviles que ya tenían acceso tendrán que abrir el enlace nuevo. ¿Seguir?')) setAccess(await post('/api/access', { regenerate: true })); })}>Generar otra clave</button>
     </Panel>
-    <Panel title="Archivos" aside={<label className="btn ghost upload">Subir archivos<input type="file" multiple accept="video/*,image/*,audio/*,.woff2,.woff,.ttf,.otf" hidden onChange={guard(async e => { await up.run([...(e.target.files || [])]); e.target.value = ''; })} /></label>}>
+    <Panel title="Archivos" aside={<label className="eg-btn eg-btn--ghost upload">Subir archivos<input type="file" multiple accept="video/*,image/*,audio/*,.woff2,.woff,.ttf,.otf" hidden onChange={guard(async e => { await up.run([...(e.target.files || [])]); e.target.value = ''; })} /></label>}>
       <p className="hint">Vídeos (webm con transparencia, mp4), imágenes (gif, png, webp) y sonidos (mp3, ogg, wav). Se guardan en la carpeta <code>media/</code> de la app{media.length > 0 ? <> · total: <b>{formatBytes(media.reduce((s: number, m: MediaItem) => s + (m.size || 0), 0))}</b></> : null}.</p>
       <ul className="files">{media.map(m => <li key={m.name}><div className="thumb"><MediaThumb m={m} /></div>
-        <div className="meta"><span title={m.name}>{m.name}{m.size ? <> · {formatBytes(m.size)}</> : null}</span><button className="btn ghost sm danger" onClick={guard(async () => { if (!confirm(`¿Borrar ${m.name}?`)) return; const d = await post<{ media: MediaItem[] }>('/api/media/delete', { name: m.name }); live.update(() => ({ media: d.media })); })}>Borrar</button></div></li>)}</ul>
+        <div className="meta"><span title={m.name}>{m.name}{m.size ? <> · {formatBytes(m.size)}</> : null}</span><button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(m.name, 'este archivo')) return; const d = await post<{ media: MediaItem[] }>('/api/media/delete', { name: m.name }); live.update(() => ({ media: d.media })); })}>Borrar</button></div></li>)}</ul>
     </Panel>
     <UploadBar name={up.name} progress={up.progress} />
   </>;

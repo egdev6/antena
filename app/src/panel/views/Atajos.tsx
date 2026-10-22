@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { del, enc, get, post, put } from '../../lib/api';
 import { live } from '../../lib/live';
-import { copy, cx, guard, LazyInput, Panel, toast } from '../../lib/ui';
+import { confirmDelete, copy, cx, EmptyState, guard, IconBtn, ItemTabs, LazyInput, Panel, toast, ViewHead } from '../../lib/ui';
+import { IC } from '../../lib/icons';
 import { ACTIONS, ActionFields } from './Editor';
 
 export const SD_HELP: Record<string, string> = {
@@ -44,17 +45,19 @@ function StepsEditor({ steps, info, onChange }: { steps: Step[]; info: Info; onC
         ? <div className="afields">{st.action === 'prompter' && <label>Pestaña<select value={st.arg} onChange={e => repl(i, { ...st, arg: e.target.value })}>{info.prompterTabs.map(t => <option key={t} value={t}>{TAB_NAMES[t] || t}</option>)}</select></label>}</div>
         : <ActionFields act={st} uid={'s' + i} onChange={a => repl(i, a)} />}
       <span className="vbtns">
-        <button className="btn ghost sm" title="Subir" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
-        <button className="btn ghost sm" title="Bajar" disabled={i === steps.length - 1} onClick={() => move(i, 1)}>↓</button>
-        <button className="btn ghost sm danger" title="Quitar" onClick={() => onChange(steps.filter((_, j) => j !== i))}>✕</button>
+        <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={() => move(i, -1)} />
+        <IconBtn icon={IC.down} label="Bajar" disabled={i === steps.length - 1} onClick={() => move(i, 1)} />
+        <IconBtn icon={IC.x} label="Quitar paso" onClick={() => onChange(steps.filter((_, j) => j !== i))} />
       </span>
     </div>)}
   </div>;
 }
 
-function ShortcutCard({ sc, info, base, onSaved, onDeleted }: { sc: Shortcut; info: Info; base: string; onSaved: (s: Shortcut) => void; onDeleted: () => void }) {
+// Cada atajo tiene su pestaña; las tarjetas no seleccionadas siguen montadas (hidden) para no perder pasos sin guardar.
+function ShortcutCard({ sc, info, base, hidden, onSaved, onDeleted, onDirty }: { sc: Shortcut; info: Info; base: string; hidden?: boolean; onSaved: (s: Shortcut) => void; onDeleted: () => void; onDirty: (dirty: boolean) => void }) {
   const [steps, setSteps] = useState<Step[]>(sc.steps);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirtyState] = useState(false);
+  const setDirty = (v: boolean) => { setDirtyState(v); onDirty(v); };
   const [msg, setMsg] = useState<{ t: string; err?: boolean } | null>(null);
   useEffect(() => { if (!dirty) setSteps(sc.steps); }, [sc.steps]);
   const url = `${base}/sd/custom/${sc.id}`;
@@ -65,23 +68,23 @@ function ShortcutCard({ sc, info, base, onSaved, onDeleted }: { sc: Shortcut; in
     const r = await post<{ errors?: string[]; results?: unknown[] }>(`/api/shortcuts/${enc(sc.id)}/run`);
     setMsg(r.errors?.length ? { t: `Hecho a medias: ${r.errors.join(' · ')}`, err: true } : { t: `Hecho: ${(r.results || []).length} ${(r.results || []).length === 1 ? 'paso' : 'pasos'}` });
   });
-  return <article className="panel shortcut-card" style={{ ['--sc' as any]: sc.color || 'var(--eg-accent, #FF3B5C)' }}>
+  return <article className="panel shortcut-card" hidden={hidden} style={{ ['--sc' as any]: sc.color || 'var(--eg-accent, #FF3B5C)' }}>
     <header>
       <span className="sc-swatch" aria-hidden="true" />
       <LazyInput className="title-input sm" aria-label="Nombre del atajo" value={sc.name} onCommit={v => save({ name: v }).catch(e => toast(e.message, true))} />
       <div className="row tight">
-        <button className="btn sm" onClick={run}>Probar</button>
-        <button className="btn ghost sm danger" onClick={guard(async () => { if (!confirm(`¿Borrar el atajo «${sc.name}»?`)) return; await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar</button>
+        <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={run}>Probar</button>
+        <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(sc.name, 'este atajo')) return; await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar</button>
       </div>
     </header>
-    <div className="overlay-url"><code>{url}</code><button className="btn ghost sm" onClick={() => copy(url)}>Copiar</button></div>
+    <div className="overlay-url"><code>{url}</code><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(url)}>Copiar</button></div>
     <div className="row tight colors" role="radiogroup" aria-label="Color en el dock">
       {COLORS.map(c => <button key={c || 'none'} role="radio" aria-checked={(sc.color || '') === c} title={c || 'Sin color'} className={cx('color-dot', (sc.color || '') === c && 'on')} style={{ background: c || 'transparent' }} onClick={guard(() => save({ color: c }))} />)}
     </div>
     <StepsEditor steps={steps} info={info} onChange={l => { setSteps(l); setDirty(true); setMsg(null); }} />
-    <div className="row" style={{ marginTop: 10, alignItems: 'center' }}>
-      <button className="btn ghost sm" disabled={steps.length >= 20} onClick={() => { setSteps([...steps, { kind: 'builtin', action: 'marca' }]); setDirty(true); }}>+ Añadir paso</button>
-      {dirty && <button className="btn sm" onClick={saveSteps}>Guardar pasos</button>}
+    <div className="row middle mt-s">
+      <button className="eg-btn eg-btn--ghost eg-btn--sm" disabled={steps.length >= 20} onClick={() => { setSteps([...steps, { kind: 'builtin', action: 'marca' }]); setDirty(true); }}>+ Añadir paso</button>
+      {dirty && <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={saveSteps}>Guardar pasos</button>}
       {msg && <span className={cx('hint', msg.err && 'err-inline')} aria-live="polite">{msg.t}</span>}
     </div>
   </article>;
@@ -90,6 +93,8 @@ function ShortcutCard({ sc, info, base, onSaved, onDeleted }: { sc: Shortcut; in
 export function Atajos() {
   const [info, setInfo] = useState<Info | null>(null);
   const [name, setName] = useState('');
+  const [sel, setSel] = useState<string | null | undefined>(undefined);
+  const [unsaved, setUnsaved] = useState<Record<string, boolean>>({});
   const base = location.origin;
   const load = () => get<Info>('/api/shortcuts').then(setInfo).catch(e => toast(e.message, true));
   useEffect(() => { load(); }, []);
@@ -98,15 +103,22 @@ export function Atajos() {
   if (!info) return <p className="hint">Cargando…</p>;
   const create = guard(async () => {
     const d = await post<{ shortcut: Shortcut }>('/api/shortcuts', { name: name.trim() || `Atajo ${info.custom.length + 1}`, steps: [{ kind: 'builtin', action: 'marca' }] });
-    sync([...info.custom, d.shortcut]); setName('');
+    sync([...info.custom, d.shortcut]); setName(''); setSel(d.shortcut.id);
   });
+  // sin elegir aún (undefined), el primero; una selección que ya no existe también cae al primero
+  const current = sel === null ? null : info.custom.find(x => x.id === sel)?.id ?? info.custom[0]?.id ?? null;
   return <>
-    <header className="view-head"><div><span className="crumb">Meld y Stream Deck › Atajos</span><h1>Atajos y Stream Deck</h1><p className="hint">Cada atajo es una dirección: un botón del Stream Deck la llama y se hacen sus pasos en orden. También salen como botones en el dock de Meld.</p></div>
-      <div className="actions"><input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="Empezar el directo" style={{ width: 220, margin: 0 }} aria-label="Nombre del atajo nuevo" /><button className="btn" onClick={create}>Crear atajo</button></div></header>
+    <ViewHead crumb="Meld y Stream Deck › Atajos y Stream Deck" title="Atajos y Stream Deck" hint="Cada atajo es una dirección: un botón del Stream Deck la llama y se hacen sus pasos en orden. También salen como botones en el dock de Meld." />
     <h2 className="sub-h">Mis atajos <span className="hint">{info.custom.length}</span></h2>
-    {info.custom.length ? info.custom.map(sc => <ShortcutCard key={sc.id} sc={sc} info={info} base={base}
-      onSaved={n => sync(info.custom.map(x => (x.id === n.id ? n : x)))} onDeleted={() => sync(info.custom.filter(x => x.id !== sc.id))} />)
-      : <Panel><p className="hint">Aún no tienes atajos. Ideas: «Empezar» (escena de inicio + abrir preguntas + mensaje en el chat), «Pausa café» (escena de pausa + pausar alertas), «Sorteo» (abrir sorteo + prompter en la pestaña de sorteo).</p></Panel>}
+    <ItemTabs label="Atajos" items={info.custom.map(x => ({ id: x.id, label: x.name, badge: unsaved[x.id] ? 'sin guardar' : undefined }))} selected={current} onSelect={setSel} onNew={() => setSel(null)} newLabel="+ Nuevo atajo" />
+    {info.custom.map(sc => <ShortcutCard key={sc.id} sc={sc} info={info} base={base} hidden={sc.id !== current}
+      onSaved={n => sync(info.custom.map(x => (x.id === n.id ? n : x)))}
+      onDeleted={() => { setUnsaved(u => ({ ...u, [sc.id]: false })); setSel(undefined); sync(info.custom.filter(x => x.id !== sc.id)); }}
+      onDirty={v => setUnsaved(u => (!!u[sc.id] === v ? u : { ...u, [sc.id]: v }))} />)}
+    {current === null && <Panel title="Nuevo atajo">
+      {!info.custom.length && <EmptyState>Aún no tienes atajos. Ideas: «Empezar» (escena de inicio + abrir preguntas + mensaje en el chat), «Pausa café» (escena de pausa + pausar alertas), «Sorteo» (abrir sorteo + prompter en la pestaña de sorteo).</EmptyState>}
+      <div className="row tight"><input className="grow" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="Empezar el directo" aria-label="Nombre del atajo nuevo" /><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}>Crear atajo</button></div>
+    </Panel>}
     <div className="grid2 mt">
       <Panel title="Cómo ponerlo en el Stream Deck">
         <ol className="steps">
@@ -117,7 +129,7 @@ export function Atajos() {
         <p className="hint">Si cambias el nombre, la dirección sigue siendo la misma: usa el identificador, no el nombre.</p>
       </Panel>
       <Panel title="Atajos de serie">
-        <ul className="sd-list">{info.actions.map(a => <li key={a}><code>/sd/{a}</code><span className="hint">{sdLabel(a)}</span><span className="vbtns"><button className="btn ghost sm" onClick={guard(() => post('/sd/' + a), 'Hecho')}>Probar</button><button className="btn ghost sm" onClick={() => copy(`${base}/sd/${a}`)}>Copiar</button></span></li>)}</ul>
+        <ul className="sd-list">{info.actions.map(a => <li key={a}><code>/sd/{a}</code><span className="hint">{sdLabel(a)}</span><span className="vbtns"><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/sd/' + a), 'Hecho')}>Probar</button><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(`${base}/sd/${a}`)}>Copiar</button></span></li>)}</ul>
       </Panel>
     </div>
   </>;
