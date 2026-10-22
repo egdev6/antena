@@ -82,6 +82,14 @@ one tab per object, the selected one is edited below, and the last tab is «+ Nu
   announced as a setting, and adds `aria-selected` for the underline.
 - Icon-only options (platform logos) dim the unpicked icons: a short underline under a 16 px logo is not
   enough to show the pick on its own.
+- Long settings views split into section tabs with the same markup as the alert editor (`editor-tabs`,
+  `role=tab` + `tabpanel`, every pane mounted and only `hidden`): the alert editor and Apariencia
+  (Color, Tipografía, Iconos, Forma y efectos, Posición y movimiento, Sonido). The preview stays outside the
+  tabs. Prefix pane ids per view (`ap-tp-*`) so they never collide with another view's ids.
+- Cards never touch: stacked card blocks keep 16 px between them. Inside `.stack`/`.cols`/`.grid2` the
+  container's `gap` gives it; cards that hang straight from `main` get it from one rule in `panel.css`
+  (`main>:is(.panel,.sec,.cols,.grid2,.stack)+…`). Do not add per-pair margins; the browser test
+  «ninguna vista deja tarjetas apiladas sin separación» walks every route and tab and fails below 12 px.
 - Create directly when the object needs no input to exist; open a form when it needs data first.
 - After creating, select the new item. After deleting, fall back to a valid selection (the first item, or
   the «+ …» tab when the collection is empty or when the view had no other object selected).

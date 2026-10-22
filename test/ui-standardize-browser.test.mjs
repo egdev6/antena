@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/server.mjs';
 import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
@@ -19,6 +20,7 @@ async function start(t) {
   return { bin, app, base, close: async () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); } };
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 12000 });
 const api = (base, method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => { if (!r.ok) throw new Error(`${method} ${url}: ${r.status}`); return r.json(); });
 const tabsOf = label => `Array.from(document.querySelectorAll('[role=tablist][aria-label=${JSON.stringify(label)}] [role=tab]'))`;
@@ -175,7 +177,7 @@ test('O3.2 EmptyState: las listas vacías usan el mismo estado vacío (eg-post--
 test('O3.2 botones eg-btn en todas las vistas y filas eg-post--row en Comandos y Mensajes', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
-  const { bin, app, base, close } = ctx;
+  const { bin, base, close } = ctx;
   let chrome;
   try {
     await api(base, 'POST', '/api/commands', { trigger: '!web', title: 'web', text: '{user}' });
@@ -252,7 +254,8 @@ function eq(actual, expected) { if (actual !== expected) throw new Error(`espera
 // pestañas (Chat, Prompter) ni los selectores de valor (Seg) usan el estilo segmentado.
 test('pestañas y selectores usan el estilo subrayado del editor, nunca el segmentado', { timeout: 90000 }, async t => {
   const { readdir, readFile } = await import('node:fs/promises');
-  const src = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'app', 'src');
+  // fileURLToPath, not URL#pathname: on Windows the pathname is «/D:/…» and path.join breaks it
+  const src = fileURLToPath(new URL('../app/src', import.meta.url));
   const files = (await readdir(src, { recursive: true })).filter(f => /\.(tsx?|css)$/.test(f));
   const offenders = [];
   for (const f of files) {
@@ -308,5 +311,48 @@ test('Apariencia: secciones en pestañas con el estilo del editor y la vista pre
     eq(await dom(chrome, `document.querySelector('#ap-tp-sound select')?.closest('label')?.textContent.includes('Sonido de serie')`), true);
     // la vista previa no depende de la pestaña
     eq(await dom(chrome, `!!document.querySelector('.ap-preview .eg-stage iframe') && document.querySelector('.ap-preview').getBoundingClientRect().width > 0`), true);
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
+// Separación entre tarjetas: en cualquier vista (y en cada una de sus pestañas), dos bloques de
+// tarjeta apilados uno debajo del otro dejan al menos 12 px entre sí. Antes las vistas cuyas
+// tarjetas cuelgan directamente de main (Comandos, Fuentes, General, Acerca de) quedaban pegadas.
+test('ninguna vista deja tarjetas apiladas sin separación', { timeout: 240000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    app.store.config.panel = { onboardingDone: true };
+    chrome = await openChromePage(bin, `${base}/#/directo`);
+    await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await waitDom(chrome.cdp, `document.querySelectorAll('#nav a[href^="#/"]').length > 20`, { timeoutMs: 15000 });
+    const routes = [...new Set(await dom(chrome, `[...document.querySelectorAll('#nav a[href^="#/"]')].map(a => a.getAttribute('href'))`))];
+    const probe = `(() => {
+      const CARD = '.panel, .sec, .eg-stage, .goal-card, .stats, .browser-source';
+      const isCard = el => el.matches(CARD) || !!el.querySelector(CARD);
+      const vis = el => { const r = el.getBoundingClientRect(); return r.height > 0 && r.width > 0; };
+      const bad = [];
+      for (const parent of [document.querySelector('#main'), ...document.querySelectorAll('#main *')]) {
+        const kids = [...parent.children].filter(k => vis(k) && isCard(k));
+        for (let i = 0; i < kids.length - 1; i++) {
+          const a = kids[i].getBoundingClientRect(), b = kids[i + 1].getBoundingClientRect();
+          if (Math.min(a.right, b.right) - Math.max(a.left, b.left) <= 20 || b.top < a.bottom - 2) continue;
+          if (b.top - a.bottom < 12) bad.push(Math.round(b.top - a.bottom) + 'px antes de «' + (kids[i + 1].querySelector('h2,h3,.eg-eyebrow')?.textContent || kids[i + 1].className).trim().slice(0, 30) + '»');
+        }
+      }
+      return bad;
+    })()`;
+    const offenders = [];
+    for (const r of routes) {
+      await dom(chrome, `location.hash = ${JSON.stringify(r)}`);
+      await waitDom(chrome.cdp, `!!document.querySelector('#main .view-head')`, { timeoutMs: 9000 });
+      await sleep(400);
+      const tabs = await dom(chrome, `document.querySelectorAll('#main [role=tablist] [role=tab]').length`);
+      const found = [...await dom(chrome, probe)];
+      for (let i = 0; i < tabs; i++) { await dom(chrome, `document.querySelectorAll('#main [role=tablist] [role=tab]')[${i}].click()`); await sleep(150); found.push(...await dom(chrome, probe)); }
+      for (const f of new Set(found)) offenders.push(`${r}: ${f}`);
+    }
+    eq(offenders.join(' | '), '');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });

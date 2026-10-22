@@ -615,7 +615,9 @@ figure.eg-stage{margin:0}
 .eg-icon-btn.is-muted{color:var(--color-status-danger)}
 .app .cols>.sec{align-self:start}
 .app .cols+.sec,.app .sec+.cols{margin-top:16px}
-.app main>.sec--flat+.cols{margin-top:16px}
+/* Views whose cards hang straight from main (Comandos, Fuentes, General, Acerca de…) have no gap
+   container: any card block that follows another one keeps the standard 16 px. */
+.app main>:is(.panel,.sec,.cols,.grid2,.stack)+:is(.panel,.sec,.cols,.grid2,.stack){margin-top:16px}
 /* resto de vistas al mismo lenguaje del lienzo: ghost sin borde (Button --ghost) y títulos de sección como Sec */
 .btn.ghost{background:transparent;border-color:transparent;box-shadow:none;color:var(--color-fg-secondary)}
 .btn.ghost:hover{background:var(--gradient-sheen),var(--color-surface-2);border-color:transparent;box-shadow:var(--shadow-edge),0 0 0 1px var(--color-border-hairline);color:var(--text)}
