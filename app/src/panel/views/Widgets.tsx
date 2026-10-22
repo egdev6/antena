@@ -56,6 +56,7 @@ export function Widget({ name }: { name: string }) {
     <h3 className="sub-h">Últimos</h3>
     <div className="row" style={{ marginBottom: 12 }}><ListChecks w="latest" f="items" items={[['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['member', 'Miembro'], ['any', 'Cualquier evento']]} /></div>
     <WField w="latest" f="css" label="CSS de «últimos»" type="css" placeholder=".item .big { font-size: 34px; }" />
+    <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.item</code> <code>.item-{'<tipo>'}</code> <code>.item.empty</code> <code>.item.flash</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p>
     <h3 className="sub-h">Ticker</h3>
     <CopyUrl url={origin() + '/widget/ticker'}><span className="hint">1920×64</span></CopyUrl>
     <div className="row3">
@@ -64,11 +65,13 @@ export function Widget({ name }: { name: string }) {
       <WField w="ticker" f="speed" label="Velocidad (px/s)" type="number" min={10} max={300} />
     </div>
     <WField w="ticker" f="css" label="CSS del ticker" type="css" placeholder=".band { border-top-color: #fff; }" />
+    <p className="css-help">Clases: <code>.root</code> <code>.band</code> <code>.label</code> <code>.track</code> <code>.run</code> <code>.it</code> <code>.it b</code> <code>.k</code></p>
     <ScaledFrame src="/widget/ticker?demo" w={1920} h={120} /></>;
   if (name === 'credits') form = <>
     <div className="row2"><WField w="credits" f="title" label="Título" /><WField w="credits" f="speed" label="Velocidad (px/s)" type="number" min={10} max={300} /></div>
     <WField w="credits" f="subtitle" label="Línea final" />
     <WField w="credits" f="css" label="CSS personalizado" type="css" placeholder=".grp li { color: #FF8FA6; }" />
+    <p className="css-help">Clases: <code>.roll</code> <code>.head</code> <code>.grp</code> <code>.grp li</code> <code>.end</code> <code>.kick</code> <code>.big</code> <code>.sub</code> <code>.hl</code></p>
     <div className="row"><button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(() => post('/api/credits/play'))}>Lanzar créditos</button><button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/credits/stop'))}>Parar</button></div>
     <p className="hint mt">Parámetros: <code>?transparent</code> (sin fondo) · <code>?autoplay</code> · <code>?loop</code>. Se lanzan desde aquí, desde el MCP, con una acción o con un atajo del Stream Deck.</p></>;
   return <>

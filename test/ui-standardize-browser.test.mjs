@@ -191,4 +191,26 @@ test('O3.2 botones eg-btn en todas las vistas y filas eg-post--row en Comandos y
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
+test('O3.2 css-help: cada campo de CSS lista las clases de su widget', { timeout: 90000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, base, close } = ctx;
+  let chrome;
+  try {
+    chrome = await openChromePage(bin, `${base}/#/widget/latest`);
+    const helps = `Array.from(document.querySelectorAll('main .css-help')).map(h => h.textContent)`;
+    const has = (i, classes) => `(${helps}[${i}] || '').length > 0 && ${JSON.stringify(classes)}.every(c => ${helps}[${i}].includes(c))`;
+    await waitDom(chrome.cdp, `${helps}.length === 2`, { timeoutMs: 12000 });
+    eq(await dom(chrome, has(0, ['.root', '.item', '.kick', '.big', '.extra', '.flash'])), true);
+    eq(await dom(chrome, has(1, ['.band', '.label', '.track', '.run', '.it', '.k'])), true);
+    await dom(chrome, `location.hash = '#/widget/credits'`);
+    await waitDom(chrome.cdp, `${helps}.length === 1 && ${has(0, ['.roll', '.head', '.grp', '.end', '.kick', '.big', '.sub', '.hl'])}`, { timeoutMs: 12000 });
+    await dom(chrome, `location.hash = '#/alerta/follow'`);
+    await waitDom(chrome.cdp, `!!document.querySelector('#tb-css')`, { timeoutMs: 12000 });
+    await dom(chrome, `document.querySelector('#tb-css').click()`);
+    await waitDom(chrome.cdp, `!document.querySelector('#tp-css').hidden && !!document.querySelector('#tp-css .css-help')`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `['.alert', '.alert-box', '.alert-title', '.alert-name', '.alert-sub'].every(c => document.querySelector('#tp-css .css-help').textContent.includes(c))`), true);
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
 function eq(actual, expected) { if (actual !== expected) throw new Error(`esperaba ${JSON.stringify(expected)}, hubo ${JSON.stringify(actual)}`); }
