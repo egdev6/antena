@@ -135,7 +135,7 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
     await waitDone(app);
     const seen = await dom(chrome, `window.__tourSeen`);
     // Meld está sin conectar: sus escenas no existen y ese paso se salta sin romper el tour.
-    for (const a of ['directo-alerts', 'chat-send', 'goals-tabs', 'meld-head', 'meld-connection', 'atajos-tabs', 'conexiones-twitch', 'general-tour']) {
+    for (const a of ['directo-alerts', 'chat-send', 'goals-tabs', 'meld-head', 'meld-connection', 'atajos-streamdeck', 'atajos-list', 'conexiones-twitch', 'general-tour']) {
       if (!seen.includes(a)) throw new Error(`el tour no pasó por ${a}: ${seen.join(', ')}`);
     }
     if (seen.includes('meld-scenes')) throw new Error('el paso sin ancla no se saltó');

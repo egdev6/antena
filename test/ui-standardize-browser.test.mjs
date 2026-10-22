@@ -107,7 +107,7 @@ test('O3.2 teleprompter: pestañas por guion, + Nuevo guion y el último no se b
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
-test('O3.2 atajos: pestañas por atajo, + Nuevo atajo, pasos con subir/bajar y borrado', { timeout: 90000 }, async t => {
+test('atajos: lista bajo «Cómo ponerlo» con Probar/Editar/Borrar, «+ Nuevo atajo» en la cabecera y el editor en un modal', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, app, base, close } = ctx;
@@ -115,42 +115,69 @@ test('O3.2 atajos: pestañas por atajo, + Nuevo atajo, pasos con subir/bajar y b
   try {
     await api(base, 'POST', '/api/shortcuts', { name: 'Uno', steps: [{ kind: 'builtin', action: 'marca' }, { kind: 'builtin', action: 'pausa' }] });
     await api(base, 'POST', '/api/shortcuts', { name: 'Dos', steps: [{ kind: 'builtin', action: 'saltar' }] });
+    app.store.config.panel = { onboardingDone: true };
     chrome = await openChromePage(bin, `${base}/#/atajos`);
-    const L = 'Atajos';
-    const card = `document.querySelector('.shortcut-card:not([hidden])')`;
-    const name = `${card}?.querySelector('input[aria-label="Nombre del atajo"]')?.value`;
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3`, { timeoutMs: 12000 });
-    eq(await dom(chrome, tabTexts(L)), 'Uno|Dos|+ Nuevo atajo');
-    eq(await dom(chrome, selectedTab(L)), 'Uno');
-    eq(await dom(chrome, name), 'Uno');
-    eq(await dom(chrome, `document.querySelectorAll('.shortcut-card:not([hidden])').length`), 1);
-    eq(await dom(chrome, `getComputedStyle(document.querySelector('.shortcut-card[hidden]')).display`), 'none');
+    await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    const list = `document.querySelector('[data-tour="atajos-list"]')`;
+    const rows = `[...${list}.querySelectorAll('.eg-post--row')]`;
+    const modal = `document.querySelector('[role=dialog][aria-modal=true]')`;
+    const btnIn = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+    await waitDom(chrome.cdp, `!!${list} && ${rows}.length === 2`, { timeoutMs: 15000 });
 
-    // pasos: subir/bajar con IconBtn; el guardado sigue siendo explícito con «Guardar pasos»
-    eq(await dom(chrome, `Array.from(${card}.querySelectorAll('.action .eg-icon-btn')).map(b => b.getAttribute('aria-label')).join('|')`), 'Subir|Bajar|Quitar paso|Subir|Bajar|Quitar paso');
-    await dom(chrome, `${card}.querySelectorAll('.action')[0].querySelector('[aria-label="Bajar"]').click()`);
-    await waitDom(chrome.cdp, `!!Array.from(${card}.querySelectorAll('button')).find(b => b.textContent.trim() === 'Guardar pasos')`, { timeoutMs: 12000 });
-    eq(app.store.config.shortcuts[0].steps.map(x => x.action).join('|'), 'marca|pausa');
-    await dom(chrome, `Array.from(${card}.querySelectorAll('button')).find(b => b.textContent.trim() === 'Guardar pasos').click()`);
-    await waitDom(chrome.cdp, `!Array.from(${card}.querySelectorAll('button')).find(b => b.textContent.trim() === 'Guardar pasos')`, { timeoutMs: 12000 });
+    // sin pestañas; «+ Nuevo atajo» vive en la cabecera
+    eq(await dom(chrome, `!!document.querySelector('[role=tablist][aria-label="Atajos"]')`), false);
+    eq(await dom(chrome, `!!${btnIn(`document.querySelector('.view-head')`, '+ Nuevo atajo')}`), true);
+    // la lista va debajo de «Cómo ponerlo en el Stream Deck», en la misma columna; «Atajos de serie» a la derecha
+    eq(await dom(chrome, `(() => { const how = document.querySelector('[data-tour="atajos-streamdeck"]').getBoundingClientRect(), l = ${list}.getBoundingClientRect(), serie = [...document.querySelectorAll('main h2')].find(h => h.textContent.includes('Atajos de serie')).closest('.panel').getBoundingClientRect(); return l.top >= how.bottom && Math.abs(l.left - how.left) < 2 && serie.left > how.right; })()`), true);
+    eq(await dom(chrome, `${rows}.map(r => r.querySelector('b').textContent + ':' + [...r.querySelectorAll('button')].map(b => b.textContent.trim()).join('/')).join('|')`), 'Uno:Probar/Editar/Borrar|Dos:Probar/Editar/Borrar');
+    eq(await dom(chrome, `${rows}[0].querySelector('code').textContent`), `/sd/custom/${app.store.config.shortcuts[0].id}`);
+    eq(await dom(chrome, `!!${modal}`), false);
+
+    // Probar desde la lista ejecuta sus pasos y lo avisa
+    await dom(chrome, `${btnIn(`${rows}[0]`, 'Probar')}.click()`);
+    await waitDom(chrome.cdp, `document.querySelector('.toast.on')?.textContent.includes('Hecho: 2 pasos')`, { timeoutMs: 9000 });
+    eq(app.session.data.notes.some(n => n.kind === 'marker'), true);
+
+    // Editar abre el modal con ese atajo; los pasos se reordenan y se guardan con «Guardar pasos»
+    // (focus + click like a real click, so the modal can give the focus back to «Editar» on close)
+    await dom(chrome, `(() => { const b = ${btnIn(`${rows}[0]`, 'Editar')}; b.focus(); b.click(); return 'ok'; })()`);
+    await waitDom(chrome.cdp, `!!${modal} && ${modal}.querySelector('input[aria-label="Nombre del atajo"]')?.value === 'Uno'`, { timeoutMs: 9000 });
+    eq(await dom(chrome, `document.activeElement && ${modal}.contains(document.activeElement)`), true);
+    await dom(chrome, `${modal}.querySelectorAll('.action')[0].querySelector('[aria-label="Bajar"]').click()`);
+    await waitDom(chrome.cdp, `!!${btnIn(modal, 'Guardar pasos')}`, { timeoutMs: 9000 });
+    await dom(chrome, `${btnIn(modal, 'Guardar pasos')}.click()`);
+    await waitDom(chrome.cdp, `!${btnIn(modal, 'Guardar pasos')}`, { timeoutMs: 9000 });
     eq(app.store.config.shortcuts[0].steps.map(x => x.action).join('|'), 'pausa|marca');
 
-    await dom(chrome, `${tabsOf(L)}[1].click()`);
-    await waitDom(chrome.cdp, `${name} === 'Dos' && ${selectedTab(L)} === 'Dos'`, { timeoutMs: 12000 });
-
-    // «+ Nuevo atajo»: formulario; al crear queda seleccionado el nuevo
-    await dom(chrome, `${tabsOf(L)}.at(-1).click()`);
-    await waitDom(chrome.cdp, `${selectedTab(L)} === '+ Nuevo atajo' && !${card} && !!document.querySelector('input[aria-label="Nombre del atajo nuevo"]')`, { timeoutMs: 12000 });
-    await dom(chrome, `(() => { const i = document.querySelector('input[aria-label="Nombre del atajo nuevo"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Tres'); i.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()`);
-    await dom(chrome, `${buttonByText('Crear atajo')}.click()`);
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 4 && ${selectedTab(L)} === 'Tres' && ${name} === 'Tres'`, { timeoutMs: 12000 });
-
-    // borrar: queda seleccionado otro atajo válido
+    // cerrar con pasos sin guardar pregunta; si se rechaza el modal sigue abierto, si se acepta se descartan
+    await dom(chrome, `${modal}.querySelectorAll('.action')[0].querySelector('[aria-label="Bajar"]').click()`);
+    await waitDom(chrome.cdp, `!!${btnIn(modal, 'Guardar pasos')}`, { timeoutMs: 9000 });
+    await dom(chrome, `(() => { window.__confirms = []; window.confirm = m => { window.__confirms.push(m); return false; }; return 'ok'; })()`);
+    await dom(chrome, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await sleep(300);
+    eq(await dom(chrome, `!!${modal}`), true);
+    eq(await dom(chrome, `window.__confirms[0]`), 'Tienes pasos sin guardar. ¿Cerrar sin guardarlos?');
     await dom(chrome, acceptConfirms);
-    await dom(chrome, `Array.from(${card}.querySelectorAll('button')).find(b => b.textContent.trim() === 'Borrar').click()`);
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3 && ${selectedTab(L)} === 'Uno' && ${name} === 'Uno'`, { timeoutMs: 12000 });
-    eq(app.store.config.shortcuts.map(x => x.name).join('|'), 'Uno|Dos');
+    await dom(chrome, `${modal}.querySelector('[aria-label="Cerrar"]').click()`);
+    await waitDom(chrome.cdp, `!${modal}`, { timeoutMs: 9000 });
+    eq(app.store.config.shortcuts[0].steps.map(x => x.action).join('|'), 'pausa|marca');
+    eq(await dom(chrome, `document.activeElement?.textContent.trim()`), 'Editar');
+
+    // «+ Nuevo atajo»: el modal pide el nombre y, al crear, pasa a editar el atajo nuevo
+    await dom(chrome, `${btnIn(`document.querySelector('.view-head')`, '+ Nuevo atajo')}.click()`);
+    await waitDom(chrome.cdp, `!!${modal}?.querySelector('input[aria-label="Nombre del atajo nuevo"]')`, { timeoutMs: 9000 });
+    await dom(chrome, `(() => { const i = ${modal}.querySelector('input[aria-label="Nombre del atajo nuevo"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Tres'); i.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()`);
+    await dom(chrome, `${btnIn(modal, 'Crear atajo')}.click()`);
+    await waitDom(chrome.cdp, `${modal}?.querySelector('input[aria-label="Nombre del atajo"]')?.value === 'Tres' && ${rows}.length === 3`, { timeoutMs: 9000 });
+    await dom(chrome, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await waitDom(chrome.cdp, `!${modal}`, { timeoutMs: 9000 });
+
+    // Borrar desde la lista
+    await dom(chrome, acceptConfirms);
+    await dom(chrome, `${btnIn(`${rows}[2]`, 'Borrar')}.click()`);
+    await waitDom(chrome.cdp, `${rows}.length === 2`, { timeoutMs: 9000 });
     eq(await dom(chrome, `window.__confirms[0]`), '¿Borrar «Tres»?');
+    eq(app.store.config.shortcuts.map(x => x.name).join('|'), 'Uno|Dos');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 

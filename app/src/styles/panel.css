@@ -232,7 +232,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .history .tagm{margin-left:6px}
 
 /* Toast (overlay) */
-.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;transition:opacity var(--duration-base) var(--ease-out),transform var(--duration-base) var(--ease-spring);z-index:10;
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;transition:opacity var(--duration-base) var(--ease-out),transform var(--duration-base) var(--ease-spring);z-index:90;
   padding:12px 18px;border-radius:var(--radius-lg);font-weight:600;
   background:var(--color-surface-overlay);-webkit-backdrop-filter:blur(var(--blur-overlay)) saturate(150%);backdrop-filter:blur(var(--blur-overlay)) saturate(150%);
   border:1px solid var(--line2);box-shadow:var(--shadow-edge-strong),var(--shadow-elev-3);pointer-events:none}
@@ -472,8 +472,14 @@ textarea.code{min-height:200px;font:500 13px/1.55 var(--font-mono);tab-size:2;wh
 .src-main code{flex-basis:100%;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 .src-main .hint{flex-basis:100%;font-size:12px}
 /* atajos */
-.shortcut-card{border-left:3px solid var(--sc)}
-.shortcut-card header{gap:10px}
+/* the shortcut editor lives inside the Modal (which is the card); its colour shows in the swatch */
+.shortcut-card>header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.shortcut-card>header .title-input{flex:1;min-width:0}
+.shortcut-row .sc-swatch{align-self:center}
+/* Modal (lib/ui.tsx): above the panel and the tour greeting; toasts (.toast) stay above it */
+.modal-backdrop{position:fixed;inset:0;z-index:85;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
+.modal{width:min(880px,100%);max-height:min(90vh,900px);overflow:auto;outline:none}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .sc-swatch{width:12px;height:12px;border-radius:50%;background:var(--sc);flex:none}
 .title-input.sm{font-size:22px;width:auto;flex:1;min-width:0}
 .colors{margin:10px 0}

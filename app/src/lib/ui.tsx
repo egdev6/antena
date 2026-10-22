@@ -1,6 +1,7 @@
 // Piezas comunes del panel con las clases de EGDEV Foundation que ya usa panel.css.
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { LOGOS } from '../../../public/platform-icons.js';
+import { IC } from './icons';
 
 // ---------- avisos ----------
 let toastMsg = { text: '', err: false, n: 0 };
@@ -166,6 +167,25 @@ export function Sec({ title, aside, children, foot, footRight, flat, className, 
 /** IconButton con etiqueta accesible. */
 export function IconBtn({ icon, label, onClick, disabled, pressed, className }: { icon: string; label: string; onClick?: () => void; disabled?: boolean; pressed?: boolean; className?: string }) {
   return <button type="button" className={cx('eg-icon-btn', className)} aria-label={label} title={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}><Icon d={icon} /></button>;
+}
+/** Diálogo modal: Esc, el botón «Cerrar» y el fondo piden cerrar (onClose decide, p. ej. si hay
+ *  cambios sin guardar); el foco entra al abrir y vuelve al botón que lo abrió al cerrar. */
+export function Modal({ title, onClose, children, className }: { title: ReactNode; onClose: () => void; children?: ReactNode; className?: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose); close.current = onClose;
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    box.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close.current(); } };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); opener?.focus?.(); };
+  }, []);
+  return <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) close.current(); }}>
+    <div className={cx('modal panel', className)} role="dialog" aria-modal="true" aria-labelledby="modal-title" tabIndex={-1} ref={box}>
+      <header className="modal-head"><h2 id="modal-title">{title}</h2><IconBtn icon={IC.x} label="Cerrar" onClick={() => close.current()} /></header>
+      {children}
+    </div>
+  </div>;
 }
 /** StageFrame con barra superior: una capa en vivo (iframe escalado) con su título y acciones. */
 export function Stage({ eyebrow, aside, src, w = 1920, h = 1080, foot, frameRef }: { eyebrow: ReactNode; aside?: ReactNode; src: string; w?: number; h?: number; foot?: ReactNode; frameRef?: (el: HTMLIFrameElement | null) => void }) {

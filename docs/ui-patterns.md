@@ -47,7 +47,7 @@ Objetivos, Últimos y ticker, Créditos) uses one layout, `WidgetLayout`, below 
 - A section's introduction is the first child: `p.hint.lead`. Hints about a single field go right after
   that field as `p.hint`.
 - Use `.sub-h` headings only to name a group of content that has no section of its own (for example
-  «Últimos» and «Ticker» inside one form, or «Mis atajos» above the shortcut tabs).
+  «Últimos» and «Ticker» inside one form).
 
 ## Forms
 
@@ -74,7 +74,6 @@ one tab per object, the selected one is edited below, and the last tab is «+ Nu
 | Goals | `Widgets.tsx` (Goals) | creates the object directly and selects it |
 | Teleprompter scripts | `Teleprompter.tsx` | creates the object directly and selects it |
 | Tier lists | `Interactivos.tsx` (TierList) | opens a creation form (title + items), then selects the new list |
-| Shortcuts | `Atajos.tsx` | opens a creation form (name), then selects the new shortcut |
 
 - There is one tab look in the whole UI: the underlined `eg-tabs` of the alert editor. Item tabs, filters
   (Prompter timeline), mode toggles (Chat and Prompter «Escribir en») and value pickers (`Seg`) all use it;
@@ -102,12 +101,19 @@ the list shows one `eg-post eg-post--row` per object with its actions, and «Edi
 Commands (`#/comandos` → `#/comando/<id>`), scheduled messages (`#/mensajes` → `#/mensaje/<id>`) and alert
 variations (`#/alerta/<type>/v/<id>`) follow this pattern.
 
-### Saving inside item tabs
+Use **list + modal** when the list itself is what the user works with day to day and the editor is
+occasional: shortcuts (`Atajos.tsx`). The list (`eg-post eg-post--row`) shows each object with
+«Probar», «Editar» and «Borrar»; «+ Nuevo …» is a primary button in the `ViewHead` actions; «Editar» and
+«+ Nuevo» open the shared `Modal` (`lib/ui.tsx`). The modal asks for the data needed to create the object
+and, once created, switches to editing it. `Modal` closes on Esc, its «Cerrar» button and the backdrop,
+but `onClose` decides (it can refuse), and it gives the focus back to the button that opened it. Toasts sit
+above modals (`z-index`), so errors inside a modal stay visible.
+
+### Saving: explicit steps
 
 Most editors save as you type (`LazyInput`, `live.patchConfig`). Shortcut steps are the exception: they keep
 an explicit «Guardar pasos» button because a half-built chain of steps should not run from the Stream Deck.
-Non-selected shortcut cards stay mounted (`hidden`) so unsaved steps survive a tab switch, and the tab shows
-«sin guardar» while there are pending changes.
+Closing the shortcut modal with unsaved steps asks «Tienes pasos sin guardar. ¿Cerrar sin guardarlos?».
 
 ## Rows and reordering
 
