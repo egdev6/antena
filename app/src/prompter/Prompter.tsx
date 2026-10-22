@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, enc, get, post, put } from '../lib/api';
 import { live, makeChatLoader, useLive } from '../lib/live';
 import { mergeChat } from '../lib/chat-merge.mjs';
-import { cx, fmtTime, guard, Icon, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
+import { ConnPill, cx, fmtTime, guard, Icon, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
 import { IC } from '../lib/icons';
 import type { ChatMessage, ChatSendResult, Question, TimelineItem, TierListItem, TierListTier } from '../lib/types';
 
@@ -29,10 +29,9 @@ function Top({ onThanks }: { onThanks: () => void }) {
   const w: ReactNode[] = [];
   if (mic?.muted) w.push(<span key="mic" className="eg-status eg-status--danger pr-mic"><Icon d={IC.micOff} />Micro silenciado</span>);
   if (pause.paused) w.push(<span key="p" className="eg-status eg-status--warning"><Icon d={IC.pause} />Alertas en pausa{pause.held ? ' · ' + pause.held : ''}</span>);
-  if (st.twitch && st.twitch.state !== 'conectado' && st.twitch.state !== 'desconectado') w.push(<span key="tw" className="eg-status eg-status--warning"><PfIcon platform="twitch" />Twitch: {st.twitch.state}</span>);
-  if (st.twitch?.state === 'desconectado') w.push(<span key="tw0" className="eg-status eg-status--warning"><PfIcon platform="twitch" />Twitch sin conectar</span>);
-  if (st.youtube?.state === 'error') w.push(<span key="yt" className="eg-status eg-status--danger"><PfIcon platform="youtube" />YouTube: error</span>);
-  if (st.meld && !meldOn && s.config.meld?.enabled) w.push(<span key="m" className="eg-status eg-status--warning"><Icon d={IC.plug} />Meld sin conectar</span>);
+  if (st.twitch && st.twitch.state !== 'conectado') w.push(<ConnPill key="tw" platform="twitch" state={st.twitch.state} />);
+  if (st.youtube?.state === 'error') w.push(<ConnPill key="yt" platform="youtube" state="error" />);
+  if (st.meld && !meldOn && s.config.meld?.enabled) w.push(<ConnPill key="m" platform="meld" state={st.meld.state} />);
   if (st.overlays === 0) w.push(<span key="o" className="eg-status eg-status--warning"><Icon d={IC.alert} />Sin overlay</span>);
   return <header className="pr-top top">
     <span className={cx('eg-live-label live', streaming && 'on')}>{streaming ? <span className="eg-live-dot is-active" aria-hidden="true" /> : <span className="pr-dot" aria-hidden="true" />}{streaming ? 'En directo' : meldOn ? 'Sin emitir' : 'Sesión'} <b>{tl.startedAt ? mmss((now - +new Date(tl.startedAt)) / 1000) : ''}</b></span>
