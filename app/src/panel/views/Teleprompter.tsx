@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { copy, cx, guard, Icon, IconBtn, LazyInput, mmss, ScaledFrame, Sec, Seg, Switch } from '../../lib/ui';
+import { copy, cx, guard, Icon, IconBtn, ItemTabs, LazyInput, mmss, ScaledFrame, Sec, Seg, Switch } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { isDesktop, listMonitors, openTeleprompter, type Monitor } from '../../lib/desktop';
 import type { TeleprompterState, TpBlock, TpCompiled, TpCompiledBlock } from '../../lib/types';
@@ -74,8 +74,10 @@ export function Teleprompter() {
     setEditing(id);
   });
   const pickScript = guard(async (id: string) => {
-    if (id === '__new') { const d = await post<TeleprompterState>('/api/teleprompter/scripts', { title: 'Nuevo guion' }); live.update(() => ({ teleprompter: d })); setEditing(null); return; }
     const d = await post<TeleprompterState>('/api/teleprompter/select', { id }); live.update(() => ({ teleprompter: d })); setEditing(null);
+  });
+  const newScript = guard(async () => {
+    const d = await post<TeleprompterState>('/api/teleprompter/scripts', { title: 'Nuevo guion' }); live.update(() => ({ teleprompter: d })); setEditing(null);
   });
   const openWindow = guard(async () => {
     if (desk) await openTeleprompter(st.monitor || null, true);
@@ -88,15 +90,11 @@ export function Teleprompter() {
     <header className="view-head">
       <div><span className="crumb">Widgets › Teleprompter · solo lo ves tú</span><h1>Teleprompter</h1></div>
       <div className="actions">
-        <label className="sr-only" htmlFor="tp-guion">Guion</label>
-        <select id="tp-guion" className="tp-pick" value={tp.activeId || ''} onChange={e => pickScript(e.target.value)}>
-          {tp.scripts.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
-          <option value="__new">Nuevo guion…</option>
-        </select>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={openWindow}><Icon d={IC.external} className="eg-btn__icon" />Abrir en ventana</button>
         {playBtn('eg-btn eg-btn--primary eg-btn--sm')}
       </div>
     </header>
+    <ItemTabs label="Guiones" items={tp.scripts.map(s => ({ id: s.id, label: s.title }))} selected={tp.activeId} onSelect={id => { if (id !== tp.activeId) pickScript(id); }} onNew={newScript} newLabel="+ Nuevo guion" />
     <div className="cols cols--q tp">
       <div className="stack">
         <figure className="eg-stage">

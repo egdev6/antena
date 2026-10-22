@@ -624,7 +624,6 @@ svg.pf-ico path{stroke:none}
 .eg-module-card__icon.pf-ico{width:var(--icon-size);height:var(--icon-size)}
 .eg-timeline__type svg.pf-ico{width:15px;height:15px}
 /* ===== Teleprompter (lienzo › Teleprompter) ===== */
-.tp-pick{width:240px;margin:0}
 .tp-tools{display:flex;align-items:center;gap:4px}
 .tp-left{font-size:12px;color:var(--color-fg-muted)}
 .tp-frame{background:#000}

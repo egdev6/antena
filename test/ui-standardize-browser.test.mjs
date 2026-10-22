@@ -9,8 +9,6 @@ import { createApp } from '../src/server.mjs';
 import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
 async function start(t) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
@@ -64,10 +62,43 @@ test('O3.2 tier lists: pestañas, cambio de editor, + Nueva y borrado', { timeou
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
-async function eventually(read, expected, timeoutMs = 5000) {
-  const until = Date.now() + timeoutMs;
-  let actual = await read();
-  while (actual !== expected && Date.now() < until) { await sleep(50); actual = await read(); }
-  eq(actual, expected);
-}
+test('O3.2 teleprompter: pestañas por guion, + Nuevo guion y el último no se borra', { timeout: 90000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    const first = (await api(base, 'GET', '/api/teleprompter')).scripts[0];
+    await api(base, 'POST', '/api/teleprompter/scripts', { title: 'Guion B', select: false });
+    chrome = await openChromePage(bin, `${base}/#/widget/teleprompter`);
+    const L = 'Guiones';
+    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3`, { timeoutMs: 12000 });
+    eq(await dom(chrome, tabTexts(L)), `${first.title}|Guion B|+ Nuevo guion`);
+    eq(await dom(chrome, selectedTab(L)), first.title);
+    eq(await dom(chrome, `!!document.querySelector('select#tp-guion')`), false);
+    const title = `document.querySelector('#tp-title')?.value`;
+    eq(await dom(chrome, title), first.title);
+
+    await dom(chrome, `${tabsOf(L)}[1].click()`);
+    await waitDom(chrome.cdp, `${title} === 'Guion B' && ${selectedTab(L)} === 'Guion B'`, { timeoutMs: 12000 });
+    eq(app.teleprompter.snapshot().script.title, 'Guion B');
+
+    // «+ Nuevo guion» lo crea y lo deja seleccionado
+    await dom(chrome, `${tabsOf(L)}.at(-1).click()`);
+    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 4 && ${selectedTab(L)} === 'Nuevo guion' && ${title} === 'Nuevo guion'`, { timeoutMs: 12000 });
+
+    // borrar: queda seleccionado otro guion válido
+    await dom(chrome, acceptConfirms);
+    await dom(chrome, `${buttonByText('Borrar guion')}.click()`);
+    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3 && ${selectedTab(L)} === ${JSON.stringify(first.title)} && ${title} === ${JSON.stringify(first.title)}`, { timeoutMs: 12000 });
+
+    // el último guion no se puede borrar
+    await dom(chrome, `${tabsOf(L)}[1].click()`);
+    await waitDom(chrome.cdp, `${title} === 'Guion B'`, { timeoutMs: 12000 });
+    await dom(chrome, `${buttonByText('Borrar guion')}.click()`);
+    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 2 && ${selectedTab(L)} === ${JSON.stringify(first.title)}`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `${buttonByText('Borrar guion')}.disabled`), true);
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
 function eq(actual, expected) { if (actual !== expected) throw new Error(`esperaba ${JSON.stringify(expected)}, hubo ${JSON.stringify(actual)}`); }
