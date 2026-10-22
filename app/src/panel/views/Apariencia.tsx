@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { copy, cx, guard, PfIcon, ScaledFrame, Sec, Seg, Switch, toast, ViewHead } from '../../lib/ui';
+import { copy, cx, guard, PfIcon, ScaledFrame, Seg, Switch, toast, ViewHead } from '../../lib/ui';
 import type { Theme, ThemeInfo } from '../../lib/types';
 
+// pestañas de la vista (mismo marcado que las del editor de alertas)
+const SECTIONS: [string, string][] = [['color', 'Color'], ['font', 'Tipografía'], ['icons', 'Iconos'], ['shape', 'Forma y efectos'], ['pos', 'Posición y movimiento'], ['sound', 'Sonido']];
 const SAMPLES: [string, string][] = [['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['viewers', 'Récord']];
 const WIDGETS: { id: string; label: string; src: string; w: number; h: number }[] = [
   { id: 'alert', label: 'Alerta', src: '/overlay?preview', w: 1920, h: 1080 },
@@ -29,6 +31,7 @@ export function Apariencia() {
   const types = useLive(s => s.types);
   const [view, setView] = useState('alert');
   const [frameKey, setFrameKey] = useState(0);
+  const [tab, setTab] = useState(SECTIONS[0][0]);
   const pending = useRef<Partial<Theme>>({});
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const load = guard(async () => { info.current = await get<ThemeInfo>('/api/theme'); live.update(() => ({ theme: info.current!.theme })); setLoaded(x => x + 1); });
@@ -66,6 +69,8 @@ export function Apariencia() {
     return <label>{label} <span className="val">{v} {unit}</span>
       <input type="range" min={min} max={max} step={step} value={v} style={{ ['--v' as any]: ((v - min) / (max - min)) * 100 + '%' }} onChange={e => set({ [k]: Number(e.target.value) } as Partial<Theme>)} /></label>;
   };
+  // same tabs as the alert editor: every pane stays mounted (only hidden), nothing typed is lost
+  const pane = (k: string, children: ReactNode) => <div role="tabpanel" id={`ap-tp-${k}`} aria-labelledby={`ap-tb-${k}`} hidden={tab !== k} className="tabpane"><section className="sec">{children}</section></div>;
   const sw = (k: keyof Theme, label: string) => <Switch checked={!!t[k]} onChange={x => set({ [k]: x } as Partial<Theme>)}>{label}</Switch>;
   const fontSel = (k: 'fontDisplay' | 'fontBody', label: string) => <label>{label}
     <select value={t[k]} onChange={e => set({ [k]: e.target.value })} style={{ fontFamily: fonts.find(f => f.id === t[k])?.css || undefined }}>
@@ -87,9 +92,12 @@ export function Apariencia() {
         }, 'Tema importado')}>Importar</button>
         <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={isDefault} onClick={guard(async () => { if (!confirm('¿Volver al tema de serie de EGDEV?')) return; cancelPending(); replace(await post<ThemeInfo>('/api/theme/reset')); }, 'Tema de EGDEV restaurado')}>Restaurar EGDEV</button>
       </>} />
+    <div className="eg-tabs editor-tabs" role="tablist" aria-label="Secciones de la apariencia">
+      {SECTIONS.map(([k, l]) => <button key={k} type="button" role="tab" id={`ap-tb-${k}`} aria-controls={`ap-tp-${k}`} className="eg-tabs__item" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
+    </div>
     <div className="cols ap">
       <div className="stack">
-        <Sec title="Color" id="ap-color">
+        {pane('color', <>
           <div className="row3">{color('accent', 'Acento')}{color('accentSoft', 'Acento suave', 'Antetítulos y detalles')}{color('surface', 'Fondo de las tarjetas')}</div>
           <div className="row3">{color('text', 'Texto principal')}{color('textSoft', 'Texto secundario')}{color('muted', 'Texto apagado')}</div>
           <div className="lbl">Fondo<div className="field-ctl"><Seg wide value={t.surfaceStyle} onChange={v => set({ surfaceStyle: v })} options={[['gradient', 'Degradado'], ['solid', 'Sólido'], ['glass', 'Cristal']]} /></div></div>
@@ -102,15 +110,16 @@ export function Apariencia() {
           </div>
           {sw('platformAccent', 'Acento de cada plataforma (Twitch y YouTube con su color)')}
           {t.platformAccent && <div className="row2">{color('twitchColor', <><PfIcon platform="twitch" /> Twitch</>)}{color('youtubeColor', <><PfIcon platform="youtube" /> YouTube</>)}</div>}
-        </Sec>
+        </>)}
 
-        <Sec title="Tipografía" id="ap-font" aside={<span className="hint">Sube tus fuentes (woff2, ttf…) en <a href="#/general">General y archivos</a></span>}>
+        {pane('font', <>
+          <p className="hint">Sube tus fuentes (woff2, ttf…) en <a href="#/general">General y archivos</a>.</p>
           <div className="row2">{fontSel('fontDisplay', 'Títulos y nombres')}{fontSel('fontBody', 'Textos')}</div>
           {range('textScale', 'Tamaño del texto de las alertas', 50, 200, 5, '%')}
           <div className="row2 switches">{sw('uppercase', 'Títulos en mayúsculas')}{sw('outline', 'Contorno negro (se lee sobre cualquier fondo)')}</div>
-        </Sec>
+        </>)}
 
-        <Sec title="Iconos" id="ap-icons">
+        {pane('icons', <>
           <div className="row2">
             <div className="lbl">Trazo<div className="field-ctl"><Seg wide value={t.iconStroke} onChange={v => set({ iconStroke: v })} options={[['thin', 'Fino'], ['normal', 'Normal'], ['bold', 'Grueso']]} /></div></div>
             <div className="lbl">Casilla<div className="field-ctl"><Seg wide value={t.tileShape} onChange={v => set({ tileShape: v })} options={[['square', 'Cuadrada'], ['round', 'Redonda'], ['none', 'Sin casilla']]} /></div></div>
@@ -142,14 +151,14 @@ export function Apariencia() {
               </div>;
             })}
           </div>
-        </Sec>
+        </>)}
 
-        <Sec title="Forma y efectos" id="ap-shape">
+        {pane('shape', <>
           <div className="row3">{range('round', 'Esquinas', 0, 300, 10, '%')}{range('alertWidth', 'Ancho de la alerta', 400, 1600, 20, 'px')}{range('alertScale', 'Escala de la alerta', 30, 200, 5, '%')}</div>
           <div className="row2 switches">{sw('tilt', 'Inclinación 3D')}{sw('reflection', 'Reflejo debajo')}{sw('decorations', 'Decoraciones (halo, puntos y cubo)')}{sw('timerBar', 'Barra de tiempo')}</div>
-        </Sec>
+        </>)}
 
-        <Sec title="Posición y movimiento" id="ap-pos">
+        {pane('pos', <>
           <div className="row2">
             <div className="lbl">Altura<div className="field-ctl"><Seg wide value={t.position} onChange={v => set({ position: v })} options={[['top', 'Arriba'], ['center', 'Centro'], ['bottom', 'Abajo']]} /></div></div>
             <div className="lbl">Lado<div className="field-ctl"><Seg wide value={t.align} onChange={v => set({ align: v })} options={[['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']]} /></div></div>
@@ -157,9 +166,9 @@ export function Apariencia() {
           <div className="row2">{range('offsetX', 'Ajuste horizontal', -960, 960, 10, 'px')}{range('offsetY', 'Ajuste vertical', -540, 540, 10, 'px')}</div>
           <div className="lbl">Entrada y salida de las alertas<div className="field-ctl"><Seg wide value={t.animation} onChange={v => set({ animation: v })} options={[['3d', 'Giro 3D'], ['slide', 'Deslizar'], ['fade', 'Fundido'], ['pop', 'Rebote'], ['none', 'Sin animación']]} /></div></div>
           <p className="hint">La posición vale para el overlay de alertas; si en Meld usas <code>/overlay?pos=top</code>, manda la URL.</p>
-        </Sec>
+        </>)}
 
-        <Sec title="Sonido" id="ap-sound">
+        {pane('sound', <>
           <div className="row2">
             <label>Sonido de serie de las alertas
               <select value={t.sound} onChange={e => set({ sound: e.target.value })}>
@@ -169,7 +178,7 @@ export function Apariencia() {
             {range('soundVolume', 'Volumen de las alertas', 0, 200, 5, '%')}
           </div>
           <p className="hint">Lo usan las alertas que tienen «Sonido de serie»; las que tienen su propio sonido lo conservan.</p>
-        </Sec>
+        </>)}
       </div>
 
       <div className="stack ap-preview">

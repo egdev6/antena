@@ -282,3 +282,31 @@ test('pestañas y selectores usan el estilo subrayado del editor, nunca el segme
     eq(await dom(chrome, `[...document.querySelector('.send-to').classList].filter(c => c.startsWith('eg-tabs')).join(' ')`), 'eg-tabs');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
+
+// Apariencia se divide en pestañas como el editor de alertas: una por sección, un solo panel
+// visible a la vez y la vista previa siempre a la vista.
+test('Apariencia: secciones en pestañas con el estilo del editor y la vista previa fija', { timeout: 90000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, close } = ctx;
+  const { base } = ctx;
+  let chrome;
+  try {
+    chrome = await openChromePage(bin, `${base}/#/apariencia`);
+    const L = 'Secciones de la apariencia';
+    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 6`, { timeoutMs: 15000 });
+    eq(await dom(chrome, tabTexts(L)), 'Color|Tipografía|Iconos|Forma y efectos|Posición y movimiento|Sonido');
+    eq(await dom(chrome, `document.querySelector('[role=tablist][aria-label=${JSON.stringify(L)}]').className`), 'eg-tabs editor-tabs');
+    eq(await dom(chrome, selectedTab(L)), 'Color');
+    const visible = `[...document.querySelectorAll('[role=tabpanel][id^=ap-tp-]')].filter(p => !p.hidden).map(p => p.id).join(',')`;
+    eq(await dom(chrome, visible), 'ap-tp-color');
+    eq(await dom(chrome, `!!document.querySelector('#ap-tp-color .ap-color input.mono')`), true);
+
+    await dom(chrome, `${tabsOf(L)}.find(x => x.textContent.trim() === 'Sonido').click()`);
+    await waitDom(chrome.cdp, `${selectedTab(L)} === 'Sonido'`, { timeoutMs: 9000 });
+    eq(await dom(chrome, visible), 'ap-tp-sound');
+    eq(await dom(chrome, `document.querySelector('#ap-tp-sound select')?.closest('label')?.textContent.includes('Sonido de serie')`), true);
+    // la vista previa no depende de la pestaña
+    eq(await dom(chrome, `!!document.querySelector('.ap-preview .eg-stage iframe') && document.querySelector('.ap-preview').getBoundingClientRect().width > 0`), true);
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
