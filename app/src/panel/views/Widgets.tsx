@@ -101,13 +101,23 @@ function Goals() {
   const [sel, setSel] = useState<string | null>(null);
   const g = goals.find(x => x.id === sel) || goals[0];
   const reloadGoals = (list: GoalConfig[]) => live.update(s => ({ config: { ...s.config, widgets: { ...s.config.widgets, goals: list } } }));
-  const saveGoal = (id: string, patch: Partial<GoalConfig>) => {
-    reloadGoals(goals.map(g => (g.id === id ? { ...g, ...patch } : g)));
-    return put('/api/goals/' + enc(id), patch);
+  // Optimistic save: if the server rejects the change, the panel goes back to the saved list
+  // instead of showing a value that does not exist (the error still reaches guard's toast).
+  const saveOptimistic = async (next: GoalConfig[], request: () => Promise<unknown>) => {
+    const saved = goals;
+    reloadGoals(next);
+    try { return await request(); } catch (e) { reloadGoals(saved); throw e; }
   };
-  const saveBar = (boxId: string, barId: string, patch: Partial<GoalBar>) => {
-    reloadGoals(goals.map(g => (g.id === boxId ? { ...g, bars: g.bars.map(b => (b.id === barId ? { ...b, ...patch } : b)) } : g)));
-    return put(`/api/goals/${enc(boxId)}/bars/${enc(barId)}`, patch);
+  const saveGoal = (id: string, patch: Partial<GoalConfig>) =>
+    saveOptimistic(goals.map(g => (g.id === id ? { ...g, ...patch } : g)), () => put('/api/goals/' + enc(id), patch));
+  const saveBar = (boxId: string, barId: string, patch: Partial<GoalBar>) =>
+    saveOptimistic(goals.map(g => (g.id === boxId ? { ...g, bars: g.bars.map(b => (b.id === barId ? { ...b, ...patch } : b)) } : g)),
+      () => put(`/api/goals/${enc(boxId)}/bars/${enc(barId)}`, patch));
+  // A metric only counts on some platforms: switching platform keeps the metric when it is valid
+  // there and otherwise takes the first valid one, in the same request (the server checks the pair).
+  const savePlatform = (boxId: string, b: GoalBar, platform: GoalBar['platform']) => {
+    const valid = GOAL_METRICS[platform] || GOAL_METRICS.twitch;
+    return saveBar(boxId, b.id, { platform, metric: valid.includes(b.metric) ? b.metric : valid[0] });
   };
   const setValue = (boxId: string, barId: string, value: number) => live.update(s => ({
     widgets: { ...s.widgets, goals: (s.widgets?.goals || []).map(g => (g.id === boxId ? { ...g, bars: g.bars.map(b => (b.id === barId ? { ...b, value } : b)) } : g)) },
@@ -128,10 +138,10 @@ function Goals() {
           preview={<Stage key={JSON.stringify(g)} eyebrow="Vista previa" aside={<span>{visibleBars ? 'Con los datos reales del directo' : 'Sin barras visibles en el overlay'}</span>} src={`/widget/goal?id=${enc(g.id)}&debug`} w={1000} h={previewHeight} />}>
         <Panel>
           <div className="row2">
-            <label>Título <LazyInput value={g.title} onCommit={x => saveGoal(g.id, { title: x })} /></label>
+            <label>Título <LazyInput value={g.title} onCommit={guard((x: string) => saveGoal(g.id, { title: x }))} /></label>
             <Switch checked={g.visible !== false} onChange={guard((x: boolean) => saveGoal(g.id, { visible: x }))}>Visible</Switch>
             <Switch checked={g.showMetric !== false} onChange={guard((x: boolean) => saveGoal(g.id, { showMetric: x }))}>Mostrar qué cuenta</Switch>
-            <label>Etiqueta <LazyInput aria-label="Etiqueta" placeholder="Objetivo" value={g.label || ''} onCommit={x => saveGoal(g.id, { label: x })} /></label>
+            <label>Etiqueta <LazyInput aria-label="Etiqueta" placeholder="Objetivo" value={g.label || ''} onCommit={guard((x: string) => saveGoal(g.id, { label: x }))} /></label>
             <Switch checked={g.showLabel !== false} onChange={guard((x: boolean) => saveGoal(g.id, { showLabel: x }))}>Mostrar etiqueta</Switch>
             <Switch checked={g.showTitle !== false} onChange={guard((x: boolean) => saveGoal(g.id, { showTitle: x }))}>Mostrar título</Switch>
           </div>
@@ -141,9 +151,9 @@ function Goals() {
             return <fieldset key={b.id} className="goal-bar-editor">
               <legend><PfIcon platform={b.platform === 'youtube' ? 'youtube' : 'twitch'} /> Barra · {b.platform === 'youtube' ? 'YouTube' : 'Twitch'}</legend>
               <div className="goal-fields">
-                <label>Plataforma <select value={b.platform} onChange={guard(e => saveBar(g.id, b.id, { platform: e.target.value as GoalBar['platform'] }))}>{GOAL_PLATFORMS.map(p => <option key={p} value={p}>{p === 'youtube' ? 'YouTube' : 'Twitch'}</option>)}</select></label>
+                <label>Plataforma <select value={b.platform} onChange={guard(e => savePlatform(g.id, b, e.target.value as GoalBar['platform']))}>{GOAL_PLATFORMS.map(p => <option key={p} value={p}>{p === 'youtube' ? 'YouTube' : 'Twitch'}</option>)}</select></label>
                 <label>Qué cuenta <select value={b.metric} onChange={guard(e => saveBar(g.id, b.id, { metric: e.target.value }))}>{validas.map(k => <option key={k} value={k}>{(metrics[k] as { label?: string } | undefined)?.label || k}</option>)}</select></label>
-                <label>Meta <LazyInput type="number" min={1} value={b.target} onCommit={x => saveBar(g.id, b.id, { target: Number(x) })} /></label>
+                <label>Meta <LazyInput type="number" min={1} value={b.target} onCommit={guard((x: string) => saveBar(g.id, b.id, { target: Number(x) }))} /></label>
                 <Switch checked={b.visible !== false} onChange={guard((x: boolean) => saveBar(g.id, b.id, { visible: x }))}>Visible</Switch>
               </div>
                 <div className="goal-adjust"><span>Ahora: <b className="gval">{v}</b> / {b.target}</span>

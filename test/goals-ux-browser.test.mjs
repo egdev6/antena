@@ -149,3 +149,52 @@ async function eventually(read, expected, timeoutMs = 5000) {
   eq(actual, expected);
 }
 function eq(actual, expected) { if (actual !== expected) throw new Error(`esperaba ${JSON.stringify(expected)}, hubo ${JSON.stringify(actual)}`); }
+
+// Cambiar la plataforma de una barra (p. ej. una recién añadida, Twitch · Seguidores) a YouTube
+// tiene que guardarse con una métrica válida allí: si no, el servidor lo rechaza, la barra sigue
+// siendo Twitch · Seguidores y «Fijar» en otra barra de Twitch parece cambiarlas todas. Y si el
+// servidor rechaza un cambio, el panel vuelve al valor guardado en vez de mostrar uno que no existe.
+test('O1 panel: cambiar la plataforma de una barra se guarda con una métrica válida y Fijar solo toca su barra', { timeout: 120000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    await putBox(app, { id: 'mixta', title: 'Mixta', bars: [
+      { id: 'b1', platform: 'twitch', metric: 'follows', target: 200, visible: true },
+      { id: 'b2', platform: 'twitch', metric: 'follows', target: 1000, visible: true },
+    ] });
+    app.store.config.panel = { onboardingDone: true };
+    chrome = await openChromePage(bin, `${base}/#/widget/goals`);
+    const fs = i => `document.querySelectorAll('.goal-card fieldset')[${i}]`;
+    await waitDom(chrome.cdp, `document.querySelectorAll('.goal-card fieldset').length === 2`, { timeoutMs: 15000 });
+    const pick = (i, value) => `(() => { const s = ${fs(i)}.querySelector('select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', { bubbles: true })); return 'ok'; })()`;
+    const bar = id => app.store.config.widgets.goals[0].bars.find(b => b.id === id);
+
+    // la segunda barra pasa a YouTube: el servidor la guarda con una métrica de YouTube
+    await dom(chrome, pick(1, 'youtube'));
+    for (let i = 0; i < 50 && bar('b2').platform !== 'youtube'; i++) await sleep(100);
+    eq(bar('b2').platform, 'youtube');
+    eq(['superchats', 'members', 'events'].includes(bar('b2').metric), true);
+    await waitDom(chrome.cdp, `${fs(1)}.querySelector('legend').textContent.includes('YouTube')`, { timeoutMs: 9000 });
+    // and the overlay in the preview draws that bar with the YouTube logo and colour
+    const rows = `document.querySelector('.goal-card iframe')?.contentDocument?.querySelectorAll('#bars .bar')`;
+    await waitDom(chrome.cdp, `${rows}?.length === 2 && ${rows}[0].classList.contains('pf-twitch') && ${rows}[1].classList.contains('pf-youtube') && ${rows}[1].querySelector('svg')?.getAttribute('aria-label') === 'YouTube'`, { timeoutMs: 12000 });
+
+    // «Fijar 106» en la barra de Twitch solo cambia esa barra
+    await dom(chrome, `(() => { const i = ${fs(0)}.querySelector('.goal-set-value'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '106'); i.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()`);
+    await dom(chrome, `[...${fs(0)}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Fijar').click()`);
+    for (let i = 0; i < 50 && app.session.goalValue('follows', 'twitch') !== 106; i++) await sleep(100);
+    eq(app.session.goalValue('follows', 'twitch'), 106);
+    const values = app.engine.widgetState().goals[0].bars;
+    eq(values.find(b => b.id === 'b1').value, 106);
+    eq(values.find(b => b.id === 'b2').value, 0);
+
+    // un cambio rechazado (meta 0) vuelve al valor guardado y se avisa
+    const meta = `${fs(0)}.querySelector('input[type=number]')`;
+    await dom(chrome, `(() => { const i = ${meta}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '0'); i.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()`);
+    await waitDom(chrome.cdp, `!!document.querySelector('.toast.on.err')`, { timeoutMs: 9000 });
+    await waitDom(chrome.cdp, `${meta}.value === '200'`, { timeoutMs: 9000 });
+    eq(bar('b1').target, 200);
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
