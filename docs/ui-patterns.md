@@ -16,7 +16,48 @@ Every view starts with `ViewHead`, so all headers share the same order:
 4. `actions` (optional), on the right: status and switches that turn the whole view on/off first, then
    secondary buttons, and the primary button (if any) last.
 
-The live dashboard (`Directo`) is the one exception: its crumb shows the stream state and clock.
+Header exceptions are listed in the view grammar below (Headers).
+
+## View grammar
+
+The sections below say how each piece looks; this table says when to use each one. Pick by the rule, not
+by what the neighbouring view did: the same data gets the same control in every view.
+
+### Controls
+
+| The value is… | Use |
+| --- | --- |
+| One of 2-4 fixed options (Degradado/Sólido/Cristal) | `Seg` |
+| One of a dynamic or long list (voices, tracks, commands, monitors) | `select` |
+| On/off | `Switch` |
+| A numeric magnitude | `Range` |
+| Several from a set | `Check` (only for multi-selection or a form sent with a button) |
+
+### Cards and rows
+
+| The object is… | Use |
+| --- | --- |
+| An item of a list, with its actions | `eg-post--row` |
+| A dashboard module or a platform | `eg-module-card` |
+| A pickable option with a preview | `eg-tile` |
+
+### Structure
+
+- Small configuration (two groups or fewer): stacked sections (`Sec`). Three or more groups that are each
+  worth a stop of their own: `editor-tabs`.
+- `Panel` is retired: migrate the remaining uses to `Sec`.
+- Layout: `row2`/`row3` inside a section; `grid2` for two panels of equal weight. One layout system per
+  view.
+- The preview always goes in the right column (`WidgetLayout`).
+
+### Headers
+
+`ViewHead` in every view. Documented exceptions:
+
+- `Directo`: its crumb shows the stream state and clock.
+- Espectadores: the «Récord» pane of the viewers alerts is a pane of the alert editor, not a view; its
+  `eg-module-card` acts as its header.
+- `AcercaDe`: writes the `view-head` markup by hand; migrate it to `ViewHead` (or document why not).
 
 ## Widget pages
 
@@ -40,8 +81,8 @@ Objetivos, Últimos y ticker, Créditos) uses one layout, `WidgetLayout`, below 
 
 ## Sections and hints
 
-- A view is made of sections: `Sec` for new code; `Panel` is the legacy wrapper and is styled the same
-  (same surface, title in display caps, hairline under the header).
+- A view is made of sections (`Sec`). `Panel` is retired (see the view grammar): it is styled the same
+  (same surface, title in display caps, hairline under the header) until its remaining uses move to `Sec`.
 - The section title is the `title` prop; counts or status go in `aside` as `span.hint`; an on/off switch
   for the whole section also goes in `aside`.
 - A section's introduction is the first child: `p.hint.lead`. Hints about a single field go right after
@@ -141,6 +182,10 @@ views.
 Use `EmptyState` for an empty list or section: it renders `eg-post eg-post--empty empty-state` (dashed box,
 muted text, no pointer cursor). Do not use `li.empty`, `li.hint` or a loose `p.hint` for «nothing here yet».
 Render the list element only when it has items, so the empty state is never inside a `ul`/`ol`.
+
+One approved exception (#4): in the Chat view the empty state lives **inside** `ol.chatlog`. The list is a
+guided tour anchor (`data-tour="chat-log"`) and must always exist, and a child inside it stops the `:empty`
+pseudo-element of `panel.css` from showing. Everywhere else the rule above holds.
 
 ## Delete confirmation
 
