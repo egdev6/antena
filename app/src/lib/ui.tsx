@@ -151,6 +151,29 @@ export type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'info';
 export function Status({ tone = 'neutral', icon, children, title }: { tone?: Tone; icon?: string | ReactNode; children: ReactNode; title?: string }) {
   return <span className={`eg-status eg-status--${tone}`} title={title}>{typeof icon === 'string' ? <Icon d={icon} /> : icon}{children}</span>;
 }
+/** Estados de conexión de la píldora: las tres superficies (panel, dock y prompter) muestran
+ *  el mismo texto para el mismo hecho (#3): «Twitch · desconectado», «YouTube · desconectado»,
+ *  «Meld · desconectado». YouTube descansa en 'parado' (src/youtube.mjs nunca usa
+ *  'desconectado'): es el mismo hecho —no está leyendo el chat—, así que se muestra en la
+ *  misma familia y solo cambia el matiz activo («leyendo el chat» cuando 'escuchando'). */
+export type ConnPlatform = 'twitch' | 'youtube' | 'meld';
+const CONN_PLATFORM_NAMES: Record<ConnPlatform, string> = { twitch: 'Twitch', youtube: 'YouTube', meld: 'Meld' };
+/** Texto visible de un estado de conexión, en la misma familia en las tres superficies. */
+export const connStateText = (state?: string) => !state ? 'sin conectar' : state === 'parado' ? 'desconectado' : state;
+/** Tono por defecto de un estado de conexión. */
+export const connStateTone = (state?: string): Tone =>
+  state === 'conectado' || state === 'escuchando' ? 'success'
+    : state === 'error' ? 'danger'
+    : !state || state === 'desconectado' || state === 'parado' ? 'neutral'
+    : 'warning'; // estados intermedios: conectando, reconectando, buscando directo, en espera…
+/** Píldora de conexión: «<Plataforma> · <estado>». `label` sustituye al texto del estado
+ *  (p. ej. «leyendo el chat») y `detail` añade un matiz al final (« · chat conectado»). */
+export function ConnPill({ platform, state, label, tone, detail, title }: { platform: ConnPlatform; state?: string; label?: ReactNode; tone?: Tone; detail?: ReactNode; title?: string }) {
+  const on = state === 'conectado' || state === 'escuchando';
+  return <Status tone={tone ?? connStateTone(state)} icon={platform === 'meld' ? (on ? IC.check : IC.plug) : <PfIcon platform={platform} />} title={title}>
+    {CONN_PLATFORM_NAMES[platform]} · {label ?? connStateText(state)}{detail ? <> · {detail}</> : null}
+  </Status>;
+}
 /** ProgressBar (p entre 0 y 1). */
 export function Progress({ p, lg, label, style }: { p: number; lg?: boolean; label: string; style?: React.CSSProperties }) {
   const v = Math.max(0, Math.min(1, Number.isFinite(p) ? p : 0));

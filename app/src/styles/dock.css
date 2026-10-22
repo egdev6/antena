@@ -23,6 +23,9 @@ button:focus-visible,input:focus-visible{outline:none;box-shadow:var(--shadow-fo
 .d-live b{margin-left:auto;font:600 13px/1 var(--font-mono);letter-spacing:0;color:var(--text);font-variant-numeric:tabular-nums}
 .d-warns{display:flex;flex-wrap:wrap;gap:4px}
 .d-warns:not(:empty){margin-top:6px}
+/* La píldora de conexión (ConnPill, eg-status) comparte fila con los d-warn: misma métrica que .d-warn; los colores son los tokens eg-status de ds/bundle.css. */
+.d-warns .eg-status{padding:3px 8px;font-size:11px;gap:4px}
+.d-warns .eg-status .pf-ico{width:12px;height:12px}
 .d-warn{--st:var(--color-status-danger);padding:3px 8px;border-radius:999px;font:600 11px/1.2 var(--font-sans);border:1px solid color-mix(in srgb,var(--st) 40%,transparent);background:color-mix(in srgb,var(--st) 14%,transparent);color:var(--st)}
 .d-warn.soft{--st:var(--warn)}
 .d-warn.big{font:800 13px/1 var(--font-display);text-transform:uppercase;padding:6px 10px;border-radius:var(--radius-md);background:var(--gradient-btn-primary);color:var(--color-action-primary-solid-fg);border-color:transparent;animation:blink 1.2s infinite}
