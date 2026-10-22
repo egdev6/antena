@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { useLive } from '../../lib/live';
 import { patchIx } from '../../lib/patch';
-import { codeTab, cx, fmtDate, fmtTime, guard, Icon, IconBtn, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec } from '../../lib/ui';
+import { codeTab, cx, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { PERMS } from './Editor';
 import type { Question, TierListItem, TierListTier } from '../../lib/types';
@@ -134,10 +134,7 @@ export function TierList() {
     <Head title="Tier list" desc="Clasifica lo que quieras y deja que el chat vote cada elemento escribiendo la letra del tier.">
       {v ? <Status tone="warning" icon={IC.play}>Votando</Status> : null}
     </Head>
-    <div className="eg-tabs eg-tabs--segmented eg-tabs--sm list-tabs" role="tablist" aria-label="Tier lists">
-      {lists.map(x => <button key={x.id} type="button" role="tab" className="eg-tabs__item" aria-selected={x.id === sel} onClick={() => setSel(x.id)}>{x.title}{I.shownTierlist === x.id ? <span className="eg-tabs__count">en pantalla</span> : null}</button>)}
-      <button type="button" role="tab" className="eg-tabs__item" aria-selected={!l} onClick={() => setSel(null)}>+ Nueva</button>
-    </div>
+    <ItemTabs label="Tier lists" items={lists.map(x => ({ id: x.id, label: x.title, badge: I.shownTierlist === x.id ? 'en pantalla' : undefined }))} selected={l?.id ?? null} onSelect={setSel} onNew={() => setSel(null)} newLabel="+ Nueva" />
     <div className="cols cols--q">
       <div className="stack">{main}</div>
       <div className="stack">
