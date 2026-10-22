@@ -50,7 +50,7 @@ function Connections() {
   const twTone: Tone = tw === 'conectado' ? 'success' : tw === 'desconectado' ? 'neutral' : st.twitch?.errors?.length ? 'danger' : 'warning';
   const ytOn = yt === 'escuchando' || yt === 'conectado' || !!st.youtube?.liveChatId;
   const ytTone: Tone = yt === 'error' ? 'danger' : ytOn ? 'success' : 'neutral';
-  return <div role="group" aria-label="Conexiones" className="row tight">
+  return <div role="group" aria-label="Conexiones" className="row tight" data-tour="directo-status">
     <Status tone={twTone} icon={<PfIcon platform="twitch" />}>Twitch · {tw || 'sin conectar'}{ch && ch !== 'parado' ? ` · chat ${ch}` : ''}</Status>
     <Status tone={ytTone} icon={<PfIcon platform="youtube" />}>YouTube · {ytOn ? 'leyendo el chat' : yt || 'parado'}</Status>
     <Status tone={md === 'conectado' ? 'success' : md === 'error' ? 'danger' : 'neutral'} icon={md === 'conectado' ? IC.check : IC.plug}>Meld · {md === 'conectado' ? (scene ? `escena «${scene}»` : 'conectado') : md || 'sin conectar'}</Status>
@@ -66,7 +66,7 @@ function AlertsCard() {
   const pause = useLive(s => s.status?.pause || { paused: false, held: 0 });
   const last = history[0];
   const t = last ? types[last.type] : undefined;
-  return <article className="eg-module-card eg-module-card--wide">
+  return <article className="eg-module-card eg-module-card--wide" data-tour="directo-alerts">
     <div className="eg-module-card__head"><Icon d={IC.bell} className="eg-module-card__icon" /><h2 className="eg-module-card__name">Alertas</h2>
       {pause.paused ? <Status tone="warning" icon={IC.pause}>En pausa{pause.held ? ` · ${pause.held} en cola` : ''}</Status> : <Status tone="success" icon={IC.play}>Activas</Status>}</div>
     <div className="eg-module-card__body">
@@ -137,7 +137,7 @@ export function Directo() {
     return pf.size === 1 ? (pf.has('youtube') ? 'YouTube' : 'Twitch') : 'Twitch y YouTube';
   };
   return <>
-    <header className="view-head"><div>
+    <header className="view-head" data-tour="directo-head"><div>
       <span className={cx('crumb', streaming && 'onair')}>{streaming ? <span className="eg-live-dot is-active" aria-hidden="true" /> : null}{streaming ? 'En directo' : 'Sesión'} · desde las {fmtTime(started)}{started ? ` · ${mmss((now - started) / 1000)}` : ''}</span>
       <LazyInput className="title-input" value={ses.title ?? ''} placeholder="Título del directo" aria-label="Título del directo" onCommit={guard((v: string) => put('/api/session', { title: v }))} /></div>
       <div className="actions">
@@ -147,12 +147,12 @@ export function Directo() {
         <button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(async () => { if (!confirm('Se archiva el directo actual y todo vuelve a cero (objetivos, créditos, últimos). ¿Seguir?')) return; await post('/api/session/new', { title: '' }); await load(); })}>Nuevo directo</button>
       </div></header>
     <Connections />
-    <div className="stats">{Object.entries(s.metrics || {}).filter(([k]) => k !== 'events').map(([k, m]) => <div className="eg-stat" key={k}>
+    <div className="stats" data-tour="directo-stats">{Object.entries(s.metrics || {}).filter(([k]) => k !== 'events').map(([k, m]) => <div className="eg-stat" key={k}>
       <span className="eg-stat__label">{m.label}</span><span className="eg-stat__value">{(t[k] ?? 0).toLocaleString('es-ES')}</span><span className="eg-stat__delta">{source(m.types as string[])}</span></div>)}</div>
     <div className="cols">
       <div className="stack">
         <AlertsCard />
-        <Sec title="Cronología" id="h-crono" aside={<>
+        <Sec title="Cronología" id="h-crono" tour="directo-timeline" aside={<>
           <span className="hint">{ses.eventCount} eventos{tl.pending ? ` · ${tl.pending} por agradecer` : ''}</span>
           <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const { marker } = await post<{ marker: { twitchError?: string } }>('/api/markers', {}); toast(marker?.twitchError ? `Marca guardada (Twitch: ${marker.twitchError})` : 'Momento marcado'); })}><Icon d={IC.bookmark} className="eg-btn__icon" />Marcar momento</button></>}>
           <Timeline items={tl.items} types={s.types} />

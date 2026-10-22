@@ -84,10 +84,10 @@ export function Sidebar({ current }: { current: string }) {
       <img className="brand-mark" src="/brand/logo.png" alt="" aria-hidden="true" />
       <span className="brand-name"><b>antena</b><small>Alertas y control de Meld</small></span>
     </a>
-    <nav id="nav" aria-label="Secciones">
+    <nav id="nav" aria-label="Secciones" data-tour="nav">
       {groups.map(([id, label, items, live]) => {
         const isClosed = closed.has(id);
-        return <div key={id} className={cx('nav-grp', isClosed && 'closed')} data-grp={id}>
+        return <div key={id} className={cx('nav-grp', isClosed && 'closed')} data-grp={id} data-tour={`nav-${id}`}>
           <button type="button" className="grp eg-menu__group eg-menu__group--toggle" aria-expanded={!isClosed} onClick={e => toggle(id, e.altKey)}>
             <Icon d={ICONS.chev} className="eg-menu__chev" /><span className="grp-l">{label}</span>
             {live ? <span className="eg-live-dot is-active" aria-label="Algo en marcha" /> : null}

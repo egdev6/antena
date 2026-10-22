@@ -125,3 +125,18 @@ classes the user can target. Derive them from the real widget markup (`public/wi
 - A preview whose widget only reads its config when it loads must remount when the config changes: key the
   `ScaledFrame` by the config (`key={JSON.stringify(config)}`, see Goals). Do not remount on live values
   (counters), only on configuration.
+
+## Guided tour anchors
+
+The first-run greeting and the guided tour (`app/src/panel/tour/`, driver.js) point at elements marked with
+`data-tour="<id>"`. To add a step:
+
+1. Mark the element: pass `tour="<id>"` to `ViewHead`, `Sec`, `Panel` or `ItemTabs`, or add
+   `data-tour="<id>"` to any other element. Ids are `<view>-<zone>` (`chat-log`, `meld-connection`); sidebar
+   groups are `nav-<group>`. An anchor only adds the attribute: never change layout or behaviour for the tour.
+2. Add an entry to `TOUR_STEPS` (`app/src/panel/tour/steps.ts`): `route` (the hash to open), `anchor`, and the
+   `title` and `text` in Spanish (one or two short sentences). `side` places the popover.
+3. Anchor a box that is always rendered in that view. If the anchor does not appear within 2 s (a section that
+   only exists when Meld is connected, a sidebar group in the narrow layout), the tour skips the step, so a
+   step that is often missing is a step to rethink.
+4. Update `test/onboarding-browser.test.mjs` if the step changes the route order it checks.

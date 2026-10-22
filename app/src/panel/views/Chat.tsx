@@ -32,14 +32,14 @@ export function Chat() {
     setText(''); toast(sendResultText(r), !!Object.keys(r.errors || {}).length);
   });
   return <>
-    <ViewHead crumb="En directo › Chat" title="Chat" hint="Twitch y YouTube juntos, ya filtrados. Los mensajes con comando salen marcados. Últimos 200." actions={<><input value={channel} onChange={e => setChannel(e.target.value)} placeholder="canal de Twitch (vacío = el tuyo)" />
+    <ViewHead tour="chat-head" crumb="En directo › Chat" title="Chat" hint="Twitch y YouTube juntos, ya filtrados. Los mensajes con comando salen marcados. Últimos 200." actions={<><input value={channel} onChange={e => setChannel(e.target.value)} placeholder="canal de Twitch (vacío = el tuyo)" />
         <button className="eg-btn eg-btn--ghost" onClick={guard(() => post('/api/chat/join', { channel: channel.trim() }), 'Leyendo el chat')}>Leer este canal</button></>} />
     <article className="panel chatpanel">
-      <ol className="chatlog" ref={log} onScroll={e => { const el = e.currentTarget; stick.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 30; }}>
+      <ol className="chatlog" data-tour="chat-log" ref={log} onScroll={e => { const el = e.currentTarget; stick.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 30; }}>
         {chat.map(m => <li key={m.id} className={cx(m.command && 'cmd', m.owner && 'own')}><time>{fmtTime(m.at)}</time><span className="pf">{m.platform === 'twitch' || m.platform === 'youtube' ? <PfIcon platform={m.platform} /> : '··'}</span>
           <b>{m.user}{m.owner ? <> <span className="tagm you">Tú</span></> : m.mod ? ' ◆' : ''}</b><span>{m.text}</span></li>)}
       </ol>
-      <div className="row chat-send">
+      <div className="row chat-send" data-tour="chat-send">
         <SendTo value={cfg.sendTo || 'twitch'} onChange={v => live.patchConfig({ chat: { sendTo: v } })} />
         <input className="grow" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} placeholder="Escribe en tu chat… (tus mensajes no salen en el chat en pantalla)" style={{ minWidth: 200 }} />
         <button className="eg-btn eg-btn--primary" onClick={send}>Enviar</button>

@@ -15,9 +15,9 @@ export function Conexiones() {
   const tw = st.twitch || {}, yt = st.youtube || {};
   const yset = (k: string) => (v: string) => live.patchConfig({ youtube: { [k]: v.trim() } });
   return <>
-    <ViewHead crumb="Ajustes › Conexiones" title="Conexiones" hint="Conecta tus cuentas una vez; la sesión se guarda en tu PC." />
+    <ViewHead tour="conexiones-head" crumb="Ajustes › Conexiones" title="Conexiones" hint="Conecta tus cuentas una vez; la sesión se guarda en tu PC." />
     <div className="grid2">
-      <article className="panel" id="twitch">
+      <article className="panel" id="twitch" data-tour="conexiones-twitch">
         <header><h2>Twitch</h2><span className={cx('state', stateClass(tw.state))}>{tw.state}</span></header>
         <label>Client ID de tu app<LazyInput value={c.twitch.clientId} spellCheck={false} placeholder="p. ej. abc123…" onCommit={(v: string) => live.patchConfig({ twitch: { clientId: v.trim() } })} /></label>
         <details className="help"><summary>Cómo crear la app de Twitch (una vez)</summary><ol>
@@ -35,7 +35,7 @@ export function Conexiones() {
           <button className="eg-btn eg-btn--ghost danger" onClick={guard(() => post('/api/twitch/disconnect'))}>Cerrar sesión</button>
         </div>
       </article>
-      <article className="panel" id="youtube">
+      <article className="panel" id="youtube" data-tour="conexiones-youtube">
         <header><h2>YouTube</h2><span className={cx('state', stateClass(yt.state))}>{yt.state}</span></header>
         <label>API key (YouTube Data API v3)<LazyInput type="password" spellCheck={false} placeholder="AIza…" value={c.youtube.apiKey} onCommit={yset('apiKey')} /></label>
         <div className="row2">

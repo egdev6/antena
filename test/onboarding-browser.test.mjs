@@ -1,6 +1,7 @@
-// Onboarding del panel: el modal de bienvenida se muestra la primera vez, al cerrarlo se
-// marca en config (panel.onboardingDone) y no reaparece al recargar; el botón de
-// «General y archivos» lo relanza cuando quieras.
+// Onboarding del panel (O5): la primera vez sale un saludo («¿Te enseño cómo funciona?»);
+// «Ahora no» lo marca como visto (panel.onboardingDone) y «Empezar el tour» lanza un tour
+// guiado con driver.js que navega por las vistas señalando sus zonas ([data-tour]).
+// Terminar o cerrar el tour también lo marca; «General y archivos» lo relanza sin saludo.
 import { test } from 'node:test';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,50 +12,143 @@ import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function start(t) {
+async function start(t, { done = false } = {}) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-onb-'));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  app.store.config.panel.onboardingDone = done;
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
   return { bin, app, base, close: async () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); } };
 }
 
-const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 12000 });
+// Ventana de escritorio: por debajo de 860 px los grupos del menú no tienen caja propia
+// (display: contents) y el tour se salta sus pasos.
+async function openDesktop(bin, url) {
+  const chrome = await openChromePage(bin, url);
+  await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  return chrome;
+}
 
-test('onboarding: primera vez, cierre persistente y relanzamiento desde General', { timeout: 120000 }, async t => {
+const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 12000 });
+const GREET = `document.querySelector('.tour-greet')`;
+const POPOVER = `document.querySelector('.driver-popover')`;
+const ACTIVE = `document.querySelector('.driver-active-element')?.getAttribute('data-tour')`;
+const NEXT = `document.querySelector('.driver-popover-next-btn')`;
+
+async function waitDone(app) {
+  for (let i = 0; i < 50 && app.store.config.panel.onboardingDone !== true; i++) await sleep(100);
+  if (app.store.config.panel.onboardingDone !== true) throw new Error('no se guardó panel.onboardingDone');
+}
+
+// Anota cada ancla resaltada (en orden y sin repetir seguidas) en window.__tourSeen.
+const RECORD = `(() => { window.__tourSeen = [];
+  new MutationObserver(ms => { for (const m of ms) {
+    const a = m.target.classList?.contains('driver-active-element') && m.target.getAttribute('data-tour');
+    if (a && window.__tourSeen.at(-1) !== a) window.__tourSeen.push(a);
+  } }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  return 'ok'; })()`;
+
+test('onboarding: primera vez sale el saludo y «Ahora no» lo deja visto aunque recargues', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, app, base, close } = ctx;
   let chrome;
   try {
-    // Primera entrada: la bienvenida aparece (onboardingDone parte a false).
-    chrome = await openChromePage(bin, `${base}/#/directo`);
-    await waitDom(chrome.cdp, `!!document.querySelector('.onboarding')`, { timeoutMs: 15000 });
-    // Las nueve áreas están en las tarjetas.
-    const tarjetas = await dom(chrome, `document.querySelectorAll('.onboarding__card').length`);
-    if (tarjetas !== 9) throw new Error(`esperaba 9 tarjetas, hay ${tarjetas}`);
-    // Cerrar la marca como vista y la guarda en el servidor (patchConfig con PUT /api/config).
-    await dom(chrome, `${buttonByText('Empezar')}.click(); 'ok'`);
-    for (let i = 0; i < 50 && app.store.config.panel.onboardingDone !== true; i++) await sleep(100);
-    if (app.store.config.panel.onboardingDone !== true) throw new Error('el cierre no guardó panel.onboardingDone');
-    await waitDom(chrome.cdp, `!document.querySelector('.onboarding')`, { timeoutMs: 9000 });
+    chrome = await openDesktop(bin, `${base}/#/directo`);
+    await waitDom(chrome.cdp, `!!${GREET}`, { timeoutMs: 15000 });
+    const text = await dom(chrome, `${GREET}.textContent`);
+    if (!text.includes('¿Te enseño cómo funciona?')) throw new Error('el saludo no pregunta si enseñar el tour');
+    if (await dom(chrome, `!!${POPOVER}`)) throw new Error('el tour no debe empezar antes de pedirlo');
+    await dom(chrome, `${buttonByText('Ahora no')}.click(); 'ok'`);
+    await waitDone(app);
+    await waitDom(chrome.cdp, `!${GREET} && !${POPOVER}`, { timeoutMs: 9000 });
     await chrome.child.kill(); await chrome.cdp.close(); chrome = null;
 
-    // Recargar: no reaparece.
-    chrome = await openChromePage(bin, `${base}/#/directo`);
-    await waitDom(chrome.cdp, `document.querySelector('.view-head') && !document.querySelector('.onboarding')`, { timeoutMs: 15000 });
-    await chrome.child.kill(); await chrome.cdp.close(); chrome = null;
+    chrome = await openDesktop(bin, `${base}/#/directo`);
+    await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="directo-head"]')`, { timeoutMs: 15000 });
+    await sleep(500);
+    if (await dom(chrome, `!!${GREET} || !!${POPOVER}`)) throw new Error('el saludo o el tour reaparecen al recargar');
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
 
-    // Relanzar desde General y archivos.
-    chrome = await openChromePage(bin, `${base}/#/general`);
-    await waitDom(chrome.cdp, `!!${buttonByText('Ver la bienvenida de nuevo')}`, { timeoutMs: 15000 });
-    await dom(chrome, `${buttonByText('Ver la bienvenida de nuevo')}.click(); 'ok'`);
-    await waitDom(chrome.cdp, `!!document.querySelector('.onboarding')`, { timeoutMs: 12000 });
-    // Y al cerrarla de nuevo vuelve a guardarse como vista.
-    await dom(chrome, `${buttonByText('Empezar')}.click(); 'ok'`);
-    for (let i = 0; i < 50 && app.store.config.panel.onboardingDone !== true; i++) await sleep(100);
-    await waitDom(chrome.cdp, `!document.querySelector('.onboarding')`, { timeoutMs: 9000 });
+test('onboarding: el tour señala zonas, cambia de vista, salta anclas que faltan y al terminar queda visto', { timeout: 180000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    chrome = await openDesktop(bin, `${base}/#/directo`);
+    await waitDom(chrome.cdp, `!!${GREET}`, { timeoutMs: 15000 });
+    await dom(chrome, RECORD);
+    await dom(chrome, `${buttonByText('Empezar el tour')}.click(); 'ok'`);
+    // Primer paso: popover sobre el menú lateral, con el progreso «1 de N» y botones en español.
+    await waitDom(chrome.cdp, `!!${POPOVER} && ${ACTIVE} === 'nav'`, { timeoutMs: 9000 });
+    if (await dom(chrome, `!!${GREET}`)) throw new Error('el saludo sigue visible durante el tour');
+    const progress = await dom(chrome, `document.querySelector('.driver-popover-progress-text').textContent`);
+    if (!/^1 de \d+$/.test(progress)) throw new Error(`progreso inesperado: ${progress}`);
+    const next = await dom(chrome, `${NEXT}.textContent`);
+    if (next !== 'Siguiente') throw new Error(`botón siguiente: ${next}`);
+    if (app.store.config.panel.onboardingDone !== false) throw new Error('empezar el tour no debe marcarlo aún');
+
+    // Siguiente hasta cruzar a otra vista: aterriza en #/chat con su ancla resaltada.
+    for (let i = 0; i < 12 && await dom(chrome, `location.hash`) !== '#/chat'; i++) {
+      const before = await dom(chrome, ACTIVE);
+      await dom(chrome, `${NEXT}.click(); 'ok'`);
+      await waitDom(chrome.cdp, `${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
+    }
+    await waitDom(chrome.cdp, `location.hash === '#/chat' && ${ACTIVE} === 'chat-log' && !!document.querySelector('.chatlog[data-tour="chat-log"]')`, { timeoutMs: 9000 });
+    // Anterior vuelve a la vista de antes.
+    await dom(chrome, `document.querySelector('.driver-popover-prev-btn').click(); 'ok'`);
+    await waitDom(chrome.cdp, `location.hash === '#/directo' && ${ACTIVE} === 'directo-timeline'`, { timeoutMs: 9000 });
+
+    // Siguiente hasta el final: el último paso dice «Terminar» y al pulsarlo se cierra y queda visto.
+    for (let i = 0; i < 40 && await dom(chrome, `!!${POPOVER}`); i++) {
+      const label = await dom(chrome, `${NEXT}?.textContent`);
+      const before = await dom(chrome, ACTIVE);
+      await dom(chrome, `${NEXT}.click(); 'ok'`);
+      if (label === 'Terminar') break;
+      await waitDom(chrome.cdp, `${ACTIVE} !== ${JSON.stringify(before)} || !${POPOVER}`, { timeoutMs: 9000 });
+    }
+    await waitDom(chrome.cdp, `!${POPOVER} && !document.querySelector('.driver-active-element')`, { timeoutMs: 9000 });
+    await waitDone(app);
+    const seen = await dom(chrome, `window.__tourSeen`);
+    // Meld está sin conectar: sus escenas no existen y ese paso se salta sin romper el tour.
+    for (const a of ['directo-alerts', 'chat-send', 'goals-tabs', 'meld-head', 'meld-connection', 'atajos-tabs', 'conexiones-twitch', 'general-tour']) {
+      if (!seen.includes(a)) throw new Error(`el tour no pasó por ${a}: ${seen.join(', ')}`);
+    }
+    if (seen.includes('meld-scenes')) throw new Error('el paso sin ancla no se saltó');
+    if (seen.indexOf('meld-connection') !== seen.indexOf('meld-head') + 1) throw new Error(`orden inesperado: ${seen.join(', ')}`);
+    if (seen.at(-1) !== 'general-tour') throw new Error(`el tour no terminó en General: ${seen.join(', ')}`);
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
+test('onboarding: «General y archivos» relanza el tour sin saludo; Esc y las flechas funcionan', { timeout: 120000 }, async t => {
+  const ctx = await start(t, { done: true });
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    chrome = await openDesktop(bin, `${base}/#/general`);
+    await waitDom(chrome.cdp, `!!${buttonByText('Ver el tour de nuevo')}`, { timeoutMs: 15000 });
+    if (await dom(chrome, `!!${GREET}`)) throw new Error('con el onboarding visto no debe salir el saludo');
+    await dom(chrome, `${buttonByText('Ver el tour de nuevo')}.click(); 'ok'`);
+    await waitDom(chrome.cdp, `!!${POPOVER} && ${ACTIVE} === 'nav' && location.hash === '#/directo'`, { timeoutMs: 9000 });
+    if (await dom(chrome, `!!${GREET}`)) throw new Error('relanzar desde General no debe pasar por el saludo');
+    // Flecha derecha = siguiente; flecha izquierda = anterior (driver.js ignora las teclas
+    // mientras anima el resaltado, así que se deja asentar cada paso).
+    const key = async k => {
+      await sleep(700);
+      for (const type of ['keyDown', 'keyUp']) await chrome.cdp.send('Input.dispatchKeyEvent', { type, key: k, code: k, windowsVirtualKeyCode: { ArrowRight: 39, ArrowLeft: 37, Escape: 27 }[k] });
+    };
+    await key('ArrowRight');
+    await waitDom(chrome.cdp, `${ACTIVE} === 'nav-directo'`, { timeoutMs: 9000 });
+    await key('ArrowLeft');
+    await waitDom(chrome.cdp, `${ACTIVE} === 'nav'`, { timeoutMs: 9000 });
+    // Esc cierra el tour.
+    await key('Escape');
+    await waitDom(chrome.cdp, `!${POPOVER} && !document.querySelector('.driver-active-element')`, { timeoutMs: 9000 });
+    await waitDone(app);
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });

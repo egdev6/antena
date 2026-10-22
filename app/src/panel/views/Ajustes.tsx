@@ -23,7 +23,7 @@ export function Meld() {
   const evt = (event: string) => guard(() => post('/api/meld/event', { event }));
   const current = ses.scenes.find(x => x.current) || ses.scenes[0];
   const mic = ses.tracks.find(t => /mic/i.test(t.name));
-  const connection = <Sec title="Conexión" id="h-con">
+  const connection = <Sec title="Conexión" id="h-con" tour="meld-connection">
     <ol className="steps"><li>En Meld: <b>Ajustes › Avanzado › Allow remote connections</b>.</li><li>Pulsa <b>Conectar</b>. Se reconecta solo si cierras Meld.</li></ol>
     <div className="row2"><label>Dirección <input value={url} onChange={e => setUrl(e.target.value)} className="mono" /></label>
       <Switch checked={!!m.autoSession} onChange={x => live.patchConfig({ meld: { autoSession: x } })}>Empezar un directo nuevo en el panel al empezar a emitir</Switch></div>
@@ -31,7 +31,7 @@ export function Meld() {
     <div className="row tight"><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(() => post('/api/meld/connect', { url: url.trim() }), 'Conectando con Meld…')}>{on ? 'Reconectar' : 'Conectar'}</button><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/meld/disconnect'))}>Desconectar</button></div>
   </Sec>;
   return <>
-    <ViewHead crumb="Meld y Stream Deck › Meld Studio" title="Meld Studio" hint="Cambia de escena, muestra capas y lanza efectos desde las alertas, el panel, los atajos o el MCP." actions={<>
+    <ViewHead tour="meld-head" crumb="Meld y Stream Deck › Meld Studio" title="Meld Studio" hint="Cambia de escena, muestra capas y lanza efectos desde las alertas, el panel, los atajos o el MCP." actions={<>
         {on ? <Status tone="success" icon={IC.check}>Conectado · {m.url || 'ws://127.0.0.1:13376'}</Status> : <Status tone={st.state === 'error' ? 'danger' : 'neutral'} icon={IC.plug}>{st.state || 'Sin conectar'}</Status>}
         <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/meld/connect', { url: (url || m.url || '').trim() }), 'Conectando con Meld…')}>{on ? 'Reconectar' : 'Conectar'}</button>
       </>} />
@@ -46,7 +46,7 @@ export function Meld() {
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={cmd('meld.toggleRecordingAction')}><Icon d={IC.record} className="eg-btn__icon" />{ses.recording ? 'Parar grabación' : 'Grabar'}</button>
         <span className="hint push">{ses.streaming ? 'Emitiendo' : 'Sin emitir'}{ses.recording ? ' · grabando' : ''}</span>
       </section>
-      <Sec flat title="Escenas" id="h-esc" aside={<span className="hint">Pulsa una escena para ponerla en directo</span>}>
+      <Sec flat title="Escenas" id="h-esc" tour="meld-scenes" aside={<span className="hint">Pulsa una escena para ponerla en directo</span>}>
         <div className="scene-tiles">{ses.scenes.map(sc => <button key={sc.id} type="button" className={cx('eg-tile', sc.current && 'eg-tile--live')} aria-pressed={!!sc.current} onClick={guard(() => post('/api/meld/scene', { scene: sc.id }))}>
           <span className="eg-tile__thumb"><span className="tile-scene">{sc.name}</span>{sc.current && <span className="eg-tile__badge"><span className="eg-tag eg-tag--solid">En directo</span></span>}</span>
           <span className="eg-tile__name">{sc.name}</span><span className="eg-tile__meta">{sc.layers.length} {sc.layers.length === 1 ? 'capa' : 'capas'}{sc.layers.some(l => l.url?.includes('/overlay') || l.url?.includes('/widget/')) ? ' · egdev' : ''}</span>

@@ -114,14 +114,14 @@ function Goals() {
     widgets: { ...s.widgets, goals: (s.widgets?.goals || []).map(g => (g.id === boxId ? { ...g, bars: g.bars.map(b => (b.id === barId ? { ...b, value } : b)) } : g)) },
   }));
   return <>
-    <ViewHead crumb="Widgets › Objetivos" title="Objetivos" hint="Una caja, varias metas. Añade barras de Twitch y YouTube con su propio progreso. Cada caja es una fuente de navegador para Meld." />
-    <ItemTabs label="Objetivos" items={goals.map(x => ({ id: x.id, label: x.title, badge: x.visible === false ? 'oculto' : undefined }))} selected={g?.id} onSelect={setSel} newLabel="+ Nuevo objetivo"
+    <ViewHead tour="goals-head" crumb="Widgets › Objetivos" title="Objetivos" hint="Una caja, varias metas. Añade barras de Twitch y YouTube con su propio progreso. Cada caja es una fuente de navegador para Meld." />
+    <ItemTabs label="Objetivos" tour="goals-tabs" items={goals.map(x => ({ id: x.id, label: x.title, badge: x.visible === false ? 'oculto' : undefined }))} selected={g?.id} onSelect={setSel} newLabel="+ Nuevo objetivo"
       onNew={guard(async () => { const d = await post<{ goal: GoalConfig }>('/api/goals', { title: 'Nuevo objetivo', metric: 'follows', target: 10 }); reloadGoals([...goals, d.goal]); setSel(d.goal.id); })} />
     {g ? (() => {
       const vs = values.find(x => x.id === g.id);
       const visibleBars = g.visible === false ? 0 : g.bars.filter(b => b.visible !== false).length;
       const previewHeight = 210 + 60 * visibleBars;
-      return <article className="panel goal-card" key={g.id}>
+      return <article className="panel goal-card" key={g.id} data-tour="goals-editor">
         <header className="goal-card-head"><h2>{g.title}</h2><span className="hint">{visibleBars} barras visibles · {g.visible === false ? 'Caja oculta' : 'En pantalla'}</span></header>
         <div className="editor">
         <div className="form-col">

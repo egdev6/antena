@@ -108,9 +108,9 @@ export function Atajos() {
   // sin elegir aún (undefined), el primero; una selección que ya no existe también cae al primero
   const current = sel === null ? null : info.custom.find(x => x.id === sel)?.id ?? info.custom[0]?.id ?? null;
   return <>
-    <ViewHead crumb="Meld y Stream Deck › Atajos y Stream Deck" title="Atajos y Stream Deck" hint="Cada atajo es una dirección: un botón del Stream Deck la llama y se hacen sus pasos en orden. También salen como botones en el dock de Meld." />
+    <ViewHead tour="atajos-head" crumb="Meld y Stream Deck › Atajos y Stream Deck" title="Atajos y Stream Deck" hint="Cada atajo es una dirección: un botón del Stream Deck la llama y se hacen sus pasos en orden. También salen como botones en el dock de Meld." />
     <h2 className="sub-h">Mis atajos <span className="hint">{info.custom.length}</span></h2>
-    <ItemTabs label="Atajos" items={info.custom.map(x => ({ id: x.id, label: x.name, badge: unsaved[x.id] ? 'sin guardar' : undefined }))} selected={current} onSelect={setSel} onNew={() => setSel(null)} newLabel="+ Nuevo atajo" />
+    <ItemTabs label="Atajos" tour="atajos-tabs" items={info.custom.map(x => ({ id: x.id, label: x.name, badge: unsaved[x.id] ? 'sin guardar' : undefined }))} selected={current} onSelect={setSel} onNew={() => setSel(null)} newLabel="+ Nuevo atajo" />
     {info.custom.map(sc => <ShortcutCard key={sc.id} sc={sc} info={info} base={base} hidden={sc.id !== current}
       onSaved={n => sync(info.custom.map(x => (x.id === n.id ? n : x)))}
       onDeleted={() => { setUnsaved(u => ({ ...u, [sc.id]: false })); setSel(undefined); sync(info.custom.filter(x => x.id !== sc.id)); }}
@@ -120,7 +120,7 @@ export function Atajos() {
       <div className="row tight"><input className="grow" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="Empezar el directo" aria-label="Nombre del atajo nuevo" /><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}>Crear atajo</button></div>
     </Panel>}
     <div className="grid2 mt">
-      <Panel title="Cómo ponerlo en el Stream Deck">
+      <Panel title="Cómo ponerlo en el Stream Deck" tour="atajos-streamdeck">
         <ol className="steps">
           <li>Instala un plugin de peticiones web (por ejemplo «API Ninja» o «Web Requests»).</li>
           <li>Arrastra su acción a un botón y pega la dirección del atajo. Vale GET o POST, sin cuerpo.</li>
