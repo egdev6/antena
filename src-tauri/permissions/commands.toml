@@ -26,3 +26,13 @@ commands.allow = ["open_dock"]
 identifier = "allow-desktop-info"
 description = "Permite a la interfaz leer el puerto, la carpeta de datos y la versión de la app."
 commands.allow = ["desktop_info"]
+
+[[permission]]
+identifier = "allow-update-check"
+description = "Permite a Ajustes › Acerca de buscar una actualización firmada en GitHub Releases."
+commands.allow = ["update_check"]
+
+[[permission]]
+identifier = "allow-update-install"
+description = "Permite a Ajustes › Acerca de instalar la actualización ofrecida: apaga el servidor y reinicia la app."
+commands.allow = ["update_install"]

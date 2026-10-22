@@ -1,10 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "updater",
-  "description": "Solo la ventana principal (panel servido por el servidor local, http://127.0.0.1) busca, descarga e instala actualizaciones firmadas y reinicia la app (Ajustes › Acerca de).",
+  "description": "Solo la ventana principal (panel servido por el servidor local, http://127.0.0.1) busca e instala actualizaciones firmadas (Ajustes › Acerca de). Lo hacen los comandos de la app, que apagan el servidor antes de que corra el instalador: los comandos JS del plugin updater no se conceden.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*"]
   },
-  "permissions": ["updater:default", "process:allow-restart"]
+  "permissions": ["allow-update-check", "allow-update-install"]
 }
