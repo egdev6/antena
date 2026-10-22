@@ -35,6 +35,9 @@ const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 1200
 const GREET = `document.querySelector('.tour-greet')`;
 const POPOVER = `document.querySelector('.driver-popover')`;
 const ACTIVE = `document.querySelector('.driver-active-element')?.getAttribute('data-tour')`;
+// While the tour moves to another view and animates the highlight (~400 ms) there is no active anchor
+// (undefined) even though the new popover is already on screen: «arrived» means a defined anchor
+// different from the previous one, or a click lands on the new step and the test overshoots it.
 const NEXT = `document.querySelector('.driver-popover-next-btn')`;
 const PROGRESS = `document.querySelector('.driver-popover-progress-text')?.textContent`;
 // Pulsa «Siguiente» y espera en la página a que se resalte otra ancla; devuelve los ms.
@@ -104,7 +107,7 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
     for (let i = 0; i < 12 && await dom(chrome, `location.hash`) !== '#/chat'; i++) {
       const before = await dom(chrome, ACTIVE);
       await dom(chrome, `${NEXT}.click(); 'ok'`);
-      await waitDom(chrome.cdp, `${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
+      await waitDom(chrome.cdp, `!!${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
     }
     await waitDom(chrome.cdp, `location.hash === '#/chat' && ${ACTIVE} === 'chat-log' && !!document.querySelector('.chatlog[data-tour="chat-log"]')`, { timeoutMs: 9000 });
     // Anterior vuelve a la vista de antes.
@@ -115,9 +118,14 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
     for (let i = 0; i < 12 && await dom(chrome, ACTIVE) !== 'meld-head'; i++) {
       const before = await dom(chrome, ACTIVE);
       await dom(chrome, `${NEXT}.click(); 'ok'`);
-      await waitDom(chrome.cdp, `${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
+      await waitDom(chrome.cdp, `!!${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
     }
-    await waitDom(chrome.cdp, `${ACTIVE} === 'meld-head' && ${PROGRESS} === '13 de 19'`, { timeoutMs: 9000 });
+    try {
+      await waitDom(chrome.cdp, `${ACTIVE} === 'meld-head' && ${PROGRESS} === '13 de 19'`, { timeoutMs: 9000 });
+    } catch (e) {
+      const state = await dom(chrome, `JSON.stringify({ active: ${ACTIVE} ?? null, progress: ${PROGRESS} ?? null, hash: location.hash, seen: window.__tourSeen })`).catch(() => 'sin estado');
+      throw new Error(`el tour no llegó a meld-head «13 de 19»: ${state}`, { cause: e });
+    }
     const ms = await nextTimed(chrome, 'meld-connection');
     await waitDom(chrome.cdp, `${PROGRESS} === '14 de 19'`, { timeoutMs: 3000 });
     if (ms > 1000) throw new Error(`el paso no disponible hizo esperar ${ms} ms`);
@@ -129,7 +137,7 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
       const before = await dom(chrome, ACTIVE);
       await dom(chrome, `${NEXT}.click(); 'ok'`);
       if (label === 'Terminar') break;
-      await waitDom(chrome.cdp, `${ACTIVE} !== ${JSON.stringify(before)} || !${POPOVER}`, { timeoutMs: 9000 });
+      await waitDom(chrome.cdp, `!!${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(before)} || !${POPOVER}`, { timeoutMs: 9000 });
     }
     await waitDom(chrome.cdp, `!${POPOVER} && !document.querySelector('.driver-active-element')`, { timeoutMs: 9000 });
     await waitDone(app);
@@ -189,7 +197,7 @@ test('onboarding: red de seguridad, un ancla que no aparece se salta y la numera
     for (let i = 0; i < 8 && await dom(chrome, ACTIVE) !== 'directo-stats'; i++) {
       const before = await dom(chrome, ACTIVE);
       await dom(chrome, `${NEXT}.click(); 'ok'`);
-      await waitDom(chrome.cdp, `${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
+      await waitDom(chrome.cdp, `!!${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
     }
     await waitDom(chrome.cdp, `${ACTIVE} === 'directo-stats' && ${PROGRESS} === '5 de 19'`, { timeoutMs: 9000 });
     // Tras la espera acotada, la cronología toma el número del paso que falta y el total baja.
