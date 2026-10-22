@@ -3,7 +3,7 @@ import { get, post, put, enc } from '../../lib/api';
 import { IC } from '../../lib/icons';
 import { ViewerChips } from './Espectadores';
 import { live, useLive } from '../../lib/live';
-import { copy, cx, EmptyState, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, Sec, Status, toast, type Tone } from '../../lib/ui';
+import { ConnPill, copy, cx, EmptyState, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, Sec, Status, toast, type Tone } from '../../lib/ui';
 import type { AlertType, ChatSendResult, SessionList, SessionSummary, TimelineItem } from '../../lib/types';
 import { SendTo, sendResultText } from './Chat';
 
@@ -50,10 +50,11 @@ function Connections() {
   const twTone: Tone = tw === 'conectado' ? 'success' : tw === 'desconectado' ? 'neutral' : st.twitch?.errors?.length ? 'danger' : 'warning';
   const ytOn = yt === 'escuchando' || yt === 'conectado' || !!st.youtube?.liveChatId;
   const ytTone: Tone = yt === 'error' ? 'danger' : ytOn ? 'success' : 'neutral';
+  const mdTone: Tone = md === 'conectado' ? 'success' : md === 'error' ? 'danger' : 'neutral';
   return <div role="group" aria-label="Conexiones" className="row tight" data-tour="directo-status">
-    <Status tone={twTone} icon={<PfIcon platform="twitch" />}>Twitch · {tw || 'sin conectar'}{ch && ch !== 'parado' ? ` · chat ${ch}` : ''}</Status>
-    <Status tone={ytTone} icon={<PfIcon platform="youtube" />}>YouTube · {ytOn ? 'leyendo el chat' : yt || 'parado'}</Status>
-    <Status tone={md === 'conectado' ? 'success' : md === 'error' ? 'danger' : 'neutral'} icon={md === 'conectado' ? IC.check : IC.plug}>Meld · {md === 'conectado' ? (scene ? `escena «${scene}»` : 'conectado') : md || 'sin conectar'}</Status>
+    <ConnPill platform="twitch" state={tw} tone={twTone} detail={ch && ch !== 'parado' ? `chat ${ch}` : undefined} />
+    <ConnPill platform="youtube" state={yt} tone={ytTone} label={ytOn ? 'leyendo el chat' : undefined} />
+    <ConnPill platform="meld" state={md} tone={mdTone} label={md === 'conectado' && scene ? `escena «${scene}»` : undefined} />
     <Status tone={st.overlays ? 'success' : 'warning'} icon={IC.monitor}>{st.overlays === 1 ? '1 overlay' : `${st.overlays || 0} overlays`}</Status>
     <ViewerChips />
   </div>;
@@ -147,7 +148,7 @@ export function Directo() {
         <button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(async () => { if (!confirm('Se archiva el directo actual y todo vuelve a cero (objetivos, créditos, últimos). ¿Seguir?')) return; await post('/api/session/new', { title: '' }); await load(); })}>Nuevo directo</button>
       </div></header>
     <Connections />
-    <div className="stats" data-tour="directo-stats">{Object.entries(s.metrics || {}).filter(([k]) => k !== 'events').map(([k, m]) => <div className="eg-stat" key={k}>
+    <div className="stats stats--directo" data-tour="directo-stats">{Object.entries(s.metrics || {}).filter(([k]) => k !== 'events').map(([k, m]) => <div className="eg-stat" key={k}>
       <span className="eg-stat__label">{m.label}</span><span className="eg-stat__value">{(t[k] ?? 0).toLocaleString('es-ES')}</span><span className="eg-stat__delta">{source(m.types as string[])}</span></div>)}</div>
     <div className="cols">
       <div className="stack">

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { enc, get, post } from '../lib/api';
 import { live, makeChatLoader, useLive } from '../lib/live';
 import { mergeChat } from '../lib/chat-merge.mjs';
-import { cx, guard, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
+import { ConnPill, cx, guard, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
 import type { ChatMessage, ChatSendResult, ShortcutConfig, TimelineItem } from '../lib/types';
 import { stepText } from '../panel/views/Atajos';
 
@@ -28,10 +28,10 @@ function Status() {
     <div className="d-warns">
       {mic?.muted && <span className="d-warn big">🎙 Micro silenciado</span>}
       {pause.paused && <span className="d-warn">Alertas en pausa{pause.held ? ` · ${pause.held}` : ''}</span>}
-      {!meldOn && <span className="d-warn soft">Meld sin conectar</span>}
+      {!meldOn && <ConnPill platform="meld" state={st.meld?.state} />}
       {st.overlays === 0 && <span className="d-warn soft">Sin overlay</span>}
-      {st.twitch && st.twitch.state !== 'conectado' && <span className="d-warn soft">Twitch: {st.twitch.state}</span>}
-      {st.youtube && (st.youtube.state === 'en espera') && <span className="d-warn">YouTube: {st.youtube.notice || st.youtube.state}</span>}
+      {st.twitch && st.twitch.state !== 'conectado' && <ConnPill platform="twitch" state={st.twitch.state} />}
+      {st.youtube?.state === 'en espera' && <ConnPill platform="youtube" state="en espera" label={st.youtube.notice || undefined} />}
     </div>
   </header>;
 }
