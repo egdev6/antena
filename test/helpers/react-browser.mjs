@@ -33,8 +33,11 @@ export async function openChromePage(bin, url) {
   const child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-gpu', '--disable-dev-shm-usage', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: 'ignore' });
   try {
     let port, page;
-    for (let i = 0; i < 150 && !port; i++) { try { port = (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0].trim(); } catch { await sleep(100); } }
-    for (let i = 0; port && i < 100 && !page; i++) {
+    // The first Chrome start on a fresh CI runner (cold profile and font cache) took over 15 s
+    // once on ubuntu Node 24: the port wait gets 30 s, and the error names the phase that failed.
+    for (let i = 0; i < 300 && !port; i++) { try { port = (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0].trim(); } catch { await sleep(100); } }
+    if (!port) throw new Error('Chrome no arrancó: no escribió DevToolsActivePort en 30 s');
+    for (let i = 0; i < 100 && !page; i++) {
       page = (await fetch(`http://127.0.0.1:${port}/json/list`).then(r => r.json()).catch(() => [])).find(x => x.type === 'page' && x.url === 'about:blank');
       if (!page) await sleep(100);
     }
