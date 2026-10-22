@@ -69,7 +69,7 @@ export function Range({ label, value, min, max, step = 1, unit = '', onChange, e
 export function Opt({ value, children }: { value: string | number; children: ReactNode }) { return <option value={value}>{children}</option>; }
 
 export function CopyUrl({ url, children }: { url: string; children?: ReactNode }) {
-  return <div className="overlay-url"><code>{url}</code><button className="btn ghost sm" type="button" onClick={() => copy(url)}>Copiar</button>{children}</div>;
+  return <div className="overlay-url"><code>{url}</code><button className="eg-btn eg-btn--ghost eg-btn--sm" type="button" onClick={() => copy(url)}>Copiar</button>{children}</div>;
 }
 
 /** Estado vacío de una lista o sección (eg-post--empty, sin acción): el mismo aspecto en todo el panel. */

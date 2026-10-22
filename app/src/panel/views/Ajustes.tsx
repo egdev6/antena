@@ -111,7 +111,7 @@ export function Filtros() {
           <Range label="Volumen" value={t.volume ?? 1} min={0} max={1} step={0.05} onChange={x => T({ volume: x })} />
         </div>
         <label>Máximo de caracteres <input type="number" min={20} value={t.maxChars} onChange={e => T({ maxChars: Number(e.target.value) })} /></label>
-        <div className="row"><input value={say} onChange={e => setSay(e.target.value)} style={{ flex: 1, margin: 0 }} /><button className="btn" onClick={guard(async () => { await live.flushConfig(); await post('/api/say', { text: say }); }, 'Enviado al overlay')}>Probar en el overlay</button></div>
+        <div className="row"><input value={say} onChange={e => setSay(e.target.value)} style={{ flex: 1, margin: 0 }} /><button className="eg-btn eg-btn--primary" onClick={guard(async () => { await live.flushConfig(); await post('/api/say', { text: say }); }, 'Enviado al overlay')}>Probar en el overlay</button></div>
       </Panel>
     </div>
   </>;
@@ -132,7 +132,7 @@ export function PrompterAjustes() {
   });
   return <>
     <header className="view-head"><div><span className="crumb">Meld y Stream Deck › Prompter</span><h1>Prompter</h1><p className="hint">Vista de 1024×600 para el Elgato Prompter: lees el chat y manejas los widgets mirando a cámara. Lo de un solo botón va al Stream Deck.</p></div>
-      <div className="actions"><button className="btn" onClick={open}>{desk ? 'Abrir en el Prompter' : 'Abrir la vista'}</button></div></header>
+      <div className="actions"><button className="eg-btn eg-btn--primary" onClick={open}>{desk ? 'Abrir en el Prompter' : 'Abrir la vista'}</button></div></header>
     <div className="grid2">
       <Panel title="Pantalla">
         {desk ? <>

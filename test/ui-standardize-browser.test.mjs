@@ -167,4 +167,28 @@ test('O3.2 EmptyState: las listas vacías usan el mismo estado vacío (eg-post--
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
+test('O3.2 botones eg-btn en todas las vistas y filas eg-post--row en Comandos y Mensajes', { timeout: 120000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    await api(base, 'POST', '/api/commands', { trigger: '!web', title: 'web', text: '{user}' });
+    await api(base, 'POST', '/api/timers', { name: 'Recordatorio', message: 'Sigue el canal' });
+    await api(base, 'POST', '/api/shortcuts', { name: 'Uno', steps: [{ kind: 'builtin', action: 'marca' }] });
+    chrome = await openChromePage(bin, `${base}/#/comandos`);
+    const row = `document.querySelector('main .rows .eg-post--row')`;
+    await waitDom(chrome.cdp, `${row}?.querySelector('.eg-post__content code')?.textContent === '!web'`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `Array.from(${row}.querySelectorAll('.eg-btn.eg-btn--ghost.eg-btn--sm')).map(b => b.textContent.trim()).join('|')`), 'Probar|Editar');
+    await dom(chrome, `location.hash = '#/mensajes'`);
+    await waitDom(chrome.cdp, `${row}?.querySelector('.eg-post__content b')?.textContent === 'Recordatorio'`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `Array.from(${row}.querySelectorAll('.eg-btn')).map(b => b.textContent.trim()).join('|')`), 'Enviar ahora|Editar');
+    for (const hash of ['#/comandos', '#/mensajes', '#/atajos', '#/conexiones', '#/general', '#/fuentes', '#/historial', '#/chat', '#/prompter', '#/meld', '#/filtros']) {
+      await dom(chrome, `location.hash = ${JSON.stringify(hash)}`);
+      await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(hash)} && !!document.querySelector('main h1') && !document.querySelector('main p.hint')?.textContent.startsWith('Cargando')`, { timeoutMs: 12000 });
+      eq(await dom(chrome, `${JSON.stringify(hash)} + ':' + document.querySelectorAll('main .btn').length`), `${hash}:0`);
+    }
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
 function eq(actual, expected) { if (actual !== expected) throw new Error(`esperaba ${JSON.stringify(expected)}, hubo ${JSON.stringify(actual)}`); }

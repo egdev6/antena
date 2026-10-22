@@ -73,18 +73,18 @@ function ShortcutCard({ sc, info, base, hidden, onSaved, onDeleted, onDirty }: {
       <span className="sc-swatch" aria-hidden="true" />
       <LazyInput className="title-input sm" aria-label="Nombre del atajo" value={sc.name} onCommit={v => save({ name: v }).catch(e => toast(e.message, true))} />
       <div className="row tight">
-        <button className="btn sm" onClick={run}>Probar</button>
-        <button className="btn ghost sm danger" onClick={guard(async () => { if (!confirm(`¿Borrar el atajo «${sc.name}»?`)) return; await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar</button>
+        <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={run}>Probar</button>
+        <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm(`¿Borrar el atajo «${sc.name}»?`)) return; await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar</button>
       </div>
     </header>
-    <div className="overlay-url"><code>{url}</code><button className="btn ghost sm" onClick={() => copy(url)}>Copiar</button></div>
+    <div className="overlay-url"><code>{url}</code><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(url)}>Copiar</button></div>
     <div className="row tight colors" role="radiogroup" aria-label="Color en el dock">
       {COLORS.map(c => <button key={c || 'none'} role="radio" aria-checked={(sc.color || '') === c} title={c || 'Sin color'} className={cx('color-dot', (sc.color || '') === c && 'on')} style={{ background: c || 'transparent' }} onClick={guard(() => save({ color: c }))} />)}
     </div>
     <StepsEditor steps={steps} info={info} onChange={l => { setSteps(l); setDirty(true); setMsg(null); }} />
     <div className="row" style={{ marginTop: 10, alignItems: 'center' }}>
-      <button className="btn ghost sm" disabled={steps.length >= 20} onClick={() => { setSteps([...steps, { kind: 'builtin', action: 'marca' }]); setDirty(true); }}>+ Añadir paso</button>
-      {dirty && <button className="btn sm" onClick={saveSteps}>Guardar pasos</button>}
+      <button className="eg-btn eg-btn--ghost eg-btn--sm" disabled={steps.length >= 20} onClick={() => { setSteps([...steps, { kind: 'builtin', action: 'marca' }]); setDirty(true); }}>+ Añadir paso</button>
+      {dirty && <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={saveSteps}>Guardar pasos</button>}
       {msg && <span className={cx('hint', msg.err && 'err-inline')} aria-live="polite">{msg.t}</span>}
     </div>
   </article>;
@@ -130,7 +130,7 @@ export function Atajos() {
         <p className="hint">Si cambias el nombre, la dirección sigue siendo la misma: usa el identificador, no el nombre.</p>
       </Panel>
       <Panel title="Atajos de serie">
-        <ul className="sd-list">{info.actions.map(a => <li key={a}><code>/sd/{a}</code><span className="hint">{sdLabel(a)}</span><span className="vbtns"><button className="btn ghost sm" onClick={guard(() => post('/sd/' + a), 'Hecho')}>Probar</button><button className="btn ghost sm" onClick={() => copy(`${base}/sd/${a}`)}>Copiar</button></span></li>)}</ul>
+        <ul className="sd-list">{info.actions.map(a => <li key={a}><code>/sd/{a}</code><span className="hint">{sdLabel(a)}</span><span className="vbtns"><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/sd/' + a), 'Hecho')}>Probar</button><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(`${base}/sd/${a}`)}>Copiar</button></span></li>)}</ul>
       </Panel>
     </div>
   </>;

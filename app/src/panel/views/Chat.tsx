@@ -34,7 +34,7 @@ export function Chat() {
   return <>
     <header className="view-head"><div><span className="crumb">En directo › Chat</span><h1>Chat</h1><p className="hint">Twitch y YouTube juntos, ya filtrados. Los mensajes con comando salen marcados. Últimos 200.</p></div>
       <div className="actions"><input value={channel} onChange={e => setChannel(e.target.value)} placeholder="canal de Twitch (vacío = el tuyo)" style={{ width: 250, margin: 0 }} />
-        <button className="btn ghost" onClick={guard(() => post('/api/chat/join', { channel: channel.trim() }), 'Leyendo el chat')}>Leer este canal</button></div></header>
+        <button className="eg-btn eg-btn--ghost" onClick={guard(() => post('/api/chat/join', { channel: channel.trim() }), 'Leyendo el chat')}>Leer este canal</button></div></header>
     <article className="panel chatpanel">
       <ol className="chatlog" ref={log} onScroll={e => { const el = e.currentTarget; stick.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 30; }}>
         {chat.map(m => <li key={m.id} className={cx(m.command && 'cmd', m.owner && 'own')}><time>{fmtTime(m.at)}</time><span className="pf">{m.platform === 'twitch' || m.platform === 'youtube' ? <PfIcon platform={m.platform} /> : '··'}</span>
@@ -43,7 +43,7 @@ export function Chat() {
       <div className="row chat-send">
         <SendTo value={cfg.sendTo || 'twitch'} onChange={v => live.patchConfig({ chat: { sendTo: v } })} />
         <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} placeholder="Escribe en tu chat… (tus mensajes no salen en el chat en pantalla)" style={{ flex: 1, margin: 0, minWidth: 200 }} />
-        <button className="btn" onClick={send}>Enviar</button>
+        <button className="eg-btn eg-btn--primary" onClick={send}>Enviar</button>
       </div>
     </article>
   </>;

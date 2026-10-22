@@ -11,6 +11,6 @@ export function Historial() {
       <time>{fmtTime(h.at)}</time><span className="pf"><PfIcon platform={types[h.type]?.platform} /></span>
       <span className="t">{types[h.type]?.label || (h.type === 'command' ? 'Comando' : h.type)}</span>
       <span className="x"><b>{h.text}</b> {h.sub ? '· ' + h.sub : ''}{h.variation ? <> <span className="tagm">{h.variation.name}</span></> : null}</span>
-      <button className="btn ghost sm" onClick={guard(() => post('/api/replay', { id: h.id }), 'Repitiendo')}>Repetir</button></li>)}</ol> : <EmptyState>Todavía no ha llegado ninguna alerta.</EmptyState>}</Panel>
+      <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/replay', { id: h.id }), 'Repitiendo')}>Repetir</button></li>)}</ol> : <EmptyState>Todavía no ha llegado ninguna alerta.</EmptyState>}</Panel>
   </>;
 }

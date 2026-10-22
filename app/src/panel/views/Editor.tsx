@@ -182,7 +182,7 @@ export function ActionsEditor({ list, onChange }: { list: any[]; onChange: (l: a
     {list.map((act, i) => <div className="action" key={i}>
       <select value={act.kind} onChange={e => repl(i, { kind: e.target.value, delaySec: act.delaySec })}>{Object.entries(ACTIONS).map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select>
       <ActionFields act={act} uid={'a' + i} onChange={a => repl(i, a)} />
-      <button className="btn ghost sm danger" title="Quitar" onClick={() => { const l = [...list]; l.splice(i, 1); onChange(l); }}>✕</button>
+      <IconBtn icon={IC.x} label="Quitar acción" onClick={() => { const l = [...list]; l.splice(i, 1); onChange(l); }} />
     </div>)}
   </div>;
 }
