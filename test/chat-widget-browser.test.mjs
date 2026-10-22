@@ -82,8 +82,93 @@ test('chat overlay: vista previa en vivo, reverse con tope, anim none, fade e ic
     await put({ widgets: { chat: { fadeAfterSec: 0, fontSize: 26 } } });
 
     // (e) iconos de plataforma con showPlatform
+    // (d) con caducidad en vivo ya retiró los mensajes previos: entra uno nuevo
     await put({ widgets: { chat: { showPlatform: true } } });
+    app.engine.handleChat(chat(211));
     await waitDom(c, `!!document.querySelector('.msg .pf svg[aria-label="Twitch"]') || !!document.querySelector('.msg .pf svg[aria-label="YouTube"]')`, { timeoutMs: 12000 });
+  } finally {
+    if (chrome) chrome.child.kill();
+    await close();
+  }
+});
+
+// O2.1 · la vista previa refleja la config en vivo: las opciones por mensaje (filtros, icono,
+// tope, caducidad) se reaplican a los mensajes ya pintados, sin recargar ni reconstruirlos.
+test('chat overlay: la config se reaplica en vivo a los mensajes existentes', { timeout: 120000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { app, base, close } = ctx;
+  const put = async patch => { const r = await fetch(`${base}/api/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), signal: AbortSignal.timeout(2500) }); assert.equal(r.status, 200, 'PUT /api/config'); await sleep(300); };
+  let chrome, demo;
+  try {
+    chrome = await openChromePage(ctx.bin, `${base}/widget/chat`);
+    const c = chrome.cdp;
+    for (let n = 301; n <= 304; n++) app.engine.handleChat(chat(n));
+    await waitDom(c, `document.querySelectorAll('.msg').length === 4 && !!document.querySelector('.msg .pf')`, { timeoutMs: 12000 });
+    await dom(c, `document.querySelectorAll('.msg').forEach(m => m.__sentinel = 1); window.__nav = performance.getEntriesByType('navigation').length`);
+
+    await put({ widgets: { chat: { showPlatform: false } } });
+    await waitDom(c, `!document.querySelector('.msg .pf')`, { timeoutMs: 12000 });
+    await put({ widgets: { chat: { showPlatform: true } } });
+    await waitDom(c, `document.querySelectorAll('.msg .pf').length === 4`, { timeoutMs: 12000 });
+
+    await put({ widgets: { chat: { platforms: ['twitch'] } } });
+    await waitDom(c, `!document.querySelector('.msg.pf-youtube') && document.querySelectorAll('.msg.pf-twitch').length === 2`, { timeoutMs: 12000 });
+
+    await put({ widgets: { chat: { maxMessages: 1 } } });
+    await waitDom(c, `document.querySelectorAll('.msg').length === 1`, { timeoutMs: 12000 });
+    assert.ok(await dom(c, `document.querySelector('.msg').textContent.includes('Sintético 303')`), 'el tope conserva el más reciente');
+    assert.ok(await dom(c, `document.querySelector('.msg').__sentinel === 1 && window.__nav === performance.getEntriesByType('navigation').length`), 'sin reconstruir ni recargar');
+
+    await put({ widgets: { chat: { fadeAfterSec: 1, animOut: 'fade' } } });
+    await waitDom(c, `!document.querySelector('.msg')`, { timeoutMs: 12000 });
+    await put({ widgets: { chat: { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, animOut: 'slide' } } });
+
+    // Modo demo (la vista previa del panel): un cambio de entrada se ve al instante con una muestra.
+    demo = await openChromePage(ctx.bin, `${base}/widget/chat?demo`);
+    const d = demo.cdp;
+    await waitDom(d, `document.querySelectorAll('.msg').length >= 6`, { timeoutMs: 12000 });
+    await put({ widgets: { chat: { fontSize: 31, animIn: 'pop' } } });
+    await waitDom(d, `getComputedStyle(document.getElementById('root')).getPropertyValue('--fs').trim() === '31px'`, { timeoutMs: 12000, intervalMs: 20 });
+    assert.ok(await dom(d, `!!document.querySelector('.msg.a-pop')`), 'la muestra demo usa la entrada nueva en cuanto llega la config');
+  } finally {
+    if (chrome) chrome.child.kill();
+    if (demo) demo.child.kill();
+    await close();
+  }
+});
+
+// O2.2 · efectos nuevos: cada valor pone su clase y una animación real (y su variante invertida).
+test('chat overlay: efectos nuevos de entrada y salida', { timeout: 120000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { app, base, close } = ctx;
+  const put = async patch => { const r = await fetch(`${base}/api/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), signal: AbortSignal.timeout(2500) }); assert.equal(r.status, 200, 'PUT /api/config'); await sleep(300); };
+  const last = `Array.from(document.querySelectorAll('.msg')).at(-1)`;
+  let chrome;
+  try {
+    chrome = await openChromePage(ctx.bin, `${base}/widget/chat`);
+    const c = chrome.cdp;
+    let n = 400;
+    for (const v of ['bounce', 'zoom', 'flip', 'blur']) {
+      await put({ widgets: { chat: { animIn: v } } });
+      app.engine.handleChat(chat(++n));
+      await waitDom(c, `!!document.querySelector('.msg') && ${last}.textContent.includes('Sintético ${n}')`, { timeoutMs: 12000 });
+      assert.ok(await dom(c, `${last}.classList.contains('a-${v}')`), `clase a-${v}`);
+      assert.notEqual(await dom(c, `getComputedStyle(${last}).animationName`), 'none', `animación de entrada ${v}`);
+    }
+    await put({ widgets: { chat: { animIn: 'slide', fadeAfterSec: 1 } } });
+    for (const v of ['zoom', 'blur', 'drop']) {
+      await put({ widgets: { chat: { animOut: v } } });
+      app.engine.handleChat(chat(++n));
+      const el = `Array.from(document.querySelectorAll('.msg')).find(m => m.textContent.includes('Sintético ${n}'))`;
+      await waitDom(c, `${el}?.classList.contains('o-${v}')`, { timeoutMs: 12000, intervalMs: 20 });
+      assert.notEqual(await dom(c, `getComputedStyle(${el}).animationName`), 'none', `animación de salida ${v}`);
+    }
+    await put({ widgets: { chat: { reverse: true, fadeAfterSec: 0, animIn: 'bounce' } } });
+    app.engine.handleChat(chat(++n));
+    await waitDom(c, `!!document.querySelector('.msg.a-bounce')`, { timeoutMs: 12000 });
+    assert.equal(await dom(c, `getComputedStyle(document.querySelector('.msg.a-bounce')).animationName`), 'inBR', 'bounce invertido entra desde arriba');
   } finally {
     if (chrome) chrome.child.kill();
     await close();
