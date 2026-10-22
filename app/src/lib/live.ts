@@ -40,6 +40,10 @@ class Live {
    *  resuelve después de una más reciente no debe pisar config, history ni status. */
   private appliedGen = 0;
   private loadSeq = 0;
+  /** Cambios optimistas de config aplicados desde update(): una edición local (p. ej.
+   *  añadir una barra a un objetivo en el panel) es más nueva que cualquier snapshot de
+   *  /api/state pedido antes, así que ese snapshot no debe revertirla al aplicarse. */
+  private cfgTouch = 0;
   private cfgPending: Record<string, unknown> = {};
   private cfgTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -56,7 +60,10 @@ class Live {
   /** Cambia el estado con una función que recibe el estado y devuelve un parche (merge superficial). */
   update(fn: (s: AppState) => Partial<AppState>) {
     const s = this.state as AppState;
-    this.state = { ...s, ...fn(s) };
+    const patch = fn(s);
+    // Un cambio local de config marca época: los snapshots pedidos antes de él quedan obsoletos.
+    if (patch.config) this.cfgTouch++;
+    this.state = { ...s, ...patch };
     this.emit();
   }
 
@@ -67,6 +74,10 @@ class Live {
     // y la antigua se descarta entera (config, history, status; su fusión de chat no
     // revierte mensajes que llegaron después de ese snapshot).
     const gen = ++this.loadSeq;
+    // Época de config al pedir el snapshot: si la config cambia localmente mientras vuela
+    // esta carga (ediciones optimistas o un evento 'config' más nuevo), el snapshot llegó
+    // a ser viejo y no debe pisarla.
+    const cfgAtStart = this.cfgTouch;
     // ids que llegan por SSE mientras ESTA petición está en curso: cada carga concurrente
     // registra el suyo (la del llamador y la del primer open solapan); solo esos ids se
     // fusionan con el snapshot al aplicarlo (lo local más viejo o borrado no vuelve a entrar).
@@ -82,7 +93,13 @@ class Live {
         .filter(m => !removed.ids.has(m.id) && !removed.logins.has(null) && !(m.login && removed.logins.has(m.login)));
       if (gen <= this.appliedGen) return; // ya se aplicó una carga más reciente: no pisar
       this.appliedGen = gen;
-      this.state = { ...snap, widgets: { ...snap.widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } };
+      // Un cambio optimista de config durante el vuelo de esta carga es más nuevo que su
+      // snapshot (lo pedimos antes de la edición): se conserva la config local y solo se
+      // aplica el resto del snapshot. Sin esto, un gap/reconexión del SSE que aterrizara
+      // entre la edición y su guardado revertía la UI hasta la siguiente carga (fallo
+      // intermitente de goals-browser en CI: el bloque Goals volvía a 2 barras).
+      const config = this.cfgTouch === cfgAtStart ? snap.config : (this.state?.config ?? snap.config);
+      this.state = { ...snap, config, widgets: { ...snap.widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } };
     } finally { this.inflightChat.delete(inFlight); this.inflightRemoved.delete(removed); }
     try {
       const tl = await api<Timeline>('GET', '/api/timeline');

@@ -122,6 +122,45 @@ test('la carga más antigua que resuelve al final no pisa config, history ni sta
     'chat: gana la carga más reciente');
 });
 
+// Un snapshot en vuelo (gap/reconexión del SSE) que resuelve tarde no debe revertir un
+// cambio optimista de config hecho durante la carga: el guard de generación (#116) solo
+// ordena cargas entre sí y no ve las ediciones locales del panel (p. ej. añadir una barra
+// a un objetivo). En CI esto devolvía el bloque Goals a 2 barras de forma intermitente
+// hasta la siguiente carga.
+test('un snapshot en vuelo que resuelve tarde no revierte un cambio optimista de config', async t => {
+  globalThis.EventSource = FakeEventSource;
+  const { live } = await bundleLive();
+  t.after(() => { delete globalThis.EventSource; delete globalThis.__apiImpl; delete globalThis.__fakeEs; });
+
+  const pendings = [], chats = [];
+  globalThis.__apiImpl = (m, p) => {
+    if (p === '/api/timeline' || p === '/api/prompter') return Promise.resolve({});
+    if (p === '/api/chat?limit=200') return new Promise(r => chats.push(r));
+    return new Promise(r => pendings.push(r));
+  };
+  live.connect('test');
+
+  // estado inicial: config base con dos barras
+  const p0 = live.load();
+  pendings[0]({ config: { widgets: { goals: [{ id: 'mixta', bars: [{ id: 'a' }, { id: 'b' }] }] } }, widgets: {} });
+  await new Promise(r => setImmediate(r));
+  chats[0]([]);
+  await p0;
+
+  // segunda carga en vuelo (gap/reconexión): su snapshot aún no incluye la edición
+  const p1 = live.load();
+  live.update(s => ({ config: { ...s.config, widgets: { ...s.config.widgets, goals: [{ id: 'mixta', bars: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }] } } }));
+
+  // el snapshot (más viejo que la edición) resuelve después
+  pendings[1]({ config: { widgets: { goals: [{ id: 'mixta', bars: [{ id: 'a' }, { id: 'b' }] }] } }, widgets: {} });
+  await new Promise(r => setImmediate(r));
+  chats[1]([]);
+  await p1;
+
+  assert.equal(live.state.config.widgets.goals[0].bars.length, 3,
+    'la edición optimista local no se revierte con el snapshot en vuelo');
+});
+
 // #116 (cargas locales del chat, prompter y dock): una carga vieja que resuelve primero
 // se aplica aunque la más nueva todavía no haya terminado — y aunque después falle.
 test('chat local: la carga vieja que resuelve primero se aplica aunque la nueva luego falle', async t => {
