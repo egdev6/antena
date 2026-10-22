@@ -49,6 +49,10 @@ export function Icon({ d, className = 'eg-icon' }: { d: string; className?: stri
 }
 
 // ---------- controles ----------
+/** Cabecera de una vista: miga (grupo › vista, o enlace a la vista padre), título, explicación opcional y acciones a la derecha. */
+export function ViewHead({ crumb, title, hint, actions }: { crumb: ReactNode; title: ReactNode; hint?: ReactNode; actions?: ReactNode }) {
+  return <header className="view-head"><div><span className="crumb">{crumb}</span><h1>{title}</h1>{hint && <p className="hint">{hint}</p>}</div>{actions && <div className="actions">{actions}</div>}</header>;
+}
 export function Panel({ title, aside, children, className }: { title?: ReactNode; aside?: ReactNode; children?: ReactNode; className?: string }) {
   return <article className={cx('panel', className)}>{(title || aside) && <header>{title && <h2>{title}</h2>}{aside}</header>}{children}</article>;
 }
@@ -163,7 +167,7 @@ export function IconBtn({ icon, label, onClick, disabled, pressed, className }: 
 /** StageFrame con barra superior: una capa en vivo (iframe escalado) con su título y acciones. */
 export function Stage({ eyebrow, aside, src, w = 1920, h = 1080, foot, frameRef }: { eyebrow: ReactNode; aside?: ReactNode; src: string; w?: number; h?: number; foot?: ReactNode; frameRef?: (el: HTMLIFrameElement | null) => void }) {
   return <figure className="eg-stage">
-    <figcaption className="eg-stage__bar"><span className="eg-eyebrow" style={{ margin: 0 }}>{eyebrow}</span><span className="eg-stage__spacer" />{aside}</figcaption>
+    <figcaption className="eg-stage__bar"><span className="eg-eyebrow">{eyebrow}</span><span className="eg-stage__spacer" />{aside}</figcaption>
     <ScaledFrame src={src} w={w} h={h} className="preview wprev" frameRef={frameRef} />
     {foot && <div className="eg-stage__bar">{foot}</div>}
   </figure>;
@@ -171,7 +175,7 @@ export function Stage({ eyebrow, aside, src, w = 1920, h = 1080, foot, frameRef 
 /** Sección «Capa de navegador»: la URL para Meld, su tamaño y cómo añadirla. */
 export function UrlSec({ url, size, children, title = 'Capa de navegador' }: { url: string; size?: string; children?: ReactNode; title?: ReactNode }) {
   return <Sec title={title} aside={size ? <span className="hint">{size}</span> : undefined}>
-    <div className="row tight"><label className="sr-only" htmlFor={'u-' + url}>URL de la capa</label><input id={'u-' + url} className="grow mono" value={url} readOnly onFocus={e => e.target.select()} style={{ margin: 0 }} />
+    <div className="row tight"><label className="sr-only" htmlFor={'u-' + url}>URL de la capa</label><input id={'u-' + url} className="grow mono" value={url} readOnly onFocus={e => e.target.select()} />
       <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(url)}>Copiar</button></div>
     {children ?? <p className="hint">En Meld: + › Browser. El CSS propio del widget gana a los estilos de serie.</p>}
   </Sec>;

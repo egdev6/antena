@@ -674,3 +674,22 @@ svg.pf-ico path{stroke:none}
 .onboarding__card b{font:800 14px/1.2 var(--font-display);letter-spacing:.05em;text-transform:uppercase}
 .onboarding__card span{color:var(--grey);font-size:12.5px;line-height:1.45}
 .onboarding__foot{display:flex;justify-content:flex-end}
+
+/* ---------- esqueleto común de las vistas (docs/ui-patterns.md) ---------- */
+/* Panel y Sec se ven igual: misma superficie y cabecera con filete */
+.app .panel{background:var(--gradient-sheen),var(--color-surface-1);border-color:var(--color-border-hairline);box-shadow:var(--shadow-edge),var(--shadow-elev-1)}
+.app .panel>header{min-height:30px;padding-bottom:10px;border-bottom:1px solid var(--color-border-subtle)}
+/* campos dentro de una fila o de las acciones de la cabecera: sin el margen de «etiqueta encima» */
+.row>input,.row>select,.view-head .actions>input,.view-head .actions>select{margin:0}
+.view-head .actions>input{width:220px}
+/* interruptores en una rejilla de campos: alineados con los inputs vecinos */
+.row2>.switch,.row3>.switch{align-self:end;min-height:34px}
+.eg-module-card__foot>label{margin:0}
+/* utilidades de espaciado (en lugar de style en línea) */
+.field-ctl{margin-top:6px}
+.lead{margin-bottom:12px}
+.mt-s{margin-top:8px}
+.push{margin-left:auto}
+.row.middle{align-items:center}
+.row.to-end{align-items:end;justify-content:flex-end}
+

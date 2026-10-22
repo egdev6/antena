@@ -347,7 +347,7 @@ export function Editor({ target }: { target: Target }) {
         {kind === 'command' && pane('cmd', <>
           <div className="row2">
             <label>Quién puede usarlo <select value={item.permission} onChange={e => set('permission', e.target.value)}>{PERMS.map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></label>
-            <div className="lbl">Plataformas<div className="row" style={{ marginTop: 8 }}>
+            <div className="lbl">Plataformas<div className="row field-ctl">
               {['twitch', 'youtube'].map(p => <label className="check" key={p}><input type="checkbox" checked={item.platforms?.includes(p)} onChange={e => set('platforms', e.target.checked ? [...new Set([...(item.platforms || []), p])] : (item.platforms || []).filter((x: string) => x !== p))} /> {PLATFORM_NAMES[p]}</label>)}
             </div></div>
             <label>Espera entre usos (s) <input type="number" min={0} value={item.cooldownSec} onChange={e => set('cooldownSec', Number(e.target.value) || 0)} /></label>
@@ -398,7 +398,7 @@ export function Editor({ target }: { target: Target }) {
               </div>
               <div className="row2">{R('mediaSize', 'Tamaño', 10, 200, 1, '%')}{when.video && R('mediaVolume', 'Volumen del vídeo', 0, 100, 1, '%')}</div>
             </>}
-            {when.video && <div className="lbl">Duración<div style={{ marginTop: 6 }}><Seg value={a.durationMode} onChange={x => set('durationMode', x)} options={[['media', 'Lo que dure el vídeo'], ['fixed', 'Tiempo fijo']]} /></div></div>}
+            {when.video && <div className="lbl">Duración<div className="field-ctl"><Seg value={a.durationMode} onChange={x => set('durationMode', x)} options={[['media', 'Lo que dure el vídeo'], ['fixed', 'Tiempo fijo']]} /></div></div>}
             <div className="row2">
               {when.fixed && R('durationMs', 'Duración', 1, 30, 0.5, 's', true)}
               {when.media && F('animIn', 'Animación de entrada', <><select value={a.animIn} onChange={e => set('animIn', e.target.value)}>{ANIM_IN.map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></>)}
@@ -443,7 +443,7 @@ export function Editor({ target }: { target: Target }) {
           </>)}
 
           {pane('actions', <>
-            <div className="row" style={{ alignItems: 'center' }}>
+            <div className="row middle">
               <p className="hint grow">Se ejecutan cuando la alerta aparece en pantalla: cambiar de escena en Meld, mostrar una capa, lanzar confeti, escribir en el chat…{s.status.meld?.state !== 'conectado' && <> <b>Meld no está conectado</b>: puedes prepararlas igualmente.</>}</p>
               <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => set('actions', [...structuredClone(a.actions || []), { kind: 'layer', scene: '', layer: '', seconds: 8, delaySec: 0 }])}><Icon d={IC.plus} className="eg-btn__icon" />Añadir acción</button>
             </div>
@@ -452,7 +452,7 @@ export function Editor({ target }: { target: Target }) {
           </>)}
 
           {kind === 'alert' && pane('vars', <>
-            <div className="row" style={{ alignItems: 'center' }}>
+            <div className="row middle">
               <p className="hint grow">Solo guardan lo que cambia (otro vídeo, sonido o texto) según la cantidad, el tier, el usuario o el mensaje. Gana la primera que encaja.</p>
               <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => {
                 await ed.flush();
@@ -478,7 +478,7 @@ export function Editor({ target }: { target: Target }) {
           </>)}
 
           {pane('css', <>
-            <div className="row" style={{ alignItems: 'center' }}><Seg value={cssTab} onChange={setCssTab} options={[['own', kind === 'variation' ? 'Esta variación' : kind === 'alert' ? 'Esta alerta' : 'Este'], ['global', 'Todas las alertas']]} /><span className="hint">· gana siempre a los estilos de serie</span></div>
+            <div className="row middle"><Seg value={cssTab} onChange={setCssTab} options={[['own', kind === 'variation' ? 'Esta variación' : kind === 'alert' ? 'Esta alerta' : 'Este'], ['global', 'Todas las alertas']]} /><span className="hint">· gana siempre a los estilos de serie</span></div>
             {cssTab === 'own'
               ? <div className={cx('lbl', kind === 'variation' && 'css' in overrides && 'ovr')} data-field="css">{unset('css')}
                 <textarea ref={cssRef} className="code" spellCheck={false} value={a.css || ''} onKeyDown={codeTab} onChange={e => set('css', e.target.value)} placeholder={'/* Tu CSS gana a los estilos de serie: no hace falta !important */\n.alert { --accent: #00E0FF; }'} /></div>
@@ -497,7 +497,7 @@ export function Editor({ target }: { target: Target }) {
 
       {showAlert && <div className="preview-col">
         <figure className="eg-stage">
-          <figcaption className="eg-stage__bar"><span className="eg-eyebrow" style={{ margin: 0 }}>Vista previa · 1920×1080</span><span className="eg-stage__spacer" />
+          <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista previa · 1920×1080</span><span className="eg-stage__spacer" />
             {kind === 'variation' && <span>Variación: <b style={{ color: 'var(--text)' }}>{v.name}</b></span>}
             <label className="switch"><input type="checkbox" defaultChecked onChange={e => { ed.autoPreview.current = e.target.checked; }} /><i></i>Al cambiar algo</label>
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(ed.preview)}><Icon d={IC.repeat} className="eg-btn__icon" />Repetir</button>

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { enc, get, post } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { cx, EmptyState, guard, Panel, PLATFORM_NAMES, Sec, toast } from '../../lib/ui';
+import { cx, EmptyState, guard, Panel, PLATFORM_NAMES, Sec, toast, ViewHead } from '../../lib/ui';
 import { go } from '../router';
 import type { CommandConfig, TimerConfig } from '../../lib/types';
 import { fireTimer, PERMS, TimerState } from './Editor';
@@ -19,8 +19,7 @@ export function Comandos() {
     go(`#/comando/${enc(d.command.id)}`);
   });
   return <>
-    <header className="view-head"><div><span className="crumb">Chat › Comandos</span><h1>Comandos de chat</h1><p className="hint">Cuando alguien escribe el comando en Twitch o YouTube, sale su alerta en el overlay.</p></div>
-      <div className="actions"><input value={trigger} onChange={e => setTrigger(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="!engram" style={{ width: 180, margin: 0 }} aria-label="Nuevo comando" /><button className="eg-btn eg-btn--primary" onClick={create}>Crear comando</button></div></header>
+    <ViewHead crumb="Chat › Comandos de chat" title="Comandos de chat" hint="Cuando alguien escribe el comando en Twitch o YouTube, sale su alerta en el overlay." actions={<><input value={trigger} onChange={e => setTrigger(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="!engram" aria-label="Nuevo comando" /><button className="eg-btn eg-btn--primary" onClick={create}>Crear comando</button></>} />
     <Panel>
       {list.length ? <div className="rows cmd-rows">{list.map(c => <article key={c.id} className={cx('eg-post eg-post--row', c.enabled === false && 'is-off')}>
         <div className="eg-post__content"><b><a href={`#/comando/${enc(c.id)}`}><code>{c.trigger}</code></a></b>
@@ -31,7 +30,7 @@ export function Comandos() {
     <Panel title="Probar sin estar en directo">
       <div className="row2"><label>Usuario <input value={sim.user} onChange={e => setSim({ ...sim, user: e.target.value })} /></label><label>Mensaje <input value={sim.text} placeholder="!engram memoria" onChange={e => setSim({ ...sim, text: e.target.value })} /></label></div>
       <div className="row"><label className="check"><input type="checkbox" checked={sim.mod} onChange={e => setSim({ ...sim, mod: e.target.checked })} /> Es moderador</label>
-        <button className="eg-btn eg-btn--ghost" style={{ marginLeft: 'auto' }} onClick={guard(() => post('/api/chat/simulate', sim), 'Mensaje simulado enviado')}>Enviar al chat simulado</button></div>
+        <button className="eg-btn eg-btn--ghost push" onClick={guard(() => post('/api/chat/simulate', sim), 'Mensaje simulado enviado')}>Enviar al chat simulado</button></div>
     </Panel>
   </>;
 }
@@ -49,8 +48,7 @@ export function Mensajes() {
     go(`#/mensaje/${enc(d.timer.id)}`);
   });
   return <>
-    <header className="view-head"><div><span className="crumb">Chat › Mensajes programados</span><h1>Mensajes programados</h1><p className="hint">Se publican solos en tu chat de Twitch, de YouTube o en los dos cada cierto tiempo y, si quieres, también salen como alerta en pantalla.</p></div>
-      <div className="actions"><button className="eg-btn eg-btn--primary" onClick={create}>+ Nuevo mensaje</button></div></header>
+    <ViewHead crumb="Chat › Mensajes programados" title="Mensajes programados" hint="Se publican solos en tu chat de Twitch, de YouTube o en los dos cada cierto tiempo y, si quieres, también salen como alerta en pantalla." actions={<><button className="eg-btn eg-btn--primary" onClick={create}>+ Nuevo mensaje</button></>} />
     <Sec title="Lista de mensajes" foot={<>Cada 15 s se mira si toca publicar alguno. Si varios coinciden, salen en el mismo repaso. El botón de pausa los detiene, también «Enviar ahora»; al reanudar, cada uno vuelve a contar su intervalo completo. Lo que escribes tú en el chat no se pausa.</>} footRight={<>{list.length === 1 ? '1 mensaje' : `${list.length} mensajes`}</>}>
       {list.length ? <div className="rows cmd-rows">{list.map(t => <article key={t.id} className={cx('eg-post eg-post--row', t.enabled === false && 'is-off')}>
         <div className="eg-post__content"><b><a href={`#/mensaje/${enc(t.id)}`}>{t.name}</a></b>

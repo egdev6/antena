@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { del, enc, get, post, put } from '../../lib/api';
 import { live } from '../../lib/live';
-import { confirmDelete, copy, cx, EmptyState, guard, IconBtn, ItemTabs, LazyInput, Panel, toast } from '../../lib/ui';
+import { confirmDelete, copy, cx, EmptyState, guard, IconBtn, ItemTabs, LazyInput, Panel, toast, ViewHead } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { ACTIONS, ActionFields } from './Editor';
 
@@ -82,7 +82,7 @@ function ShortcutCard({ sc, info, base, hidden, onSaved, onDeleted, onDirty }: {
       {COLORS.map(c => <button key={c || 'none'} role="radio" aria-checked={(sc.color || '') === c} title={c || 'Sin color'} className={cx('color-dot', (sc.color || '') === c && 'on')} style={{ background: c || 'transparent' }} onClick={guard(() => save({ color: c }))} />)}
     </div>
     <StepsEditor steps={steps} info={info} onChange={l => { setSteps(l); setDirty(true); setMsg(null); }} />
-    <div className="row" style={{ marginTop: 10, alignItems: 'center' }}>
+    <div className="row middle mt-s">
       <button className="eg-btn eg-btn--ghost eg-btn--sm" disabled={steps.length >= 20} onClick={() => { setSteps([...steps, { kind: 'builtin', action: 'marca' }]); setDirty(true); }}>+ Añadir paso</button>
       {dirty && <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={saveSteps}>Guardar pasos</button>}
       {msg && <span className={cx('hint', msg.err && 'err-inline')} aria-live="polite">{msg.t}</span>}
@@ -108,8 +108,7 @@ export function Atajos() {
   // sin elegir aún (undefined), el primero; una selección que ya no existe también cae al primero
   const current = sel === null ? null : info.custom.find(x => x.id === sel)?.id ?? info.custom[0]?.id ?? null;
   return <>
-    <header className="view-head"><div><span className="crumb">Meld y Stream Deck › Atajos</span><h1>Atajos y Stream Deck</h1><p className="hint">Cada atajo es una dirección: un botón del Stream Deck la llama y se hacen sus pasos en orden. También salen como botones en el dock de Meld.</p></div>
-    </header>
+    <ViewHead crumb="Meld y Stream Deck › Atajos y Stream Deck" title="Atajos y Stream Deck" hint="Cada atajo es una dirección: un botón del Stream Deck la llama y se hacen sus pasos en orden. También salen como botones en el dock de Meld." />
     <h2 className="sub-h">Mis atajos <span className="hint">{info.custom.length}</span></h2>
     <ItemTabs label="Atajos" items={info.custom.map(x => ({ id: x.id, label: x.name, badge: unsaved[x.id] ? 'sin guardar' : undefined }))} selected={current} onSelect={setSel} onNew={() => setSel(null)} newLabel="+ Nuevo atajo" />
     {info.custom.map(sc => <ShortcutCard key={sc.id} sc={sc} info={info} base={base} hidden={sc.id !== current}
@@ -118,7 +117,7 @@ export function Atajos() {
       onDirty={v => setUnsaved(u => (!!u[sc.id] === v ? u : { ...u, [sc.id]: v }))} />)}
     {current === null && <Panel title="Nuevo atajo">
       {!info.custom.length && <EmptyState>Aún no tienes atajos. Ideas: «Empezar» (escena de inicio + abrir preguntas + mensaje en el chat), «Pausa café» (escena de pausa + pausar alertas), «Sorteo» (abrir sorteo + prompter en la pestaña de sorteo).</EmptyState>}
-      <div className="row tight"><input className="grow" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="Empezar el directo" style={{ margin: 0 }} aria-label="Nombre del atajo nuevo" /><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}>Crear atajo</button></div>
+      <div className="row tight"><input className="grow" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="Empezar el directo" aria-label="Nombre del atajo nuevo" /><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}>Crear atajo</button></div>
     </Panel>}
     <div className="grid2 mt">
       <Panel title="Cómo ponerlo en el Stream Deck">

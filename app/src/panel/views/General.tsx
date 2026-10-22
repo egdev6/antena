@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { post, upload, enc } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { Access, MediaItem } from '../../lib/types';
-import { confirmDelete, CopyUrl, guard, Panel, Range, Switch, toast } from '../../lib/ui';
+import { confirmDelete, CopyUrl, guard, Panel, Range, Switch, toast, ViewHead } from '../../lib/ui';
 import type { UploadResult } from '../../lib/types';
 
 export function UploadBar({ name, progress }: { name: string; progress: number }) {
@@ -52,7 +52,7 @@ export function General() {
   const up = useUploader();
   const setAccess = (a: Access) => live.update(() => ({ access: a }));
   return <>
-    <header className="view-head"><div><span className="crumb">Ajustes › General y archivos</span><h1>General y archivos</h1></div></header>
+    <ViewHead crumb="Ajustes › General y archivos" title="General y archivos" />
     <Panel title="Bienvenida">
       <p className="hint">La bienvenida explica, en nueve tarjetas, qué hace cada área de antena. Si la cerraste y quieres volver a verla:</p>
       <button className="eg-btn eg-btn--ghost" onClick={() => live.patchConfig({ panel: { onboardingDone: false } })}>Ver la bienvenida de nuevo</button>
@@ -63,7 +63,7 @@ export function General() {
       <div className="row2 mt">
         <Range label="Volumen general" value={Math.round((c.overlay.volume ?? 0.6) * 100)} min={0} max={100} unit="%" onChange={v => live.patchConfig({ overlay: { volume: v / 100 } })} />
         <label>Tope de la cola del overlay <input type="number" min={0} value={c.overlay.queueMax ?? 20} onChange={e => live.patchConfig({ overlay: { queueMax: Math.max(0, Number(e.target.value) || 0) } })} /></label>
-        <div className="row" style={{ alignItems: 'end', justifyContent: 'flex-end' }}>
+        <div className="row to-end">
           <button className="eg-btn eg-btn--ghost" onClick={guard(() => post('/api/skip'))}>Saltar la actual</button>
           <button className="eg-btn eg-btn--ghost" onClick={guard(() => post('/api/clear'))}>Vaciar cola</button>
         </div>

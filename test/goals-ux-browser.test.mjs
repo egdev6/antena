@@ -131,7 +131,7 @@ test('O1 panel: pestañas por objetivo, + Nuevo objetivo, cabecera, hint CSS y p
     // O1.3 (panel): etiqueta editable, ocultar etiqueta y título
     await dom(chrome, `(() => { const i = document.querySelector('.goal-card input[aria-label="Etiqueta"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'Meta'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); return 'ok'; })()`);
     await eventually(() => app.store.config.widgets.goals[1].label, 'Meta');
-    await dom(chrome, `(() => { const l = Array.from(document.querySelectorAll('.goal-card label.check')); for (const t of ['Mostrar etiqueta', 'Mostrar título']) l.find(x => x.textContent.trim().startsWith(t)).querySelector('input').click(); return 'ok'; })()`);
+    await dom(chrome, `(() => { const l = Array.from(document.querySelectorAll('.goal-card label.switch')); for (const t of ['Mostrar etiqueta', 'Mostrar título']) l.find(x => x.textContent.trim().startsWith(t)).querySelector('input').click(); return 'ok'; })()`);
     await eventually(() => app.store.config.widgets.goals[1].showLabel, false);
     await eventually(() => app.store.config.widgets.goals[1].showTitle, false);
 

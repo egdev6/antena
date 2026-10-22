@@ -1,12 +1,12 @@
 import { post } from '../../lib/api';
 import { useLive } from '../../lib/live';
-import { EmptyState, fmtTime, guard, Panel, PfIcon } from '../../lib/ui';
+import { EmptyState, fmtTime, guard, Panel, PfIcon, ViewHead } from '../../lib/ui';
 
 export function Historial() {
   const history = useLive(s => s.history || []);
   const types = useLive(s => s.types);
   return <>
-    <header className="view-head"><div><span className="crumb">En directo › Historial</span><h1>Historial</h1><p className="hint">Las alertas que han salido en pantalla. Las pruebas no se guardan.</p></div></header>
+    <ViewHead crumb="En directo › Historial" title="Historial" hint="Las alertas que han salido en pantalla. Las pruebas no se guardan." />
     <Panel>{history.length ? <ol className="history">{history.map((h: any) => <li key={h.id}>
       <time>{fmtTime(h.at)}</time><span className="pf"><PfIcon platform={types[h.type]?.platform} /></span>
       <span className="t">{types[h.type]?.label || (h.type === 'command' ? 'Comando' : h.type)}</span>

@@ -2,7 +2,7 @@
 import { enc, post, put, del } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { patchWidgets } from '../../lib/patch';
-import { codeTab, confirmDelete, CopyUrl, EmptyState, guard, ItemTabs, LazyInput, Panel, PfIcon, ScaledFrame } from '../../lib/ui';
+import { codeTab, confirmDelete, CopyUrl, EmptyState, guard, ItemTabs, LazyInput, Panel, PfIcon, ScaledFrame, Switch, ViewHead } from '../../lib/ui';
 import { useState, type ReactNode } from 'react';
 import type { GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
 
@@ -16,7 +16,7 @@ const q = (p: string, mode: string) => `${p}${p.includes('?') ? '&' : '?'}${mode
 
 function WField({ w, f, label, type = 'text', ...rest }: { w: string; f: string; label: ReactNode; type?: string; [k: string]: unknown }) {
   const val = useLive(s => ((s.config.widgets as WidgetSection | undefined)?.[w] as WidgetSection | undefined)?.[f] as string | number | boolean | undefined);
-  if (type === 'checkbox') return <label className="check"><input type="checkbox" checked={!!val} onChange={e => patchWidgets({ [w]: { [f]: e.target.checked } })} /> {label}</label>;
+  if (type === 'switch') return <Switch checked={!!val} onChange={x => patchWidgets({ [w]: { [f]: x } })}>{label}</Switch>;
   if (type === 'number') return <label>{label}<input type="number" value={val === undefined ? '' : String(val)} {...rest} onChange={e => patchWidgets({ [w]: { [f]: Number(e.target.value) } })} /></label>;
   if (type === 'css') return <label>{label}<textarea className="code" spellCheck={false} value={val === undefined ? '' : String(val)} onKeyDown={codeTab} {...rest} onChange={e => patchWidgets({ [w]: { [f]: e.target.value } })} /></label>;
   return <label>{label}<input value={val === undefined ? '' : String(val)} {...rest} onChange={e => patchWidgets({ [w]: { [f]: e.target.value } })} /></label>;
@@ -42,11 +42,11 @@ export function Widget({ name }: { name: string }) {
       <WField w="chat" f="maxMessages" label="Mensajes en pantalla" type="number" min={1} max={50} />
       <WField w="chat" f="fontSize" label="Tamaño de letra (px)" type="number" min={12} max={60} />
       <WField w="chat" f="fadeAfterSec" label="Desaparecen tras (s, 0 = nunca)" type="number" min={0} />
-      <div className="lbl">Plataformas<div className="row" style={{ marginTop: 8 }}><ListChecks w="chat" f="platforms" items={[['twitch', 'Twitch'], ['youtube', 'YouTube']]} /></div></div>
-      <WField w="chat" f="hideCommands" label="Ocultar los comandos (!…)" type="checkbox" />
-      <WField w="chat" f="hideOwner" label="Ocultar mis mensajes (lo que escribo desde antena, el móvil o el prompter)" type="checkbox" />
-      <WField w="chat" f="showPlatform" label="Mostrar el icono de la plataforma" type="checkbox" />
-      <WField w="chat" f="reverse" label="Chat invertido (los mensajes nuevos aparecen arriba)" type="checkbox" />
+      <div className="lbl">Plataformas<div className="row field-ctl"><ListChecks w="chat" f="platforms" items={[['twitch', 'Twitch'], ['youtube', 'YouTube']]} /></div></div>
+      <WField w="chat" f="hideCommands" label="Ocultar los comandos (!…)" type="switch" />
+      <WField w="chat" f="hideOwner" label="Ocultar mis mensajes (lo que escribo desde antena, el móvil o el prompter)" type="switch" />
+      <WField w="chat" f="showPlatform" label="Mostrar el icono de la plataforma" type="switch" />
+      <WField w="chat" f="reverse" label="Chat invertido (los mensajes nuevos aparecen arriba)" type="switch" />
       <ChatSelect f="animIn" label="Animación de entrada" options={[['slide', 'Deslizante'], ['fade', 'Desvanecida'], ['pop', 'Pop'], ['bounce', 'Rebote'], ['zoom', 'Zoom'], ['flip', 'Giro'], ['blur', 'Desenfoque'], ['none', 'Sin animación']]} />
       <ChatSelect f="animOut" label="Animación al desaparecer" options={[['slide', 'Deslizante'], ['fade', 'Desvanecida'], ['zoom', 'Zoom'], ['blur', 'Desenfoque'], ['drop', 'Caída'], ['none', 'Ninguna']]} />
     </div>
@@ -54,7 +54,7 @@ export function Widget({ name }: { name: string }) {
     <p className="css-help">Clases: <code>.msg</code> <code>.msg.mod</code> <code>.who</code> <code>.text</code> <code>.pf</code></p></>;
   if (name === 'latest') form = <>
     <h3 className="sub-h">Últimos</h3>
-    <div className="row" style={{ marginBottom: 12 }}><ListChecks w="latest" f="items" items={[['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['member', 'Miembro'], ['any', 'Cualquier evento']]} /></div>
+    <div className="row lead"><ListChecks w="latest" f="items" items={[['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['member', 'Miembro'], ['any', 'Cualquier evento']]} /></div>
     <WField w="latest" f="css" label="CSS de «últimos»" type="css" placeholder=".item .big { font-size: 34px; }" />
     <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.item</code> <code>.item-{'<tipo>'}</code> <code>.item.empty</code> <code>.item.flash</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p>
     <h3 className="sub-h">Ticker</h3>
@@ -75,7 +75,7 @@ export function Widget({ name }: { name: string }) {
     <div className="row"><button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(() => post('/api/credits/play'))}>Lanzar créditos</button><button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/credits/stop'))}>Parar</button></div>
     <p className="hint mt">Parámetros: <code>?transparent</code> (sin fondo) · <code>?autoplay</code> · <code>?loop</code>. Se lanzan desde aquí, desde el MCP, con una acción o con un atajo del Stream Deck.</p></>;
   return <>
-    <header className="view-head"><div><span className="crumb">Widgets › {info.title}</span><h1>{info.title}</h1><p className="hint">{info.desc}</p></div></header>
+    <ViewHead crumb={<>Widgets › {info.title}</>} title={info.title} hint={info.desc} />
     <div className="editor">
       <div className="form-col">
         <Panel title="Fuente de navegador en Meld" aside={<span className="hint">{info.size}</span>}><CopyUrl url={origin() + info.path} /></Panel>
@@ -114,7 +114,7 @@ function Goals() {
     widgets: { ...s.widgets, goals: (s.widgets?.goals || []).map(g => (g.id === boxId ? { ...g, bars: g.bars.map(b => (b.id === barId ? { ...b, value } : b)) } : g)) },
   }));
   return <>
-    <header className="view-head"><div><span className="crumb">Widgets › Objetivos</span><h1>Objetivos</h1><p className="hint">Una caja, varias metas. Añade barras de Twitch y YouTube con su propio progreso. Cada caja es una fuente de navegador para Meld.</p></div></header>
+    <ViewHead crumb="Widgets › Objetivos" title="Objetivos" hint="Una caja, varias metas. Añade barras de Twitch y YouTube con su propio progreso. Cada caja es una fuente de navegador para Meld." />
     <ItemTabs label="Objetivos" items={goals.map(x => ({ id: x.id, label: x.title, badge: x.visible === false ? 'oculto' : undefined }))} selected={g?.id} onSelect={setSel} newLabel="+ Nuevo objetivo"
       onNew={guard(async () => { const d = await post<{ goal: GoalConfig }>('/api/goals', { title: 'Nuevo objetivo', metric: 'follows', target: 10 }); reloadGoals([...goals, d.goal]); setSel(d.goal.id); })} />
     {g ? (() => {
@@ -127,11 +127,11 @@ function Goals() {
         <div className="form-col">
           <div className="row2">
             <label>Título <LazyInput value={g.title} onCommit={x => saveGoal(g.id, { title: x })} /></label>
-            <label className="check">Visible <input type="checkbox" checked={g.visible !== false} onChange={guard(e => saveGoal(g.id, { visible: e.target.checked }))} /></label>
-            <label className="check">Mostrar qué cuenta <input type="checkbox" checked={g.showMetric !== false} onChange={guard(e => saveGoal(g.id, { showMetric: e.target.checked }))} /></label>
+            <Switch checked={g.visible !== false} onChange={guard((x: boolean) => saveGoal(g.id, { visible: x }))}>Visible</Switch>
+            <Switch checked={g.showMetric !== false} onChange={guard((x: boolean) => saveGoal(g.id, { showMetric: x }))}>Mostrar qué cuenta</Switch>
             <label>Etiqueta <LazyInput aria-label="Etiqueta" placeholder="Objetivo" value={g.label || ''} onCommit={x => saveGoal(g.id, { label: x })} /></label>
-            <label className="check">Mostrar etiqueta <input type="checkbox" checked={g.showLabel !== false} onChange={guard(e => saveGoal(g.id, { showLabel: e.target.checked }))} /></label>
-            <label className="check">Mostrar título <input type="checkbox" checked={g.showTitle !== false} onChange={guard(e => saveGoal(g.id, { showTitle: e.target.checked }))} /></label>
+            <Switch checked={g.showLabel !== false} onChange={guard((x: boolean) => saveGoal(g.id, { showLabel: x }))}>Mostrar etiqueta</Switch>
+            <Switch checked={g.showTitle !== false} onChange={guard((x: boolean) => saveGoal(g.id, { showTitle: x }))}>Mostrar título</Switch>
           </div>
           {(g.bars || []).map(b => {
             const v = vs?.bars?.find(x => x.id === b.id)?.value ?? 0;
@@ -142,7 +142,7 @@ function Goals() {
                 <label>Plataforma <select value={b.platform} onChange={guard(e => saveBar(g.id, b.id, { platform: e.target.value as GoalBar['platform'] }))}>{GOAL_PLATFORMS.map(p => <option key={p} value={p}>{p === 'youtube' ? 'YouTube' : 'Twitch'}</option>)}</select></label>
                 <label>Qué cuenta <select value={b.metric} onChange={guard(e => saveBar(g.id, b.id, { metric: e.target.value }))}>{validas.map(k => <option key={k} value={k}>{(metrics[k] as { label?: string } | undefined)?.label || k}</option>)}</select></label>
                 <label>Meta <LazyInput type="number" min={1} value={b.target} onCommit={x => saveBar(g.id, b.id, { target: Number(x) })} /></label>
-                <label className="check">Visible <input type="checkbox" checked={b.visible !== false} onChange={guard(e => saveBar(g.id, b.id, { visible: e.target.checked }))} /></label>
+                <Switch checked={b.visible !== false} onChange={guard((x: boolean) => saveBar(g.id, b.id, { visible: x }))}>Visible</Switch>
               </div>
                 <div className="goal-adjust"><span>Ahora: <b className="gval">{v}</b> / {b.target}</span>
                   <div className="row">

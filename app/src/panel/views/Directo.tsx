@@ -80,7 +80,7 @@ function AlertsCard() {
       <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/skip'), 'Saltada')}><Icon d={IC.skip} className="eg-btn__icon" />Saltar</button>
       <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/clear'), 'Cola vacía')}>Vaciar cola</button>
       {last && <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/replay', { id: last.id }), 'Repitiendo')}><Icon d={IC.repeat} className="eg-btn__icon" />Repetir</button>}
-      <a className="eg-btn eg-btn--secondary eg-btn--sm" href="#/historial" style={{ marginLeft: 'auto' }}>Historial</a>
+      <a className="eg-btn eg-btn--secondary eg-btn--sm push" href="#/historial">Historial</a>
     </div>
   </article>;
 }
@@ -108,7 +108,7 @@ function ChatBox() {
     <form className="row tight" onSubmit={send}>
       <SendTo value={to} onChange={v => live.patchConfig({ chat: { sendTo: v } })} />
       <label className="sr-only" htmlFor="dir-say">Escribe en el chat</label>
-      <input id="dir-say" className="grow" value={text} onChange={e => setText(e.target.value)} placeholder="Escribe en tu chat…" style={{ margin: 0 }} />
+      <input id="dir-say" className="grow" value={text} onChange={e => setText(e.target.value)} placeholder="Escribe en tu chat…" />
       <button type="submit" className="eg-btn eg-btn--secondary eg-btn--sm">Enviar</button>
     </form>
   </Sec>;

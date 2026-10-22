@@ -49,7 +49,7 @@ function PlatformCard({ p, x }: { p: 'twitch' | 'youtube'; x?: ViewerPlatform })
     <div className="eg-module-card__actions">
       <form className="row tight" onSubmit={e => { e.preventDefault(); const n = Number(rec); if (rec === '' || !Number.isFinite(n)) return; guard(async () => { const d = await put<ViewersState>(`/api/viewers/records/${p}`, { value: n }); live.update(() => ({ viewers: d })); setRec(''); }, 'Récord cambiado')(); }}>
         <label className="sr-only" htmlFor={'rec-' + p}>Nuevo récord de {NAME[p]}</label>
-        <input id={'rec-' + p} type="number" min={0} placeholder="Fijar récord" value={rec} onChange={e => setRec(e.target.value)} style={{ margin: 0, width: 130 }} />
+        <input id={'rec-' + p} type="number" min={0} placeholder="Fijar récord" value={rec} onChange={e => setRec(e.target.value)} style={{ width: 130 }} />
         <button type="submit" className="eg-btn eg-btn--ghost eg-btn--sm">Guardar</button>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { if (!confirm(`¿Poner a cero el récord de ${NAME[p]}? La próxima cifra será el punto de partida, sin alerta.`)) return; const d = await put<ViewersState>(`/api/viewers/records/${p}`, { value: 0 }); live.update(() => ({ viewers: d })); }, 'Récord a cero')}>A cero</button>
       </form>

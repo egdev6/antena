@@ -3,6 +3,47 @@
 Rules for the React panel (`app/src/panel`). The goal: the same task looks and behaves the same in every
 view. Shared pieces live in `app/src/lib/ui.tsx`; UI copy stays in Spanish.
 
+## View skeleton
+
+Every view starts with `ViewHead`, so all headers share the same order:
+
+1. `crumb`: `<sidebar group> › <sidebar label>` (for example «Meld y Stream Deck › Atajos y Stream Deck»).
+   Sidebar groups are not routes, so this crumb is plain text. Sub-routes link back to their parent view
+   instead: «Comandos de chat › Comando», where «Comandos de chat» links to `#/comandos`.
+2. `title` (`h1`): the sidebar label, or the object name in a sub-route (an editable `title-input` there).
+3. `hint` (optional): one or two sentences on what the view does. Put «solo lo ves tú»-style notes here,
+   never in the crumb.
+4. `actions` (optional), on the right: status and switches that turn the whole view on/off first, then
+   secondary buttons, and the primary button (if any) last.
+
+The live dashboard (`Directo`) is the one exception: its crumb shows the stream state and clock.
+
+## Sections and hints
+
+- A view is made of sections: `Sec` for new code; `Panel` is the legacy wrapper and is styled the same
+  (same surface, title in display caps, hairline under the header).
+- The section title is the `title` prop; counts or status go in `aside` as `span.hint`; an on/off switch
+  for the whole section also goes in `aside`.
+- A section's introduction is the first child: `p.hint.lead`. Hints about a single field go right after
+  that field as `p.hint`.
+- Use `.sub-h` headings only to name a group of content that has no section of its own (for example
+  «Últimos» and «Ticker» inside one form, or «Mis atajos» above the shortcut tabs).
+
+## Forms
+
+- Label above the control: `<label>Texto <input/></label>`. For a control that is not an input (`Seg`,
+  a row of checkboxes), use `div.lbl` with the control in `div.field-ctl` (or `div.row.field-ctl`).
+- Two or three fields side by side: `.row2` / `.row3`. Inline controls with buttons: `.row` / `.row.tight`
+  (inputs inside a row and in header actions lose the «label above» margin automatically).
+- On/off settings use `Switch`, also inside `.row2` / `.row3` (it aligns with the neighbouring inputs).
+  Checkboxes (`label.check`) are only for picking several options from a set (platforms, items to show)
+  and for fields of a form that is sent with a button («Es moderador», «sub o miembro»).
+- No inline `style` for spacing or alignment. Use the classes: `.mt` (16 px) / `.mt-s` (8 px) top margin,
+  `.lead` (12 px below), `.field-ctl` (6 px above a non-input control), `.push` (push to the right in a
+  flex row), `.grow` (take the remaining width), `.row.middle` (center vertically), `.row.to-end` (align
+  to the bottom right). Inline styles are fine for data-driven values (colors, progress, sizes of a
+  specific control).
+
 ## Collections: item tabs vs list + sub-route
 
 Use **item tabs** (`ItemTabs`) when a view edits one object at a time from a small set the user creates:

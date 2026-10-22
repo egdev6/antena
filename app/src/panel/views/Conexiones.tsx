@@ -1,6 +1,6 @@
 import { post } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { cx, fmtTime, guard, LazyInput, toast } from '../../lib/ui';
+import { cx, fmtTime, guard, LazyInput, toast, ViewHead } from '../../lib/ui';
 
 export function stateClass(s?: string) {
   if (s && ['conectado', 'escuchando'].includes(s)) return 'ok';
@@ -15,7 +15,7 @@ export function Conexiones() {
   const tw = st.twitch || {}, yt = st.youtube || {};
   const yset = (k: string) => (v: string) => live.patchConfig({ youtube: { [k]: v.trim() } });
   return <>
-    <header className="view-head"><div><span className="crumb">Ajustes › Conexiones</span><h1>Conexiones</h1><p className="hint">Conecta tus cuentas una vez; la sesión se guarda en tu PC.</p></div></header>
+    <ViewHead crumb="Ajustes › Conexiones" title="Conexiones" hint="Conecta tus cuentas una vez; la sesión se guarda en tu PC." />
     <div className="grid2">
       <article className="panel" id="twitch">
         <header><h2>Twitch</h2><span className={cx('state', stateClass(tw.state))}>{tw.state}</span></header>

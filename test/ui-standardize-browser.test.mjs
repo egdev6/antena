@@ -215,4 +215,32 @@ test('O3.2 css-help: cada campo de CSS lista las clases de su widget', { timeout
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
+test('O3.2 esqueleto común: cabecera con miga «grupo › vista» igual que la barra lateral, interruptores y sin márgenes en línea', { timeout: 180000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, base, close } = ctx;
+  let chrome;
+  try {
+    chrome = await openChromePage(bin, `${base}/#/chat`);
+    await waitDom(chrome.cdp, `document.querySelectorAll('#nav a.eg-menu__item').length > 20`, { timeoutMs: 12000 });
+    const links = await dom(chrome, `JSON.stringify(Array.from(document.querySelectorAll('#nav .nav-grp')).flatMap(g => Array.from(g.querySelectorAll('a.eg-menu__item')).map(a => [a.getAttribute('href'), g.querySelector('.grp-l').textContent.trim(), a.querySelector('.eg-menu__label').textContent.trim()])))`);
+    eq(JSON.parse(links).length > 25, true);
+    const bad = [];
+    for (const [href, group, label] of JSON.parse(links)) {
+      if (href === '#/directo') continue;   // el tablero lleva el estado del directo en la miga
+      await dom(chrome, `location.hash = ${JSON.stringify(href)}`);
+      await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(href)} && !!document.querySelector('main .view-head h1') && !document.querySelector('main > p.hint')`, { timeoutMs: 12000 });
+      const got = JSON.parse(await dom(chrome, `JSON.stringify({ crumb: document.querySelector('main .view-head .crumb')?.textContent.trim(), h1: document.querySelector('main .view-head h1')?.textContent.trim() || document.querySelector('main .view-head h1 input')?.value, order: Array.from(document.querySelector('main .view-head > div').children).map(e => e.tagName).join(','), margins: Array.from(document.querySelectorAll('main [style]')).filter(e => /margin/.test(e.getAttribute('style'))).length, checks: document.querySelectorAll('main .switch').length })`));
+      if (got.crumb !== `${group} › ${label}` || got.h1 !== label || !/^SPAN,H1(,P)?$/.test(got.order) || got.margins) bad.push({ href, ...got, want: `${group} › ${label}` });
+    }
+    eq(JSON.stringify(bad), '[]');
+    // ajustes de sí/no: interruptor (Switch), no casilla suelta
+    for (const [hash, n] of [['#/filtros', 1], ['#/prompter', 3], ['#/meld', 1], ['#/widget/chat', 4]]) {
+      await dom(chrome, `location.hash = ${JSON.stringify(hash)}`);
+      await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(hash)} && !!document.querySelector('main .view-head h1')`, { timeoutMs: 12000 });
+      eq(await dom(chrome, `${JSON.stringify(hash)} + ':' + (document.querySelectorAll('main label.switch').length >= ${n}) + ':' + document.querySelectorAll('main label.check:not(:has(+ label.check)):not(label.check + label.check)').length`), `${hash}:true:0`);
+    }
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
 function eq(actual, expected) { if (actual !== expected) throw new Error(`esperaba ${JSON.stringify(expected)}, hubo ${JSON.stringify(actual)}`); }

@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { useLive } from '../../lib/live';
 import { patchIx } from '../../lib/patch';
-import { codeTab, confirmDelete, cx, EmptyState, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec } from '../../lib/ui';
+import { codeTab, confirmDelete, cx, EmptyState, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec, ViewHead } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { PERMS } from './Editor';
 import type { Question, TierListItem, TierListTier } from '../../lib/types';
@@ -13,7 +13,6 @@ function IxField({ k, label, type = 'text', ...rest }: { k: string; label: React
   const [sec, f] = k.split('.');
   const val = useLive(s => s.interactive?.config?.[sec]?.[f] as string | number | boolean | undefined);
   const set = (v: string | number | boolean) => patchIx(sec, { [f]: v });
-  if (type === 'checkbox') return <label className="check"><input type="checkbox" checked={!!val} onChange={e => set(e.target.checked)} /> {label}</label>;
   if (type === 'switch') return <Switch checked={!!val} onChange={set}>{label}</Switch>;
   if (type === 'range') { const n = Number(val ?? 0), min = Number(rest.min ?? 0), max = Number(rest.max ?? 100); return <label>{label}<span className="val">{n}</span><input type="range" min={min} max={max} value={n} style={{ ['--v' as any]: ((n - min) / ((max - min) || 1)) * 100 + '%' }} onChange={e => set(Number(e.target.value))} /></label>; }
   if (type === 'perm') return <label>{label}<select value={String(val ?? '')} onChange={e => set(e.target.value)}>{PERMS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>;
@@ -22,11 +21,11 @@ function IxField({ k, label, type = 'text', ...rest }: { k: string; label: React
   return <label>{label}<input value={val === undefined ? '' : String(val)} {...rest} onChange={e => set(e.target.value)} /></label>;
 }
 const Head = ({ title, desc, children }: { title: string; desc: ReactNode; children?: ReactNode }) =>
-  <header className="view-head"><div><span className="crumb">Widgets › {title}</span><h1>{title}</h1><p className="hint">{desc}</p></div><div className="actions">{children}</div></header>;
+  <ViewHead crumb={<>Widgets › {title}</>} title={title} hint={desc} actions={children} />;
 function AddRow({ placeholder, onAdd, children }: { placeholder: string; onAdd: (v: string) => Promise<unknown>; children?: ReactNode }) {
   const [v, setV] = useState('');
   const go = guard(async () => { if (!v.trim()) return; await onAdd(v.trim()); setV(''); });
-  return <form className="row tight" onSubmit={e => { e.preventDefault(); go(); }}><input aria-label={placeholder} value={v} onChange={e => setV(e.target.value)} placeholder={placeholder} className="grow" style={{ margin: 0 }} />{children}<button type="submit" className="eg-btn eg-btn--secondary eg-btn--sm">Añadir</button></form>;
+  return <form className="row tight" onSubmit={e => { e.preventDefault(); go(); }}><input aria-label={placeholder} value={v} onChange={e => setV(e.target.value)} placeholder={placeholder} className="grow" />{children}<button type="submit" className="eg-btn eg-btn--secondary eg-btn--sm">Añadir</button></form>;
 }
 
 // ---------- Preguntas ----------
@@ -71,7 +70,7 @@ export function Preguntas() {
             <IxField k="questions.minLength" label="Largo mínimo" type="range" min={0} max={60} />
           </div>
           <IxField k="questions.permission" label="Quién puede preguntar" type="perm" />
-          <div className="row tight"><IxField k="questions.confirmInChat" label="Confirmar en el chat al recibirla" type="checkbox" /><IxField k="questions.showUser" label="Mostrar quién pregunta" type="checkbox" /></div>
+          <div className="row tight"><IxField k="questions.confirmInChat" label="Confirmar en el chat al recibirla" type="switch" /><IxField k="questions.showUser" label="Mostrar quién pregunta" type="switch" /></div>
           <IxField k="questions.confirmText" label="Texto de confirmación ({user} {position})" />
           <IxField k="questions.css" label="CSS del widget" type="css" placeholder=".text { font-size: 50px; }" />
           <p className="css-help">Clases: <code>.q</code> <code>.text</code> <code>.who</code> <code>.count</code></p>
@@ -141,7 +140,7 @@ export function TierList() {
         {l && <Stage key={l.id} eyebrow="Vista previa" src={`/widget/tierlist?id=${enc(l.id)}&debug`} aside={<span>{I.shownTierlist === l.id ? 'En pantalla' : 'No está en pantalla'}</span>} />}
         <Sec title="Ajustes de la votación" id="h-vaj">
           <div className="row2"><IxField k="tierlist.command" label="Comando" className="mono" /><IxField k="tierlist.voteSeconds" label="Cierre automático (s, 0 = a mano)" type="number" min={0} /></div>
-          <IxField k="tierlist.acceptBare" label="Vale escribir solo la letra («S», «A»…)" type="checkbox" />
+          <IxField k="tierlist.acceptBare" label="Vale escribir solo la letra («S», «A»…)" type="switch" />
           <IxField k="tierlist.css" label="CSS del widget" type="css" placeholder=".chip { font-size: 30px; }" />
           <p className="css-help">Clases: <code>.board</code> <code>.row</code> <code>.tier</code> <code>.chip</code> <code>.vote</code> <code>.bar</code> <code>.pool</code></p>
         </Sec>
@@ -196,9 +195,9 @@ export function Sorteo() {
             <IxField k="giveaway.rollSeconds" label="Duración de la ruleta (s)" type="range" min={1} max={20} />
           </div>
           <div className="row tight">
-            <IxField k="giveaway.excludeWinners" label="No repetir ganador" type="checkbox" />
-            <IxField k="giveaway.announceInChat" label="Avisar en el chat" type="checkbox" />
-            <IxField k="giveaway.meldConfetti" label="Confeti en Meld" type="checkbox" />
+            <IxField k="giveaway.excludeWinners" label="No repetir ganador" type="switch" />
+            <IxField k="giveaway.announceInChat" label="Avisar en el chat" type="switch" />
+            <IxField k="giveaway.meldConfetti" label="Confeti en Meld" type="switch" />
           </div>
           <IxField k="giveaway.openText" label="Al abrir" />
           <IxField k="giveaway.closeText" label="Al cerrar" />
