@@ -72,6 +72,11 @@ export function CopyUrl({ url, children }: { url: string; children?: ReactNode }
   return <div className="overlay-url"><code>{url}</code><button className="btn ghost sm" type="button" onClick={() => copy(url)}>Copiar</button>{children}</div>;
 }
 
+/** Estado vacío de una lista o sección (eg-post--empty, sin acción): el mismo aspecto en todo el panel. */
+export function EmptyState({ children }: { children: ReactNode }) {
+  return <div className="eg-post eg-post--empty empty-state">{children}</div>;
+}
+
 /** Pestañas de una sección con varios objetos (patrón de las tier lists): una por elemento y la última para crear uno nuevo. */
 export function ItemTabs({ items, selected, onSelect, onNew, newLabel, label }: { items: { id: string; label: ReactNode; badge?: ReactNode }[]; selected: string | null | undefined; onSelect: (id: string) => void; onNew: () => void; newLabel: ReactNode; label?: string }) {
   return <div className="eg-tabs eg-tabs--segmented eg-tabs--sm list-tabs" role="tablist" aria-label={label}>

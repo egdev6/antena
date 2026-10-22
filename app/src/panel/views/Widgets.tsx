@@ -2,7 +2,7 @@
 import { enc, post, put, del } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { patchWidgets } from '../../lib/patch';
-import { codeTab, CopyUrl, guard, ItemTabs, LazyInput, Panel, PfIcon, ScaledFrame } from '../../lib/ui';
+import { codeTab, CopyUrl, EmptyState, guard, ItemTabs, LazyInput, Panel, PfIcon, ScaledFrame } from '../../lib/ui';
 import { useState, type ReactNode } from 'react';
 import type { GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
 
@@ -159,7 +159,7 @@ function Goals() {
         {/* O1.5: la preview se vuelve a montar al cambiar la config de la caja (no con cada valor) */}
         <div className="preview-col"><ScaledFrame key={JSON.stringify(g)} src={`/widget/goal?id=${enc(g.id)}&debug`} w={1000} h={previewHeight} /><p className="hint">{visibleBars ? 'Con los datos reales del directo.' : 'Sin barras visibles en el overlay.'}</p></div>
       </div></article>;
-    })() : <Panel><p className="hint">Sin objetivos.</p></Panel>}
+    })() : <EmptyState>Sin objetivos.</EmptyState>}
   </>;
 }
 

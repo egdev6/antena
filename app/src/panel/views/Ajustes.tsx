@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { post } from '../../lib/api';
 import { isDesktop, listMonitors, openPrompter, type Monitor } from '../../lib/desktop';
 import { live, useLive } from '../../lib/live';
-import { codeTab, cx, guard, Icon, IconBtn, LazyInput, Panel, Range, Sec, Status, Switch, toast } from '../../lib/ui';
+import { codeTab, cx, EmptyState, guard, Icon, IconBtn, LazyInput, Panel, Range, Sec, Status, Switch, toast } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { stateClass } from './Conexiones';
 import type { FiltersConfig, PrompterConfig, TtsConfig } from '../../lib/types';
@@ -58,13 +58,13 @@ export function Meld() {
           <div className="rows">{(current?.layers || []).length ? current!.layers.map(l => <article key={l.id} className={cx('eg-post eg-post--row', !l.visible && 'is-off')}>
             <div className="eg-post__content"><b>{l.name}</b><span className="eg-post__meta">{layerMeta(l)}{l.visible ? '' : ' · oculta'}{(l.url?.includes('/overlay') || l.url?.includes('/widget/')) ? ' · antena' : ''}</span></div>
             <IconBtn icon={l.visible ? IC.eye : IC.eyeOff} label={`${l.visible ? 'Ocultar' : 'Mostrar'} ${l.name}`} pressed={!!l.visible} onClick={guard(() => post('/api/meld/layer', { scene: current!.id, layer: l.id }))} />
-          </article>) : <p className="hint">Esta escena no tiene capas.</p>}</div>
+          </article>) : <EmptyState>Esta escena no tiene capas.</EmptyState>}</div>
         </Sec>
         <Sec title="Audio" id="h-aud">
           <div className="rows">{ses.tracks.length ? ses.tracks.map(t => <div key={t.id} className="track">
             <span className="grow"><b>{t.name}</b><span className="hint">{t.muted ? ' · silenciada' : ''}</span></span>
             <IconBtn icon={t.muted ? IC.volumeOff : /mic/i.test(t.name) ? IC.mic : IC.volume} label={`${t.muted ? 'Activar' : 'Silenciar'} ${t.name}`} pressed={!t.muted} className={cx(t.muted && 'is-muted')} onClick={guard(() => post('/api/meld/track', { track: t.id, action: 'mute' }))} />
-          </div>) : <p className="hint">Meld no ha mandado pistas de audio.</p>}</div>
+          </div>) : <EmptyState>Meld no ha mandado pistas de audio.</EmptyState>}</div>
           <p className="hint">La ganancia de cada pista se cambia en Meld o con una acción del MCP; aquí, silenciar y activar.</p>
         </Sec>
       </div>

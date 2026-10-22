@@ -3,7 +3,7 @@ import { get, post, put, enc } from '../../lib/api';
 import { IC } from '../../lib/icons';
 import { ViewerChips } from './Espectadores';
 import { live, useLive } from '../../lib/live';
-import { copy, cx, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, Sec, Status, toast, type Tone } from '../../lib/ui';
+import { copy, cx, EmptyState, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, Sec, Status, toast, type Tone } from '../../lib/ui';
 import type { AlertType, ChatSendResult, SessionList, SessionSummary, TimelineItem } from '../../lib/types';
 import { SendTo, sendResultText } from './Chat';
 
@@ -13,7 +13,7 @@ const HOT = new Set(['sub', 'resub', 'giftsub', 'raid', 'superchat', 'superstick
 
 /** Cronología del directo (Timeline): la más reciente arriba. */
 export function Timeline({ items, types, limit = 60 }: { items: TimelineItem[]; types: Record<string, AlertType>; limit?: number }) {
-  if (!items.length) return <p className="hint">Todavía no ha pasado nada.</p>;
+  if (!items.length) return <EmptyState>Todavía no ha pasado nada.</EmptyState>;
   const list = [...items].reverse().slice(0, limit);
   return <ol className="eg-timeline">{list.map((e, i) => e.kind === 'event'
     ? <li key={e.id} className={cx('eg-timeline__item', HOT.has(e.type ?? '') && 'eg-timeline__item--hot', i === 0 && 'is-new')}>
@@ -39,7 +39,7 @@ export function GoalBars() {
         <b>{b.value ?? 0}/{b.target}</b></div>
       <Progress lg p={b.target ? (b.value ?? 0) / b.target : 0} label={`${g.title} · ${b.platform} · ${b.metric}`} />
     </div>)}
-  </article>) : <p className="hint">Sin objetivos visibles.</p>}</div>;
+  </article>) : <EmptyState>Sin objetivos visibles.</EmptyState>}</div>;
 }
 
 /** Estado de las conexiones en StatusBadge. */
@@ -104,7 +104,7 @@ function ChatBox() {
       <time className="eg-timeline__time">{fmtTime(m.at)}</time>
       <span className="eg-timeline__pf" title={m.platform === 'youtube' ? 'YouTube' : 'Twitch'}><PfIcon platform={m.platform === 'youtube' ? 'youtube' : 'twitch'} /></span>
       <span><span className={cx('eg-timeline__who', m.mod && 'eg-timeline__who--mod')}>{m.user}</span>{m.owner ? <span className="tagm you">Tú</span> : null} {m.command ? <span className="eg-timeline__cmd">{m.text}</span> : m.text}</span>
-    </li>)}</ol> : <p className="hint">Aún no hay mensajes.</p>}
+    </li>)}</ol> : <EmptyState>Aún no hay mensajes.</EmptyState>}
     <form className="row tight" onSubmit={send}>
       <SendTo value={to} onChange={v => live.patchConfig({ chat: { sendTo: v } })} />
       <label className="sr-only" htmlFor="dir-say">Escribe en el chat</label>
@@ -165,7 +165,7 @@ export function Directo() {
           {(past || []).length ? <div className="rows">{(past || []).map(p => <article className="eg-post eg-post--row" key={p!.id}>
             <div className="eg-post__content"><b>{p!.title || 'Sin título'}</b><span className="eg-post__meta">{fmtDateTime(p!.startedAt)} · {p!.events} eventos</span></div>
             <a className="eg-btn eg-btn--ghost eg-btn--sm" href={`/api/session/summary.md?id=${enc(p!.id)}`} target="_blank">Resumen</a></article>)}</div>
-            : <p className="hint">Todavía no hay directos archivados.</p>}
+            : <EmptyState>Todavía no hay directos archivados.</EmptyState>}
         </Sec>
       </div>
     </div>

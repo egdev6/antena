@@ -147,4 +147,24 @@ test('O3.2 atajos: pestañas por atajo, + Nuevo atajo, pasos con subir/bajar y b
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
+test('O3.2 EmptyState: las listas vacías usan el mismo estado vacío (eg-post--empty)', { timeout: 90000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    app.store.config.commands = [];
+    app.store.config.timers = [];
+    chrome = await openChromePage(bin, `${base}/#/comandos`);
+    const empty = `Array.from(document.querySelectorAll('main .eg-post--empty.empty-state')).map(e => e.textContent.trim())`;
+    await waitDom(chrome.cdp, `${empty}.some(x => x.startsWith('Todavía no hay comandos'))`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `document.querySelectorAll('li.empty, li.hint').length`), 0);
+    await dom(chrome, `location.hash = '#/historial'`);
+    await waitDom(chrome.cdp, `${empty}.includes('Todavía no ha llegado ninguna alerta.')`, { timeoutMs: 12000 });
+    await dom(chrome, `location.hash = '#/widget/giveaway'`);
+    await waitDom(chrome.cdp, `${empty}.includes('Aún no se ha sorteado.') && ${empty}.includes('Sin sorteos anteriores.')`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `getComputedStyle(document.querySelector('main .empty-state')).cursor`), 'default');
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
 function eq(actual, expected) { if (actual !== expected) throw new Error(`esperaba ${JSON.stringify(expected)}, hubo ${JSON.stringify(actual)}`); }

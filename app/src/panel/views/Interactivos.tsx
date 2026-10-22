@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { useLive } from '../../lib/live';
 import { patchIx } from '../../lib/patch';
-import { codeTab, cx, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec } from '../../lib/ui';
+import { codeTab, cx, EmptyState, fmtDate, fmtTime, guard, Icon, IconBtn, ItemTabs, LazyInput, Sec, Stage, Status, Switch, toast, UrlSec } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { PERMS } from './Editor';
 import type { Question, TierListItem, TierListTier } from '../../lib/types';
@@ -53,14 +53,14 @@ export function Preguntas() {
             <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={guard(() => post(`/api/questions/${q.id}/move`, { dir: -1 }))} />
             <IconBtn icon={IC.down} label="Bajar" disabled={i === pend.length - 1} onClick={guard(() => post(`/api/questions/${q.id}/move`, { dir: 1 }))} />
             <IconBtn icon={IC.x} label="Descartar" onClick={guard(() => post(`/api/questions/${q.id}/status`, { status: 'discarded' }))} />
-          </article>) : <div className="eg-post eg-post--empty">Aún no hay preguntas. Se envían con {c.command} tu pregunta.</div>}</div>
+          </article>) : <EmptyState>Aún no hay preguntas. Se envían con {c.command} tu pregunta.</EmptyState>}</div>
           <AddRow placeholder="Añadir una pregunta a mano…" onAdd={text => post('/api/questions', { text })} />
         </Sec>
         <Sec flat title="Respondidas" id="h-done" aside={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!done.length} onClick={guard(() => post('/api/questions/clear', {}))}>Limpiar</button>}>
           <div className="rows">{done.length ? done.map(q => <article key={q.id} className="eg-post eg-post--row eg-post--sent">
             <div className="eg-post__content"><b className="muted">{q.text}</b><span className="eg-post__meta">{q.user} · {q.status === 'discarded' ? 'descartada' : 'respondida'} {q.at ? `· ${fmtTime(q.at)}` : ''}</span></div>
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post(`/api/questions/${q.id}/status`, { status: 'pending' }))}>Devolver a la cola</button>
-          </article>) : <p className="hint">Nada todavía.</p>}</div>
+          </article>) : <EmptyState>Nada todavía.</EmptyState>}</div>
         </Sec>
       </div>
       <div className="stack">
@@ -111,7 +111,7 @@ export function TierList() {
           <button type="button" className={cx('tbtn', !l.placements[it.id] && 'on')} title="Sin colocar" onClick={guard(() => post(T + '/place', { item: it.id, tier: '' }))}>–</button></span>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!!v} onClick={guard(() => post(T + '/vote', { item: it.id }))}>Votar en el chat</button>
         <IconBtn icon={IC.x} label={`Quitar ${it.label}`} onClick={guard(() => del(`${T}/items/${enc(it.id)}`))} />
-      </article>) : <div className="eg-post eg-post--empty">Sin elementos.</div>}</div>
+      </article>) : <EmptyState>Sin elementos.</EmptyState>}</div>
       <AddRow placeholder="Añadir elementos (separados por comas)" onAdd={x => post(T + '/items', { items: x.split(',').map(y => y.trim()).filter(Boolean) })} />
     </Sec>
     <Sec title="Lista" id="h-list" aside={<div className="row tight">
@@ -174,14 +174,14 @@ export function Sorteo() {
           <div className="rows">{g.entries.length ? g.entries.slice().reverse().map(e => <article key={e.user} className={cx('eg-post eg-post--row', g.winners.some(w => w.user === e.user) && 'won')}>
             <div className="eg-post__content"><b>{e.user}</b><span className="eg-post__meta">{e.member ? 'sub o miembro · ' : ''}{PF[String(e.platform)] || 'Twitch'}</span></div>
             <IconBtn icon={IC.x} label={`Quitar a ${e.user}`} onClick={guard(() => post('/api/giveaway/remove', { user: e.user }))} /></article>)
-            : <div className="eg-post eg-post--empty">Nadie todavía. {g.open ? <>Se entra con <code>{String(c.command ?? '')}</code>.</> : 'Abre el sorteo para que el chat pueda entrar.'}</div>}</div>
+            : <EmptyState>Nadie todavía. {g.open ? <>Se entra con <code>{String(c.command ?? '')}</code>.</> : 'Abre el sorteo para que el chat pueda entrar.'}</EmptyState>}</div>
           <AddRow placeholder="Añadir a alguien a mano" onAdd={user => post('/api/giveaway/join', { user, member })}><label className="check"><input type="checkbox" checked={member} onChange={e => setMember(e.target.checked)} /> sub o miembro</label></AddRow>
         </Sec>
         <Sec flat title="Ganadores" id="h-win">
-          <div className="rows">{g.winners.length ? g.winners.map(w => <article key={w.user + w.at} className="eg-post eg-post--row eg-post--new"><div className="eg-post__content"><b>{w.user}</b><span className="eg-post__meta">{fmtTime(w.at)}</span></div></article>) : <p className="hint">Aún no se ha sorteado.</p>}</div>
+          <div className="rows">{g.winners.length ? g.winners.map(w => <article key={w.user + w.at} className="eg-post eg-post--row eg-post--new"><div className="eg-post__content"><b>{w.user}</b><span className="eg-post__meta">{fmtTime(w.at)}</span></div></article>) : <EmptyState>Aún no se ha sorteado.</EmptyState>}</div>
         </Sec>
         <Sec flat title="Sorteos anteriores" id="h-past">
-          <div className="rows">{(g.history || []).length ? (g.history || []).slice(0, 8).map((h: any) => <article key={h.at} className="eg-post eg-post--row eg-post--sent"><div className="eg-post__content"><b>{h.winner}</b><span className="eg-post__meta">{fmtDate(h.at)} · {h.title}{h.prize ? ' · ' + h.prize : ''} · {h.entries} part.</span></div></article>) : <p className="hint">Sin sorteos anteriores.</p>}</div>
+          <div className="rows">{(g.history || []).length ? (g.history || []).slice(0, 8).map((h: any) => <article key={h.at} className="eg-post eg-post--row eg-post--sent"><div className="eg-post__content"><b>{h.winner}</b><span className="eg-post__meta">{fmtDate(h.at)} · {h.title}{h.prize ? ' · ' + h.prize : ''} · {h.entries} part.</span></div></article>) : <EmptyState>Sin sorteos anteriores.</EmptyState>}</div>
         </Sec>
       </div>
       <div className="stack">

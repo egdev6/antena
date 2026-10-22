@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { del, enc, post, put, get } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { AlertConfig, AlertVariation, CommandConfig, Config, SendResult, TimerConfig } from '../../lib/types';
-import { codeTab, cx, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, Switch, toast, fmtTime } from '../../lib/ui';
+import { codeTab, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, Switch, toast, fmtTime } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { go } from '../router';
 import { useUploader, UploadBar } from './General';
@@ -474,7 +474,7 @@ export function Editor({ target }: { target: Target }) {
               })} /><i></i></label>
               <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" title={`Probar ${x.name}`} onClick={guard(() => post('/api/test', { type, variationId: x.id, target: 'preview' }))}><Icon d={IC.play} className="eg-btn__icon" />Probar</button>
               <a className="eg-btn eg-btn--ghost eg-btn--sm" href={`#/alerta/${type}/v/${x.id}`}>Editar</a>
-            </article>) : <div className="eg-post eg-post--empty">Sin variaciones.</div>}</div>
+            </article>) : <EmptyState>Sin variaciones.</EmptyState>}</div>
           </>)}
 
           {pane('css', <>

@@ -299,6 +299,9 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .vcond{flex:1;min-width:160px;color:var(--muted);font-size:13px}
 .vbtns{display:flex;gap:6px;margin-left:auto}
 .varlist .empty,.cmdlist .empty{justify-content:center;color:var(--muted);background:transparent;box-shadow:none;border:1px dashed var(--ctrl);font-weight:600;font-size:14px}
+/* estado vacío compartido (EmptyState): el aspecto de eg-post--empty, sin la invitación a pulsar */
+.empty-state{display:block;text-align:center;line-height:1.5;cursor:default}
+.empty-state:hover{border-color:var(--color-border-control);color:var(--color-fg-muted);background:transparent}
 .past li span:first-child{flex:1}
 .tracks li span{flex:1}
 

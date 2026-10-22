@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { del, enc, get, post, put } from '../../lib/api';
 import { live } from '../../lib/live';
-import { copy, cx, guard, IconBtn, ItemTabs, LazyInput, Panel, toast } from '../../lib/ui';
+import { copy, cx, EmptyState, guard, IconBtn, ItemTabs, LazyInput, Panel, toast } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { ACTIONS, ActionFields } from './Editor';
 
@@ -117,7 +117,7 @@ export function Atajos() {
       onDeleted={() => { setUnsaved(u => ({ ...u, [sc.id]: false })); setSel(undefined); sync(info.custom.filter(x => x.id !== sc.id)); }}
       onDirty={v => setUnsaved(u => (!!u[sc.id] === v ? u : { ...u, [sc.id]: v }))} />)}
     {current === null && <Panel title="Nuevo atajo">
-      {!info.custom.length && <p className="hint">Aún no tienes atajos. Ideas: «Empezar» (escena de inicio + abrir preguntas + mensaje en el chat), «Pausa café» (escena de pausa + pausar alertas), «Sorteo» (abrir sorteo + prompter en la pestaña de sorteo).</p>}
+      {!info.custom.length && <EmptyState>Aún no tienes atajos. Ideas: «Empezar» (escena de inicio + abrir preguntas + mensaje en el chat), «Pausa café» (escena de pausa + pausar alertas), «Sorteo» (abrir sorteo + prompter en la pestaña de sorteo).</EmptyState>}
       <div className="row tight"><input className="grow" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="Empezar el directo" style={{ margin: 0 }} aria-label="Nombre del atajo nuevo" /><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}>Crear atajo</button></div>
     </Panel>}
     <div className="grid2 mt">
