@@ -1,6 +1,9 @@
-# Release manual (#162): compila el instalador de Windows (NSIS, sin firma) y crea un BORRADOR
-# de release con el .exe adjunto. Solo se lanza a mano y desde main. No publica ni crea tags:
+# Release manual (#162): compila el instalador de Windows (NSIS, sin firma de código de Windows) y crea
+# un BORRADOR de release con el .exe adjunto. Solo se lanza a mano y desde main. No publica ni crea tags:
 # el tag v<versión> nace cuando el mantenedor publica el borrador tras revisarlo.
+# Actualizaciones (Ajustes › Acerca de): el instalador se firma con la clave del updater de Tauri
+# (minisign, secretos TAURI_SIGNING_PRIVATE_KEY y TAURI_SIGNING_PRIVATE_KEY_PASSWORD) y se adjuntan
+# su .sig y latest.json. La app solo ve la versión cuando el borrador se publica (releases/latest).
 name: Release
 
 on:
@@ -47,6 +50,23 @@ jobs:
         run: |
           node scripts/release-check.mjs "$VERSION"
           test -f "docs/releases/v$VERSION.md" || { echo "::error::Faltan las notas docs/releases/v$VERSION.md."; exit 1; }
+      - name: Clave pública del updater configurada
+        shell: bash
+        run: |
+          if grep -q 'PLACEHOLDER_UPDATER_PUBKEY' src-tauri/tauri.conf.json; then
+            echo "::error::plugins.updater.pubkey de src-tauri/tauri.conf.json sigue siendo el marcador: pon la clave pública de «tauri signer generate»."
+            exit 1
+          fi
+      - name: Secreto de firma del updater
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::Falta el secreto TAURI_SIGNING_PRIVATE_KEY; sin él las actualizaciones no se pueden firmar."
+            exit 1
+          fi
+          echo "Clave de firma presente; su valor nunca se imprime."
       - name: La release no existe todavía
         shell: bash
         env:
@@ -67,7 +87,15 @@ jobs:
         run: pnpm fonts
       - name: Node empaquetado con la app
         run: pnpm desktop:node
+      - name: Activar los artefactos del updater
+        # solo en esta copia de CI: en local `pnpm desktop:build` sigue funcionando sin la clave de firma
+        shell: bash
+        run: |
+          node -e 'const fs=require("fs"),f="src-tauri/tauri.conf.json",c=JSON.parse(fs.readFileSync(f,"utf8"));c.bundle.createUpdaterArtifacts=true;fs.writeFileSync(f,JSON.stringify(c,null,2)+"\n")'
       - name: Compilar el instalador
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm desktop:build
       - name: Localizar el instalador
         id: exe
@@ -75,12 +103,39 @@ jobs:
         run: |
           exe=src-tauri/target/release/bundle/nsis/antena_"$VERSION"_x64-setup.exe
           test -f "$exe"
+          test -s "$exe.sig" || { echo "::error::No se generó la firma del updater ($exe.sig)."; exit 1; }
           echo "path=$exe" >> "$GITHUB_OUTPUT"
+      - name: Manifiesto del updater (latest.json)
+        shell: bash
+        env:
+          EXE: ${{ steps.exe.outputs.path }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const { VERSION, EXE, GITHUB_REPOSITORY } = process.env;
+          const manifest = {
+            version: VERSION,
+            notes: fs.readFileSync(`docs/releases/v${VERSION}.md`, 'utf8').replace(/\r\n/g, '\n'),
+            pub_date: new Date().toISOString(),
+            platforms: {
+              'windows-x86_64': {
+                signature: fs.readFileSync(`${EXE}.sig`, 'utf8').trim(),
+                url: `https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${path.basename(EXE)}`,
+              },
+            },
+          };
+          fs.writeFileSync('latest.json', JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+          echo "latest.json para v$VERSION apunta a $(basename "$EXE")"
       - name: Conservar el instalador
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: antena-windows-installer
-          path: ${{ steps.exe.outputs.path }}
+          path: |
+            ${{ steps.exe.outputs.path }}
+            ${{ steps.exe.outputs.path }}.sig
+            latest.json
           if-no-files-found: error
           retention-days: 14
       - name: Borrador de release
@@ -89,4 +144,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EXE: ${{ steps.exe.outputs.path }}
         run: |
-          gh release create "v$VERSION" "$EXE" --draft --target "$GITHUB_SHA" --title "antena $VERSION" --notes-file "docs/releases/v$VERSION.md" --repo "$GITHUB_REPOSITORY"
+          gh release create "v$VERSION" "$EXE" "$EXE.sig" latest.json --draft --target "$GITHUB_SHA" --title "antena $VERSION" --notes-file "docs/releases/v$VERSION.md" --repo "$GITHUB_REPOSITORY"

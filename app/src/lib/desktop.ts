@@ -14,3 +14,19 @@ export const openPrompter = (monitor?: string | null, fullscreen = true) => invo
 export const openTeleprompter = (monitor?: string | null, fullscreen = true) => invoke('open_teleprompter', { monitor: monitor || null, fullscreen });
 export const openDock = (alwaysOnTop = true) => invoke('open_dock', { alwaysOnTop });
 export const desktopInfo = () => invoke<{ port: number; managed: boolean; dataDir: string; version: string }>('desktop_info');
+
+// Actualizaciones: las buscan e instalan los comandos de la app (update_check, update_install), que
+// comprueban la firma con la clave pública de tauri.conf.json y apagan el servidor antes de que corra
+// el instalador. En el navegador no existen y la UI solo enlaza las releases.
+export type AppUpdate = { version: string; notes: string; install: (onProgress: (p: number | null) => void) => Promise<void> };
+export async function checkUpdate(): Promise<AppUpdate | null> {
+  const found = await invoke<{ version: string; notes: string } | null>('update_check');
+  if (!found) return null;
+  return {
+    ...found,
+    install: async onProgress => {
+      const off = await window.__TAURI__?.event?.listen?.('antena://update-progress', (e: { payload: { progress: number | null } }) => onProgress(e.payload.progress));
+      try { await invoke('update_install'); } finally { off?.(); }
+    },
+  };
+}

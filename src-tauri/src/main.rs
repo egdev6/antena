@@ -18,9 +18,10 @@ use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::window::Color;
-use tauri::{AppHandle, Manager, PhysicalPosition, Position, RunEvent, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Position, RunEvent, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 const DEFAULT_PORT: u16 = 4500;
 /// El Elgato Prompter se presenta como una pantalla de 1024×600.
@@ -421,6 +422,74 @@ fn desktop_info(app: AppHandle, state: State<'_, Server>) -> DesktopInfo {
     }
 }
 
+// ---------- actualizaciones ----------
+// Las busca e instala Rust, no el JS del plugin: así el servidor Node se apaga (stop_server) antes
+// de que el instalador NSIS sobrescriba sus archivos. En Windows el plugin sale con
+// process::exit sin pasar por RunEvent::Exit; on_before_exit es el único punto previo.
+
+/// La actualización ofrecida por update_check, que update_install instala sin volver a buscar.
+#[derive(Default)]
+struct PendingUpdate(Mutex<Option<Update>>);
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+struct UpdateInfo {
+    version: String,
+    notes: String,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+struct UpdateProgress {
+    /// fracción descargada (0..1) o null si el servidor no da el tamaño
+    progress: Option<f64>,
+}
+
+const UPDATE_PROGRESS_EVENT: &str = "antena://update-progress";
+
+fn download_fraction(done: u64, total: Option<u64>) -> Option<f64> {
+    match total {
+        Some(t) if t > 0 => Some((done as f64 / t as f64).min(1.0)),
+        _ => None,
+    }
+}
+
+/// Lo que se hace justo antes de que el instalador tome el relevo: primero el apagado ordenado del
+/// servidor (guarda config, sesión y alertas retenidas y suelta node.exe), luego la limpieza de Tauri.
+fn before_update_exit(app: &AppHandle) {
+    stop_server(app);
+    app.cleanup_before_exit();
+}
+
+#[tauri::command]
+async fn update_check(app: AppHandle, pending: State<'_, PendingUpdate>) -> Result<Option<UpdateInfo>, String> {
+    // el hook de salida va en el updater con el que se busca: la Update guardada lo hereda
+    let handle = app.clone();
+    let updater = app.updater_builder().on_before_exit(move || before_update_exit(&handle)).build().map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+    let info = update.as_ref().map(|u| UpdateInfo { version: u.version.clone(), notes: u.body.clone().unwrap_or_default() });
+    *pending.0.lock().unwrap() = update;
+    Ok(info)
+}
+
+#[tauri::command]
+async fn update_install(app: AppHandle, pending: State<'_, PendingUpdate>) -> Result<(), String> {
+    let update = pending.0.lock().unwrap().take().ok_or("No hay ninguna actualización pendiente: busca de nuevo.")?;
+    let mut done = 0u64;
+    let progress = app.clone();
+    update
+        .download_and_install(
+            |chunk, total| {
+                done += chunk as u64;
+                let _ = progress.emit(UPDATE_PROGRESS_EVENT, UpdateProgress { progress: download_fraction(done, total) });
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    // Windows no llega aquí (el instalador ya ha cerrado la app). En el resto se apaga y reinicia.
+    before_update_exit(&app);
+    app.restart();
+}
+
 // ---------- bandeja ----------
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Abrir el panel", true, None::<&str>)?;
@@ -466,6 +535,10 @@ fn main() {
         // una sola instancia: abrir la app otra vez trae el panel al frente
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_shell::init())
+        // actualizaciones firmadas desde GitHub Releases (Ajustes › Acerca de): las usan los comandos
+        // update_check y update_install, solo desde la ventana principal (capability `updater`)
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(PendingUpdate::default())
         .setup(|app| {
             let app_data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data)?;
@@ -510,7 +583,7 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![monitors, open_prompter, open_teleprompter, open_dock, desktop_info])
+        .invoke_handler(tauri::generate_handler![monitors, open_prompter, open_teleprompter, open_dock, desktop_info, update_check, update_install])
         .build(tauri::generate_context!())
         .expect("no se pudo iniciar antena");
 
@@ -551,6 +624,26 @@ mod tests {
         assert!(!allowed_navigation(4500, &localhost));
         let externa = Url::parse("https://ejemplo.com/").unwrap();
         assert!(allowed_navigation(4500, &externa), "las navegaciones externas no pasan por la guardia");
+    }
+
+    #[test]
+    fn download_fraction_is_bounded_and_unknown_without_size() {
+        assert_eq!(download_fraction(50, Some(200)), Some(0.25));
+        assert_eq!(download_fraction(300, Some(200)), Some(1.0));
+        assert_eq!(download_fraction(10, Some(0)), None);
+        assert_eq!(download_fraction(10, None), None);
+    }
+
+    #[test]
+    fn update_exit_stops_the_server_before_tauri_cleanup() {
+        // el orden importa: el instalador sobrescribe node.exe en cuanto la app sale
+        let src = include_str!("main.rs");
+        let body = &src[src.find("fn before_update_exit").unwrap()..];
+        let body = &body[..body.find("\n}").unwrap()];
+        let stop = body.find("stop_server(app)").expect("before_update_exit apaga el servidor");
+        let clean = body.find("cleanup_before_exit()").expect("y limpia Tauri");
+        assert!(stop < clean);
+        assert!(src.contains(".on_before_exit(move || before_update_exit(&handle))"));
     }
 
     #[test]

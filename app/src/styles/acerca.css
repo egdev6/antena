@@ -1,0 +1,12 @@
+/* Ajustes › Acerca de: versión, actualizaciones y créditos */
+.acerca .hint{margin:.25rem 0 0}
+.acerca-app{display:flex;align-items:center;gap:1rem}
+.acerca-logo{width:48px;height:48px;border-radius:12px;flex:none}
+.acerca-name{margin:0;font-size:1.125rem}
+.acerca-version{font-variant-numeric:tabular-nums;opacity:.75;margin-left:.25rem}
+.acerca-updates,.acerca-browser{margin-top:1rem}
+.acerca-updates{display:flex;flex-direction:column;gap:.75rem}
+.acerca-row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
+.acerca-notice{margin:0}
+.acerca-notes pre{white-space:pre-wrap;max-height:16rem;overflow:auto;margin:.5rem 0 0}
+.acerca-links{list-style:none;display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0 0;padding:0}

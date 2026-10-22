@@ -68,7 +68,7 @@ test('la versión del repositorio coincide en los tres manifiestos y tiene sus n
   assert.match(notas, /### Agradecimientos/);
 });
 
-test('el workflow de release es manual, solo desde main y crea un borrador sin firma', () => {
+test('el workflow de release es manual, solo desde main y crea un borrador: instalador sin firma de código de Windows, actualización firmada', () => {
   const yml = readFileSync(WORKFLOW, 'utf8');
   const on = yml.match(/^on:\n([\s\S]*?)^\S/m)?.[1] || '';
   assert.match(on, /^\s+workflow_dispatch:/m, 'se lanza a mano');
@@ -92,6 +92,68 @@ test('el workflow de release es manual, solo desde main y crea un borrador sin f
   assert.match(yml, /pnpm desktop:node/);
   assert.match(yml, /pnpm desktop:build/);
   assert.match(yml, /gh release create "v\$VERSION"[^\n]*--draft/, 'crea un borrador');
-  assert.doesNotMatch(yml, /TAURI_SIGNING|certificate|signtool|secrets\.(?!GITHUB_TOKEN)/i, 'sin firma ni otros secretos');
+  // El updater nativo (ODD antena-ux-ajustes L3) firma la actualización con minisign; el instalador
+  // sigue sin firma de código de Windows (Authenticode).
+  assert.doesNotMatch(yml, /certificate|signtool|authenticode/i, 'sin firma de código de Windows');
+  const secretos = new Set([...yml.matchAll(/secrets\.([A-Z0-9_]+)/g)].map(m => m[1]));
+  for (const s of secretos) assert.ok(['TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD', 'GITHUB_TOKEN'].includes(s), `secreto no previsto: ${s}`);
+  for (const linea of yml.split('\n').filter(l => /\$\{\{\s*secrets\./.test(l))) {
+    assert.match(linea, /^ {10}TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)?: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)? \}\}$/, `los secretos solo van en env: ${linea.trim()}`);
+  }
+  for (const p of pasos.filter(p => /secrets\./.test(p))) assert.match(p, /^ {8}env:\n/m, `«${p.split('\n')[0]}»: los secretos entran por env`);
+  const borrador = pasos.find(p => p.startsWith('Borrador de release')) || '';
+  assert.match(borrador, /gh release create "v\$VERSION" "\$EXE" "\$EXE\.sig" latest\.json [^\n]*--draft/, 'el borrador lleva la firma y latest.json');
   for (const uses of yml.match(/uses: \S+/g) || []) assert.match(uses, /@[0-9a-f]{40}$/, `${uses} fijada por SHA`);
+});
+
+// Updater signing guards (ODD antena-ux-ajustes L3): without them a release could ship with the
+// placeholder public key, without signing, or with a latest.json the app cannot verify.
+const pasosDe = yml => yml.split(/^ {6}- name: /m).slice(1);
+const paso = (pasos, nombre) => pasos.findIndex(p => p.startsWith(nombre));
+
+test('release: las guardas de la clave pública y del secreto de firma cortan antes de compilar', () => {
+  const pasos = pasosDe(readFileSync(WORKFLOW, 'utf8'));
+  const compilar = paso(pasos, 'Compilar el instalador');
+  assert.ok(compilar > 0, 'existe el paso de compilación');
+  const pubkey = paso(pasos, 'Clave pública del updater configurada');
+  assert.ok(pubkey >= 0 && pubkey < compilar, 'la guarda de la clave pública va antes de compilar');
+  assert.match(pasos[pubkey], /grep -q 'PLACEHOLDER_UPDATER_PUBKEY' src-tauri\/tauri\.conf\.json[\s\S]*exit 1/, 'el marcador de la clave pública corta la release');
+  const secreto = paso(pasos, 'Secreto de firma del updater');
+  assert.ok(secreto >= 0 && secreto < compilar, 'la guarda del secreto de firma va antes de compilar');
+  assert.match(pasos[secreto], /^ {10}TAURI_SIGNING_PRIVATE_KEY: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY \}\}$/m, 'la guarda recibe el secreto por env');
+  assert.match(pasos[secreto], /if \[ -z "\$\{TAURI_SIGNING_PRIVATE_KEY:-\}" \]; then[\s\S]*exit 1/, 'sin la clave de firma la release se corta');
+});
+
+test('release: la firma del instalador tiene que existir y no estar vacía', () => {
+  const pasos = pasosDe(readFileSync(WORKFLOW, 'utf8'));
+  const localizar = pasos[paso(pasos, 'Localizar el instalador')] || '';
+  assert.match(localizar, /test -s "\$exe\.sig" \|\| \{[^}]*exit 1; \}/, 'sin .sig (o vacío) la release se corta');
+});
+
+test('release: latest.json lleva windows-x86_64 con la firma y la URL de la release', () => {
+  const pasos = pasosDe(readFileSync(WORKFLOW, 'utf8'));
+  const i = paso(pasos, 'Manifiesto del updater (latest.json)');
+  assert.ok(i > paso(pasos, 'Localizar el instalador') && i < paso(pasos, 'Borrador de release'), 'el manifiesto se genera tras localizar el .sig y antes del borrador');
+  const script = pasos[i].match(/node --input-type=module - <<'NODE'\n([\s\S]*?)\n {10}NODE\n/)?.[1];
+  assert.ok(script, 'el paso genera latest.json con un script de Node');
+  // se ejecuta el script del workflow tal cual sobre un .sig y unas notas falsas
+  const dir = mkdtempSync(path.join(tmpdir(), 'egdev-latest-json-'));
+  try {
+    mkdirSync(path.join(dir, 'docs', 'releases'), { recursive: true });
+    writeFileSync(path.join(dir, 'docs', 'releases', 'v1.2.3.md'), '# notas\r\nhola\r\n');
+    const exe = path.join(dir, 'antena_1.2.3_x64-setup.exe');
+    writeFileSync(exe + '.sig', 'firma-de-prueba\n');
+    const r = spawnSync(process.execPath, ['--input-type=module', '-'], {
+      cwd: dir, input: script.replace(/^ {10}/gm, ''), encoding: 'utf8',
+      env: { ...process.env, VERSION: '1.2.3', EXE: exe, GITHUB_REPOSITORY: 'egdev6/antena' },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const manifest = JSON.parse(readFileSync(path.join(dir, 'latest.json'), 'utf8'));
+    assert.equal(manifest.version, '1.2.3');
+    assert.equal(manifest.notes, '# notas\nhola\n');
+    const win = manifest.platforms?.['windows-x86_64'];
+    assert.ok(win, 'plataforma windows-x86_64');
+    assert.equal(win.signature, 'firma-de-prueba', 'la firma es el contenido del .sig');
+    assert.equal(win.url, 'https://github.com/egdev6/antena/releases/download/v1.2.3/antena_1.2.3_x64-setup.exe');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

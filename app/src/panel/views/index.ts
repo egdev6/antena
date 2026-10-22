@@ -12,4 +12,5 @@ import { Conexiones } from './Conexiones';
 import { General } from './General';
 import { Teleprompter } from './Teleprompter';
 import { Apariencia } from './Apariencia';
-export const Vistas = { Directo, Chat, Historial, Editor, Comandos, Mensajes, Preguntas, TierList, Sorteo, Widget, Fuentes, Meld, Filtros, PrompterAjustes, Atajos, Conexiones, General, Teleprompter, Apariencia };
+import { AcercaDe } from './AcercaDe';
+export const Vistas = { Directo, Chat, Historial, Editor, Comandos, Mensajes, Preguntas, TierList, Sorteo, Widget, Fuentes, Meld, Filtros, PrompterAjustes, Atajos, Conexiones, General, Teleprompter, Apariencia, AcercaDe };
