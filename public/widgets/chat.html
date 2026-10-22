@@ -12,13 +12,23 @@
 .msg.a-slide{animation:in .35s cubic-bezier(.2,1.3,.4,1) both}
 .msg.a-fade{animation:inF .35s ease-out both}
 .msg.a-pop{animation:inP .35s cubic-bezier(.2,1.3,.4,1) both}
+.msg.a-bounce{animation:inB .6s cubic-bezier(.28,.84,.42,1) both}
+.msg.a-zoom{animation:inZ .35s cubic-bezier(.2,1,.3,1) both}
+.msg.a-flip{animation:inFl .45s cubic-bezier(.2,1,.3,1) both;transform-origin:top center}
+.msg.a-blur{animation:inBl .4s ease-out both}
 .msg.a-none{animation:none}
 .msg.out.o-slide{animation:out .45s ease-in forwards}
 .msg.out.o-fade{animation:outF .35s ease-in forwards}
+.msg.out.o-zoom{animation:outZ .35s ease-in forwards}
+.msg.out.o-blur{animation:outBl .4s ease-in forwards}
+.msg.out.o-drop{animation:outD .45s cubic-bezier(.5,0,.75,0) forwards}
 .msg.out.o-none{animation:none}
 .root.reverse{flex-direction:column-reverse}
 .reverse .msg.a-slide{animation-name:inR}
+.reverse .msg.a-bounce{animation-name:inBR}
+.reverse .msg.a-flip{animation-name:inFlR;transform-origin:bottom center}
 .reverse .msg.out.o-slide{animation-name:outR}
+.reverse .msg.out.o-drop{animation-name:outDR}
 .msg.mod{border-left-color:#fff}
 @keyframes in{from{opacity:0;transform:translateX(-24px) scale(.97)}to{opacity:1;transform:none}}
 @keyframes out{to{opacity:0;transform:translateX(-24px)}}
@@ -27,6 +37,16 @@
 @keyframes outF{to{opacity:0}}
 @keyframes inR{from{opacity:0;transform:translateX(24px) scale(.97)}to{opacity:1;transform:none}}
 @keyframes outR{to{opacity:0;transform:translateX(24px)}}
+@keyframes inB{0%{opacity:0;transform:translateY(60px)}55%{opacity:1;transform:translateY(-10px)}75%{transform:translateY(4px)}100%{opacity:1;transform:none}}
+@keyframes inBR{0%{opacity:0;transform:translateY(-60px)}55%{opacity:1;transform:translateY(10px)}75%{transform:translateY(-4px)}100%{opacity:1;transform:none}}
+@keyframes inZ{from{opacity:0;transform:scale(1.35)}to{opacity:1;transform:none}}
+@keyframes inFl{from{opacity:0;transform:perspective(600px) rotateX(-80deg)}to{opacity:1;transform:none}}
+@keyframes inFlR{from{opacity:0;transform:perspective(600px) rotateX(80deg)}to{opacity:1;transform:none}}
+@keyframes inBl{from{opacity:0;filter:blur(12px)}to{opacity:1;filter:none}}
+@keyframes outZ{to{opacity:0;transform:scale(.6)}}
+@keyframes outBl{to{opacity:0;filter:blur(12px)}}
+@keyframes outD{to{opacity:0;transform:translateY(80px) rotate(4deg)}}
+@keyframes outDR{to{opacity:0;transform:translateY(-80px) rotate(-4deg)}}
 .body{min-width:0;flex:1}
 .who{display:flex;align-items:center;gap:8px;font:800 .78em/1 var(--f-cond);letter-spacing:.06em;text-transform:uppercase;color:var(--red-2);margin-bottom:5px}
 .who .pf{display:inline-flex;align-items:center;font:700 .62em/1 var(--f-cond);letter-spacing:.16em;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:3px 6px 2px}
@@ -42,18 +62,49 @@ import { LOGOS, platformSvg } from '/platform-icons.js';
 import { connect, DEMO, demoChat, setCss } from '/widgets/widget.js';
 const root = document.getElementById('root');
 let cfg = { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide' };
-const ANIM_IN = { slide: 'a-slide', fade: 'a-fade', pop: 'a-pop', none: 'a-none' };
-const ANIM_OUT = { slide: 'o-slide', fade: 'o-fade', none: 'o-none' };
+const ANIM_IN = { slide: 'a-slide', fade: 'a-fade', pop: 'a-pop', bounce: 'a-bounce', zoom: 'a-zoom', flip: 'a-flip', blur: 'a-blur', none: 'a-none' };
+const ANIM_OUT = { slide: 'o-slide', fade: 'o-fade', zoom: 'o-zoom', blur: 'o-blur', drop: 'o-drop', none: 'o-none' };
+let demoN = 0;
 
 // Logos de plataforma: SVG por DOM con las rutas fijas de /platform-icons.js
 
+function visible(m) {
+  if (!cfg.platforms?.includes(m.platform)) return false;
+  if (cfg.hideCommands && m.command) return false;
+  return !(cfg.hideOwner !== false && m.owner); // lo que escribes tú (y los mensajes programados) no sale en pantalla
+}
+
+// Icono de plataforma en la cabecera del mensaje (se añade o se quita al cambiar showPlatform).
+function setPlatform(el) {
+  const who = el.querySelector('.who'), cur = who.querySelector('.pf'), m = el._m;
+  const want = !!cfg.showPlatform && !!LOGOS[m.platform];
+  if (!want) { cur?.remove(); return; }
+  if (cur) return;
+  const pf = document.createElement('span'); pf.className = 'pf';
+  pf.append(platformSvg(m.platform));   // SVG construido por DOM con las rutas fijas de /platform-icons.js
+  who.append(pf);
+}
+
+function trim() { while (root.children.length > (Number(cfg.maxMessages) || 12)) root.firstElementChild.remove(); }
+
+function expire(el) {
+  if (el.classList.contains('out')) return;
+  clearTimeout(el._fade);
+  el.classList.add('out', ANIM_OUT[cfg.animOut] || 'o-slide'); setTimeout(() => el.remove(), 500);
+}
+
+// La caducidad cuenta desde que entró el mensaje: cambiar la config no reinicia el reloj.
+function scheduleFade(el) {
+  clearTimeout(el._fade);
+  const fade = Number(cfg.fadeAfterSec) || 0;
+  if (fade > 0 && !el.classList.contains('out')) el._fade = setTimeout(() => expire(el), Math.max(0, fade * 1000 - (Date.now() - el._at)));
+}
+
 function render(m) {
-  if (!cfg.platforms?.includes(m.platform)) return;
-  if (cfg.hideCommands && m.command) return;
-  if (cfg.hideOwner !== false && m.owner) return; // lo que escribes tú (y los mensajes programados) no sale en pantalla
+  if (!visible(m)) return;
   const el = document.createElement('div');
   el.className = 'msg pf-' + (m.platform || 'egdev') + ' ' + (ANIM_IN[cfg.animIn] || 'a-slide') + (m.mod || m.owner ? ' mod' : '');
-  el.dataset.id = m.id; el.dataset.login = m.login || '';
+  el.dataset.id = m.id; el.dataset.login = m.login || ''; el._m = m; el._at = Date.now();
   // Construcción por DOM (sin innerHTML): el texto del chat nunca entra como HTML.
   const body = document.createElement('div'); body.className = 'body';
   const who = document.createElement('div'); who.className = 'who';
@@ -61,11 +112,6 @@ function render(m) {
   const b = document.createElement('span'); b.className = 'b';
   if (m.owner) b.textContent = '◆ host'; else if (m.mod) b.textContent = '◆ mod'; else if (m.member) b.textContent = '◆';
   if (b.textContent) who.append(b);
-  if (cfg.showPlatform && LOGOS[m.platform]) {
-    const pf = document.createElement('span'); pf.className = 'pf';
-    pf.append(platformSvg(m.platform));   // SVG construido por DOM con las rutas fijas de /platform-icons.js
-    who.append(pf);
-  }
   const text = document.createElement('div'); text.className = 'text';
   for (const p of (m.parts?.length ? m.parts : [{ t: m.text }])) {
     if (p.e) {
@@ -74,19 +120,30 @@ function render(m) {
     } else text.append(document.createTextNode(p.t ?? ''));
   }
   body.append(who, text); el.append(body);
+  setPlatform(el);
   root.append(el);
-  while (root.children.length > (Number(cfg.maxMessages) || 12)) root.firstElementChild.remove();
-  const fade = Number(cfg.fadeAfterSec) || 0;
-  if (fade > 0) setTimeout(() => { el.classList.add('out', ANIM_OUT[cfg.animOut] || 'o-slide'); setTimeout(() => el.remove(), 500); }, fade * 1000);
+  trim();
+  scheduleFade(el);
 }
 
-// Los cambios de configuración solo parchean estilos y clases del contenedor: los mensajes
-// existentes no se reconstruyen (sin resetear temporizadores de salida ni repetir entradas).
+// Los cambios de configuración se reaplican en sitio a los mensajes ya pintados (filtros, icono,
+// tope y caducidad) sin reconstruirlos: no se resetean temporizadores ni se repiten entradas.
+// En la vista previa (demo) un cambio de efecto se enseña al momento con una muestra.
 function apply(w) {
+  const prev = cfg;
   cfg = { ...cfg, ...(w?.chat || {}) };
   root.style.setProperty('--fs', (Number(cfg.fontSize) || 26) + 'px');
   root.classList.toggle('reverse', !!cfg.reverse);
   setCss(cfg.css);
+  for (const el of [...root.children]) {
+    if (!el._m) continue;
+    if (!visible(el._m)) { clearTimeout(el._fade); el.remove(); continue; }
+    setPlatform(el);
+    scheduleFade(el);
+  }
+  trim();
+  if (DEMO && cfg.animOut !== prev.animOut && root.firstElementChild) expire(root.firstElementChild);
+  if (DEMO && cfg.animIn !== prev.animIn) render(demoChat(demoN++));
 }
 
 let first = true;
@@ -96,5 +153,5 @@ connect({
   chatDelete: ({ id }) => root.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove(),
   chatClear: ({ login }) => [...root.children].forEach(el => { if (!login || el.dataset.login === login) el.remove(); }),
 });
-if (DEMO) { let i = 0; for (; i < 6; i++) render(demoChat(i)); setInterval(() => render(demoChat(i++)), 2200); }
+if (DEMO) { for (; demoN < 6; demoN++) render(demoChat(demoN)); setInterval(() => render(demoChat(demoN++)), 2200); }
 </script></body></html>

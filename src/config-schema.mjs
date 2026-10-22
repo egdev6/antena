@@ -214,8 +214,8 @@ export const CONFIG_SCHEMA = {
       fontSize: num({ min: 8, max: 80 }),
       hideCommands: bool, hideOwner: bool, showPlatform: bool,
       reverse: bool,                                   // #130: chat invertido (nuevos arriba)
-      animIn: en(['slide', 'fade', 'pop', 'none']),    // #130: animación de entrada de los mensajes
-      animOut: en(['slide', 'fade', 'none']),          // #130: animación de salida (sin pop: solo entrada)
+      animIn: en(['slide', 'fade', 'pop', 'bounce', 'zoom', 'flip', 'blur', 'none']),  // #130: animación de entrada de los mensajes
+      animOut: en(['slide', 'fade', 'zoom', 'blur', 'drop', 'none']),                  // #130: animación de salida (pop y bounce solo de entrada)
       css: str,
     },
     goals: list(GOAL_BOX),

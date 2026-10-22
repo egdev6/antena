@@ -21,6 +21,17 @@ test('validatePath: widgets.chat.reverse es bool y animIn/animOut son enums de c
   assert.ok(validatePath('widgets.chat.animOut', 'pop').length > 0);
 });
 
+test('validatePath: efectos nuevos de entrada/salida del chat (O2.2)', async () => {
+  const { validatePath } = await import('../src/config-schema.mjs');
+  for (const v of ['bounce', 'zoom', 'flip', 'blur']) assert.deepEqual(validatePath('widgets.chat.animIn', v), [], `animIn ${v}`);
+  for (const v of ['zoom', 'blur', 'drop']) assert.deepEqual(validatePath('widgets.chat.animOut', v), [], `animOut ${v}`);
+  // drop y bounce solo tienen sentido en un sentido; lo desconocido sigue rechazado
+  assert.ok(validatePath('widgets.chat.animIn', 'drop').length > 0);
+  assert.ok(validatePath('widgets.chat.animOut', 'bounce').length > 0);
+  assert.ok(validatePath('widgets.chat.animIn', 'spin').length > 0);
+  assert.ok(validatePath('widgets.chat.animOut', 'spin').length > 0);
+});
+
 test('validatePatch: patch de chat con opciones nuevas válidas y rechazo de inválidas', async () => {
   const { validatePatch } = await import('../src/config-schema.mjs');
   assert.deepEqual(validatePatch({ widgets: { chat: { reverse: true, animIn: 'pop', animOut: 'fade' } } }), []);

@@ -47,8 +47,8 @@ export function Widget({ name }: { name: string }) {
       <WField w="chat" f="hideOwner" label="Ocultar mis mensajes (lo que escribo desde antena, el móvil o el prompter)" type="checkbox" />
       <WField w="chat" f="showPlatform" label="Mostrar el icono de la plataforma" type="checkbox" />
       <WField w="chat" f="reverse" label="Chat invertido (los mensajes nuevos aparecen arriba)" type="checkbox" />
-      <ChatSelect f="animIn" label="Animación de entrada" options={[['slide', 'Deslizante'], ['fade', 'Desvanecida'], ['pop', 'Pop'], ['none', 'Sin animación']]} />
-      <ChatSelect f="animOut" label="Animación al desaparecer" options={[['slide', 'Deslizante'], ['fade', 'Desvanecida'], ['none', 'Ninguna']]} />
+      <ChatSelect f="animIn" label="Animación de entrada" options={[['slide', 'Deslizante'], ['fade', 'Desvanecida'], ['pop', 'Pop'], ['bounce', 'Rebote'], ['zoom', 'Zoom'], ['flip', 'Giro'], ['blur', 'Desenfoque'], ['none', 'Sin animación']]} />
+      <ChatSelect f="animOut" label="Animación al desaparecer" options={[['slide', 'Deslizante'], ['fade', 'Desvanecida'], ['zoom', 'Zoom'], ['blur', 'Desenfoque'], ['drop', 'Caída'], ['none', 'Ninguna']]} />
     </div>
     <WField w="chat" f="css" label="CSS personalizado" type="css" placeholder=".msg { border-left-color: #fff; }" />
     <p className="css-help">Clases: <code>.msg</code> <code>.msg.mod</code> <code>.who</code> <code>.text</code> <code>.pf</code></p></>;
