@@ -15,6 +15,15 @@
   /* recetas */
   --surface:var(--gradient-sheen),var(--color-surface-1);
   --surface-shadow:var(--shadow-edge),var(--shadow-elev-1);
+  /* sombra compuesta del panel (brillo interior + glow rojo): 10px en controles,
+     12px en barras de progreso. El .tbtn.on combina el brillo con --shadow-elev-1. */
+  --shadow-inset-highlight:inset 0 1px 0 rgba(255,255,255,.35);
+  --shadow-inset-highlight-glow:var(--shadow-inset-highlight),0 0 10px -2px var(--color-alpha-red-65);
+  --shadow-inset-highlight-glow-wide:var(--shadow-inset-highlight),0 0 12px -2px var(--color-alpha-red-65);
+  /* El token --color-bg-scrim es negro opaco; el backdrop del modal necesita 60% de alfa,
+     así que lo derivamos aquí con color-mix (misma receta que .off en prompter.css)
+     en vez de inventar un token nuevo en el sistema generado. */
+  --bg-scrim-backdrop:color-mix(in srgb,var(--color-bg-scrim) 60%,transparent);
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -149,7 +158,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .switch input{position:absolute;opacity:0;width:0;height:0;margin:0;min-height:0}
 .switch i{position:relative;width:36px;height:20px;border-radius:999px;flex:none;border:1px solid var(--ctrl);background:var(--s0);box-shadow:var(--shadow-well)}
 .switch i::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--grey);transition:transform var(--duration-fast) var(--ease-out)}
-.switch input:checked+i{background:var(--gradient-btn-primary);border-color:var(--color-action-primary-solid-bg);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 10px -2px var(--color-alpha-red-65)}
+.switch input:checked+i{background:var(--gradient-btn-primary);border-color:var(--color-action-primary-solid-bg);box-shadow:var(--shadow-inset-highlight-glow)}
 .switch input:checked+i::after{transform:translateX(16px);background:var(--color-action-primary-solid-fg)}
 .switch input:focus-visible+i{box-shadow:var(--shadow-focus)}
 .switch:has(input:checked){color:var(--text)}
@@ -253,7 +262,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .upbar span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:8px}
 /* ProgressBar --lg */
 .upbar i{display:block;height:10px;border-radius:999px;background:var(--s0);box-shadow:var(--shadow-well);overflow:hidden}
-.upbar b{display:block;height:100%;width:0;border-radius:inherit;background:var(--gradient-progress);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 12px -2px var(--color-alpha-red-65)}
+.upbar b{display:block;height:100%;width:0;border-radius:inherit;background:var(--gradient-progress);box-shadow:var(--shadow-inset-highlight-glow-wide)}
 
 /* ---------- pausa ---------- */
 .pause-btn{all:unset;cursor:pointer;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 16px;border-radius:var(--radius-md);
@@ -278,7 +287,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 /* Check */
 .check{display:inline-flex;align-items:center;gap:8px;margin:0;min-height:36px;color:var(--grey);font:500 15px/1.3 var(--font-sans);cursor:pointer}
 .check input{appearance:none;margin:0;flex:none;width:18px;height:18px;min-height:0;padding:0;border-radius:var(--radius-sm);border:1px solid var(--ctrl);background:var(--s0);box-shadow:var(--shadow-well);display:grid;place-items:center;cursor:pointer}
-.check input:checked{background:var(--gradient-btn-primary);border-color:var(--color-action-primary-solid-bg);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 10px -2px var(--color-alpha-red-65)}
+.check input:checked{background:var(--gradient-btn-primary);border-color:var(--color-action-primary-solid-bg);box-shadow:var(--shadow-inset-highlight-glow)}
 .check input:checked::after{content:"";width:9px;height:5px;margin-top:-2px;border:2px solid var(--color-action-primary-solid-fg);border-top:0;border-right:0;transform:rotate(-45deg)}
 .unset{all:unset;cursor:pointer;margin-left:6px;color:var(--pink);font-size:13px;font-weight:600}
 .unset[hidden]{display:none}
@@ -358,7 +367,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .gbar{margin-bottom:14px}
 .gtop{display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px}
 .gbar>i{display:block;height:10px;border-radius:999px;background:var(--s0);box-shadow:var(--shadow-well);overflow:hidden}
-.gbar>i>b{display:block;height:100%;border-radius:inherit;background:var(--gradient-progress);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 12px -2px var(--color-alpha-red-65)}
+.gbar>i>b{display:block;height:100%;border-radius:inherit;background:var(--gradient-progress);box-shadow:var(--shadow-inset-highlight-glow-wide)}
 
 /* chat (Timeline --chat) */
 .chatpanel{display:grid;gap:12px}
@@ -410,7 +419,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .tbtn{all:unset;cursor:pointer;min-width:32px;height:32px;padding:0 6px;box-sizing:border-box;display:grid;place-items:center;border-radius:8px;font:800 15px var(--font-display);color:var(--grey);
   background:var(--s0);box-shadow:var(--shadow-well);border:1px solid var(--line)}
 .tbtn:hover{border-color:var(--c,var(--text));color:var(--text)}
-.tbtn.on{background:var(--c,var(--s3));border-color:var(--c,var(--line2));color:#0b0b0d;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),var(--shadow-elev-1)}
+.tbtn.on{background:var(--c,var(--s3));border-color:var(--c,var(--line2));color:var(--color-fg-on-status);box-shadow:var(--shadow-inset-highlight),var(--shadow-elev-1)}
 .tbtn:focus-visible{box-shadow:var(--shadow-focus)}
 .tlitems .vbtns{margin-left:auto}
 .tiers-ed{margin:8px 0}
@@ -477,7 +486,7 @@ textarea.code{min-height:200px;font:500 13px/1.55 var(--font-mono);tab-size:2;wh
 .shortcut-card>header .title-input{flex:1;min-width:0}
 .shortcut-row .sc-swatch{align-self:center}
 /* Modal (lib/ui.tsx): above the panel and the tour greeting; toasts (.toast) stay above it */
-.modal-backdrop{position:fixed;inset:0;z-index:85;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
+.modal-backdrop{position:fixed;inset:0;z-index:85;display:grid;place-items:center;padding:24px;background:var(--bg-scrim-backdrop);backdrop-filter:blur(2px)}
 .modal{width:min(880px,100%);max-height:min(90vh,900px);overflow:auto;outline:none}
 .modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .sc-swatch{width:12px;height:12px;border-radius:50%;background:var(--sc);flex:none}
@@ -637,7 +646,7 @@ svg.pf-ico path{stroke:none}
 /* ===== Teleprompter (lienzo › Teleprompter) ===== */
 .tp-tools{display:flex;align-items:center;gap:4px}
 .tp-left{font-size:12px;color:var(--color-fg-muted)}
-.tp-frame{background:#000}
+.tp-frame{background:var(--color-primitive-black)}
 .tp-edit{display:flex;flex-direction:column;gap:8px;padding-top:4px}
 .tp-prose{min-height:150px;font:500 15px/1.55 var(--font-sans);letter-spacing:normal;resize:vertical}
 /* Propuesta del lienzo (EGDEV Foundation › Propuestas): PostCard --row .is-active = bloque que se está leyendo */
