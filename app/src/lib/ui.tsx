@@ -81,9 +81,10 @@ export function CopyUrl({ url, children }: { url: string; children?: ReactNode }
   return <div className="overlay-url"><code>{url}</code><button className="eg-btn eg-btn--ghost eg-btn--sm" type="button" onClick={() => copy(url)}>Copiar</button>{children}</div>;
 }
 
-/** Estado vacío de una lista o sección (eg-post--empty, sin acción): el mismo aspecto en todo el panel. */
-export function EmptyState({ children }: { children: ReactNode }) {
-  return <div className="eg-post eg-post--empty empty-state">{children}</div>;
+/** Estado vacío de una lista o sección (eg-post--empty, sin acción): el mismo aspecto en todo el panel.
+ *  `action` (opcional) añade el CTA bajo el texto, centrado como el resto de la caja. */
+export function EmptyState({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return <div className="eg-post eg-post--empty empty-state">{children}{action && <div className="mt-s">{action}</div>}</div>;
 }
 
 /** Pestañas de una sección con varios objetos: una por elemento y la última para crear uno nuevo.

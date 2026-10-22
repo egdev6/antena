@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { cx, fmtTime, guard, PfIcon, PLATFORM_NAMES, Seg, toast, ViewHead } from '../../lib/ui';
+import { cx, EmptyState, fmtTime, guard, PfIcon, PLATFORM_NAMES, Seg, toast, ViewHead } from '../../lib/ui';
 import type { ChatSendResult } from '../../lib/types';
 
 export function sendResultText(r: any) {
@@ -36,6 +36,9 @@ export function Chat() {
         <button className="eg-btn eg-btn--ghost" onClick={guard(() => post('/api/chat/join', { channel: channel.trim() }), 'Leyendo el chat')}>Leer este canal</button></>} />
     <article className="panel chatpanel">
       <ol className="chatlog" data-tour="chat-log" ref={log} onScroll={e => { const el = e.currentTarget; stick.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 30; }}>
+        {/* la caja va dentro del ol a propósito: el chatlog es ancla del tour y debe existir siempre;
+            con un hijo dentro, el ol deja de estar :empty y el pseudo-texto de panel.css no sale */}
+        {!chat.length && <EmptyState action={<a className="eg-btn eg-btn--secondary eg-btn--sm" href="#/conexiones">Conectar Twitch</a>}>Todavía no hay mensajes. Conecta Twitch para leer tu chat.</EmptyState>}
         {chat.map(m => <li key={m.id} className={cx(m.command && 'cmd', m.owner && 'own')}><time>{fmtTime(m.at)}</time><span className="pf">{m.platform === 'twitch' || m.platform === 'youtube' ? <PfIcon platform={m.platform} /> : '··'}</span>
           <b>{m.user}{m.owner ? <> <span className="tagm you">Tú</span></> : m.mod ? ' ◆' : ''}</b><span>{m.text}</span></li>)}
       </ol>
