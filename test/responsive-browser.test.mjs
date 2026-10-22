@@ -136,9 +136,16 @@ test('en /prompter los filtros de la cronología cortados en el borde muestran u
     await viewport(c, 1280);
     await waitDom(c, `!!(document.querySelector('.top .clock') && document.querySelector('.pr-filters'))`, { timeoutMs: 15000 });
 
+    // #5 en Windows el desborde natural no ocurre (métricas de fuente del SO): forzamos el
+    // corte de forma determinista inyectando CSS de prueba — cada uno de los 5 filtros mide
+    // al menos 320px sin encoger (flex:none), 5×320=1600 > viewport 1280, así el desborde
+    // es independiente de la tipografía. El ResizeObserver de la barra recalcula el cue.
+    await dom(c, `(()=>{const s=document.createElement('style');s.id='i5-force-overflow';s.textContent='.pr-filters .eg-tabs__item{flex:none!important;min-width:320px!important}';document.head.appendChild(s);return true})()`);
+
     // la fila se desplaza horizontalmente (sin scrollbar) y el fundido avisa de que hay más
     const overflow = `(()=>{const el=document.querySelector('.pr-filters');return el.scrollWidth>el.clientWidth+1})()`;
-    assert.equal(await dom(c, overflow), true, 'precondición: a 1280 los filtros de la cronología se cortan en el borde derecho');
+    await waitDom(c, overflow, { timeoutMs: 9000 });
+    assert.equal(await dom(c, overflow), true, 'precondición: con el CSS de prueba los filtros de la cronología se cortan en el borde derecho');
     await waitDom(c, `document.querySelector('.pr-filters-cue').classList.contains('cue-right')`, { timeoutMs: 9000 });
 
     // al llegar al final, la pista de la derecha desaparece y aparece la de la izquierda
