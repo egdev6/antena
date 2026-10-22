@@ -469,3 +469,26 @@ test('Session.load rechaza si el reparto no se puede persistir (writer inyectado
     assert.equal(Object.keys(s2.data.goalOffsets).filter(k => k.startsWith('events@')).length, 2);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+// ---------- O1.3: cabecera configurable (label, showLabel, showTitle) ----------
+
+test('O1.3: el esquema valida label/showLabel/showTitle y PUT de caja los guarda', async () => {
+  const { validatePatch } = await import('../src/config-schema.mjs');
+  const { registerGoalsRoutes } = await import('../src/routes/goals.mjs');
+  const box = { id: 'h', title: 'T', visible: true, showMetric: true, css: '', bars: [{ id: 'h-1', platform: 'twitch', metric: 'follows', target: 5, visible: true }] };
+  assert.deepEqual(validatePatch({ widgets: { goals: [{ ...box, label: 'Meta', showLabel: false, showTitle: false }] } }), []);
+  assert.ok(validatePatch({ widgets: { goals: [{ ...box, label: 42 }] } }).length > 0, 'label tiene que ser texto');
+  assert.ok(validatePatch({ widgets: { goals: [{ ...box, showTitle: 'no' }] } }).length > 0, 'showTitle tiene que ser booleano');
+
+  const routes = [];
+  const route = (method, pattern, fn) => routes.push({ method, pattern, fn });
+  const config = { widgets: { goals: [structuredClone(box)] } };
+  registerGoalsRoutes({ route, store: { config, save: async () => {} }, session: {}, id8: () => 'id000000' });
+  const put = routes.find(r => r.method === 'PUT' && r.pattern === '/api/goals/:id').fn;
+  const { goal } = await put({ id: 'h' }, { label: 'Meta del día', showLabel: false, showTitle: false });
+  assert.equal(goal.label, 'Meta del día');
+  assert.equal(goal.showLabel, false);
+  assert.equal(goal.showTitle, false);
+  await assert.rejects(put({ id: 'h' }, { label: 42 }), err => err.status === 400);
+  assert.equal(config.widgets.goals[0].label, 'Meta del día', 'un label inválido no se guarda');
+});

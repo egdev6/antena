@@ -2,7 +2,7 @@
 import { enc, post, put, del } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { patchWidgets } from '../../lib/patch';
-import { codeTab, CopyUrl, guard, LazyInput, Panel, PfIcon, ScaledFrame } from '../../lib/ui';
+import { codeTab, CopyUrl, guard, ItemTabs, LazyInput, Panel, PfIcon, ScaledFrame } from '../../lib/ui';
 import { useState, type ReactNode } from 'react';
 import type { GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
 
@@ -95,6 +95,9 @@ function Goals() {
   const values: GoalValue[] = useLive(s => s.widgets?.goals || []);
   const metrics = useLive(s => s.metrics || {});
   const [setVal, setSetVal] = useState<Record<string, string>>({});
+  // O1.7: una pestaña por objetivo; sin selección (o si se borró) se edita el primero.
+  const [sel, setSel] = useState<string | null>(null);
+  const g = goals.find(x => x.id === sel) || goals[0];
   const reloadGoals = (list: GoalConfig[]) => live.update(s => ({ config: { ...s.config, widgets: { ...s.config.widgets, goals: list } } }));
   const saveGoal = (id: string, patch: Partial<GoalConfig>) => {
     reloadGoals(goals.map(g => (g.id === id ? { ...g, ...patch } : g)));
@@ -108,9 +111,10 @@ function Goals() {
     widgets: { ...s.widgets, goals: (s.widgets?.goals || []).map(g => (g.id === boxId ? { ...g, bars: g.bars.map(b => (b.id === barId ? { ...b, value } : b)) } : g)) },
   }));
   return <>
-    <header className="view-head"><div><span className="crumb">Widgets › Objetivos</span><h1>Objetivos</h1><p className="hint">Una caja, varias metas. Añade barras de Twitch y YouTube con su propio progreso. Cada caja es una fuente de navegador para Meld.</p></div>
-      <div className="actions"><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { const d = await post<{ goal: GoalConfig }>('/api/goals', { title: 'Nuevo objetivo', metric: 'follows', target: 10 }); reloadGoals([...goals, d.goal]); })}>+ Nuevo objetivo</button></div></header>
-    {goals.length ? goals.map(g => {
+    <header className="view-head"><div><span className="crumb">Widgets › Objetivos</span><h1>Objetivos</h1><p className="hint">Una caja, varias metas. Añade barras de Twitch y YouTube con su propio progreso. Cada caja es una fuente de navegador para Meld.</p></div></header>
+    <ItemTabs label="Objetivos" items={goals.map(x => ({ id: x.id, label: x.title, badge: x.visible === false ? 'oculto' : undefined }))} selected={g?.id} onSelect={setSel} newLabel="+ Nuevo objetivo"
+      onNew={guard(async () => { const d = await post<{ goal: GoalConfig }>('/api/goals', { title: 'Nuevo objetivo', metric: 'follows', target: 10 }); reloadGoals([...goals, d.goal]); setSel(d.goal.id); })} />
+    {g ? (() => {
       const vs = values.find(x => x.id === g.id);
       const visibleBars = g.visible === false ? 0 : g.bars.filter(b => b.visible !== false).length;
       const previewHeight = 210 + 60 * visibleBars;
@@ -122,6 +126,9 @@ function Goals() {
             <label>Título <LazyInput value={g.title} onCommit={x => saveGoal(g.id, { title: x })} /></label>
             <label className="check">Visible <input type="checkbox" checked={g.visible !== false} onChange={guard(e => saveGoal(g.id, { visible: e.target.checked }))} /></label>
             <label className="check">Mostrar qué cuenta <input type="checkbox" checked={g.showMetric !== false} onChange={guard(e => saveGoal(g.id, { showMetric: e.target.checked }))} /></label>
+            <label>Etiqueta <LazyInput aria-label="Etiqueta" placeholder="Objetivo" value={g.label || ''} onCommit={x => saveGoal(g.id, { label: x })} /></label>
+            <label className="check">Mostrar etiqueta <input type="checkbox" checked={g.showLabel !== false} onChange={guard(e => saveGoal(g.id, { showLabel: e.target.checked }))} /></label>
+            <label className="check">Mostrar título <input type="checkbox" checked={g.showTitle !== false} onChange={guard(e => saveGoal(g.id, { showTitle: e.target.checked }))} /></label>
           </div>
           {(g.bars || []).map(b => {
             const v = vs?.bars?.find(x => x.id === b.id)?.value ?? 0;
@@ -144,13 +151,15 @@ function Goals() {
             </fieldset>;
           })}
           <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const d = await post<{ bar: GoalBar }>(`/api/goals/${enc(g.id)}/bars`, { platform: 'twitch', metric: 'follows', target: 10 }); reloadGoals(goals.map(x => (x.id === g.id ? { ...x, bars: [...x.bars, d.bar] } : x))); })}>+ Añadir barra</button>
-          <details className="goal-css"><summary>CSS personalizado</summary><label>CSS <LazyInput as="textarea" className="code" spellCheck={false} style={{ minHeight: 70 }} placeholder=".title { color: #FF8FA6; }" value={g.css || ''} onCommit={x => saveGoal(g.id, { css: x })} /></label></details>
+          <details className="goal-css"><summary>CSS personalizado</summary><label>CSS <LazyInput as="textarea" className="code" spellCheck={false} style={{ minHeight: 70 }} placeholder=".title { color: #FF8FA6; }" value={g.css || ''} onCommit={x => saveGoal(g.id, { css: x })} /></label>
+            <p className="css-help">Clases: <code>.goal</code> <code>.goal.done</code> <code>.kick</code> <code>.title</code> <code>.bar</code> <code>.bar.pf-twitch</code> <code>.bar.pf-youtube</code> <code>.fill</code> <code>.pf-ico</code> <code>.metric</code> <code>.pct</code></p></details>
           <CopyUrl url={`${origin()}/widget/goal?id=${enc(g.id)}`}><span className="hint">1000×{previewHeight}</span></CopyUrl>
           <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirm('¿Borrar este objetivo?')) return; const d = await del<{ goals: GoalConfig[] }>('/api/goals/' + enc(g.id)); reloadGoals(d.goals); })}>Borrar objetivo</button>
         </div>
-        <div className="preview-col"><ScaledFrame src={`/widget/goal?id=${enc(g.id)}&debug`} w={1000} h={previewHeight} /><p className="hint">{visibleBars ? 'Con los datos reales del directo.' : 'Sin barras visibles en el overlay.'}</p></div>
+        {/* O1.5: la preview se vuelve a montar al cambiar la config de la caja (no con cada valor) */}
+        <div className="preview-col"><ScaledFrame key={JSON.stringify(g)} src={`/widget/goal?id=${enc(g.id)}&debug`} w={1000} h={previewHeight} /><p className="hint">{visibleBars ? 'Con los datos reales del directo.' : 'Sin barras visibles en el overlay.'}</p></div>
       </div></article>;
-    }) : <Panel><p className="hint">Sin objetivos.</p></Panel>}
+    })() : <Panel><p className="hint">Sin objetivos.</p></Panel>}
   </>;
 }
 

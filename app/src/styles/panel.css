@@ -320,7 +320,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .goal-card .check input{width:16px;height:16px;margin:0;flex:none}
 .goal-card .goal-bar-editor{min-width:0;border:1px solid var(--line);border-radius:12px;padding:12px;margin:0}
 .goal-card .goal-bar-editor legend{padding:0 6px;font-size:13px;font-weight:700}
-.goal-card .goal-bar-editor legend svg{width:18px;height:18px;vertical-align:middle;margin-right:6px}
+.goal-card .goal-bar-editor legend svg{display:inline-block;width:18px;height:18px;vertical-align:middle;margin-right:6px}
 .goal-card .goal-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .goal-card .goal-adjust{display:grid;gap:8px;padding:12px 0;margin-top:12px;border-top:1px solid var(--line)}
 .goal-card .goal-adjust .row{flex-wrap:wrap;gap:6px}

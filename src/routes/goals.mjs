@@ -59,7 +59,7 @@ export function registerGoalsRoutes({ route, store, session, id8 = id8Base, http
   });
   route('PUT', '/api/goals/:id', async ({ id }, body) => {
     const g = goalOf(id);
-    const next = { ...structuredClone(g), ...pick(body, ['title', 'visible', 'showMetric', 'css']) };
+    const next = { ...structuredClone(g), ...pick(body, ['title', 'visible', 'showMetric', 'css', 'label', 'showLabel', 'showTitle']) };
     if (Object.hasOwn(body, 'metric') || Object.hasOwn(body, 'target')) {
       if (next.bars.length !== 1) throw httpError(400, 'Indica la barra para editar su métrica o meta en una caja con varias barras.');
       Object.assign(next.bars[0], pick(body, ['metric', 'target']));

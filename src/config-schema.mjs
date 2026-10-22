@@ -49,6 +49,7 @@ function crossCheckBar(value, path, errors) {
 }
 const GOAL_BOX = {
   id: str, title: str, visible: bool, showMetric: bool, css: str,
+  label: str, showLabel: bool, showTitle: bool,   // cabecera (O1.3): ausentes = «Objetivo» y ambos visibles
   bars: list(GOAL_BAR),
 };
 

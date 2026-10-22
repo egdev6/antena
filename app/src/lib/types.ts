@@ -158,7 +158,7 @@ export interface ShortcutConfig { id: string; name: string; color?: string; step
 
 // ---------- widgets y objetivos (#128: cajas con barras por plataforma) ----------
 export interface GoalBar { id: string; platform: 'twitch' | 'youtube'; metric: string; target: number; visible?: boolean; [k: string]: unknown }
-export interface GoalConfig { id: string; title: string; visible?: boolean; showMetric?: boolean; css?: string; bars: GoalBar[]; [k: string]: unknown }
+export interface GoalConfig { id: string; title: string; visible?: boolean; showMetric?: boolean; css?: string; label?: string; showLabel?: boolean; showTitle?: boolean; bars: GoalBar[]; [k: string]: unknown }
 export interface GoalValue extends GoalConfig { bars: (GoalBar & { value?: number })[] }
 /** Sección de ajustes de un widget (chat, latest, ticker, credits): campos dinámicos. */
 export type WidgetSection = Record<string, unknown>;

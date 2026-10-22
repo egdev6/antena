@@ -72,6 +72,14 @@ export function CopyUrl({ url, children }: { url: string; children?: ReactNode }
   return <div className="overlay-url"><code>{url}</code><button className="btn ghost sm" type="button" onClick={() => copy(url)}>Copiar</button>{children}</div>;
 }
 
+/** Pestañas de una sección con varios objetos (patrón de las tier lists): una por elemento y la última para crear uno nuevo. */
+export function ItemTabs({ items, selected, onSelect, onNew, newLabel, label }: { items: { id: string; label: ReactNode; badge?: ReactNode }[]; selected: string | null | undefined; onSelect: (id: string) => void; onNew: () => void; newLabel: ReactNode; label?: string }) {
+  return <div className="eg-tabs eg-tabs--segmented eg-tabs--sm list-tabs" role="tablist" aria-label={label}>
+    {items.map(x => <button key={x.id} type="button" role="tab" className="eg-tabs__item" aria-selected={x.id === selected} onClick={() => onSelect(x.id)}>{x.label}{x.badge ? <span className="eg-tabs__count">{x.badge}</span> : null}</button>)}
+    <button type="button" role="tab" className="eg-tabs__item" aria-selected={selected == null} onClick={onNew}>{newLabel}</button>
+  </div>;
+}
+
 /** iframe escalado: muestra una capa de 1920×1080 (u otro tamaño) dentro del ancho disponible. */
 export function ScaledFrame({ src, w = 1920, h = 1080, className = 'preview wprev', title = 'Vista previa', frameRef }: { src: string; w?: number; h?: number; className?: string; title?: string; frameRef?: (el: HTMLIFrameElement | null) => void }) {
   const box = useRef<HTMLDivElement>(null);
