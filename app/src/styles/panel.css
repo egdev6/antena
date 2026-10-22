@@ -604,7 +604,7 @@ input.mono{font:500 12.5px var(--font-mono)}
 .stats--3{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin:0}
 .stat-name{font-size:22px!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:uppercase}
 .muted{color:var(--grey)}
-.list-tabs{margin:-4px 0 16px}
+.list-tabs{margin:-6px 0 16px}
 .tl-row .tbtns{flex:none}
 .sec>label,.sec .row2>label,.sec>.lbl{margin-bottom:0}
 .sec .row2{gap:10px 16px}

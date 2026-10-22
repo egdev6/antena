@@ -83,9 +83,10 @@ export function EmptyState({ children }: { children: ReactNode }) {
   return <div className="eg-post eg-post--empty empty-state">{children}</div>;
 }
 
-/** Pestañas de una sección con varios objetos (patrón de las tier lists): una por elemento y la última para crear uno nuevo. */
+/** Pestañas de una sección con varios objetos: una por elemento y la última para crear uno nuevo.
+ *  Mismo estilo subrayado que las pestañas del editor de alertas (eg-tabs sin modificadores). */
 export function ItemTabs({ items, selected, onSelect, onNew, newLabel, label, tour }: { items: { id: string; label: ReactNode; badge?: ReactNode }[]; selected: string | null | undefined; onSelect: (id: string) => void; onNew: () => void; newLabel: ReactNode; label?: string; tour?: string }) {
-  return <div className="eg-tabs eg-tabs--segmented eg-tabs--sm list-tabs" role="tablist" aria-label={label} data-tour={tour}>
+  return <div className="eg-tabs list-tabs" role="tablist" aria-label={label} data-tour={tour}>
     {items.map(x => <button key={x.id} type="button" role="tab" className="eg-tabs__item" aria-selected={x.id === selected} onClick={() => onSelect(x.id)}>{x.label}{x.badge ? <span className="eg-tabs__count">{x.badge}</span> : null}</button>)}
     <button type="button" role="tab" className="eg-tabs__item" aria-selected={selected == null} onClick={onNew}>{newLabel}</button>
   </div>;

@@ -75,6 +75,9 @@ test('O3.2 teleprompter: pestañas por guion, + Nuevo guion y el último no se b
     await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3`, { timeoutMs: 12000 });
     eq(await dom(chrome, tabTexts(L)), `${first.title}|Guion B|+ Nuevo guion`);
     eq(await dom(chrome, selectedTab(L)), first.title);
+    // item tabs share the underlined style of the alert editor tabs, not the segmented one
+    const tabClasses = `[...document.querySelector('[role=tablist][aria-label=${JSON.stringify(L)}]').classList].filter(c => c.startsWith('eg-tabs')).join(' ')`;
+    eq(await dom(chrome, tabClasses), 'eg-tabs');
     eq(await dom(chrome, `!!document.querySelector('select#tp-guion')`), false);
     const title = `document.querySelector('#tp-title')?.value`;
     eq(await dom(chrome, title), first.title);

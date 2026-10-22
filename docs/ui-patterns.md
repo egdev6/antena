@@ -76,6 +76,9 @@ one tab per object, the selected one is edited below, and the last tab is «+ Nu
 | Tier lists | `Interactivos.tsx` (TierList) | opens a creation form (title + items), then selects the new list |
 | Shortcuts | `Atajos.tsx` | opens a creation form (name), then selects the new shortcut |
 
+- Item tabs use the same underlined `eg-tabs` style as the alert editor tabs (no `eg-tabs--segmented`).
+  The segmented variant is only for small toggles that pick a mode or filter (Chat «Escribir en»,
+  Prompter filters), never for navigating between objects or parts of an editor.
 - Create directly when the object needs no input to exist; open a form when it needs data first.
 - After creating, select the new item. After deleting, fall back to a valid selection (the first item, or
   the «+ …» tab when the collection is empty or when the view had no other object selected).
