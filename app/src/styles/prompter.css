@@ -117,6 +117,13 @@ button{font:inherit;color:inherit}
 .pr-names{margin:0;font-size:calc(var(--fs)*.73);line-height:1.5;color:var(--grey)}
 .pr-filters{align-self:stretch;display:flex}
 .pr-filters .eg-tabs__item{flex:1 1 auto;justify-content:center;font-size:calc(var(--fs)*.6)}
+/* #5: los filtros que no caben se desplazan sin scrollbar; el fundido del borde avisa de que
+   hay más contenido (el fondo funde con la superficie de la columna de herramientas) */
+.pr-filters-cue{position:relative;display:flex;align-self:stretch;min-width:0}
+.pr-filters-cue::before,.pr-filters-cue::after{content:"";position:absolute;top:0;bottom:0;width:24px;pointer-events:none;opacity:0;transition:opacity var(--duration-base) var(--ease-out);z-index:1}
+.pr-filters-cue::before{left:0;background:linear-gradient(to right,var(--color-surface-1),transparent)}
+.pr-filters-cue::after{right:0;background:linear-gradient(to left,var(--color-surface-1),transparent)}
+.pr-filters-cue.cue-left::before,.pr-filters-cue.cue-right::after,.pr-filters-cue.cue-both::before,.pr-filters-cue.cue-both::after{opacity:1}
 .eg-timeline--lg:not(.eg-timeline--chat) .eg-timeline__item{grid-template-columns:48px minmax(0,auto) minmax(0,1fr) auto;align-items:center;gap:10px;font-size:calc(var(--fs)*.77)}
 .pr-tl .eg-timeline__item.is-done{opacity:.55}
 .pr-tl .eg-timeline__item.k-marker{cursor:pointer}

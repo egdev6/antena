@@ -53,9 +53,12 @@ h2{font:800 15px/1 var(--font-display);letter-spacing:.04em;display:flex;align-i
 #nav .eg-menu__group{margin:12px 0 2px;font-size:11.5px}
 #nav .eg-menu__group--toggle{padding:0 10px;justify-content:flex-start;text-align:left}
 #nav .eg-menu__item[aria-current]>.eg-icon{color:var(--color-fg-brand-default)}
-#nav .eg-menu__group--toggle .grp-l{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#nav .eg-menu__group--toggle .grp-l{flex:0 1 auto;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;text-overflow:ellipsis;white-space:normal}
 #nav .eg-menu__group--toggle .eg-menu__count:only-of-type{margin-left:auto}
 #nav .eg-menu__item .eg-status-dot{--dot-ring:var(--s1)}
+/* #5: los items largos («Récord de espectadores», «Membresías regaladas») se cortan en un
+   hueco de palabra (clamp de línea), no a mitad de palabra como con nowrap + ellipsis */
+#nav .eg-menu__item .eg-menu__label{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;white-space:normal}
 #nav .eg-menu__item .eg-menu__tag+.eg-menu__tag{margin-left:4px}
 /* plegada, la sección activa sigue a la vista */
 #nav .nav-grp.closed .eg-menu>li:not(:has([aria-current])){display:none}
@@ -562,6 +565,9 @@ textarea.code{min-height:200px;font:500 13px/1.55 var(--font-mono);tab-size:2;wh
 @media (max-width:860px){.side-well{display:none}}
 /* directo */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0 16px}
+/* #5: con la sidebar a la izquierda, por debajo de ~1120 px la fila de 6 KPIs del directo
+   partía 5+1 (o peor) y «Miembros» quedaba sola en segunda fila: se reparte 3×2 */
+@media (max-width:1180px){.stats--directo{grid-template-columns:repeat(3,minmax(0,1fr))}}
 main>.row.tight[role=group]{margin-bottom:0}
 .dir-chat{max-height:320px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
 .goals{display:grid;gap:12px}

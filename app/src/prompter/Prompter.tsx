@@ -244,6 +244,23 @@ function Cronologia({ filter, setFilter }: { filter: string; setFilter: (f: stri
   const tl = live.timeline;
   const [editing, setEditing] = useState<string | null>(null);
   const [label, setLabel] = useState('');
+  // #5: cuando los filtros no caben, la fila se desplaza sin scrollbar; un fundido en el
+  // borde avisa de que hay más contenido (a la derecha, a la izquierda o en los dos lados)
+  const bar = useRef<HTMLDivElement>(null);
+  const [cue, setCue] = useState<'left' | 'right' | 'both' | null>(null);
+  useEffect(() => {
+    const el = bar.current; if (!el) return;
+    const check = () => {
+      const left = el.scrollLeft > 1, right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setCue(left && right ? 'both' : left ? 'left' : right ? 'right' : null);
+    };
+    check();
+    el.addEventListener('scroll', check, { passive: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    for (const b of Array.from(el.children)) ro.observe(b);
+    return () => { el.removeEventListener('scroll', check); ro.disconnect(); };
+  }, []);
   const items = (tl.items || []).filter(i => (filter === 'all' ? true : filter === 'pend' ? i.kind === 'event' && !i.done : i.kind === filter)).slice().reverse();
   const startEdit = (i: TimelineItem) => { setEditing(i.id); setLabel(i.label || ''); };
   const saveEdit = async () => { const id = editing; if (!id) return; setEditing(null); try { await put(`/api/timeline/${enc(id)}`, { label }); } catch (e: any) { toast(e.message, true); } };
@@ -263,7 +280,9 @@ function Cronologia({ filter, setFilter }: { filter: string; setFilter: (f: stri
       startEdit(marker);
       toast(marker.twitchError ? 'Marca guardada (Twitch: ' + marker.twitchError + ')' : 'Marca creada');
     })}><Icon d={IC.clapper} className="eg-btn__icon" />Marca de short</button>
-    <div className="eg-tabs pr-filters" role="tablist" aria-label="Filtrar cronología">{Object.entries(FILTERS).map(([k, v]) => <button key={k} type="button" role="tab" className="eg-tabs__item" aria-selected={filter === k} onClick={() => setFilter(k)}>{v}{k === 'pend' && tl.pending ? <span className="eg-tabs__count">{tl.pending}</span> : null}</button>)}</div>
+    <div className={cx('pr-filters-cue', cue === 'left' && 'cue-left', cue === 'right' && 'cue-right', cue === 'both' && 'cue-both')}>
+      <div ref={bar} className="eg-tabs pr-filters" role="tablist" aria-label="Filtrar cronología">{Object.entries(FILTERS).map(([k, v]) => <button key={k} type="button" role="tab" className="eg-tabs__item" aria-selected={filter === k} onClick={() => setFilter(k)}>{v}{k === 'pend' && tl.pending ? <span className="eg-tabs__count">{tl.pending}</span> : null}</button>)}</div>
+    </div>
     {items.length ? <ol className="eg-timeline eg-timeline--lg pr-tl">{items.slice(0, 150).map((i, _n) => {
       const ev = i.kind === 'event';
       const [noteLabel, noteIcon] = NOTE[i.kind] || [i.kind, IC.bookmark];
