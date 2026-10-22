@@ -53,6 +53,10 @@ export function General() {
   const setAccess = (a: Access) => live.update(() => ({ access: a }));
   return <>
     <header className="view-head"><div><span className="crumb">Ajustes › General y archivos</span><h1>General y archivos</h1></div></header>
+    <Panel title="Bienvenida">
+      <p className="hint">La bienvenida explica, en nueve tarjetas, qué hace cada área de antena. Si la cerraste y quieres volver a verla:</p>
+      <button className="btn ghost" onClick={() => live.patchConfig({ panel: { onboardingDone: false } })}>Ver la bienvenida de nuevo</button>
+    </Panel>
     <Panel title="Capa de alertas">
       <CopyUrl url={`${location.origin}/overlay`} />
       <p className="hint">En Meld: <b>+ › Browser</b>, 1920×1080 y activa <b>Add audio track</b>. Todas las capas están en <a href="#/fuentes">Fuentes para Meld</a>. Parámetros: <code>?pos=top|center|bottom</code> <code>&amp;scale=0.8</code> <code>&amp;mute</code> <code>&amp;debug</code></p>

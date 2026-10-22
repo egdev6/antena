@@ -158,6 +158,7 @@ export const CONFIG_SCHEMA = {
     maxChars: num({ int: true, min: 20, max: 2000 }),   // la UI ya acota desde 20
   },
   meld: { enabled: bool, url: str, autoSession: bool },
+  panel: { onboardingDone: bool },   // bienvenida del panel vista (relanzable desde General)
   access: { lan: bool, key: str },
   sessions: { retention: num({ int: true, min: 0, max: 1000 }) },
   alerts: Object.fromEntries(Object.keys(DEFAULT_ALERTS).map(k => [k, alertaItem])),   // #118: las 12 alertas conocidas; claves nuevas se aceptan con aviso

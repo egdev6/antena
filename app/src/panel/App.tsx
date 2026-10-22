@@ -4,6 +4,7 @@ import { live, useLive } from '../lib/live';
 import { flushAll } from '../lib/patch';
 import { toast, Toaster } from '../lib/ui';
 import { useHash } from './router';
+import { Onboarding } from './Onboarding';
 import { Sidebar } from './Sidebar';
 import { Vistas } from './views/index';
 import { platformsText } from './views/Editor';
@@ -74,6 +75,7 @@ export function App() {
     <Sidebar current={'#/' + parts.join('/')} />
     <main id="main">{offline && <div className="offline" role="status">Sin conexión con el servidor. Reintentando…</div>}<View parts={parts} /></main>
     <PersistBar />
+    <Onboarding />
     <Toaster />
   </div>;
 }

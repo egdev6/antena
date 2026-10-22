@@ -223,6 +223,7 @@ export interface Config {
   chat: ChatConfig;
   overlay: OverlayConfig;
   meld: MeldConfig;
+  panel: { onboardingDone?: boolean };
   tts: TtsConfig;
   filters: FiltersConfig;
   twitch: TwitchConfig;
