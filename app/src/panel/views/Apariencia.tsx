@@ -1,6 +1,6 @@
 // Apariencia: un solo tema para todo lo que sale en pantalla (overlay de alertas, widgets y créditos).
 // El de serie es el de EGDEV; aquí se sobrescribe. Se guarda solo (src/theme.mjs) y llega en vivo a Meld.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { copy, cx, guard, PfIcon, ScaledFrame, Seg, Switch, toast, ViewHead } from '../../lib/ui';
@@ -36,8 +36,12 @@ export function Apariencia() {
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const load = guard(async () => { info.current = await get<ThemeInfo>('/api/theme'); live.update(() => ({ theme: info.current!.theme })); setLoaded(x => x + 1); });
   useEffect(() => { load(); return () => { clearTimeout(timer.current); flush(); }; }, []);
-  // al abrir la pestaña de alertas sale una de ejemplo para ver el tema
-  useEffect(() => { if (view !== 'alert') return; const h = setTimeout(() => { post('/api/test', { type: 'follow', target: 'preview' }).catch(() => {}); }, 900); return () => clearTimeout(h); }, [view, frameKey]);
+  // al abrir la pestaña de alertas sale una de ejemplo para ver el tema; igual que en el editor,
+  // se dispara cuando el marco termina de cargar (onload), nunca antes: si el iframe tarda, el ejemplo no se pierde (#6)
+  const viewRef = useRef(view); viewRef.current = view;
+  const sampleFrame = useCallback((el: HTMLIFrameElement | null) => {
+    if (el) el.onload = () => setTimeout(() => { if (viewRef.current === 'alert') post('/api/test', { type: 'follow', target: 'preview' }).catch(() => {}); }, 300);
+  }, []);
   const flush = () => {
     const p = pending.current; pending.current = {};
     if (!Object.keys(p).length) return Promise.resolve();
@@ -187,7 +191,7 @@ export function Apariencia() {
           <div className="ap-tabs" role="tablist" aria-label="Qué ver">
             {WIDGETS.map(w => <button key={w.id} type="button" role="tab" aria-selected={view === w.id} className={cx('eg-chip', view === w.id && 'is-on')} onClick={() => setView(w.id)}>{w.label}</button>)}
           </div>
-          <ScaledFrame key={W.id + frameKey} src={W.src} w={W.w} h={W.h} className="preview wprev" title={`Vista previa: ${W.label}`} />
+          <ScaledFrame key={W.id + frameKey} src={W.src} w={W.w} h={W.h} className="preview wprev" title={`Vista previa: ${W.label}`} frameRef={sampleFrame} />
           {view === 'alert' && <div className="eg-stage__bar ap-samples">
             {SAMPLES.map(([type, label]) => <button key={type} type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => sample(type)}>{label}</button>)}
           </div>}
