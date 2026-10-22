@@ -15,6 +15,13 @@
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "PLACEHOLDER_UPDATER_PUBKEY__REPLACE_WITH_TAURI_SIGNER_PUBLIC_KEY",
+      "endpoints": ["https://github.com/egdev6/antena/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],

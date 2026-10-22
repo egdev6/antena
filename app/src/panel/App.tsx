@@ -35,6 +35,7 @@ function View({ parts }: { parts: string[] }) {
     case 'filtros': return <V.Filtros />;
     case 'conexiones': return <V.Conexiones />;
     case 'general': return <V.General />;
+    case 'acerca': return <V.AcercaDe />;
     default: return <V.Directo />;
   }
 }

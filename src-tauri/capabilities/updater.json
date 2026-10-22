@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "Solo la ventana principal (panel servido por el servidor local, http://127.0.0.1) busca, descarga e instala actualizaciones firmadas y reinicia la app (Ajustes › Acerca de).",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
+  "permissions": ["updater:default", "process:allow-restart"]
+}

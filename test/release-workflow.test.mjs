@@ -68,7 +68,7 @@ test('la versión del repositorio coincide en los tres manifiestos y tiene sus n
   assert.match(notas, /### Agradecimientos/);
 });
 
-test('el workflow de release es manual, solo desde main y crea un borrador sin firma', () => {
+test('el workflow de release es manual, solo desde main y crea un borrador: instalador sin firma de código de Windows, actualización firmada', () => {
   const yml = readFileSync(WORKFLOW, 'utf8');
   const on = yml.match(/^on:\n([\s\S]*?)^\S/m)?.[1] || '';
   assert.match(on, /^\s+workflow_dispatch:/m, 'se lanza a mano');
@@ -92,6 +92,16 @@ test('el workflow de release es manual, solo desde main y crea un borrador sin f
   assert.match(yml, /pnpm desktop:node/);
   assert.match(yml, /pnpm desktop:build/);
   assert.match(yml, /gh release create "v\$VERSION"[^\n]*--draft/, 'crea un borrador');
-  assert.doesNotMatch(yml, /TAURI_SIGNING|certificate|signtool|secrets\.(?!GITHUB_TOKEN)/i, 'sin firma ni otros secretos');
+  // El updater nativo (ODD antena-ux-ajustes L3) firma la actualización con minisign; el instalador
+  // sigue sin firma de código de Windows (Authenticode).
+  assert.doesNotMatch(yml, /certificate|signtool|authenticode/i, 'sin firma de código de Windows');
+  const secretos = new Set([...yml.matchAll(/secrets\.([A-Z0-9_]+)/g)].map(m => m[1]));
+  for (const s of secretos) assert.ok(['TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD', 'GITHUB_TOKEN'].includes(s), `secreto no previsto: ${s}`);
+  for (const linea of yml.split('\n').filter(l => /\$\{\{\s*secrets\./.test(l))) {
+    assert.match(linea, /^ {10}TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)?: \$\{\{ secrets\.TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)? \}\}$/, `los secretos solo van en env: ${linea.trim()}`);
+  }
+  for (const p of pasos.filter(p => /secrets\./.test(p))) assert.match(p, /^ {8}env:\n/m, `«${p.split('\n')[0]}»: los secretos entran por env`);
+  const borrador = pasos.find(p => p.startsWith('Borrador de release')) || '';
+  assert.match(borrador, /gh release create "v\$VERSION" "\$EXE" "\$EXE\.sig" latest\.json [^\n]*--draft/, 'el borrador lleva la firma y latest.json');
   for (const uses of yml.match(/uses: \S+/g) || []) assert.match(uses, /@[0-9a-f]{40}$/, `${uses} fijada por SHA`);
 });

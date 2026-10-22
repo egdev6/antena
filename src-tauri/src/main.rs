@@ -466,6 +466,11 @@ fn main() {
         // una sola instancia: abrir la app otra vez trae el panel al frente
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_shell::init())
+        // actualizaciones firmadas desde GitHub Releases (Ajustes › Acerca de); solo la ventana
+        // principal puede usarlas (capability `updater`). Al instalar, la app sale y el servidor
+        // se apaga solo al cerrarse su stdin (ANTENA_DESKTOP=1).
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let app_data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data)?;

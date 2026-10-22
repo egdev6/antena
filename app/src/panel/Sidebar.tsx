@@ -65,6 +65,7 @@ export function Sidebar({ current }: { current: string }) {
       { href: '#/filtros', label: 'Filtros y voz' },
       { href: '#/conexiones', label: 'Conexiones' },
       { href: '#/general', label: 'General y archivos' },
+      { href: '#/acerca', label: 'Acerca de' },
     ]],
   ];
   const active = (href: string) => href === current || (current.startsWith('#/comando/') && href === '#/comandos') || (current.startsWith('#/mensaje/') && href === '#/mensajes');
