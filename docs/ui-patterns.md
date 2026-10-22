@@ -136,7 +136,11 @@ The first-run greeting and the guided tour (`app/src/panel/tour/`, driver.js) po
    groups are `nav-<group>`. An anchor only adds the attribute: never change layout or behaviour for the tour.
 2. Add an entry to `TOUR_STEPS` (`app/src/panel/tour/steps.ts`): `route` (the hash to open), `anchor`, and the
    `title` and `text` in Spanish (one or two short sentences). `side` places the popover.
-3. Anchor a box that is always rendered in that view. If the anchor does not appear within 2 s (a section that
-   only exists when Meld is connected, a sidebar group in the narrow layout), the tour skips the step, so a
-   step that is often missing is a step to rethink.
-4. Update `test/onboarding-browser.test.mjs` if the step changes the route order it checks.
+3. If the anchor only exists in some states, give the step a `when` precondition (for example
+   `meldConnected` for the scenes, `wideSidebar` for sidebar groups, which have no box below 860 px). The tour
+   evaluates `when` once at start and drops the steps that fail, so «n de N» counts only steps that will be
+   shown and they are skipped instantly.
+4. Anchor a box that is always rendered when `when` holds. As a safety net, an anchor that still does not
+   appear within 2 s is skipped and the counter is renumbered: the next step takes its number and the total
+   drops by one (no gaps). A step that hits the safety net is a missing `when`.
+5. Update `test/onboarding-browser.test.mjs` if the step changes the route order it checks.

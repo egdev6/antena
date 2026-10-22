@@ -36,6 +36,14 @@ const GREET = `document.querySelector('.tour-greet')`;
 const POPOVER = `document.querySelector('.driver-popover')`;
 const ACTIVE = `document.querySelector('.driver-active-element')?.getAttribute('data-tour')`;
 const NEXT = `document.querySelector('.driver-popover-next-btn')`;
+const PROGRESS = `document.querySelector('.driver-popover-progress-text')?.textContent`;
+// Pulsa «Siguiente» y espera en la página a que se resalte otra ancla; devuelve los ms.
+const nextTimed = (chrome, anchor) => dom(chrome, `new Promise(resolve => {
+  const t0 = performance.now();
+  ${NEXT}.click();
+  const tick = () => (${ACTIVE} === ${JSON.stringify(anchor)} ? resolve(Math.round(performance.now() - t0)) : setTimeout(tick, 10));
+  tick();
+})`);
 
 async function waitDone(app) {
   for (let i = 0; i < 50 && app.store.config.panel.onboardingDone !== true; i++) await sleep(100);
@@ -87,7 +95,7 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
     await waitDom(chrome.cdp, `!!${POPOVER} && ${ACTIVE} === 'nav'`, { timeoutMs: 9000 });
     if (await dom(chrome, `!!${GREET}`)) throw new Error('el saludo sigue visible durante el tour');
     const progress = await dom(chrome, `document.querySelector('.driver-popover-progress-text').textContent`);
-    if (!/^1 de \d+$/.test(progress)) throw new Error(`progreso inesperado: ${progress}`);
+    if (progress !== '1 de 19') throw new Error(`progreso inesperado: ${progress}`);
     const next = await dom(chrome, `${NEXT}.textContent`);
     if (next !== 'Siguiente') throw new Error(`botón siguiente: ${next}`);
     if (app.store.config.panel.onboardingDone !== false) throw new Error('empezar el tour no debe marcarlo aún');
@@ -103,7 +111,19 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
     await dom(chrome, `document.querySelector('.driver-popover-prev-btn').click(); 'ok'`);
     await waitDom(chrome.cdp, `location.hash === '#/directo' && ${ACTIVE} === 'directo-timeline'`, { timeoutMs: 9000 });
 
-    // Siguiente hasta el final: el último paso dice «Terminar» y al pulsarlo se cierra y queda visto.
+    // Meld sin conectar: el paso de escenas no cuenta y se salta al instante, sin huecos.
+    for (let i = 0; i < 12 && await dom(chrome, ACTIVE) !== 'meld-head'; i++) {
+      const before = await dom(chrome, ACTIVE);
+      await dom(chrome, `${NEXT}.click(); 'ok'`);
+      await waitDom(chrome.cdp, `${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
+    }
+    await waitDom(chrome.cdp, `${ACTIVE} === 'meld-head' && ${PROGRESS} === '13 de 19'`, { timeoutMs: 9000 });
+    const ms = await nextTimed(chrome, 'meld-connection');
+    await waitDom(chrome.cdp, `${PROGRESS} === '14 de 19'`, { timeoutMs: 3000 });
+    if (ms > 1000) throw new Error(`el paso no disponible hizo esperar ${ms} ms`);
+
+    // Siguiente hasta el final: el último paso dice «Terminar» y al pulsarlo se cierra y queda visto,
+    // aunque se pulse mientras el resaltado aún se anima.
     for (let i = 0; i < 40 && await dom(chrome, `!!${POPOVER}`); i++) {
       const label = await dom(chrome, `${NEXT}?.textContent`);
       const before = await dom(chrome, ACTIVE);
@@ -150,5 +170,35 @@ test('onboarding: «General y archivos» relanza el tour sin saludo; Esc y las f
     await key('Escape');
     await waitDom(chrome.cdp, `!${POPOVER} && !document.querySelector('.driver-active-element')`, { timeoutMs: 9000 });
     await waitDone(app);
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
+test('onboarding: red de seguridad, un ancla que no aparece se salta y la numeración se rehace sin huecos', { timeout: 120000 }, async t => {
+  const ctx = await start(t, { done: true });
+  if (!ctx) return;
+  const { bin, base, close } = ctx;
+  let chrome;
+  try {
+    chrome = await openDesktop(bin, `${base}/#/general`);
+    await waitDom(chrome.cdp, `!!${buttonByText('Ver el tour de nuevo')}`, { timeoutMs: 15000 });
+    // La tarjeta de alertas existe pero no se ve: su paso cumple la condición y aun así no llega.
+    await dom(chrome, `(() => { const s = document.createElement('style'); s.textContent = '[data-tour="directo-alerts"]{display:none!important}'; document.head.append(s); return 'ok'; })()`);
+    await dom(chrome, RECORD);
+    await dom(chrome, `${buttonByText('Ver el tour de nuevo')}.click(); 'ok'`);
+    await waitDom(chrome.cdp, `${ACTIVE} === 'nav' && ${PROGRESS} === '1 de 19'`, { timeoutMs: 9000 });
+    for (let i = 0; i < 8 && await dom(chrome, ACTIVE) !== 'directo-stats'; i++) {
+      const before = await dom(chrome, ACTIVE);
+      await dom(chrome, `${NEXT}.click(); 'ok'`);
+      await waitDom(chrome.cdp, `${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
+    }
+    await waitDom(chrome.cdp, `${ACTIVE} === 'directo-stats' && ${PROGRESS} === '5 de 19'`, { timeoutMs: 9000 });
+    // Tras la espera acotada, la cronología toma el número del paso que falta y el total baja.
+    await dom(chrome, `${NEXT}.click(); 'ok'`);
+    await waitDom(chrome.cdp, `${ACTIVE} === 'directo-timeline' && ${PROGRESS} === '6 de 18'`, { timeoutMs: 9000 });
+    // Y hacia atrás no vuelve a esperar por él.
+    await dom(chrome, `document.querySelector('.driver-popover-prev-btn').click(); 'ok'`);
+    await waitDom(chrome.cdp, `${ACTIVE} === 'directo-stats' && ${PROGRESS} === '5 de 18'`, { timeoutMs: 1500 });
+    const seen = await dom(chrome, `window.__tourSeen`);
+    if (seen.includes('directo-alerts')) throw new Error('el ancla invisible se resaltó');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
