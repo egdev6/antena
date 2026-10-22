@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, enc, get, post, put } from '../lib/api';
 import { live, makeChatLoader, useLive } from '../lib/live';
 import { mergeChat } from '../lib/chat-merge.mjs';
-import { cx, fmtTime, guard, Icon, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
+import { cx, EmptyState, fmtTime, guard, Icon, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
 import { IC } from '../lib/icons';
 import type { ChatMessage, ChatSendResult, Question, TimelineItem, TierListItem, TierListTier } from '../lib/types';
 
@@ -123,7 +123,7 @@ function Chat() {
           <button type="button" className={cx('eg-btn eg-btn--secondary eg-btn--sm act', done['ask' + m.id] && 'done')} onClick={act(m, 'ask')}><Icon d={IC.question} className="eg-btn__icon" />Pregunta</button>
           <button type="button" className={cx('eg-btn eg-btn--secondary eg-btn--sm act', done['save' + m.id] && 'done')} onClick={act(m, 'save')}><Icon d={IC.pin} className="eg-btn__icon" />Guardar</button>
         </span>}
-      </li>) : <li className="pr-empty">Aún no hay mensajes en el chat</li>}
+      </li>) : <li className="pr-empty"><EmptyState>Todavía no hay mensajes en el chat. Conecta Twitch en el panel para leerlo aquí.</EmptyState></li>}
     </ol>
     {unseen > 0 && <button type="button" className="eg-timeline__more" onClick={() => { stick.current = true; scrollEnd(); }}>{unseen} {unseen === 1 ? 'mensaje nuevo' : 'mensajes nuevos'}</button>}
     <form className="pr-send" onSubmit={send}>
@@ -277,7 +277,7 @@ function Cronologia({ filter, setFilter }: { filter: string; setFilter: (f: stri
           {i.kind === 'marker' && <button type="button" className="eg-icon-btn act" aria-label="Poner nombre" title="Poner nombre" onClick={() => startEdit(i)}><Icon d={IC.edit} /></button>}
           <button type="button" className="eg-icon-btn x" aria-label="Borrar" title="Borrar" onClick={guard(() => api('DELETE', `/api/timeline/${enc(i.id)}`), 'Borrada')}><Icon d={IC.trash} /></button></>}</span>
       </li>; })}</ol>
-      : <p className="pr-empty">{filter === 'pend' ? 'Nadie pendiente de agradecer' : 'Aún no hay nada en la cronología'}</p>}
+      : <p className="pr-empty">{filter === 'pend' ? 'Nadie pendiente de agradecer' : 'Todavía no hay nada en la cronología'}</p>}
   </>;
 }
 

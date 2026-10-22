@@ -52,7 +52,7 @@ export function Preguntas() {
             <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={guard(() => post(`/api/questions/${q.id}/move`, { dir: -1 }))} />
             <IconBtn icon={IC.down} label="Bajar" disabled={i === pend.length - 1} onClick={guard(() => post(`/api/questions/${q.id}/move`, { dir: 1 }))} />
             <IconBtn icon={IC.x} label="Descartar" onClick={guard(() => post(`/api/questions/${q.id}/status`, { status: 'discarded' }))} />
-          </article>) : <EmptyState>Aún no hay preguntas. Se envían con {c.command} tu pregunta.</EmptyState>}</div>
+          </article>) : <EmptyState>Todavía no hay preguntas. Se envían con {c.command} tu pregunta.</EmptyState>}</div>
           <AddRow placeholder="Añadir una pregunta a mano…" onAdd={text => post('/api/questions', { text })} />
         </Sec>
         <Sec flat title="Respondidas" id="h-done" aside={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!done.length} onClick={guard(() => post('/api/questions/clear', {}))}>Limpiar</button>}>

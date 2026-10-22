@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { post, upload, enc } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { Access, MediaItem } from '../../lib/types';
-import { confirmDelete, CopyUrl, guard, Panel, Range, Switch, toast, ViewHead } from '../../lib/ui';
+import { confirmDelete, CopyUrl, EmptyState, guard, Panel, Range, Switch, toast, ViewHead } from '../../lib/ui';
 import type { UploadResult } from '../../lib/types';
 import { launchTour } from '../tour';
 
@@ -52,6 +52,8 @@ export function General() {
   const access = useLive(s => s.access || { lan: false, urls: [] });
   const up = useUploader();
   const setAccess = (a: Access) => live.update(() => ({ access: a }));
+  const subir = guard(async (e: React.ChangeEvent<HTMLInputElement>) => { await up.run([...(e.target.files || [])]); e.target.value = ''; });
+  const ctaSubir = <label className="eg-btn eg-btn--secondary eg-btn--sm upload">Subir archivos<input type="file" multiple accept="video/*,image/*,audio/*,.woff2,.woff,.ttf,.otf" hidden onChange={subir} /></label>;
   return <>
     <ViewHead tour="general-head" crumb="Ajustes › General y archivos" title="General y archivos" />
     <Panel title="Tour guiado" tour="general-tour">
@@ -76,10 +78,11 @@ export function General() {
       <ul className="access-urls">{access.lan ? (access.urls?.length ? access.urls.map((u: string) => <li key={u}><CopyUrl url={u} /></li>) : <li className="hint">No encuentro ninguna red local.</li>) : <li className="hint">Desactivado: el panel solo se abre desde este PC.</li>}</ul>
       <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { if (confirm('Los móviles que ya tenían acceso tendrán que abrir el enlace nuevo. ¿Seguir?')) setAccess(await post('/api/access', { regenerate: true })); })}>Generar otra clave</button>
     </Panel>
-    <Panel title="Archivos" aside={<label className="eg-btn eg-btn--ghost upload">Subir archivos<input type="file" multiple accept="video/*,image/*,audio/*,.woff2,.woff,.ttf,.otf" hidden onChange={guard(async e => { await up.run([...(e.target.files || [])]); e.target.value = ''; })} /></label>}>
+    <Panel title="Archivos" aside={<label className="eg-btn eg-btn--ghost upload">Subir archivos<input type="file" multiple accept="video/*,image/*,audio/*,.woff2,.woff,.ttf,.otf" hidden onChange={subir} /></label>}>
       <p className="hint">Vídeos (webm con transparencia, mp4), imágenes (gif, png, webp) y sonidos (mp3, ogg, wav). Se guardan en la carpeta <code>media/</code> de la app{media.length > 0 ? <> · total: <b>{formatBytes(media.reduce((s: number, m: MediaItem) => s + (m.size || 0), 0))}</b></> : null}.</p>
-      <ul className="files">{media.map(m => <li key={m.name}><div className="thumb"><MediaThumb m={m} /></div>
+      {media.length ? <ul className="files">{media.map(m => <li key={m.name}><div className="thumb"><MediaThumb m={m} /></div>
         <div className="meta"><span title={m.name}>{m.name}{m.size ? <> · {formatBytes(m.size)}</> : null}</span><button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(m.name, 'este archivo')) return; const d = await post<{ media: MediaItem[] }>('/api/media/delete', { name: m.name }); live.update(() => ({ media: d.media })); })}>Borrar</button></div></li>)}</ul>
+      : <EmptyState action={ctaSubir}>Todavía no hay archivos. Sube los vídeos, imágenes y sonidos que usan tus alertas.</EmptyState>}
     </Panel>
     <UploadBar name={up.name} progress={up.progress} />
   </>;

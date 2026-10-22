@@ -104,7 +104,7 @@ function ChatBox() {
       <time className="eg-timeline__time">{fmtTime(m.at)}</time>
       <span className="eg-timeline__pf" title={m.platform === 'youtube' ? 'YouTube' : 'Twitch'}><PfIcon platform={m.platform === 'youtube' ? 'youtube' : 'twitch'} /></span>
       <span><span className={cx('eg-timeline__who', m.mod && 'eg-timeline__who--mod')}>{m.user}</span>{m.owner ? <span className="tagm you">Tú</span> : null} {m.command ? <span className="eg-timeline__cmd">{m.text}</span> : m.text}</span>
-    </li>)}</ol> : <EmptyState>Aún no hay mensajes.</EmptyState>}
+    </li>)}</ol> : <EmptyState>Todavía no hay mensajes.</EmptyState>}
     <form className="row tight" onSubmit={send}>
       <SendTo value={to} onChange={v => live.patchConfig({ chat: { sendTo: v } })} />
       <label className="sr-only" htmlFor="dir-say">Escribe en el chat</label>
