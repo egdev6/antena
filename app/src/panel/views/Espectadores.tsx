@@ -61,7 +61,7 @@ function PlatformCard({ p, x }: { p: 'twitch' | 'youtube'; x?: ViewerPlatform })
 export function RecordPane({ type }: { type: string }) {
   const v = useLive(s => s.viewers);
   const p = VIEWER_TYPES[type];
-  if (!v) return <p className="hint">El servidor no ha mandado aún el estado de espectadores.</p>;
+  if (!v) return <Status tone="neutral">El servidor no ha mandado aún el estado de espectadores.</Status>;
   const c = v.settings;
   return <>
     <p className="hint">Sale cuando hay más gente viendo a la vez que nunca en {NAME[p]}. El récord se guarda siempre; lo que se limita es la alerta, para que no salga cada vez que la cifra sube uno.</p>
