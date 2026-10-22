@@ -1,0 +1,11 @@
+node_modules/
+data/
+media/*
+!media/.gitkeep
+public/fonts/*.woff2
+app/node_modules/
+app/dist/
+src-tauri/target/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+src-tauri/gen/

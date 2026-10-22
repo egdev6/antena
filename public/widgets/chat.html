@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>EGDEV · chat</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@500;600&display=swap" rel="stylesheet">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+.root{display:flex;flex-direction:column;justify-content:flex-end;gap:10px;padding:18px;--fs:26px}
+.msg{display:flex;gap:12px;align-items:flex-start;padding:12px 16px 13px;border-radius:calc(16px * var(--round,1));font-size:var(--fs);line-height:1.3;
+  background:var(--surface-bg,linear-gradient(160deg,rgba(28,28,32,.92),rgba(10,10,12,.94)));border:1px solid rgba(255,255,255,.08);border-left:3px solid var(--red);
+  box-shadow:0 10px 26px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08);max-width:100%}
+.msg.a-slide{animation:in .35s cubic-bezier(.2,1.3,.4,1) both}
+.msg.a-fade{animation:inF .35s ease-out both}
+.msg.a-pop{animation:inP .35s cubic-bezier(.2,1.3,.4,1) both}
+.msg.a-none{animation:none}
+.msg.out.o-slide{animation:out .45s ease-in forwards}
+.msg.out.o-fade{animation:outF .35s ease-in forwards}
+.msg.out.o-none{animation:none}
+.root.reverse{flex-direction:column-reverse}
+.reverse .msg.a-slide{animation-name:inR}
+.reverse .msg.out.o-slide{animation-name:outR}
+.msg.mod{border-left-color:#fff}
+@keyframes in{from{opacity:0;transform:translateX(-24px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes out{to{opacity:0;transform:translateX(-24px)}}
+@keyframes inF{from{opacity:0}to{opacity:1}}
+@keyframes inP{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+@keyframes outF{to{opacity:0}}
+@keyframes inR{from{opacity:0;transform:translateX(24px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes outR{to{opacity:0;transform:translateX(24px)}}
+.body{min-width:0;flex:1}
+.who{display:flex;align-items:center;gap:8px;font:800 .78em/1 var(--f-cond);letter-spacing:.06em;text-transform:uppercase;color:var(--red-2);margin-bottom:5px}
+.who .pf{display:inline-flex;align-items:center;font:700 .62em/1 var(--f-cond);letter-spacing:.16em;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:3px 6px 2px}
+.who .pf svg{width:1.1em;height:1.1em}
+.who .b{color:var(--pink);font-size:.8em}
+.text{font-weight:500;color:var(--white);overflow-wrap:anywhere}
+.text img{height:1.3em;vertical-align:-.3em;margin:0 .05em}
+}
+</style></head>
+<body><div class="root" id="root"></div>
+<script type="module">
+import { LOGOS, platformSvg } from '/platform-icons.js';
+import { connect, DEMO, demoChat, setCss } from '/widgets/widget.js';
+const root = document.getElementById('root');
+let cfg = { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide' };
+const ANIM_IN = { slide: 'a-slide', fade: 'a-fade', pop: 'a-pop', none: 'a-none' };
+const ANIM_OUT = { slide: 'o-slide', fade: 'o-fade', none: 'o-none' };
+
+// Logos de plataforma: SVG por DOM con las rutas fijas de /platform-icons.js
+
+function render(m) {
+  if (!cfg.platforms?.includes(m.platform)) return;
+  if (cfg.hideCommands && m.command) return;
+  if (cfg.hideOwner !== false && m.owner) return; // lo que escribes tú (y los mensajes programados) no sale en pantalla
+  const el = document.createElement('div');
+  el.className = 'msg pf-' + (m.platform || 'egdev') + ' ' + (ANIM_IN[cfg.animIn] || 'a-slide') + (m.mod || m.owner ? ' mod' : '');
+  el.dataset.id = m.id; el.dataset.login = m.login || '';
+  // Construcción por DOM (sin innerHTML): el texto del chat nunca entra como HTML.
+  const body = document.createElement('div'); body.className = 'body';
+  const who = document.createElement('div'); who.className = 'who';
+  who.append(document.createTextNode(m.user ?? ''));
+  const b = document.createElement('span'); b.className = 'b';
+  if (m.owner) b.textContent = '◆ host'; else if (m.mod) b.textContent = '◆ mod'; else if (m.member) b.textContent = '◆';
+  if (b.textContent) who.append(b);
+  if (cfg.showPlatform && LOGOS[m.platform]) {
+    const pf = document.createElement('span'); pf.className = 'pf';
+    pf.append(platformSvg(m.platform));   // SVG construido por DOM con las rutas fijas de /platform-icons.js
+    who.append(pf);
+  }
+  const text = document.createElement('div'); text.className = 'text';
+  for (const p of (m.parts?.length ? m.parts : [{ t: m.text }])) {
+    if (p.e) {
+      const img = document.createElement('img'); img.src = p.e; img.alt = p.alt ?? '';
+      text.append(img);
+    } else text.append(document.createTextNode(p.t ?? ''));
+  }
+  body.append(who, text); el.append(body);
+  root.append(el);
+  while (root.children.length > (Number(cfg.maxMessages) || 12)) root.firstElementChild.remove();
+  const fade = Number(cfg.fadeAfterSec) || 0;
+  if (fade > 0) setTimeout(() => { el.classList.add('out', ANIM_OUT[cfg.animOut] || 'o-slide'); setTimeout(() => el.remove(), 500); }, fade * 1000);
+}
+
+// Los cambios de configuración solo parchean estilos y clases del contenedor: los mensajes
+// existentes no se reconstruyen (sin resetear temporizadores de salida ni repetir entradas).
+function apply(w) {
+  cfg = { ...cfg, ...(w?.chat || {}) };
+  root.style.setProperty('--fs', (Number(cfg.fontSize) || 26) + 'px');
+  root.classList.toggle('reverse', !!cfg.reverse);
+  setCss(cfg.css);
+}
+
+let first = true;
+connect({
+  widgets: s => { apply(s.widgets); if (first && !DEMO) (s.chat || []).slice(-(Number(cfg.maxMessages) || 12)).forEach(render); first = false; },
+  chat: m => { if (!DEMO) render(m); },
+  chatDelete: ({ id }) => root.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove(),
+  chatClear: ({ login }) => [...root.children].forEach(el => { if (!login || el.dataset.login === login) el.remove(); }),
+});
+if (DEMO) { let i = 0; for (; i < 6; i++) render(demoChat(i)); setInterval(() => render(demoChat(i++)), 2200); }
+</script></body></html>

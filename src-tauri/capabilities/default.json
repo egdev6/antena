@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Las ventanas de antena cargan el panel desde el servidor local (solo http://127.0.0.1, guardia de navegación en main.rs) y pueden llamar a los comandos de la app que usa la interfaz (monitores, prompter, teleprompter, dock, info). La ventana del teleprompter no recibe IPC.",
+  "windows": ["main", "prompter", "dock"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
+  "permissions": ["core:default", "allow-monitors", "allow-open-prompter", "allow-open-teleprompter", "allow-open-dock", "allow-desktop-info"]
+}

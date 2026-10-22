@@ -1,0 +1,15 @@
+import { Directo } from './Directo';
+import { Chat } from './Chat';
+import { Historial } from './Historial';
+import { Editor } from './Editor';
+import { Comandos, Mensajes } from './Comandos';
+import { Preguntas, TierList, Sorteo } from './Interactivos';
+import { Widget } from './Widgets';
+import { Fuentes } from './Fuentes';
+import { Meld, Filtros, PrompterAjustes } from './Ajustes';
+import { Atajos } from './Atajos';
+import { Conexiones } from './Conexiones';
+import { General } from './General';
+import { Teleprompter } from './Teleprompter';
+import { Apariencia } from './Apariencia';
+export const Vistas = { Directo, Chat, Historial, Editor, Comandos, Mensajes, Preguntas, TierList, Sorteo, Widget, Fuentes, Meld, Filtros, PrompterAjustes, Atajos, Conexiones, General, Teleprompter, Apariencia };

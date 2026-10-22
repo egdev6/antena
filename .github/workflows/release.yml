@@ -1,0 +1,92 @@
+# Release manual (#162): compila el instalador de Windows (NSIS, sin firma) y crea un BORRADOR
+# de release con el .exe adjunto. Solo se lanza a mano y desde main. No publica ni crea tags:
+# el tag v<versión> nace cuando el mantenedor publica el borrador tras revisarlo.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión (igual que package.json, sin «v»; p. ej. 0.9.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Instalador de Windows
+    runs-on: windows-2022
+    timeout-minutes: 90   # compilación en frío de Rust + NSIS, sin caché
+    permissions:
+      contents: write   # solo para crear el borrador y subir el .exe
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Solo desde main
+        if: github.ref != 'refs/heads/main'
+        shell: bash
+        run: |
+          echo "::error::La release se lanza desde main (ahora: $GITHUB_REF)."
+          exit 1
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Comprobar la versión
+        shell: bash
+        run: |
+          node scripts/release-check.mjs "$VERSION"
+          test -f "docs/releases/v$VERSION.md" || { echo "::error::Faltan las notas docs/releases/v$VERSION.md."; exit 1; }
+      - name: La release no existe todavía
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Ya existe la release v$VERSION (borrador o publicada)."
+            exit 1
+          fi
+      - name: pnpm
+        run: corepack enable pnpm
+      - name: Dependencias
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+        run: pnpm install --frozen-lockfile
+      - name: Fuentes de la marca
+        # public/fonts no está en git: sin este paso el overlay saldría con las fuentes de reserva
+        run: pnpm fonts
+      - name: Node empaquetado con la app
+        run: pnpm desktop:node
+      - name: Compilar el instalador
+        run: pnpm desktop:build
+      - name: Localizar el instalador
+        id: exe
+        shell: bash
+        run: |
+          exe=src-tauri/target/release/bundle/nsis/antena_"$VERSION"_x64-setup.exe
+          test -f "$exe"
+          echo "path=$exe" >> "$GITHUB_OUTPUT"
+      - name: Conservar el instalador
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: antena-windows-installer
+          path: ${{ steps.exe.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
+      - name: Borrador de release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXE: ${{ steps.exe.outputs.path }}
+        run: |
+          gh release create "v$VERSION" "$EXE" --draft --target "$GITHUB_SHA" --title "antena $VERSION" --notes-file "docs/releases/v$VERSION.md" --repo "$GITHUB_REPOSITORY"

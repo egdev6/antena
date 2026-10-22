@@ -1,0 +1,74 @@
+# Baseline de CI en vigor: suite completa con la interfaz React compilada
+# (pnpm app:build), en Linux/Windows y Node 22/24. Reactiva la CI (#69).
+name: Baseline
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baseline-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    name: Baseline (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    # Windows es obligatorio desde #83: un fallo en windows-2022 bloquea igual que en Linux.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+        node: ['22', '24']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: pnpm
+        run: corepack enable pnpm
+      - name: Instalar dependencias de compilación
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+        run: pnpm install --frozen-lockfile
+      - name: Compilar interfaz React
+        run: pnpm app:build
+      - name: Chrome del runner (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          test -x /usr/bin/google-chrome
+          /usr/bin/google-chrome --version
+      - name: Chrome
+        if: runner.os == 'Windows'
+        id: chrome
+        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1.7.3
+        with:
+          chrome-version: stable
+          install-dependencies: true
+      - name: Baseline con cobertura
+        env:
+          CHROME_PATH: ${{ runner.os == 'Linux' && '/usr/bin/google-chrome' || steps.chrome.outputs.chrome-path }}
+        run: node scripts/baseline.mjs --output baseline.json --tap baseline.tap
+      - name: Verificar navegador y skips críticos
+        if: ${{ always() && !cancelled() }}
+        run: node scripts/ci-baseline.mjs baseline.json baseline.tap
+      - name: Conservar JSON y TAP
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: baseline-${{ matrix.os }}-node-${{ matrix.node }}
+          path: |
+            baseline.json
+            baseline.tap
+          if-no-files-found: warn
+          retention-days: 7

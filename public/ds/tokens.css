@@ -1,0 +1,197 @@
+/* EGDEV Foundation · tokens.css (Material v2 + Grafito) — generado desde tokens.json v2 del artefacto EGDEV Foundation. No editar a mano. */
+:root{
+
+  /* color */
+  --color-primitive-black:#000000;
+  --color-primitive-neutral-950:#0A0A0A;
+  --color-primitive-neutral-900:#1A1A1A;
+  --color-primitive-white:#FFFFFF;
+  --color-primitive-neutral-200:#CCCCCC;
+  --color-primitive-neutral-500:#888888;
+  --color-primitive-red-neon:#FF0036;
+  --color-primitive-red-dark:#CC002B;
+  --color-primitive-red-light:#FF335E;
+  --logo-red:#E91B35;
+  --logo-red-shade:#800C1D;
+  --color-alpha-white-07:rgba(255, 255, 255, 0.07);
+  --color-alpha-white-08:rgba(255, 255, 255, 0.08);
+  --color-alpha-red-07:rgba(255, 0, 54, 0.07);
+  --color-alpha-red-10:rgba(255, 0, 54, 0.10);
+  --color-alpha-red-12:rgba(255, 0, 54, 0.12);
+  --color-alpha-red-15:rgba(255, 0, 54, 0.15);
+  --color-alpha-red-18:rgba(255, 0, 54, 0.18);
+  --color-alpha-red-30:rgba(255, 0, 54, 0.30);
+  --color-alpha-red-45:rgba(255, 0, 54, 0.45);
+  --color-alpha-red-65:rgba(255, 0, 54, 0.65);
+  --color-alpha-black-25:rgba(0, 0, 0, 0.25);
+  --color-alpha-black-42:rgba(0, 0, 0, 0.42);
+  --color-bg-canvas:var(--color-primitive-graphite-950);
+  --color-bg-scrim:var(--color-primitive-black);
+  --color-bg-surface:var(--color-surface-1);
+  --color-bg-glass:var(--color-alpha-white-08);
+  --color-bg-brand-subtle:var(--color-alpha-red-10);
+  --color-bg-brand-hover:var(--color-alpha-red-18);
+  --color-fg-default:var(--color-primitive-white);
+  --color-fg-secondary:var(--color-primitive-neutral-200);
+  --color-fg-muted:var(--color-primitive-graphite-400);
+  --color-fg-brand-default:var(--color-primitive-red-neon);
+  --color-fg-brand-hover:var(--color-primitive-red-light);
+  --color-border-default:var(--color-primitive-graphite-800);
+  --color-border-subtle:var(--color-alpha-white-07);
+  --color-border-brand:var(--color-alpha-red-45);
+  --color-action-primary-bg-default:var(--color-alpha-red-12);
+  --color-action-primary-bg-hover:var(--color-alpha-red-18);
+  --color-action-primary-fg:var(--color-primitive-white);
+  --color-focus-ring:var(--color-primitive-red-neon);
+  --color-primitive-neutral-600:#6B6B6B;
+  --color-primitive-red-200:#FF8FA6;
+  --color-primitive-red-950:#1F0006;
+  --color-border-control:var(--color-primitive-graphite-500);
+  --color-border-brand-strong:var(--color-primitive-red-dark);
+  --color-action-primary-solid-bg:var(--color-primitive-red-neon);
+  --color-action-primary-solid-fg:var(--color-primitive-black);
+  --color-fg-brand-raised:var(--color-primitive-red-300);
+  --color-focus-ring-inverse:var(--color-primitive-white);
+  --color-status-success:#2DE2C4;
+  --color-status-warning:#FFB224;
+  --color-status-info:#8AB4FF;
+  --color-status-danger:var(--color-primitive-red-300);
+  --color-fg-on-status:var(--color-primitive-black);
+  --color-alpha-red-22:rgba(255, 0, 54, 0.22);
+  --color-action-primary-solid-bg-hover:var(--color-primitive-red-light);
+  --color-bg-flood:var(--color-primitive-red-neon);
+  --color-fg-on-flood:var(--color-primitive-black);
+  --color-bg-deep:var(--logo-red-shade);
+  --color-ambient-bg:#060103;
+  --color-ambient-glow:#b40a1e;
+  --color-ambient-line:#950e20;
+  --color-ambient-line-glow:#4d000d;
+  --color-ambient-square:#e6001a;
+  --color-ambient-square-glow:#ff2244;
+  --color-primitive-graphite-950:#141518;
+  --color-primitive-graphite-900:#1B1C20;
+  --color-primitive-graphite-850:#232428;
+  --color-primitive-graphite-800:#2A2B30;
+  --color-primitive-graphite-750:#2D2E33;
+  --color-primitive-graphite-500:#7A7B81;
+  --color-primitive-graphite-400:#A1A2A8;
+  --color-primitive-red-300:#FF6680;
+  --color-surface-0:var(--color-primitive-graphite-950);
+  --color-surface-1:var(--color-primitive-graphite-900);
+  --color-surface-2:var(--color-primitive-graphite-850);
+  --color-surface-3:var(--color-primitive-graphite-750);
+  --color-surface-overlay:rgba(35, 36, 40, 0.84);
+  --color-border-hairline:rgba(255, 255, 255, 0.08);
+  --color-border-hairline-strong:rgba(255, 255, 255, 0.14);
+
+  /* type */
+  --font-display:"Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-sans:"Barlow", system-ui, sans-serif;
+  --font-mono:"JetBrains Mono", ui-monospace, monospace;
+
+  /* spacing */
+  --space-0:0px;
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:20px;
+  --space-6:24px;
+  --space-7:28px;
+  --space-8:32px;
+  --space-10:40px;
+  --space-12:48px;
+  --space-14:56px;
+  --space-16:64px;
+  --space-20:80px;
+  --space-24:96px;
+
+  /* radius */
+  --radius-none:0px;
+  --radius-sm:4px;
+  --radius-md:12px;
+  --radius-lg:16px;
+  --radius-xl:22px;
+  --radius-2xl:24px;
+  --radius-full:9999px;
+
+  /* shadow */
+  --shadow-glow-base:0 4px 20px 0 rgba(255, 0, 54, 0.15);
+  --shadow-glow-active:0 8px 30px 0 rgba(255, 0, 54, 0.30);
+  --shadow-glow-intense:0 0 22px 4px rgba(255, 0, 54, 0.65), 0 0 55px 8px rgba(255, 0, 54, 0.28);
+  --shadow-cta-hover:0 0 16px 4px rgba(255, 0, 54, 0.35), 0 0 45px 10px rgba(255, 0, 54, 0.15), inset 0 0 16px 0 rgba(255, 0, 54, 0.08);
+  --shadow-focus:0 0 0 2px #141518, 0 0 0 4px #FF0036;
+  --shadow-card:0 0 0 1px rgba(255, 0, 54, 0.12), 0 8px 40px 0 rgba(255, 0, 54, 0.12), inset 0 0 16px 0 rgba(255, 0, 54, 0.08);
+  --shadow-glow-hot:0 0 4px 1px rgba(255, 255, 255, 0.85), 0 0 18px 4px rgba(255, 0, 54, 0.75), 0 0 60px 12px rgba(255, 0, 54, 0.35);
+  --shadow-edge:inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow-edge-strong:inset 0 1px 0 rgba(255, 255, 255, 0.13);
+  --shadow-elev-1:0 1px 2px rgba(0, 0, 0, 0.7), 0 4px 14px -2px rgba(0, 0, 0, 0.55);
+  --shadow-elev-2:0 2px 4px rgba(0, 0, 0, 0.7), 0 14px 36px -6px rgba(0, 0, 0, 0.75);
+  --shadow-elev-3:0 4px 10px rgba(0, 0, 0, 0.7), 0 28px 70px -10px rgba(0, 0, 0, 0.9);
+  --shadow-well:inset 0 1px 2px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+  --shadow-ring-brand:0 0 0 3px rgba(255, 0, 54, 0.22);
+  --shadow-btn-primary:inset 0 1px 0 rgba(255, 255, 255, 0.38), inset 0 -1px 0 rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.6), 0 8px 22px -8px rgba(255, 0, 54, 0.7);
+  --shadow-btn-primary-hover:inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 0, 54, 0.35), 0 10px 30px -6px rgba(255, 0, 54, 0.75);
+  --shadow-btn-pressed:inset 0 2px 5px rgba(0, 0, 0, 0.4);
+  --shadow-hot:inset 0 1px 0 rgba(255, 180, 195, 0.35), inset 0 0 0 1px rgba(255, 0, 54, 0.18), 0 2px 0 0 #7A0A1C, 0 5px 0 0 #3D050E, 0 18px 40px -10px rgba(0, 0, 0, 0.85), 0 0 50px -6px rgba(255, 0, 54, 0.45);
+
+  /* effect */
+  --effect-grid-opacity:0.025;
+  --effect-grid-size:40px;
+
+  /* blur */
+  --blur-glass:16px;
+  --blur-overlay:20px;
+
+  /* border */
+  --border-width:1px;
+  --focus-width:2px;
+  --focus-offset:2px;
+
+  /* icon */
+  --icon-size:20px;
+  --icon-stroke:1.75;
+
+  /* timing */
+  --duration-fast:200ms;
+  --duration-base:300ms;
+  --duration-reveal:560ms;
+  --ease-out:cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-overshoot:cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ambient-cycle:10s;
+  --delay-popover:2s;
+  --ease-spring:cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-snappy:cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-press:90ms;
+
+  /* layout */
+  --content-max:1280px;
+  --gutter:clamp(16px, 4vw, 40px);
+  --nav-height:68px;
+  --section-min-height:100dvh;
+  --bp-sm:520px;
+  --bp-md:960px;
+  --bp-lg:1260px;
+  --tilt-max:6deg;
+
+  /* ambient */
+  --ambient-angle:315;
+  --ambient-line-count:70;
+  --ambient-square-count:90;
+  --ambient-speed:1;
+  --ambient-glow-opacity:0.1;
+  --ambient-square-size-min:6px;
+  --ambient-square-size-max:28px;
+
+  /* gradient */
+  --gradient-sheen:linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0) 42%);
+  --gradient-glass-card:linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015) 45%);
+  --gradient-btn-primary:linear-gradient(180deg, #FF2D57 0%, #FF0036 52%, #EE0031 100%);
+  --gradient-btn-primary-hover:linear-gradient(180deg, #FF4A6E 0%, #FF1A49 52%, #F00033 100%);
+  --gradient-btn-secondary:linear-gradient(180deg, rgba(255, 0, 54, 0.20) 0%, rgba(255, 0, 54, 0.08) 100%);
+  --gradient-btn-secondary-hover:linear-gradient(180deg, rgba(255, 0, 54, 0.30) 0%, rgba(255, 0, 54, 0.13) 100%);
+  --gradient-chip-active:linear-gradient(180deg, rgba(255, 0, 54, 0.24), rgba(255, 0, 54, 0.09));
+  --gradient-post-new:linear-gradient(180deg, rgba(255, 0, 54, 0.11), rgba(255, 0, 54, 0.03) 60%);
+  --gradient-progress:linear-gradient(180deg, #FF4A6E, #FF0036 60%, #D9002D);
+  --gradient-hot:radial-gradient(120% 80% at 85% -10%, rgba(255, 0, 54, 0.26), transparent 55%), linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 40%), #0E0709;
+}

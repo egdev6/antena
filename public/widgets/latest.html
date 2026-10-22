@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>EGDEV · últimos</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@500;600&display=swap" rel="stylesheet">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+.root{display:flex;flex-wrap:wrap;align-content:flex-start;gap:14px;padding:18px}
+.root.col{flex-direction:column}
+.item{min-width:260px;padding:16px 20px 18px;border-radius:18px}
+.item .big{font-size:40px;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px}
+.item .extra{font:600 18px var(--f-body);color:var(--grey);margin-top:6px}
+.item.flash{animation:flash 1.2s ease-out}
+@keyframes flash{0%{box-shadow:0 0 0 1px color-mix(in srgb,var(--red-2) calc(90% * var(--glow,1)),transparent),0 0 60px var(--red)}100%{}}
+.empty{opacity:.45}
+}
+</style></head>
+<body><div class="root" id="root"></div>
+<script type="module">
+import { connect, DEMO, demoState, qs, esc, setCss } from '/widgets/widget.js';
+const root = document.getElementById('root');
+if (qs.get('layout') === 'column') root.classList.add('col');
+const LABELS = { follow: 'Último seguidor', sub: 'Última suscripción', cheer: 'Últimos bits', raid: 'Último raid', superchat: 'Último Super Chat', member: 'Último miembro', any: 'Último evento' };
+const extra = (k, e) => k === 'cheer' ? `${e.vars?.amount ?? ''} bits` : k === 'raid' ? `${e.vars?.amount ?? ''} personas` : k === 'superchat' ? (e.vars?.amountText || '') : '';
+let prev = {};
+function apply(s) {
+  const cfg = s.widgets?.latest || {};
+  setCss(cfg.css);
+  const items = (qs.get('items')?.split(',') || cfg.items || ['follow', 'sub', 'cheer', 'superchat']).filter(k => LABELS[k]);
+  root.innerHTML = items.map(k => {
+    const e = s.latest?.[k];
+    const changed = e && prev[k] && prev[k] !== e.user + e.at;
+    return `<div class="item eg-card soft ${e ? '' : 'empty'} ${changed ? 'flash' : ''} item-${k}"><p class="kick">${LABELS[k]}</p><p class="big">${e ? esc(e.user) : '—'}</p>${e && extra(k, e) ? `<p class="extra">${esc(extra(k, e))}</p>` : ''}</div>`;
+  }).join('');
+  prev = Object.fromEntries(items.map(k => [k, s.latest?.[k] ? s.latest[k].user + s.latest[k].at : null]));
+}
+connect({ widgets: s => apply(DEMO ? { ...demoState(), widgets: s.widgets } : s) });
+if (DEMO) apply(demoState());
+</script></body></html>

@@ -1,0 +1,34 @@
+{
+  "name": "antena",
+  "version": "0.9.0",
+  "description": "Alertas, chat, widgets y control de Meld Studio para los directos de EGDEV: app de escritorio (Tauri + React), fuentes de navegador para Meld, prompter para Elgato y atajos para Stream Deck.",
+  "type": "module",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "fonts": "node scripts/fonts.mjs",
+    "test": "node --test test/*.test.mjs",
+    "baseline": "node scripts/baseline.mjs",
+    "mcp": "node src/mcp.mjs",
+    "app:build": "node scripts/build-app.mjs",
+    "app:dev": "node scripts/build-app.mjs --watch",
+    "desktop:node": "node scripts/fetch-node.mjs",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "typecheck": "tsc -p app"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "esbuild": "^0.28.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^6.0.3"
+  }
+}

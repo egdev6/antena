@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>EGDEV · pregunta</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@500;600&display=swap" rel="stylesheet">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+.root{display:flex;align-items:flex-end;justify-content:center;padding:40px}
+.q{position:relative;width:min(1400px,100%);padding:30px 40px 32px 44px;opacity:0;transform:translateY(40px) scale(.97);transition:opacity .45s,transform .55s cubic-bezier(.2,1.3,.4,1)}
+.q.on{opacity:1;transform:none}
+.q::before{content:"?";position:absolute;right:-22px;top:-96px;font:800 150px/1 var(--f-cond);color:color-mix(in srgb,var(--red) calc(22% * var(--glow,1)),transparent);text-shadow:0 0 30px color-mix(in srgb,var(--red) calc(50% * var(--glow,1)),transparent);pointer-events:none;transform:rotate(12deg)}
+.head{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.head .count{margin-left:auto;font:700 17px var(--f-cond);letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:6px 12px 5px}
+.text{font:600 44px/1.22 var(--f-body);color:var(--white);text-wrap:pretty}
+.who{margin-top:18px;display:flex;align-items:center;gap:12px;font:800 28px/1 var(--f-cond);text-transform:uppercase;color:var(--red-2);letter-spacing:.04em}
+.who::before{content:"";width:36px;height:3px;background:var(--red);box-shadow:0 0 10px var(--red)}
+.who .pf{font:700 15px var(--f-cond);letter-spacing:.16em;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:4px 7px 3px}
+}
+</style></head>
+<body><div class="root"><div class="q eg-card" id="q">
+  <div class="head"><p class="kick">Pregunta del chat</p><span class="count" id="count"></span></div>
+  <p class="text" id="text"></p>
+  <p class="who" id="who"></p>
+</div></div>
+<script type="module">
+import { connect, DEMO, demoInteractive, qs, esc, setCss } from '/widgets/widget.js';
+const $ = id => document.getElementById(id);
+let shown = null;
+function fit() {
+  const el = $('text'); let size = 44; el.style.fontSize = size + 'px';
+  while (el.scrollHeight > 260 && size > 26) { size -= 2; el.style.fontSize = size + 'px'; }
+}
+function apply(s) {
+  const cfg = s.config?.questions || {};
+  setCss(cfg.css);
+  const q = s.questions?.current;
+  $('count').textContent = s.questions?.pending ? `${s.questions.pending} en cola` : '';
+  $('count').hidden = qs.has('nocount') || !s.questions?.pending;
+  if (!q) { $('q').classList.remove('on'); shown = null; return; }
+  const change = shown !== q.id;
+  const paint = () => {
+    $('text').textContent = q.text;
+    $('who').innerHTML = cfg.showUser === false ? '' : `${esc(q.user)}${q.platform === 'twitch' || q.platform === 'youtube' ? ` <span class="pf">${q.platform === 'youtube' ? 'YT' : 'TW'}</span>` : ''}`;
+    fit(); document.fonts?.ready.then(fit);
+    $('q').classList.add('on');
+  };
+  if (change && shown) { $('q').classList.remove('on'); setTimeout(paint, 380); } else paint();
+  shown = q.id;
+}
+connect({ interactive: s => { if (!DEMO) apply(s); } });
+if (DEMO) apply(demoInteractive());
+</script></body></html>

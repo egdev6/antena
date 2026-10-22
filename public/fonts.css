@@ -1,0 +1,14 @@
+/* Fuentes locales (pnpm fonts). Si no están, se usa Google Fonts y, si no, una condensada del sistema. */
+@font-face{font-family:'EG Barlow Condensed';font-weight:700;font-display:swap;src:url(/fonts/barlow-condensed-latin-700-normal.woff2) format('woff2')}
+@font-face{font-family:'EG Barlow Condensed';font-weight:800;font-display:swap;src:url(/fonts/barlow-condensed-latin-800-normal.woff2) format('woff2')}
+@font-face{font-family:'EG Barlow';font-weight:500;font-display:swap;src:url(/fonts/barlow-latin-500-normal.woff2) format('woff2')}
+@font-face{font-family:'EG Barlow';font-weight:600;font-display:swap;src:url(/fonts/barlow-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:'EG JetBrains Mono';font-weight:500;font-display:swap;src:url(/fonts/jetbrains-mono-latin-500-normal.woff2) format('woff2')}
+/* En la capa egdev: el tema de Apariencia (/theme.css, capa egdev-theme) puede cambiar las fuentes. */
+@layer egdev {
+:root{
+  --f-cond:'EG Barlow Condensed','Barlow Condensed','Arial Narrow','DejaVu Sans Condensed',sans-serif;
+  --f-body:'EG Barlow','Barlow','Segoe UI',system-ui,sans-serif;
+  --f-mono:'EG JetBrains Mono','JetBrains Mono',Consolas,monospace;
+}
+}

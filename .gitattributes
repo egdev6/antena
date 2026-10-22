@@ -1,0 +1,10 @@
+# Saltos de línea: LF en el repo y en todas las plataformas (evita cientos de «modificados» falsos en Windows)
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.webm binary
+*.woff2 binary
+*.ico binary
+*.icns binary
+*.bundle binary

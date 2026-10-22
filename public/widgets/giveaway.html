@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>EGDEV · sorteo</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@500;600&display=swap" rel="stylesheet">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+/* Mismo lenguaje visual que el overlay de preguntas (#131): cabecera con píldora,
+   texto principal y línea de autoría con barra roja. Sin cambiar la lógica del sorteo. */
+.root{display:flex;align-items:flex-end;justify-content:center;padding:40px}
+.g{position:relative;width:min(1400px,100%);padding:30px 40px 32px 44px;opacity:0;transform:translateY(40px) scale(.97);transition:opacity .45s,transform .55s cubic-bezier(.2,1.3,.4,1)}
+.g.on{opacity:1;transform:none}
+.head{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.head .count{margin-left:auto;font:700 17px var(--f-cond);letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:6px 12px 5px}
+.head .count span{color:var(--white)}
+.prize{font:600 44px/1.22 var(--f-body);color:var(--white);text-wrap:pretty}
+.join{margin-top:18px;display:flex;align-items:center;gap:12px;font:800 28px/1 var(--f-cond);text-transform:uppercase;color:var(--red-2);letter-spacing:.04em;flex-wrap:wrap}
+.join::before{content:"";width:36px;height:3px;background:var(--red);box-shadow:0 0 10px var(--red);flex:none}
+.join b{font:700 22px/1 var(--f-cond);letter-spacing:.1em;color:var(--white);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:8px 12px 6px}
+.last{margin-top:14px;min-height:28px;font:600 20px var(--f-body);color:var(--muted)}
+.last b{color:var(--white)}
+/* sorteando */
+.reel{display:none;margin:26px auto 6px;height:120px;width:min(820px,100%);border-radius:18px;overflow:hidden;position:relative;
+  background:#0b0b0e;border:2px solid color-mix(in srgb,var(--red-2) calc(90% * var(--glow,1)),transparent);box-shadow:inset 0 0 30px color-mix(in srgb,var(--red) calc(25% * var(--glow,1)),transparent),0 0 26px color-mix(in srgb,var(--red) calc(45% * var(--glow,1)),transparent)}
+.reel::before,.reel::after{content:"";position:absolute;left:0;right:0;height:34px;z-index:2;pointer-events:none}
+.reel::before{top:0;background:linear-gradient(#0b0b0e,transparent)}.reel::after{bottom:0;background:linear-gradient(transparent,#0b0b0e)}
+.reel .name{position:absolute;inset:0;display:grid;place-items:center;font:800 76px/1 var(--f-cond);text-transform:uppercase;color:var(--white);padding:0 24px;white-space:nowrap}
+/* el nombre se encoge para caber en la ruleta (premios y nicks largos) */
+.reel .name b{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.g.rolling .reel{display:block}
+.g.rolling .join,.g.rolling .last{display:none}
+.g.winner .reel{display:block;border-color:#fff;box-shadow:0 0 0 2px var(--red),0 0 60px var(--red),0 0 140px color-mix(in srgb,var(--red) calc(60% * var(--glow,1)),transparent)}
+.g.winner .reel .name{color:var(--white);text-shadow:0 0 26px var(--red);animation:win .7s cubic-bezier(.2,1.6,.4,1)}
+.g.winner .join,.g.winner .last{display:none}
+.won{display:none;margin-top:18px;font:800 28px/1 var(--f-cond);text-transform:uppercase;color:var(--red-2);letter-spacing:.04em}
+.g.winner .won{display:block}
+@keyframes win{from{transform:scale(.6)}}
+.confetti{position:absolute;inset:0;pointer-events:none;overflow:visible}
+.confetti i{position:absolute;top:40%;left:50%;width:12px;height:18px;border-radius:2px;opacity:0;animation:boom 1.8s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes boom{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:0;transform:translate(var(--x),var(--y)) rotate(var(--r))}}
+}
+</style></head>
+<body><div class="root"><div class="g eg-card" id="g">
+  <div class="head"><p class="kick" id="title">Sorteo</p><span class="count" id="count"></span></div>
+  <p class="prize" id="prize"></p>
+  <div class="reel"><div class="name" id="name"></div></div>
+  <p class="join" id="join"></p>
+  <p class="won">¡Enhorabuena!</p>
+  <p class="last" id="last"></p>
+  <div class="confetti" id="confetti"></div>
+</div></div>
+<script type="module">
+import { connect, DEMO, demoInteractive, qs, setCss } from '/widgets/widget.js';
+const $ = id => document.getElementById(id);
+let state = null, rollingKey = null, hideT = null, revealed = null;
+
+// Encaja el nombre en la ruleta: reduce la fuente hasta que quepa (nicks largos).
+function fitName(el) {
+  let size = 76; el.style.fontSize = size + 'px';
+  while (el.scrollWidth > el.clientWidth && size > 24) { size -= 4; el.style.fontSize = size + 'px'; }
+  if (el.scrollWidth > el.clientWidth) el.style.textOverflow = 'ellipsis';
+  else el.style.textOverflow = '';
+}
+function setName(t) { const el = $('name'); el.textContent = t; fitName(el); }
+
+function paint(s) {
+  const c = s.config?.giveaway || {};
+  setCss(c.css);
+  const g = s.giveaway || {};
+  $('title').textContent = c.title || 'Sorteo';
+  $('prize').textContent = c.prize || '';
+  $('prize').hidden = !c.prize;
+  const join = $('join');
+  join.textContent = '';
+  if (g.open) {
+    join.append('Escribe ');
+    const cmd = document.createElement('b');
+    cmd.textContent = c.command || '!sorteo';
+    join.append(cmd, ' en el chat para entrar');
+  } else {
+    join.textContent = 'Inscripción cerrada';
+  }
+  const count = $('count');
+  count.textContent = '';
+  const n = document.createElement('span');
+  n.textContent = String(g.count || 0);
+  count.append(n, ` ${g.count === 1 ? 'participante' : 'participantes'}`);
+  count.hidden = !g.count;
+  const last = $('last');
+  last.textContent = '';
+  const names = (g.entries || []).slice(-4).reverse();
+  if (g.open && names.length) {
+    last.append('Acaban de entrar: ');
+    names.forEach((e, i) => { if (i) last.append(', '); const b = document.createElement('b'); b.textContent = e.user; last.append(b); });
+  }
+}
+
+function show(on) { $('g').classList.toggle('on', on); }
+
+function roll(r) {
+  const key = r.winner + r.startedAt;
+  if (rollingKey === key) return;
+  rollingKey = key; revealed = null;
+  clearTimeout(hideT);
+  const g = $('g'); g.classList.remove('winner'); g.classList.add('rolling'); show(true);
+  const names = r.names?.length ? r.names : [r.winner];
+  const total = Math.max(800, r.seconds * 1000 - Math.max(0, Date.now() - r.startedAt));
+  const t0 = performance.now();
+  let next = 0;
+  const step = now => {
+    const p = Math.min(1, (now - t0) / total);
+    if (p >= 1) return reveal(r.winner);
+    // cada vez más lento: de 40 ms a ~400 ms entre nombres
+    if (now >= next) { setName(names[Math.floor(Math.random() * names.length)]); next = now + 40 + 360 * p * p; }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function reveal(name) {
+  revealed = name;
+  const g = $('g'); g.classList.remove('rolling'); g.classList.add('winner');
+  setName(name);
+  $('confetti').innerHTML = Array.from({ length: 70 }, () => {
+    const colors = ['var(--red)', 'var(--pink)', 'var(--white)', 'var(--red-2)', '#FFB547'];   // colores del tema
+    const a = Math.random() * Math.PI * 2, d = 250 + Math.random() * 520;
+    return `<i style="background:${colors[Math.floor(Math.random() * colors.length)]};--x:${Math.cos(a) * d}px;--y:${Math.sin(a) * d - 160}px;--r:${Math.random() * 900 - 450}deg;animation-delay:${Math.random() * .15}s"></i>`;
+  }).join('');
+  hideT = setTimeout(() => { g.classList.remove('winner'); revealed = null; show(!!state?.giveaway?.open); }, (Number(qs.get('winnerSeconds')) || 15) * 1000);
+}
+
+function apply(s) {
+  state = s;
+  paint(s);
+  const g = s.giveaway || {};
+  if (g.rolling && Date.now() - g.rolling.startedAt < g.rolling.seconds * 1000 + 15000) return roll(g.rolling);
+  if (!revealed) show(!!g.open);
+}
+connect({ interactive: s => { if (!DEMO) apply(s); } });
+if (DEMO) {
+  const d = demoInteractive(); apply(d);
+  if (qs.has('roll')) setTimeout(() => apply({ ...d, giveaway: { ...d.giveaway, rolling: { winner: 'lucia_codes', startedAt: Date.now(), seconds: 3, names: d.giveaway.entries.map(e => e.user) } } }), 600);
+}
+</script></body></html>

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>EGDEV · créditos</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@500;600&display=swap" rel="stylesheet">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+body.solid{background:radial-gradient(1200px 700px at 50% 0%,color-mix(in srgb,var(--red) calc(16% * var(--glow,1)),transparent),transparent 70%),#000}
+.root{overflow:hidden;-webkit-mask-image:linear-gradient(180deg,transparent,#000 12%,#000 88%,transparent)}
+.roll{position:absolute;left:0;right:0;top:100%;display:flex;flex-direction:column;align-items:center;text-align:center;gap:70px;padding:0 40px;will-change:transform}
+.head,.grp,.end{position:relative;width:min(1200px,100%);padding:36px 48px}
+.head .kick{justify-content:center;margin-bottom:18px}
+.head .big{font-size:92px}
+.head .sub{font:600 26px var(--f-body);color:var(--grey);margin-top:14px}
+.grp .kick{justify-content:center;font-size:24px;margin-bottom:22px}
+.grp ul{list-style:none;display:grid;gap:10px}
+.grp li{font:800 46px/1.05 var(--f-cond);text-transform:uppercase}
+.grp li:nth-child(odd){text-shadow:0 0 18px color-mix(in srgb,var(--red) calc(45% * var(--glow,1)),transparent)}
+.end .big{font-size:64px}
+.end .sub{font:600 26px var(--f-body);color:var(--grey);margin-top:14px}
+.idle{position:absolute;inset:0;display:grid;place-items:center;font:700 26px var(--f-cond);letter-spacing:.2em;text-transform:uppercase;color:#555}
+}
+</style></head>
+<body><div class="root" id="root"></div>
+<script type="module">
+import { connect, DEMO, demoState, qs, esc, setCss } from '/widgets/widget.js';
+const root = document.getElementById('root');
+if (!qs.has('transparent')) document.body.classList.add('solid');
+let state = null, anim = null;
+function build(s) {
+  const cfg = s.widgets?.credits || {};
+  setCss(cfg.css);
+  const groups = s.credits || [];
+  return `<div class="roll" id="roll">
+    <div class="head eg-card"><p class="kick">Créditos</p><p class="big">${esc(cfg.title || 'Gracias por estar')}</p><p class="sub">${esc(s.session?.title || 'Directo')}</p></div>
+    ${groups.map(g => `<div class="grp eg-card soft"><p class="kick">${esc(g.title)}</p><ul>${g.names.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`).join('') || '<div class="grp eg-card soft"><p class="kick">Y a todo el chat</p></div>'}
+    <div class="end eg-card"><p class="big">Nos vemos <span class="hl">el miércoles</span></p><p class="sub">${esc(cfg.subtitle || '')}</p></div>
+  </div>`;
+}
+function play() {
+  if (!state) return;
+  root.innerHTML = build(state);
+  const roll = document.getElementById('roll');
+  const dist = roll.offsetHeight + innerHeight / (Number(qs.get('scale')) || 1);
+  anim?.cancel();
+  anim = roll.animate([{ transform: 'translateY(0)' }, { transform: `translateY(-${dist}px)` }], { duration: dist / (Number(state.widgets?.credits?.speed) || 60) * 1000, easing: 'linear', fill: 'forwards' });
+  if (qs.has('loop') || DEMO) anim.onfinish = () => play();
+}
+function stop() { anim?.cancel(); root.innerHTML = qs.has('debug') ? '<p class="idle">Créditos en espera</p>' : ''; }
+connect({
+  widgets: s => { state = DEMO ? { ...demoState(), widgets: s.widgets } : s; if (DEMO && !anim) play(); },
+  credits: ({ action }) => action === 'stop' ? stop() : play(),
+});
+stop();
+if (DEMO) { state = demoState(); play(); }
+if (qs.has('autoplay')) setTimeout(play, 800);
+</script></body></html>

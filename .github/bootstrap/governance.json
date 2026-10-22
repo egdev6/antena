@@ -1,0 +1,61 @@
+{
+  "account": "egdev6",
+  "repository": "egdev6/antena",
+  "requiredScopes": [
+    "repo"
+  ],
+  "labels": {
+    "type:bug": {
+      "color": "D73A4A",
+      "description": "Bug fix or reliability correction",
+      "managed": false
+    },
+    "type:feature": {
+      "color": "1D76DB",
+      "description": "New feature or enhancement",
+      "managed": false
+    },
+    "status:needs-review": {
+      "color": "FBCA04",
+      "description": "Awaiting manual scope review; no implementation, live or delivery grant",
+      "managed": false
+    },
+    "status:in-progress": {
+      "color": "1D76DB",
+      "description": "Coordinated scoped work in progress; no live or delivery grant",
+      "managed": false
+    }
+  },
+  "files": {
+    "CONTRIBUTING.md": {
+      "source": ".github/bootstrap/CONTRIBUTING.source.md",
+      "mode": "ensure"
+    },
+    ".github/workflows/secrets-scan.yml": {
+      "source": ".github/bootstrap/secrets-scan.source.yml",
+      "mode": "ensure"
+    }
+  },
+  "templates": {
+    "issueForms": [
+      "bug_report",
+      "feature_request"
+    ],
+    "issueFormLabels": {
+      "bug_report": [
+        "type:bug",
+        "status:needs-review"
+      ],
+      "feature_request": [
+        "type:feature",
+        "status:needs-review"
+      ]
+    },
+    "issueWorkflow": false,
+    "pullRequest": true,
+    "mode": "ensure"
+  },
+  "codeSafety": {
+    "mode": "ensure"
+  }
+}

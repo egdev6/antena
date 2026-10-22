@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>EGDEV · tier list</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@500;600&display=swap" rel="stylesheet">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+.root{display:flex;align-items:center;justify-content:center;padding:36px}
+.board{width:min(1700px,100%);padding:26px 30px 30px;display:grid;gap:18px;opacity:0;transform:translateY(24px);transition:opacity .4s,transform .5s cubic-bezier(.2,1.2,.4,1)}
+.board.on{opacity:1;transform:none}
+.top{display:flex;align-items:flex-end;gap:20px}
+.top .big{font-size:58px}
+.top .hint{margin-left:auto;font:700 20px var(--f-cond);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.rows{display:grid;gap:8px}
+.row{display:grid;grid-template-columns:110px 1fr;min-height:86px;border-radius:14px;overflow:hidden;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07)}
+.tier{display:grid;place-items:center;font:800 46px/1 var(--f-cond);color:#0b0b0d;text-shadow:0 1px 0 rgba(255,255,255,.25)}
+.items{display:flex;flex-wrap:wrap;align-content:center;gap:8px;padding:10px 12px}
+.chip{display:flex;align-items:center;gap:10px;height:64px;padding:0 18px;border-radius:calc(12px * var(--round,1));background:var(--surface-bg,linear-gradient(160deg,#26262c,#121216));border:1px solid rgba(255,255,255,.12);
+  font:800 26px var(--f-cond);text-transform:uppercase;color:var(--white);box-shadow:0 8px 18px rgba(0,0,0,.4);animation:drop .5s cubic-bezier(.2,1.4,.4,1) both}
+.chip img{height:48px;width:48px;object-fit:cover;border-radius:8px}
+@keyframes drop{from{opacity:0;transform:translateY(-14px) scale(.9)}}
+.pool{display:flex;flex-wrap:wrap;gap:8px;padding-top:6px;border-top:1px dashed rgba(255,255,255,.12)}
+.pool .chip{opacity:.55;height:52px;font-size:21px}
+.pool:empty{display:none}
+/* votación */
+.vote{display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:center;padding:18px 22px;border-radius:16px;border:2px solid var(--red-2);
+  background:linear-gradient(160deg,rgba(60,10,22,.9),rgba(16,8,10,.95));box-shadow:0 0 30px color-mix(in srgb,var(--red) calc(55% * var(--glow,1)),transparent),inset 0 0 26px color-mix(in srgb,var(--red) calc(18% * var(--glow,1)),transparent)}
+.vote[hidden]{display:none}
+.vote .what .kick{font-size:18px}
+.vote .what .big{font-size:60px;margin-top:6px}
+.vote .what .how{margin-top:8px;font:600 21px var(--f-body);color:var(--grey)}
+.vote .what .how b{color:var(--white)}
+.bars{display:grid;gap:7px}
+.bar{display:grid;grid-template-columns:44px 1fr 60px;align-items:center;gap:12px;font:800 24px var(--f-cond)}
+.bar i{display:block;height:24px;border-radius:8px;background:rgba(255,255,255,.07);overflow:hidden}
+.bar i b{display:block;height:100%;width:0;border-radius:8px;transition:width .5s cubic-bezier(.2,1,.3,1)}
+.bar .n{text-align:right;color:var(--grey)}
+.bar.win .n{color:var(--white)}
+.timer{font:700 18px var(--f-mono);color:var(--pink)}
+}
+</style></head>
+<body><div class="root"><div class="board eg-card soft" id="board">
+  <div class="top"><div><p class="kick">Tier list</p><p class="big" id="title"></p></div><p class="hint" id="hint"></p></div>
+  <div class="vote" id="vote" hidden>
+    <div class="what"><p class="kick">Vota en el chat <span class="timer" id="timer"></span></p><p class="big" id="vitem"></p><p class="how" id="how"></p></div>
+    <div class="bars" id="bars"></div>
+  </div>
+  <div class="rows" id="rows"></div>
+  <div class="pool" id="pool"></div>
+</div></div>
+<script type="module">
+import { connect, DEMO, demoInteractive, qs, esc, setCss } from '/widgets/widget.js';
+const $ = id => document.getElementById(id);
+let tick;
+const chip = it => `<span class="chip">${it.image ? `<img src="/media/${encodeURIComponent(it.image)}" alt="">` : ''}${esc(it.label)}</span>`;
+function apply(s) {
+  const cfg = s.config?.tierlist || {};
+  setCss(cfg.css);
+  const l = (s.tierlists || []).find(x => x.id === (qs.get('id') || s.shownTierlist));
+  if (!l) { $('board').classList.remove('on'); return; }
+  $('board').classList.add('on');
+  $('title').textContent = l.title;
+  $('rows').innerHTML = l.tiers.map(t => `<div class="row tier-${esc(t.id)}"><div class="tier" style="background:${esc(t.color)}">${esc(t.label)}</div>
+    <div class="items">${l.items.filter(it => l.placements[it.id] === t.id).map(chip).join('')}</div></div>`).join('');
+  const v = s.vote && s.vote.listId === l.id ? s.vote : null;
+  $('pool').innerHTML = qs.has('nopool') ? '' : l.items.filter(it => !l.placements[it.id] && it.id !== v?.item?.id).map(chip).join('');
+  $('vote').hidden = !v;
+  $('hint').textContent = v ? '' : `${Object.keys(l.placements).length} / ${l.items.length} colocados`;
+  clearInterval(tick);
+  if (!v) return;
+  $('vitem').textContent = v.item?.label || '';
+  const labels = l.tiers.map(t => `<b>${esc(t.label)}</b>`).join(' ');
+  $('how').innerHTML = `Escribe ${cfg.acceptBare !== false ? labels : ''}${cfg.acceptBare !== false ? ' o ' : ''}<b>${esc(cfg.command || '!tier')} S</b> · ${v.total} ${v.total === 1 ? 'voto' : 'votos'}`;
+  const max = Math.max(1, ...Object.values(v.counts));
+  $('bars').innerHTML = l.tiers.map(t => `<div class="bar ${v.winner === t.id ? 'win' : ''}"><span style="color:${esc(t.color)}">${esc(t.label)}</span><i><b style="width:${(v.counts[t.id] || 0) / max * 100}%;background:${esc(t.color)};box-shadow:0 0 12px ${esc(t.color)}"></b></i><span class="n">${v.counts[t.id] || 0}</span></div>`).join('');
+  const upd = () => { if (!v.endsAt) { $('timer').textContent = ''; return; } const left = Math.max(0, Math.ceil((new Date(v.endsAt) - Date.now()) / 1000)); $('timer').textContent = `· ${left}s`; };
+  upd(); if (v.endsAt) tick = setInterval(upd, 500);
+}
+connect({ interactive: s => { if (!DEMO) apply(s); } });
+if (DEMO) apply(demoInteractive());
+</script></body></html>

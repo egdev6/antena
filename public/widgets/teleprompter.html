@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>EGDEV · teleprompter</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet">
+<style>
+@layer egdev {
+/* Solo lo ves tú: fondo negro opaco, texto grande y una línea de lectura al 46 % de la altura. */
+html,body{background:#000}
+body{--fs:calc(var(--size, 30) * 100vh / 600);cursor:default}
+body.idle{cursor:none}
+.stage{position:absolute;inset:0;overflow:hidden;display:flex;justify-content:center;z-index:1}
+body.mirror .stage{transform:scaleX(-1)}
+.track{width:78%;max-width:1600px;font:600 var(--fs)/1.35 var(--f-body);color:#fff;text-align:left;will-change:transform;padding-bottom:60vh}
+.blk{margin:0 0 1.1em}
+.bt{display:flex;align-items:center;gap:.5em;margin:0 0 .45em;font:700 calc(var(--fs) * .42)/1 var(--f-cond);letter-spacing:.18em;text-transform:uppercase;color:#8b8f99}
+.bt::before{content:"";width:.6em;height:.6em;background:var(--red);transform:rotate(45deg);flex:none}
+.p{margin:0 0 .9em}
+.w{transition:opacity .25s;cursor:pointer}
+.w.read{opacity:.35}
+.note{display:inline-block;margin:0 .15em;padding:0 .3em;border-radius:.2em;color:#FFD23F;background:rgba(255,210,63,.1);font-size:.78em;font-weight:600}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:#8b8f99;font:600 calc(var(--fs) * .7) var(--f-body);text-align:center;padding:0 10%}
+.line{position:absolute;left:0;right:0;top:46%;height:2px;background:var(--red);box-shadow:0 0 12px rgba(255,0,54,.6);opacity:.75;pointer-events:none;z-index:0}
+.line::before{content:"";position:absolute;left:12px;top:-7px;border-top:8px solid transparent;border-bottom:8px solid transparent;border-left:12px solid var(--red)}
+body:not(.line-on) .line{display:none}
+/* el foco de lectura: arriba y abajo se funden a negro */
+.fade{position:absolute;inset:0;pointer-events:none;z-index:2;background:linear-gradient(#000 0,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 72%,#000 100%)}
+.count{position:absolute;inset:0;z-index:3;display:none;place-items:center;font:800 calc(var(--fs) * 5)/1 var(--f-cond);color:#fff;text-shadow:0 0 40px rgba(255,0,54,.8);background:rgba(0,0,0,.55)}
+.count.on{display:grid}
+.edge{position:absolute;left:0;right:0;bottom:0;z-index:3;height:4px;background:rgba(255,255,255,.08)}
+.edge i{display:block;height:100%;width:0;background:var(--red);box-shadow:0 0 10px var(--red)}
+.hud{position:absolute;right:16px;bottom:14px;z-index:3;display:flex;gap:12px;font:500 14px var(--f-mono);color:#6b6f78;opacity:0;transition:opacity .3s}
+body:not(.idle):not(.embed) .hud{opacity:1}
+}
+</style></head>
+<body>
+<div class="stage"><div class="track" id="track"></div></div>
+<div class="fade"></div>
+<div class="line"></div>
+<div class="count" id="count" aria-live="polite"></div>
+<div class="edge"><i id="edge"></i></div>
+<div class="hud" id="hud"></div>
+<script type="module">
+import { connect, DEMO, qs, esc } from '/widgets/widget.js';
+const $ = id => document.getElementById(id);
+const EMBED = qs.has('embed');
+if (EMBED) document.body.classList.add('embed');
+let snap = null, skew = 0, lines = [], words = [], lastRead = -1, layoutKey = '';
+
+const now = () => Date.now() + skew;
+function position() {
+  const p = snap?.playback; if (!p) return 0;
+  if (!p.playing) return p.anchorWord;
+  const v = p.anchorWord + Math.max(0, now() - p.anchorAt) / 60000 * snap.settings.wpm;
+  return Math.min(v, snap.script.total);
+}
+
+function render() {
+  const sc = snap.script;
+  const key = JSON.stringify([sc.id, sc.blocks.map(b => [b.title, b.tokens.length, b.start]), sc.blocks.map(b => b.tokens.map(t => t.w || t.note || t.br).join('|'))]);
+  if (key === layoutKey) return;
+  layoutKey = key;
+  const track = $('track');
+  if (!sc.total && !sc.blocks.some(b => b.tokens.length)) {
+    const d = document.createElement('div');
+    d.className = 'empty';
+    d.textContent = 'Este guion está vacío. Escríbelo en el panel › Widgets › Teleprompter.';
+    track.replaceChildren(d); words = []; lines = []; return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const b of sc.blocks) {
+    const sec = document.createElement('section'); sec.className = 'blk';
+    const h = document.createElement('h3'); h.className = 'bt'; h.textContent = b.title;
+    sec.append(h);
+    let p = document.createElement('p'); p.className = 'p';
+    sec.append(p);
+    for (const t of b.tokens) {
+      if (t.w !== undefined) { const w = document.createElement('span'); w.className = 'w'; w.dataset.i = String(t.i); w.textContent = t.w; p.append(w, ' '); }
+      else if (t.note !== undefined) { const n = document.createElement('span'); n.className = 'note'; n.textContent = `[${t.note}]`; p.append(n, ' '); }
+      else if (t.br === 2) { p = document.createElement('p'); p.className = 'p'; sec.append(p); }
+      else p.append(document.createElement('br'));
+    }
+    frag.append(sec);
+  }
+  track.replaceChildren(frag);
+  words = [...track.querySelectorAll('.w')];
+  lastRead = -1;
+  measure();
+}
+
+/** Agrupa las palabras por renglón: el desplazamiento avanza suave dentro de cada renglón. */
+function measure() {
+  lines = [];
+  for (const el of words) {
+    const top = el.offsetTop, i = Number(el.dataset.i);
+    const last = lines.at(-1);
+    if (last && Math.abs(last.top - top) < 2) continue;
+    lines.push({ top, first: i, h: el.offsetHeight });
+  }
+}
+
+function lineY(pos) {
+  if (!lines.length) return 0;
+  let k = 0;
+  for (let j = 0; j < lines.length; j++) if (lines[j].first <= pos) k = j; else break;
+  const L = lines[k], N = lines[k + 1];
+  // el renglón que lees va centrado en la línea roja, que pasa POR DETRÁS del texto (no lo tacha)
+  if (!N) return L.top + L.h / 2;
+  const f = Math.min(1, Math.max(0, (pos - L.first) / (N.first - L.first)));
+  return L.top + L.h / 2 + f * (N.top - L.top);
+}
+
+function frame() {
+  requestAnimationFrame(frame);
+  if (!snap) return;
+  const pos = position();
+  const y = lineY(pos);
+  $('track').style.transform = `translateY(${Math.round(innerHeight * 0.46 - y)}px)`;
+  const read = Math.floor(pos + 1e-6) - 1;   // palabras ya dichas
+  if (read !== lastRead) {
+    const lo = Math.min(read, lastRead), hi = Math.max(read, lastRead);
+    for (let i = Math.max(0, lo + 1); i <= hi && i < words.length; i++) words[i].classList.toggle('read', i <= read);
+    lastRead = read;
+  }
+  const p = snap.playback;
+  const left = p.playing ? Math.ceil((p.anchorAt - now()) / 1000) : 0;
+  $('count').classList.toggle('on', left > 0);
+  if (left > 0) $('count').textContent = left;
+  $('edge').style.width = (snap.script.total ? pos / snap.script.total * 100 : 0) + '%';
+}
+
+function apply(s, local = false) {
+  if (!local) skew = (s.playback?.serverNow || Date.now()) - Date.now();
+  snap = s;
+  const st = s.settings || {};
+  document.body.style.setProperty('--size', st.size || 30);
+  document.body.classList.toggle('mirror', !!st.mirror);
+  document.body.classList.toggle('line-on', st.line !== false);
+  render();
+  requestAnimationFrame(measure);   // el tamaño de letra cambia los renglones
+  $('hud').textContent = `${st.wpm} palabras/min · ${s.playback?.playing ? 'avanzando' : 'parado'}`;
+}
+addEventListener('resize', () => requestAnimationFrame(measure));
+document.fonts?.ready?.then(measure);
+
+const control = (action, arg) => DEMO ? demoControl(action, arg) : fetch('/api/teleprompter/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, arg }) });
+$('track').addEventListener('click', e => { const w = e.target.closest('.w'); if (w) control('seek', Number(w.dataset.i)); });
+if (!EMBED) {
+  addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const map = { ' ': 'toggle', ArrowUp: 'faster', ArrowDown: 'slower', ArrowLeft: 'prev', ArrowRight: 'next', Home: 'reset', PageUp: 'prev', PageDown: 'next' };
+    const a = map[e.key]; if (!a) return;
+    e.preventDefault(); control(a);
+  });
+  // el puntero se esconde si no lo mueves
+  let t; const wake = () => { document.body.classList.remove('idle'); clearTimeout(t); t = setTimeout(() => document.body.classList.add('idle'), 2500); };
+  addEventListener('mousemove', wake); wake();
+}
+
+// ---------- modo demo (?demo): guion de ejemplo sin servidor ----------
+function demoControl(action) {
+  const p = snap.playback, pos = position();
+  if (action === 'toggle') snap.playback = p.playing ? { ...p, playing: false, anchorWord: pos } : { ...p, playing: true, anchorWord: pos >= snap.script.total ? 0 : pos, anchorAt: Date.now() + 3000 };
+  if (action === 'reset') snap.playback = { ...p, playing: false, anchorWord: 0 };
+  apply(snap, true);
+}
+if (DEMO) {
+  const text = ['¡Muy buenas a todos y bienvenidos al directo! Hoy seguimos construyendo criterio. [Saluda al chat]', 'Lo que vamos a ver hoy es cómo organizar el proyecto para que crezca sin dolor.\n\nEmpezamos por la estructura de carpetas y luego pasamos a los tests. [PAUSA · enseñar el repo]'];
+  let i = 0;
+  const blocks = text.map((tx, k) => { const tokens = []; for (const m of tx.matchAll(/\[([^\]]*)\]|(\n\s*\n)|([^\s[]+)/g)) { if (m[1]) tokens.push({ note: m[1], at: i }); else if (m[2]) tokens.push({ br: 2 }); else tokens.push({ w: m[3], i: i++ }); } return { id: 'b' + k, title: ['Saludo', 'Tema del día'][k], tokens }; });
+  apply({ settings: { wpm: 140, size: 30, line: true }, script: { id: 'demo', blocks, total: i }, playback: { playing: true, anchorWord: 0, anchorAt: Date.now() + 1500, serverNow: Date.now() } });
+} else {
+  connect({ teleprompter: apply }, 'teleprompter');
+}
+requestAnimationFrame(frame);
+</script>
+</body></html>

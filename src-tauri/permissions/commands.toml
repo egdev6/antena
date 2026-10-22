@@ -1,0 +1,28 @@
+# Permisos de los comandos de antena (#61): la capability `default` solo concede
+# los que usa la interfaz (app/src/lib/desktop.ts). Sin un "default", el resto
+# de comandos no existen para el ACL y una página remota no puede descubrirlos.
+
+[[permission]]
+identifier = "allow-monitors"
+description = "Permite a la interfaz pedir la lista de pantallas para abrir el prompter."
+commands.allow = ["monitors"]
+
+[[permission]]
+identifier = "allow-open-prompter"
+description = "Permite a la interfaz abrir el prompter en la pantalla elegida."
+commands.allow = ["open_prompter"]
+
+[[permission]]
+identifier = "allow-open-teleprompter"
+description = "Permite a la interfaz abrir el teleprompter en la pantalla elegida."
+commands.allow = ["open_teleprompter"]
+
+[[permission]]
+identifier = "allow-open-dock"
+description = "Permite a la interfaz abrir el dock flotante."
+commands.allow = ["open_dock"]
+
+[[permission]]
+identifier = "allow-desktop-info"
+description = "Permite a la interfaz leer el puerto, la carpeta de datos y la versión de la app."
+commands.allow = ["desktop_info"]

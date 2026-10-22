@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>EGDEV live · overlay</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@600&display=swap" rel="stylesheet">
+<link href="/fonts.css" rel="stylesheet">
+<style>
+/* Estilos de serie en una capa de prioridad baja: el CSS que escribas en el panel siempre gana, sin !important. */
+@layer egdev {
+:root{
+  --red:#FF0036; --red-2:#FF335E; --red-dark:#800C1D; --pink:#FF8FA6;
+  --white:#fff; --grey:#ccc; --muted:#888;
+  --scale:1; --glow:1;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent}
+body.debug{background:#1b1d22 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="20" height="20" fill="%23222"/><rect x="20" y="20" width="20" height="20" fill="%23222"/></svg>')}
+.hint{position:absolute;inset:0;display:grid;place-items:center;font:700 34px var(--f-cond);letter-spacing:.2em;text-transform:uppercase;color:#555}
+
+.stage{position:absolute;left:0;right:0;display:flex;justify-content:center;perspective:1400px;pointer-events:none;translate:var(--off-x,0px) var(--off-y,0px)}
+.stage.left{justify-content:flex-start;padding-left:5%} .stage.right{justify-content:flex-end;padding-right:5%}
+.stage.top{top:6%} .stage.center{top:50%;transform:translateY(-50%)} .stage.bottom{bottom:9%}
+.wrap{position:relative;transform:scale(calc(var(--scale) * var(--alert-scale,1)));transform-origin:center}
+
+/* =================== Diseño 1: tarjeta EGDEV =================== */
+/* Variables: cámbialas en tu CSS, por ejemplo .alert { --accent: #00E0FF; --name-size: 70px; } */
+.alert-card{
+  --accent:var(--red); --accent-2:color-mix(in srgb,var(--accent) 80%,#fff); --accent-dark:color-mix(in srgb,var(--accent) 50%,#000);
+  --title-color:color-mix(in srgb,var(--accent) 45%,var(--white)); --name-color:var(--white); --sub-color:var(--grey); --hl-color:var(--white); --platform-color:var(--muted);
+  --card-width:var(--alert-width,860px); --card-radius:calc(26px * var(--round,1)); --card-padding:26px 44px 30px 26px; --card-gap:34px;
+  --card-bg:var(--surface-bg,linear-gradient(160deg,rgba(44,44,50,.97),rgba(15,15,19,.98) 55%,rgba(8,8,10,.99)));
+  --border-width:var(--line-w,2px); --border-color:var(--surface-border,color-mix(in srgb,var(--accent) 72%,#fff));
+  --tile-size:144px; --tile-radius:calc(24px * var(--round,1)); --icon-size:72px; --icon-color:var(--icon-ink,#fff);
+  --title-size:calc(25px * var(--text-k,1)); --name-size:calc(86px * var(--text-k,1)); --sub-size:calc(29px * var(--text-k,1));
+  --font-title:var(--f-cond); --font-name:var(--f-cond); --font-sub:var(--f-body);
+  --tilt:rotateY(-9deg) rotateX(5deg) rotateZ(-.6deg);
+  --reflection:linear-gradient(transparent 62%,rgba(0,0,0,.14));
+}
+.halo{position:absolute;inset:-120px -160px;border-radius:50%;
+  background:radial-gradient(closest-side,color-mix(in srgb,var(--accent) calc(38% * var(--glow,1)),transparent),color-mix(in srgb,var(--accent) calc(12% * var(--glow,1)),transparent) 55%,transparent 75%);opacity:0;transition:opacity .5s}
+.dots{position:absolute;right:-70px;top:-60px;width:240px;height:150px;opacity:0;transition:opacity .6s .15s;
+  background-image:radial-gradient(color-mix(in srgb,var(--accent) calc(60% * var(--glow,1)),transparent) 1.6px,transparent 1.8px);background-size:20px 20px;
+  -webkit-mask-image:linear-gradient(225deg,#000 15%,transparent 80%)}
+.cube{position:absolute;left:-92px;bottom:6px;width:38px;height:38px;opacity:0;transition:opacity .6s .2s;
+  background:linear-gradient(145deg,#2c2c33,#0b0b0f);border:1px solid color-mix(in srgb,var(--accent) calc(60% * var(--glow,1)),transparent);
+  box-shadow:0 0 18px color-mix(in srgb,var(--accent) calc(50% * var(--glow,1)),transparent),inset 0 1px 0 rgba(255,255,255,.12);transform:rotate(10deg) skewY(-6deg)}
+.alert-card.on .halo,.alert-card.on .dots,.alert-card.on .cube{opacity:1}
+
+.card{position:relative;width:var(--card-width);min-height:196px;display:flex;align-items:center;gap:var(--card-gap);
+  padding:var(--card-padding);border-radius:var(--card-radius);transform-style:preserve-3d;
+  background:var(--card-bg);border:var(--border-width) solid var(--border-color);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) calc(70% * var(--glow,1)),transparent),0 0 24px var(--accent),0 0 80px color-mix(in srgb,var(--accent) calc(55% * var(--glow,1)),transparent),
+    inset 0 0 34px color-mix(in srgb,var(--accent) calc(18% * var(--glow,1)),transparent),inset 0 1px 0 rgba(255,255,255,.2),0 30px 60px rgba(0,0,0,.7);
+  -webkit-box-reflect:below 14px var(--reflection);
+  opacity:0;transform:translate3d(0,40px,-420px) rotateY(-38deg) rotateX(12deg) scale(.85)}
+.card::after{content:"";position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;
+  background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.12) 48%,color-mix(in srgb,var(--accent) calc(10% * var(--glow,1)),transparent) 52%,transparent 65%);
+  background-size:260% 100%;background-position:120% 0}
+.alert-card.on .card{animation:enter .9s cubic-bezier(.2,1.35,.35,1) forwards}
+.alert-card.on .card::after{animation:sweep 1.3s .55s ease-out forwards}
+.alert-card.out .card{animation:leave .55s cubic-bezier(.55,0,.8,.3) forwards}
+.alert-card.out .halo,.alert-card.out .dots,.alert-card.out .cube{opacity:0;transition-duration:.4s}
+@keyframes enter{to{opacity:1;transform:translate3d(0,0,0) var(--tilt) scale(1)}}
+@keyframes leave{from{opacity:1;transform:translate3d(0,0,0) var(--tilt)}
+  to{opacity:0;transform:translate3d(90px,-30px,-260px) rotateY(28deg) rotateX(4deg) scale(.92)}}
+@keyframes sweep{to{background-position:-60% 0}}
+
+.tile{flex:none;width:var(--tile-size);height:var(--tile-size);border-radius:var(--tile-radius);display:grid;place-items:center;
+  background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 22%,#0c0c0e),color-mix(in srgb,var(--red) 8%,#0c0c0e));border:2px solid color-mix(in srgb,var(--accent) calc(85% * var(--glow,1)),transparent);
+  box-shadow:0 0 22px color-mix(in srgb,var(--accent) calc(70% * var(--glow,1)),transparent),inset 0 0 26px color-mix(in srgb,var(--accent) calc(25% * var(--glow,1)),transparent),inset 0 1px 0 rgba(255,255,255,.14);
+  transform:scale(.4) rotate(-12deg);opacity:0}
+.alert-card.on .tile{animation:tilepop .6s .32s cubic-bezier(.2,1.6,.4,1) forwards}
+@keyframes tilepop{to{transform:scale(1) rotate(0);opacity:1}}
+.tile svg{width:var(--icon-size);height:var(--icon-size);stroke:var(--icon-color);fill:none;stroke-width:var(--icon-stroke,2.2);stroke-linecap:round;stroke-linejoin:round;
+  filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent) calc(95% * var(--glow,1)),transparent)) drop-shadow(0 0 2px color-mix(in srgb,var(--accent) 60%,#fff))}
+.tile .emoji{font-size:calc(var(--icon-size) * .9);line-height:1;filter:drop-shadow(0 4px 10px rgba(0,0,0,.5))}
+.tile img.pic{width:calc(var(--icon-size) * 1.2);height:calc(var(--icon-size) * 1.2);object-fit:contain}
+.tile svg.logo{stroke:none;width:calc(var(--icon-size) * 1.15);height:calc(var(--icon-size) * 1.15);filter:drop-shadow(0 4px 10px rgba(0,0,0,.55))}
+
+.txt{flex:1;min-width:0}
+.alert-card .alert-title{display:flex;align-items:center;gap:12px;font:700 var(--title-size)/1 var(--font-title);letter-spacing:.2em;
+  text-transform:uppercase;color:var(--title-color);margin-bottom:10px}
+.alert-card .alert-title::before{content:"";width:12px;height:12px;background:var(--accent);transform:rotate(45deg);box-shadow:0 0 10px var(--accent)}
+.alert-card .alert-title .pf.as-logo{border:0;padding:0;display:flex}
+.alert-card .alert-title .pf.as-logo svg{height:26px;width:auto;max-width:34px}
+.alert-card .alert-title .pf{margin-left:auto;font-size:17px;letter-spacing:.16em;color:var(--platform-color);border:1px solid rgba(255,255,255,.14);
+  border-radius:999px;padding:6px 12px 5px}
+.alert-card .alert-name{font:800 var(--name-size)/.9 var(--font-name);font-size:var(--name-fit,var(--name-size));text-transform:uppercase;color:var(--name-color);white-space:nowrap;
+  text-shadow:0 0 22px color-mix(in srgb,var(--accent) calc(55% * var(--glow,1)),transparent),0 2px 0 rgba(0,0,0,.6)}
+.alert-card .alert-sub{margin-top:12px;font:600 var(--sub-size)/1.25 var(--font-sub);color:var(--sub-color);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.alert-sub b{font-weight:inherit;color:var(--hl-color);text-shadow:0 0 12px color-mix(in srgb,var(--accent,var(--red)) 80%,transparent)}
+.alert-card .alert-title,.alert-card .alert-name,.alert-card .alert-sub{opacity:0;transform:translateY(18px)}
+.alert-card.on .alert-title{animation:rise .5s .42s ease-out forwards}
+.alert-card.on .alert-name{animation:rise .55s .5s cubic-bezier(.2,1.3,.4,1) forwards}
+.alert-card.on .alert-sub{animation:rise .5s .62s ease-out forwards}
+@keyframes rise{to{opacity:1;transform:none}}
+
+.timer{position:absolute;left:28px;right:28px;bottom:12px;height:4px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden}
+.timer i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--accent-dark),var(--accent),var(--accent-2));
+  box-shadow:0 0 10px var(--accent);transform-origin:left}
+
+/* =================== Diseño 2: vídeo o imagen con texto encima =================== */
+.alert-media-layout{--accent:var(--red);--ink:var(--white);--fs:64px}
+.alert-media-layout .alert-box{position:relative;max-width:96vw;width:var(--media-w,auto)}
+.alert-media-layout .alert-media{display:block;width:100%;height:auto}
+.alert-media-layout .alert-text{position:absolute;left:var(--text-x,50%);top:var(--text-y,78%);width:var(--text-w,90%);text-align:var(--text-align,center);transform:translate(-50%,-50%);color:var(--ink);font-size:var(--fs);
+  opacity:0;-webkit-text-stroke:.09em #000;paint-order:stroke fill}
+.alert-media-layout .alert-title{font:700 .4em/1.1 var(--f-cond);letter-spacing:.18em;text-transform:uppercase;opacity:.92;margin-bottom:.15em}
+.alert-media-layout .alert-name{font:800 1em/.92 var(--f-cond);text-transform:uppercase;color:var(--accent);
+  text-shadow:0 0 .3em color-mix(in srgb,var(--accent) calc(60% * var(--glow,1)),transparent),0 .05em .08em rgba(0,0,0,.6)}
+.alert-media-layout .alert-sub{font:600 .44em/1.25 var(--f-body);margin-top:.25em;-webkit-text-stroke:.07em #000}
+.alert-media-layout .alert-sub b{color:var(--ink);text-shadow:0 0 .4em color-mix(in srgb,var(--accent) calc(80% * var(--glow,1)),transparent)}
+.alert-media-layout .alert-text.show{animation:textin .55s cubic-bezier(.2,1.35,.4,1) forwards}
+@keyframes textin{from{opacity:0;transform:translate(-50%,calc(-50% + .35em)) scale(.92)}to{opacity:1;transform:translate(-50%,-50%)}}
+
+/* animaciones de entrada y salida del diseño 2 */
+.alert-media-layout{opacity:0}
+.alert-media-layout.in-none.on{opacity:1}
+.alert-media-layout.in-fade.on{animation:fadein .45s ease-out forwards}
+.alert-media-layout.in-pop.on{animation:popin .65s cubic-bezier(.2,1.5,.4,1) forwards}
+.alert-media-layout.in-slide.on{animation:slidein .6s cubic-bezier(.2,1.2,.4,1) forwards}
+.alert-media-layout.in-zoom.on{animation:zoomin .5s ease-out forwards}
+.alert-media-layout.out{opacity:1}
+.alert-media-layout.out-none.out{opacity:0}
+.alert-media-layout.out-fade.out{animation:fadeout .45s ease-in forwards}
+.alert-media-layout.out-slide.out{animation:slideout .5s ease-in forwards}
+.alert-media-layout.out-zoom.out{animation:zoomout .45s ease-in forwards}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+@keyframes popin{from{opacity:0;transform:scale(.55)}to{opacity:1;transform:scale(1)}}
+@keyframes slidein{from{opacity:0;transform:translateY(80px)}to{opacity:1;transform:none}}
+@keyframes zoomin{from{opacity:0;transform:scale(1.35)}to{opacity:1;transform:none}}
+@keyframes fadeout{from{opacity:1}to{opacity:0}}
+@keyframes slideout{from{opacity:1}to{opacity:0;transform:translateY(-80px)}}
+@keyframes zoomout{from{opacity:1}to{opacity:0;transform:scale(.75)}}
+} /* fin @layer egdev */
+</style>
+<link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style id="custom-css"></style>
+</head>
+<body>
+<div class="stage" id="stage"></div>
+
+<template id="tpl-card">
+  <div class="wrap alert alert-card">
+    <div class="halo alert-glow"></div><div class="dots alert-dots"></div><div class="cube alert-cube"></div>
+    <div class="card alert-box">
+      <div class="tile alert-icon"></div>
+      <div class="txt alert-text">
+        <div class="alert-title"><span class="t"></span><span class="pf alert-platform"></span></div>
+        <div class="alert-name"></div>
+        <div class="alert-sub"></div>
+      </div>
+      <div class="timer alert-timer"><i></i></div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-media">
+  <div class="wrap alert alert-media-layout">
+    <div class="alert-box">
+      <div class="alert-text">
+        <div class="alert-title"></div>
+        <div class="alert-name"></div>
+        <div class="alert-sub"></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- logos de plataforma a color para los iconos y la etiqueta del tema (Apariencia) -->
+<script type="module">import * as P from '/platform-icons.js'; window.egPlatform = P;</script>
+<script>
+const ICONS = {
+  heart:'<path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/>',
+  star:'<path d="M12 3.2l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17.2l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+  gift:'<rect x="3.5" y="8.5" width="17" height="4" rx="1"/><path d="M5 12.5v8h14v-8M12 8.5v12M12 8.5c-1.5-3.6-6-4-6-1.3 0 1.3 1.6 1.3 6 1.3zM12 8.5c1.5-3.6 6-4 6-1.3 0 1.3-1.6 1.3-6 1.3z"/>',
+  gem:'<path d="M6.5 4h11l3.5 5-9 11L3 9z"/><path d="M3 9h18M9.5 4 8 9l4 11 4-11-1.5-5"/>',
+  rocket:'<path d="M12 2.8c3.4 2.4 5 6 4.6 10.6l-2.1 2.4h-5L7.4 13.4C7 8.8 8.6 5.2 12 2.8z"/><circle cx="12" cy="9.5" r="1.8"/><path d="M7.6 12.6 4.5 15.5l3.1.7M16.4 12.6l3.1 2.9-3.1.7M10.3 18.5 12 21.3l1.7-2.8"/>',
+  spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M12 8.2l1.2 2.6 2.6 1.2-2.6 1.2L12 15.8l-1.2-2.6-2.6-1.2 2.6-1.2z"/>',
+  coin:'<circle cx="12" cy="12" r="8.5"/><path d="M14.8 8.6c-.7-.8-1.6-1.1-2.8-1.1-1.6 0-2.7.8-2.7 2 0 2.9 5.7 1.5 5.7 4.6 0 1.3-1.2 2.2-3 2.2-1.3 0-2.4-.4-3.1-1.3M12 5.8v1.7M12 16.3V18"/>',
+  badge:'<path d="M12 3l7 3v5.5c0 4.3-3 7.8-7 9.5-4-1.7-7-5.2-7-9.5V6z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/>',
+  eye:'<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  // más iconos para elegir en Apariencia (src/theme.mjs › ICON_NAMES)
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  fire:'<path d="M12 21c-4 0-7-2.7-7-6.6 0-3.3 2.4-5.4 3.6-7.4.4 1.6 1.4 2.8 2.4 3.2C11 7 12.5 4.6 14.8 3c-.4 2.8.7 4.6 2 6.2 1.3 1.5 2.2 3 2.2 5.2C19 18.3 16 21 12 21z"/>',
+  trophy:'<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/>',
+  crown:'<path d="M3.5 8.5 8 12l4-6 4 6 4.5-3.5L19 18H5z"/><path d="M5 21h14"/>',
+  zap:'<path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/>',
+  megaphone:'<path d="M3.5 10v4a1 1 0 0 0 1 1H7l7 4.5v-15L7 9H4.5a1 1 0 0 0-1 1z"/><path d="M17.5 9a4 4 0 0 1 0 6M7 15l1.2 5"/>',
+  music:'<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  smile:'<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.3 2 3.5 2 3.5-2 3.5-2M9 9.5h.01M15 9.5h.01"/>',
+  users:'<path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  rocket2:'<path d="M5 15c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2.1-.1-2.9a2.2 2.2 0 0 0-2.9-.1z"/><path d="m12 15-3-3a22 22 0 0 1 2-4A12.9 12.9 0 0 1 22 2c0 2.7-.8 7.5-6 11a22.4 22.4 0 0 1-4 2z"/>',
+  thumb:'<path d="M7 10v11M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 7A2 2 0 0 1 17.5 21H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h2.8a2 2 0 0 0 1.8-1.1L12 2a3.1 3.1 0 0 1 3 3.9z"/>',
+};
+
+// ---------- tema (Apariencia, /theme.css): lo que no se puede hacer solo con CSS ----------
+let THEME = {};
+function applyTheme(t) {
+  THEME = t || {};
+  if (!qs.get('pos')) { stage.classList.remove('top', 'center', 'bottom'); stage.classList.add(['top', 'center', 'bottom'].includes(THEME.position) ? THEME.position : 'center'); }
+  if (!qs.get('align')) { stage.classList.remove('left', 'right'); if (['left', 'right'].includes(THEME.align)) stage.classList.add(THEME.align); }
+  const link = document.getElementById('eg-theme');
+  const href = '/theme.css?v=' + encodeURIComponent(THEME.version || '');
+  if (link && !link.href.endsWith(href)) link.href = href;
+}
+/** Icono de la casilla: el elegido en el tema para ese tipo o el de serie. */
+function tileIcon(a) {
+  const pick = THEME.icons?.[a.type] || a.icon;
+  if (pick === 'none') return null;
+  if (pick === 'logo' || pick?.startsWith('logo:')) { const pf = pick === 'logo' ? a.platform : pick.slice(5); const el = window.egPlatform?.platformSvg(pf, 'logo'); if (el) return el; }
+  if (pick === 'twitch' || pick === 'youtube') { const el = window.egPlatform?.platformSvg(pick, 'logo'); if (el) return el; }
+  if (pick?.startsWith('emoji:')) { const sp = document.createElement('span'); sp.className = 'emoji'; sp.textContent = pick.slice(6); return sp; }
+  if (pick?.startsWith('media:')) { const img = document.createElement('img'); img.className = 'pic'; img.alt = ''; img.src = '/media/' + encodeURIComponent(pick.slice(6)); return img; }
+  const tpl = document.createElement('template');
+  tpl.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[pick] || ICONS[a.icon] || ICONS.spark}</svg>`;
+  return tpl.content.firstElementChild;
+}
+
+const qs = new URLSearchParams(location.search);
+const PREVIEW = qs.has('preview');
+const stage = document.getElementById('stage');
+const customCss = document.getElementById('custom-css');
+stage.classList.add(['top','center','bottom'].includes(qs.get('pos')) ? qs.get('pos') : 'center');
+document.documentElement.style.setProperty('--scale', Number(qs.get('scale')) || 1);
+if (qs.has('debug') || PREVIEW) document.body.classList.add('debug');
+const MUTE = qs.has('mute');
+const GAP = 700;
+
+const queue = [];
+let current = null;
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// resalta números y cantidades (5 subs, 500 bits, 5,00 €), no los que van pegados a letras (V2)
+const highlight = sub => esc(sub).replace(/(?<![\p{L}\d])(\d[\d.,]*\s?(?:€|\$|£|bits|subs|meses|personas|membresías)?)/giu, '<b>$1</b>');
+
+// ajusta el nombre para que quepa (sin pisar el tamaño si lo cambias en tu CSS)
+function fit(el) {
+  el.style.removeProperty('--name-fit');
+  const cs = getComputedStyle(el);
+  let size = parseFloat(cs.fontSize) || 86;
+  while (el.scrollWidth > el.clientWidth && size > 40) { size -= 3; el.style.setProperty('--name-fit', size + 'px'); }
+}
+
+function fillText(node, a) {
+  const t = node.querySelector('.alert-title .t') || node.querySelector('.alert-title');
+  t.textContent = a.title;
+  if (!a.title) node.querySelector('.alert-title').classList.add('empty');
+  node.querySelector('.alert-name').textContent = a.text;
+  const sub = node.querySelector('.alert-sub');
+  if (a.sub) sub.innerHTML = highlight(a.sub); else sub.remove();
+}
+
+// ---------- diseño 1: tarjeta ----------
+function renderCard(a) {
+  const node = document.getElementById('tpl-card').content.firstElementChild.cloneNode(true);
+  node.classList.add('type-' + a.type, 'pf-' + (a.platform || 'egdev'));
+  // icono: el del tema para este tipo, o el de serie
+  const ico = tileIcon(a);
+  if (ico) node.querySelector('.tile').replaceChildren(ico); else node.querySelector('.tile').remove();
+  // etiqueta de plataforma: texto, logo o nada (Apariencia)
+  const pf = { twitch: 'Twitch', youtube: 'YouTube', chat: 'Chat' }[a.platform];
+  const badge = node.querySelector('.pf');
+  const pfLogo = THEME.platformBadge === 'logo' ? window.egPlatform?.platformSvg(a.platform, 'pf-logo') : null;
+  if (!pf || THEME.platformBadge === 'none') badge.remove();
+  else if (pfLogo) { badge.classList.add('as-logo'); badge.replaceChildren(pfLogo); }
+  else badge.textContent = pf;
+  fillText(node, a);
+  stage.replaceChildren(node);
+  const name = node.querySelector('.alert-name');
+  fit(name);
+  document.fonts?.ready.then(() => fit(name));
+  node.querySelector('.timer i').animate([{transform:'scaleX(1)'},{transform:'scaleX(0)'}], { duration: a.durationMs, easing: 'linear', delay: 400, fill: 'forwards' });
+  requestAnimationFrame(() => node.classList.add('on'));
+  return { node, ready: Promise.resolve(a.durationMs + 400), outMs: 560 };
+}
+
+// ---------- diseño 2: vídeo o imagen con el texto encima ----------
+function renderMedia(a) {
+  const L = a.look;
+  const node = document.getElementById('tpl-media').content.firstElementChild.cloneNode(true);
+  node.classList.add('type-' + a.type, 'in-' + L.animIn, 'out-' + L.animOut);
+  // los colores de serie (#FF0036 y blanco) dejan mandar al tema; uno elegido en la alerta lo pisa
+  if (L.accentColor && L.accentColor.toUpperCase() !== '#FF0036') node.style.setProperty('--accent', L.accentColor);
+  if (L.textColor && L.textColor.toUpperCase() !== '#FFFFFF') node.style.setProperty('--ink', L.textColor);
+  node.style.setProperty('--fs', L.fontSize + 'px');
+  const box = node.querySelector('.alert-box');
+  const text = node.querySelector('.alert-text');
+  node.style.setProperty('--text-x', L.textX + '%'); node.style.setProperty('--text-y', L.textY + '%');
+  node.style.setProperty('--text-w', L.textWidth + '%'); node.style.setProperty('--text-align', L.textAlign);
+  fillText(node, a);
+
+  const src = '/media/' + encodeURIComponent(L.media);
+  let el;
+  if (L.mediaKind === 'video') {
+    el = document.createElement('video');
+    el.src = src; el.playsInline = true; el.preload = 'auto';
+    el.volume = MUTE ? 0 : Math.min(1, (a.volume ?? .6) * L.mediaVolume / 100);
+    el.muted = MUTE || L.mediaVolume === 0;
+  } else {
+    el = document.createElement('img');
+    el.src = src; el.alt = '';
+  }
+  el.className = 'alert-media';
+  box.prepend(el);
+
+  const sized = new Promise(resolve => {
+    const done = () => {
+      const w = el.videoWidth || el.naturalWidth || 600;
+      node.style.setProperty('--media-w', Math.round(w * L.mediaSize / 100) + 'px');
+      resolve();
+    };
+    if (L.mediaKind === 'video') { el.addEventListener('loadedmetadata', done, { once: true }); el.addEventListener('error', done, { once: true }); }
+    else if (el.complete) done(); else { el.onload = done; el.onerror = done; }
+    setTimeout(done, 3000);
+  });
+
+  stage.replaceChildren(node);
+  const ready = sized.then(() => {
+    requestAnimationFrame(() => node.classList.add('on'));
+    if (L.mediaKind === 'video') {
+      el.play().catch(() => { el.muted = true; el.play().catch(() => {}); });
+    }
+    setTimeout(() => text.classList.add('show'), L.textDelayMs);
+    if (L.durationMode === 'media' && L.mediaKind === 'video' && isFinite(el.duration) && el.duration > 0) {
+      return Math.min(el.duration * 1000, 60000);
+    }
+    return a.durationMs;
+  });
+  return { node, ready, outMs: 480, video: L.mediaKind === 'video' ? el : null };
+}
+
+function show(a) {
+  // CSS común a todas las alertas + el de esta alerta (o variación)
+  customCss.textContent = [a.globalCss, a.look?.css].filter(Boolean).join('\n');
+  const r = a.look?.layout === 'media' ? renderMedia(a) : renderCard(a);
+  current = { a, ...r };
+  playSound(a);
+  r.ready.then(ms => {
+    if (current?.a !== a) return;
+    current.timer = setTimeout(hide, ms);
+    // avisa al servidor para lanzar las acciones de Meld justo ahora
+    if (!PREVIEW && a.actions?.length) fetch('/api/overlay/shown', { method: 'POST', body: JSON.stringify({ id: a.id }) }).catch(() => {});
+    if (a.tts) setTimeout(() => speak(a.tts), 600);
+  });
+}
+
+// ---------- voz (TTS del navegador; en Windows usa las voces del sistema) ----------
+function speak(t) {
+  if (MUTE || !t?.text || !('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(t.text);
+  const voices = speechSynthesis.getVoices();
+  u.voice = voices.find(v => v.name === t.voice) || voices.find(v => /^es(-|_)ES/i.test(v.lang)) || voices.find(v => /^es/i.test(v.lang)) || null;
+  u.lang = u.voice?.lang || 'es-ES';
+  u.rate = t.rate || 1; u.pitch = t.pitch || 1; u.volume = Math.min(1, t.volume ?? 1);
+  speechSynthesis.speak(u);
+}
+if ('speechSynthesis' in window) speechSynthesis.getVoices();
+
+function hide() {
+  if (!current) return;
+  clearTimeout(current.timer);
+  const { node, outMs, video } = current;
+  node.classList.remove('on'); node.classList.add('out');
+  if (video) fadeOut(video, outMs);
+  current = null;
+  setTimeout(() => { node.remove(); setTimeout(next, GAP); }, outMs);
+}
+
+function fadeOut(v, ms) {
+  const v0 = v.volume, t0 = performance.now();
+  const step = t => { const k = Math.min(1, (t - t0) / ms); v.volume = v0 * (1 - k); if (k < 1) requestAnimationFrame(step); else v.pause(); };
+  requestAnimationFrame(step);
+}
+
+function next() { if (!current && queue.length) show(queue.shift()); }
+
+// ---------- sonido ----------
+let ctx;
+function playSound(a) {
+  let sound = a.look?.sound ?? a.sound;
+  // «de serie» = el sonido del tema (Apariencia): el tono EGDEV, ninguno o un archivo
+  if (sound === 'default' && THEME.sound && THEME.sound !== 'default') sound = THEME.sound;
+  if (MUTE || !sound || sound === 'none') return;
+  const vol = Math.min(1, (a.volume ?? 0.6) * (a.look?.soundVolume ?? 100) / 100 * (THEME.soundVolume ?? 100) / 100);
+  if (sound !== 'default') {
+    const au = new Audio('/media/' + encodeURIComponent(sound));
+    au.volume = vol; au.play().catch(() => {});
+    return;
+  }
+  try {
+    ctx ||= new AudioContext();
+    if (ctx.state === 'suspended') ctx.resume();
+    const t0 = ctx.currentTime + 0.05;
+    const out = ctx.createGain(); out.gain.value = vol * 0.5; out.connect(ctx.destination);
+    [[659.25, 0], [987.77, 0.11], [1318.5, 0.22]].forEach(([f, d], i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = i === 2 ? 'sine' : 'triangle'; o.frequency.value = f;
+      g.gain.setValueAtTime(0, t0 + d);
+      g.gain.linearRampToValueAtTime(i === 2 ? .35 : .6, t0 + d + .012);
+      g.gain.exponentialRampToValueAtTime(.0001, t0 + d + (i === 2 ? .9 : .35));
+      o.connect(g).connect(out); o.start(t0 + d); o.stop(t0 + d + 1);
+    });
+  } catch {}
+}
+
+// ---------- conexión ----------
+if (PREVIEW) stage.insertAdjacentHTML('beforebegin', '<div class="hint" id="hint">Vista previa</div>');
+const es = new EventSource('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay'));
+es.addEventListener('alert', e => {
+  document.getElementById('hint')?.remove();
+  const a = JSON.parse(e.data);
+  if (PREVIEW) { queue.length = 0; if (current) { clearTimeout(current.timer); current.node.remove(); current = null; } }
+  // #66: una alerta agrupada en el motor actualiza la que ya está en cola; nunca se encola dos veces
+  if (a.merged) {
+    const i = queue.findIndex(x => x.id === a.id);
+    if (i >= 0) queue[i] = a;
+    return;
+  }
+  queue.push(a); next();
+});
+es.addEventListener('control', e => {
+  const { action, ids } = JSON.parse(e.data);
+  if (action === 'skip') { hide(); if ('speechSynthesis' in window) speechSynthesis.cancel(); }
+  // #66: el motor descarta las más antiguas por ráfaga; se quitan de la cola sin ruido
+  if (action === 'drop') {
+    const dropped = new Set(ids || []);
+    for (let i = queue.length - 1; i >= 0; i--) if (dropped.has(queue[i].id)) queue.splice(i, 1);
+  }
+  if (action === 'clear') { queue.length = 0; hide(); if ('speechSynthesis' in window) speechSynthesis.cancel(); }
+});
+es.addEventListener('theme', e => applyTheme(JSON.parse(e.data)));
+es.addEventListener('say', e => { if (!PREVIEW) speak(JSON.parse(e.data)); });
+</script>
+</body>
+</html>

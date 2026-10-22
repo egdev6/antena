@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>EGDEV · prueba de panel</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:dark}
+body{margin:0;background:#0b0b0d;color:#eee;font:14px/1.4 system-ui,Segoe UI,sans-serif;padding:12px}
+h1{font-size:16px;margin:0 0 4px;color:#FF0036;letter-spacing:.06em;text-transform:uppercase}
+p.sub{margin:0 0 10px;color:#999;font-size:12px}
+ul{list-style:none;margin:0 0 12px;padding:0;display:grid;gap:4px}
+li{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;background:#16161a}
+li b{width:18px;text-align:center}
+li.ok b{color:#3ddc84}li.no b{color:#ff4466}li.wait b{color:#999}
+li span.v{margin-left:auto;color:#888;font-size:12px;text-align:right}
+.box{display:grid;gap:8px;padding:10px;border:1px solid #333;border-radius:10px;margin-bottom:10px}
+button{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid #FF0036;background:#2a0710;color:#fff;cursor:pointer}
+button:hover{background:#4a0b1c}
+input{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid #444;background:#111;color:#fff}
+.scroll{height:70px;overflow:auto;border:1px solid #333;border-radius:8px;padding:6px;color:#aaa}
+.done{padding:10px;border-radius:10px;background:#0f2a1a;color:#9ff0c0;display:none}
+</style></head>
+<body>
+<h1>Prueba del panel de directo</h1>
+<p class="sub">Haz las 3 pruebas de abajo. El resultado se guarda solo en antena.</p>
+<div class="box">
+  <button id="btn">1 · Pulsa aquí</button>
+  <input id="txt" placeholder="2 · Escribe algo aquí">
+  <div class="scroll" id="scr">3 · Desplaza esta caja hacia abajo con la rueda…<br><br><br><br><br><br>…hasta el final ✔</div>
+</div>
+<ul id="list"></ul>
+<div class="done" id="done">Listo: ya puedes cerrar o quitar esta URL. Avisa a Claude.</div>
+<script>
+const id = new URLSearchParams(location.search).get('id') || (/QtWebEngine/i.test(navigator.userAgent) ? 'meld' : 'navegador');
+const R = { id, url: location.href, userAgent: navigator.userAgent, checks: {} };
+const names = {
+  js: 'JavaScript', fetch: 'Leer la API de antena', sse: 'Avisos en tiempo real (SSE)', storage: 'Recordar ajustes (localStorage)',
+  css: 'CSS moderno (@layer, color-mix, :has)', click: 'Clic con el ratón', hover: 'Hover del ratón', keys: 'Escribir con el teclado', scroll: 'Rueda / scroll',
+  size: 'Tamaño de la ventana', focus: 'Recibe foco'
+};
+const set = (k, ok, v = '') => { R.checks[k] = { ok, v: String(v) }; draw(); send(); };
+function draw() {
+  document.getElementById('list').innerHTML = Object.keys(names).map(k => {
+    const c = R.checks[k]; const cls = !c ? 'wait' : c.ok ? 'ok' : 'no';
+    return `<li class="${cls}"><b>${!c ? '…' : c.ok ? '✔' : '✘'}</b>${names[k]}<span class="v">${c?.v || ''}</span></li>`;
+  }).join('');
+  const manual = ['click', 'keys', 'scroll'].every(k => R.checks[k]?.ok);
+  document.getElementById('done').style.display = manual ? 'block' : 'none';
+}
+let t; function send() { clearTimeout(t); t = setTimeout(() => fetch('/api/probe' + location.search, { method: 'POST', body: JSON.stringify(R) }).catch(() => {}), 300); }
+set('js', true, 'ok');
+const size = () => set('size', true, `${innerWidth}×${innerHeight} @${devicePixelRatio}x`);
+size(); addEventListener('resize', size);
+try { localStorage.setItem('egdev.probe', '1'); set('storage', localStorage.getItem('egdev.probe') === '1'); } catch (e) { set('storage', false, e.name); }
+set('css', CSS.supports('color', 'color-mix(in srgb, red 50%, blue)') && CSS.supports('selector(:has(a))') && 'CSSLayerBlockRule' in window,
+  ['color-mix', ':has', '@layer'].filter((_, i) => [CSS.supports('color', 'color-mix(in srgb, red 50%, blue)'), CSS.supports('selector(:has(a))'), 'CSSLayerBlockRule' in window][i]).join(' '));
+fetch('/api/state').then(r => r.ok ? set('fetch', true, r.status) : set('fetch', false, r.status)).catch(e => set('fetch', false, e.message));
+const es = new EventSource('/api/stream?client=widget'); const to = setTimeout(() => set('sse', false, 'sin respuesta en 6 s'), 6000);
+es.addEventListener('widgets', () => { clearTimeout(to); set('sse', true, 'conectado'); es.close(); });
+let clicks = 0; document.getElementById('btn').onclick = e => { clicks++; e.target.textContent = `1 · Pulsado ${clicks} ✔`; set('click', true, clicks); };
+document.body.addEventListener('mouseover', () => R.checks.hover || set('hover', true), { once: false });
+document.getElementById('txt').addEventListener('input', e => set('keys', e.target.value.length > 0, `${e.target.value.length} car.`));
+const scr = document.getElementById('scr'); scr.addEventListener('scroll', () => { if (scr.scrollTop > 20 && !R.checks.scroll) set('scroll', true); });
+addEventListener('focus', () => set('focus', true)); if (document.hasFocus()) set('focus', true);
+draw();
+</script></body></html>
