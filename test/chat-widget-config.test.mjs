@@ -16,18 +16,18 @@ test('validatePath: widgets.chat.reverse es bool y animIn/animOut son enums de c
   for (const v of ['slide', 'fade', 'pop', 'none']) assert.deepEqual(validatePath('widgets.chat.animIn', v), []);
   assert.ok(validatePath('widgets.chat.animIn', 'wobble').length > 0);
   assert.ok(validatePath('widgets.chat.animIn', true).length > 0);
-  // animOut: sin pop (pop solo tiene sentido en la entrada)
-  for (const v of ['slide', 'fade', 'none']) assert.deepEqual(validatePath('widgets.chat.animOut', v), []);
-  assert.ok(validatePath('widgets.chat.animOut', 'pop').length > 0);
+  // animOut: las mismas que animIn
+  for (const v of ['slide', 'fade', 'pop', 'none']) assert.deepEqual(validatePath('widgets.chat.animOut', v), []);
+  assert.ok(validatePath('widgets.chat.animOut', 'wobble').length > 0);
 });
 
 test('validatePath: efectos nuevos de entrada/salida del chat (O2.2)', async () => {
   const { validatePath } = await import('../src/config-schema.mjs');
-  for (const v of ['bounce', 'zoom', 'flip', 'blur']) assert.deepEqual(validatePath('widgets.chat.animIn', v), [], `animIn ${v}`);
-  for (const v of ['zoom', 'blur', 'drop']) assert.deepEqual(validatePath('widgets.chat.animOut', v), [], `animOut ${v}`);
-  // drop y bounce solo tienen sentido en un sentido; lo desconocido sigue rechazado
-  assert.ok(validatePath('widgets.chat.animIn', 'drop').length > 0);
-  assert.ok(validatePath('widgets.chat.animOut', 'bounce').length > 0);
+  // entrada y salida aceptan las mismas animaciones; lo desconocido sigue rechazado
+  for (const v of ['bounce', 'zoom', 'flip', 'blur', 'drop']) {
+    assert.deepEqual(validatePath('widgets.chat.animIn', v), [], `animIn ${v}`);
+    assert.deepEqual(validatePath('widgets.chat.animOut', v), [], `animOut ${v}`);
+  }
   assert.ok(validatePath('widgets.chat.animIn', 'spin').length > 0);
   assert.ok(validatePath('widgets.chat.animOut', 'spin').length > 0);
 });
@@ -35,7 +35,7 @@ test('validatePath: efectos nuevos de entrada/salida del chat (O2.2)', async () 
 test('validatePatch: patch de chat con opciones nuevas válidas y rechazo de inválidas', async () => {
   const { validatePatch } = await import('../src/config-schema.mjs');
   assert.deepEqual(validatePatch({ widgets: { chat: { reverse: true, animIn: 'pop', animOut: 'fade' } } }), []);
-  const errores = validatePatch({ widgets: { chat: { reverse: 'sí', animIn: 'wobble', animOut: 'pop' } } });
+  const errores = validatePatch({ widgets: { chat: { reverse: 'sí', animIn: 'wobble', animOut: 'spin' } } });
   const rutas = errores.map(e => e.path).sort();
   assert.deepEqual(rutas, ['widgets.chat.animIn', 'widgets.chat.animOut', 'widgets.chat.reverse'], JSON.stringify(errores));
 });

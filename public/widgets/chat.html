@@ -16,19 +16,25 @@
 .msg.a-zoom{animation:inZ .35s cubic-bezier(.2,1,.3,1) both}
 .msg.a-flip{animation:inFl .45s cubic-bezier(.2,1,.3,1) both;transform-origin:top center}
 .msg.a-blur{animation:inBl .4s ease-out both}
+.msg.a-drop{animation:inD .45s cubic-bezier(.25,1,.5,1) both}
 .msg.a-none{animation:none}
 .msg.out.o-slide{animation:out .45s ease-in forwards}
 .msg.out.o-fade{animation:outF .35s ease-in forwards}
+.msg.out.o-pop{animation:outP .35s ease-in forwards}
+.msg.out.o-bounce{animation:outB .55s cubic-bezier(.55,0,.75,.2) forwards}
 .msg.out.o-zoom{animation:outZ .35s ease-in forwards}
+.msg.out.o-flip{animation:outFl .4s ease-in forwards;transform-origin:top center}
 .msg.out.o-blur{animation:outBl .4s ease-in forwards}
 .msg.out.o-drop{animation:outD .45s cubic-bezier(.5,0,.75,0) forwards}
 .msg.out.o-none{animation:none}
 .root.reverse{flex-direction:column-reverse}
-.reverse .msg.a-slide{animation-name:inR}
-.reverse .msg.a-bounce{animation-name:inBR}
-.reverse .msg.a-flip{animation-name:inFlR;transform-origin:bottom center}
+/* :not(.out): la entrada invertida nunca pisa la animación de salida */
+.reverse .msg.a-slide:not(.out){animation-name:inR}
+.reverse .msg.a-bounce:not(.out){animation-name:inBR}
+.reverse .msg.a-flip:not(.out){animation-name:inFlR;transform-origin:bottom center}
 .reverse .msg.out.o-slide{animation-name:outR}
-.reverse .msg.out.o-drop{animation-name:outDR}
+.reverse .msg.out.o-bounce{animation-name:outBR}
+.reverse .msg.out.o-flip{animation-name:outFlR;transform-origin:bottom center}
 .msg.mod{border-left-color:#fff}
 @keyframes in{from{opacity:0;transform:translateX(-24px) scale(.97)}to{opacity:1;transform:none}}
 @keyframes out{to{opacity:0;transform:translateX(-24px)}}
@@ -46,7 +52,12 @@
 @keyframes outZ{to{opacity:0;transform:scale(.6)}}
 @keyframes outBl{to{opacity:0;filter:blur(12px)}}
 @keyframes outD{to{opacity:0;transform:translateY(80px) rotate(4deg)}}
-@keyframes outDR{to{opacity:0;transform:translateY(-80px) rotate(-4deg)}}
+@keyframes inD{from{opacity:0;transform:translateY(-80px) rotate(-4deg)}to{opacity:1;transform:none}}
+@keyframes outP{30%{opacity:1;transform:scale(1.06)}to{opacity:0;transform:scale(.6)}}
+@keyframes outB{25%{transform:translateY(10px)}to{opacity:0;transform:translateY(-60px)}}
+@keyframes outBR{25%{transform:translateY(-10px)}to{opacity:0;transform:translateY(60px)}}
+@keyframes outFl{to{opacity:0;transform:perspective(600px) rotateX(-80deg)}}
+@keyframes outFlR{to{opacity:0;transform:perspective(600px) rotateX(80deg)}}
 .body{min-width:0;flex:1}
 .who{display:flex;align-items:center;gap:8px;font:800 .78em/1 var(--f-cond);letter-spacing:.06em;text-transform:uppercase;color:var(--red-2);margin-bottom:5px}
 .who .pf{display:inline-flex;align-items:center;font:700 .62em/1 var(--f-cond);letter-spacing:.16em;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:3px 6px 2px}
@@ -62,8 +73,12 @@ import { LOGOS, platformSvg } from '/platform-icons.js';
 import { connect, DEMO, demoChat, setCss } from '/widgets/widget.js';
 const root = document.getElementById('root');
 let cfg = { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide' };
-const ANIM_IN = { slide: 'a-slide', fade: 'a-fade', pop: 'a-pop', bounce: 'a-bounce', zoom: 'a-zoom', flip: 'a-flip', blur: 'a-blur', none: 'a-none' };
-const ANIM_OUT = { slide: 'o-slide', fade: 'o-fade', zoom: 'o-zoom', blur: 'o-blur', drop: 'o-drop', none: 'o-none' };
+// Las mismas animaciones para entrar y para salir. Las que tienen dirección siguen al orden: los
+// nuevos entran por un borde y los viejos salen por el otro (se invierte con «Chat invertido»);
+// la caída es gravedad y siempre cae hacia abajo.
+const ANIMS = ['slide', 'fade', 'pop', 'bounce', 'zoom', 'flip', 'blur', 'drop', 'none'];
+const ANIM_IN = Object.fromEntries(ANIMS.map(a => [a, 'a-' + a]));
+const ANIM_OUT = Object.fromEntries(ANIMS.map(a => [a, 'o-' + a]));
 let demoN = 0;
 
 // Logos de plataforma: SVG por DOM con las rutas fijas de /platform-icons.js

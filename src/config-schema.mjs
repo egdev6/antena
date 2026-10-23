@@ -27,6 +27,8 @@ const bool = { kind: 'bool' };
 const en = values => ({ kind: 'enum', values });
 const arrStr = values => ({ kind: 'arrStr', values });
 const list = (item, o = {}) => ({ kind: 'list', item, ...o });   // lista de objetos con esquema por elemento
+// #130: animaciones de los mensajes del chat en pantalla, las mismas para entrar y para salir.
+const CHAT_ANIMS = ['slide', 'fade', 'pop', 'bounce', 'zoom', 'flip', 'blur', 'drop', 'none'];
 
 // Objetivos por plataforma (#128): cada objetivo es una caja con barras. La métrica válida
 // de una barra depende de su plataforma (src/goals.mjs); la comprobación cruzada va en el
@@ -215,8 +217,8 @@ export const CONFIG_SCHEMA = {
       fontSize: num({ min: 8, max: 80 }),
       hideCommands: bool, hideOwner: bool, showPlatform: bool,
       reverse: bool,                                   // #130: chat invertido (nuevos arriba)
-      animIn: en(['slide', 'fade', 'pop', 'bounce', 'zoom', 'flip', 'blur', 'none']),  // #130: animación de entrada de los mensajes
-      animOut: en(['slide', 'fade', 'zoom', 'blur', 'drop', 'none']),                  // #130: animación de salida (pop y bounce solo de entrada)
+      animIn: en(CHAT_ANIMS),   // #130: animación de entrada de los mensajes
+      animOut: en(CHAT_ANIMS),  // #130: animación de salida (las mismas que de entrada)
       css: str,
     },
     goals: list(GOAL_BOX),
