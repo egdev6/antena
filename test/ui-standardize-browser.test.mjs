@@ -21,6 +21,11 @@ async function start(t) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Espera a que una condición del lado del servidor se cumpla (guardados con debounce de 500 ms).
+async function until(fn, what, timeoutMs = 6000) {
+  for (const end = Date.now() + timeoutMs; Date.now() < end; await sleep(100)) if (fn()) return;
+  throw new Error('no se cumplió: ' + what);
+}
 const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 12000 });
 const api = (base, method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => { if (!r.ok) throw new Error(`${method} ${url}: ${r.status}`); return r.json(); });
 const tabsOf = label => `Array.from(document.querySelectorAll('[role=tablist][aria-label=${JSON.stringify(label)}] [role=tab]'))`;
@@ -310,8 +315,7 @@ test('#16 Tier y destino del mensaje son Seg; el tipo de acción lleva aria-labe
     eq(await dom(chrome, `${radios(tier)}.filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.textContent.trim()).join('|')`), 'Cualquiera');
     eq(await dom(chrome, `!!${tier}.closest('.field-ctl')?.parentElement.classList.contains('lbl')`), true);
     await dom(chrome, `${radios(tier)}.find(b => b.textContent.trim() === 'Tier 2').click()`);
-    for (let i = 0; i < 60 && String(app.store.config.alerts.sub.variations[0].conditions.tier) !== '2'; i++) await sleep(100);
-    eq(String(app.store.config.alerts.sub.variations[0].conditions.tier), '2');
+    await until(() => String(app.store.config.alerts.sub.variations[0].conditions.tier) === '2', "conditions.tier = '2' guardado");
     eq(await dom(chrome, `${radios(tier)}.find(b => b.getAttribute('aria-checked') === 'true')?.textContent.trim()`), 'Tier 2');
 
     await dom(chrome, `location.hash = '#/alerta/follow'`);
