@@ -9,7 +9,8 @@ export function patcher(method: string, url: string, after?: (d: any) => void, m
     clearTimeout(t);
     if (!Object.keys(pending).length) return;
     const p = pending; pending = {};
-    try { after?.(await api(method, url, p)); } catch (e: any) { toast(e.message, true); }
+    // The request goes first: `after?.(await api(…))` skips the arguments when there is no `after`.
+    try { const d = await api(method, url, p); after?.(d); } catch (e: any) { toast(e.message, true); }
   };
   const push = (patch: any) => { pending = deepMerge(pending, patch); clearTimeout(t); t = setTimeout(flush, ms); };
   return { push, flush };
