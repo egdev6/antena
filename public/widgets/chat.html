@@ -28,9 +28,10 @@
 .msg.out.o-drop{animation:outD .45s cubic-bezier(.5,0,.75,0) forwards}
 .msg.out.o-none{animation:none}
 .root.reverse{flex-direction:column-reverse}
-.reverse .msg.a-slide{animation-name:inR}
-.reverse .msg.a-bounce{animation-name:inBR}
-.reverse .msg.a-flip{animation-name:inFlR;transform-origin:bottom center}
+/* :not(.out): la entrada invertida nunca pisa la animación de salida */
+.reverse .msg.a-slide:not(.out){animation-name:inR}
+.reverse .msg.a-bounce:not(.out){animation-name:inBR}
+.reverse .msg.a-flip:not(.out){animation-name:inFlR;transform-origin:bottom center}
 .reverse .msg.out.o-slide{animation-name:outR}
 .reverse .msg.out.o-bounce{animation-name:outBR}
 .reverse .msg.out.o-flip{animation-name:outFlR;transform-origin:bottom center}

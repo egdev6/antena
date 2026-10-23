@@ -206,10 +206,11 @@ test('chat overlay: mismas animaciones de entrada y salida, orientadas al orden'
       assert.ok(await dom(c, `${byN(n)}.classList.contains('a-${v}')`), `clase a-${v}`);
       return dom(c, `getComputedStyle(${byN(n)}).animationName`);
     };
-    const leave = async (v, reverse) => {
-      await put({ widgets: { chat: { animIn: 'none', animOut: v, reverse, fadeAfterSec: 1 } } });
+    const leave = async (v, reverse, animIn = 'none') => {
+      await put({ widgets: { chat: { animIn, animOut: v, reverse, fadeAfterSec: 1 } } });
       app.engine.handleChat(chat(++n));
       await waitDom(c, `${byN(n)}?.classList.contains('o-${v}')`, { timeoutMs: 12000, intervalMs: 20 });
+      assert.ok(await dom(c, `${byN(n)}.classList.contains('a-${animIn}')`), `entró con a-${animIn}`);
       return dom(c, `getComputedStyle(${byN(n)}).animationName`);
     };
     for (const v of ANIMS) {
@@ -226,6 +227,11 @@ test('chat overlay: mismas animaciones de entrada y salida, orientadas al orden'
     assert.equal(await leave('drop', false), 'outD');
     assert.equal(await leave('drop', true), 'outD', 'caída en orden invertido también cae hacia abajo');
     assert.equal(await enter('drop', true), 'inD', 'entrada en caída: desde arriba en los dos órdenes');
+    // la animación de entrada nunca pisa la de salida, tampoco en orden invertido
+    for (const animIn of ['slide', 'bounce', 'flip']) {
+      assert.equal(await leave('fade', true, animIn), 'outF', `invertido: entrada ${animIn} no pisa la salida`);
+      assert.equal(await leave('fade', false, animIn), 'outF', `normal: entrada ${animIn} no pisa la salida`);
+    }
   } finally {
     if (chrome) chrome.child.kill();
     await close();
