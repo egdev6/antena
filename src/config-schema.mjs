@@ -19,6 +19,9 @@ import { DEFAULT_ALERTS, DEFAULT_COMMAND } from './alerts.mjs';
 import { PLATFORM_METRICS } from './goals.mjs';
 import { TELEPROMPTER_SCRIPTS_MAX_BYTES } from './teleprompter.mjs';
 import { THEME_RULES, THEME_RANGES, themeFieldError, themeIconError, keepValidIcons } from './theme.mjs';
+// #130: animaciones de los mensajes del chat en pantalla, las mismas para entrar y para salir;
+// fuente única compartida con el widget y el panel.
+import { CHAT_ANIMS } from '../public/widgets/chat-anims.js';
 
 // ---------- constructores de nodos ----------
 const num = o => ({ kind: 'num', ...o });
@@ -27,8 +30,6 @@ const bool = { kind: 'bool' };
 const en = values => ({ kind: 'enum', values });
 const arrStr = values => ({ kind: 'arrStr', values });
 const list = (item, o = {}) => ({ kind: 'list', item, ...o });   // lista de objetos con esquema por elemento
-// #130: animaciones de los mensajes del chat en pantalla, las mismas para entrar y para salir.
-const CHAT_ANIMS = ['slide', 'fade', 'pop', 'bounce', 'zoom', 'flip', 'blur', 'drop', 'none'];
 
 // Objetivos por plataforma (#128): cada objetivo es una caja con barras. La métrica válida
 // de una barra depende de su plataforma (src/goals.mjs); la comprobación cruzada va en el

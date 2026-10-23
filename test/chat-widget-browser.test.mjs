@@ -183,7 +183,12 @@ test('chat overlay: mismas animaciones de entrada y salida, orientadas al orden'
   const ctx = await start(t);
   if (!ctx) return;
   const { app, base, close } = ctx;
-  const put = async patch => { const r = await fetch(`${base}/api/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), signal: AbortSignal.timeout(2500) }); assert.equal(r.status, 200, `PUT /api/config ${JSON.stringify(patch)}`); await sleep(300); };
+  const put = async patch => { const r = await fetch(`${base}/api/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), signal: AbortSignal.timeout(2500) }); assert.equal(r.status, 200, `PUT /api/config ${JSON.stringify(patch)}`); };
+  // En vez de una espera fija, se espera a que el widget refleje la config aplicada en #root
+  // (data-anim-in/data-anim-out/data-fade y la clase reverse) antes de mandar el mensaje.
+  const applied = (c, { animIn, animOut, reverse, fadeAfterSec }) => waitDom(c, `(() => { const r = document.getElementById('root');
+    return r.dataset.animIn === ${JSON.stringify(animIn)} && (${JSON.stringify(animOut ?? null)} === null || r.dataset.animOut === ${JSON.stringify(animOut ?? null)})
+      && r.classList.contains('reverse') === ${!!reverse} && r.dataset.fade === ${JSON.stringify(String(fadeAfterSec))}; })()`, { timeoutMs: 12000, intervalMs: 20 });
   const byN = n => `Array.from(document.querySelectorAll('.msg')).find(m => m.textContent.includes('Sintético ${n}'))`;
   let chrome;
   try {
@@ -201,6 +206,7 @@ test('chat overlay: mismas animaciones de entrada y salida, orientadas al orden'
     let n = 600;
     const enter = async (v, reverse) => {
       await put({ widgets: { chat: { animIn: v, reverse, fadeAfterSec: 0 } } });
+      await applied(c, { animIn: v, reverse, fadeAfterSec: 0 });
       app.engine.handleChat(chat(++n));
       await waitDom(c, `!!(${byN(n)})`, { timeoutMs: 12000 });
       assert.ok(await dom(c, `${byN(n)}.classList.contains('a-${v}')`), `clase a-${v}`);
@@ -208,6 +214,7 @@ test('chat overlay: mismas animaciones de entrada y salida, orientadas al orden'
     };
     const leave = async (v, reverse, animIn = 'none') => {
       await put({ widgets: { chat: { animIn, animOut: v, reverse, fadeAfterSec: 1 } } });
+      await applied(c, { animIn, animOut: v, reverse, fadeAfterSec: 1 });
       app.engine.handleChat(chat(++n));
       await waitDom(c, `${byN(n)}?.classList.contains('o-${v}')`, { timeoutMs: 12000, intervalMs: 20 });
       assert.ok(await dom(c, `${byN(n)}.classList.contains('a-${animIn}')`), `entró con a-${animIn}`);
