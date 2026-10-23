@@ -40,7 +40,7 @@ test('panel React: PfIcon pinta LOGOS a color, sin cast y sin IC.twitch/IC.youtu
   const ui = read('app/src/lib/ui.tsx');
   assert.match(ui, /import \{ LOGOS \} from '[^']*public\/platform-icons\.js'/);
   assert.ok(!/LOGOS as /.test(ui), 'sin cast TS2352: el tipo viene del JSDoc de platform-icons.js');
-  assert.match(ui, /Status\(\{.*icon\?: string \| ReactNode/s, 'Status acepta un nodo como icono');
+  assert.match(ui, /Status\(\{.*icon\?: IconData \| ReactNode/s, 'Status acepta un nodo como icono');
   assert.ok(!/IC\.twitch|IC\.youtube/.test(read('app/src/lib/icons.ts')), 'fuera IC.twitch/IC.youtube monocromos');
   for (const p of ['app/src/panel/views/Directo.tsx', 'app/src/panel/views/Widgets.tsx', 'app/src/prompter/Prompter.tsx'])
     assert.ok(!/IC\.twitch|IC\.youtube/.test(read(p)), `${p} usa PfIcon`);
