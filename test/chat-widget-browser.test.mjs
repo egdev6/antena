@@ -174,3 +174,60 @@ test('chat overlay: efectos nuevos de entrada y salida', { timeout: 120000 }, as
     await close();
   }
 });
+
+// Entrada y salida ofrecen las mismas animaciones, y las que tienen dirección siguen al orden:
+// los mensajes nuevos entran por un borde y los viejos salen por el otro (se invierten con
+// «Chat invertido»). «Caída» es gravedad: siempre cae hacia abajo, también en orden invertido.
+const ANIMS = ['slide', 'fade', 'pop', 'bounce', 'zoom', 'flip', 'blur', 'drop', 'none'];
+test('chat overlay: mismas animaciones de entrada y salida, orientadas al orden', { timeout: 180000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { app, base, close } = ctx;
+  const put = async patch => { const r = await fetch(`${base}/api/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), signal: AbortSignal.timeout(2500) }); assert.equal(r.status, 200, `PUT /api/config ${JSON.stringify(patch)}`); await sleep(300); };
+  const byN = n => `Array.from(document.querySelectorAll('.msg')).find(m => m.textContent.includes('Sintético ${n}'))`;
+  let chrome;
+  try {
+    // el panel ofrece la misma lista en los dos selects
+    chrome = await openChromePage(ctx.bin, `${base}/#/widget/chat`);
+    const opts = label => `Array.from(document.querySelectorAll('main label')).find(l => l.textContent.startsWith(${JSON.stringify(label)}))?.querySelectorAll('option')`;
+    await waitDom(chrome.cdp, `(${opts('Animación de entrada')})?.length > 0`, { timeoutMs: 12000 });
+    const values = label => dom(chrome.cdp, `Array.from(${opts(label)}).map(o => o.value).join(',')`);
+    assert.equal(await values('Animación de entrada'), ANIMS.join(','));
+    assert.equal(await values('Animación al desaparecer'), ANIMS.join(','));
+    chrome.child.kill(); chrome = null;
+
+    chrome = await openChromePage(ctx.bin, `${base}/widget/chat`);
+    const c = chrome.cdp;
+    let n = 600;
+    const enter = async (v, reverse) => {
+      await put({ widgets: { chat: { animIn: v, reverse, fadeAfterSec: 0 } } });
+      app.engine.handleChat(chat(++n));
+      await waitDom(c, `!!(${byN(n)})`, { timeoutMs: 12000 });
+      assert.ok(await dom(c, `${byN(n)}.classList.contains('a-${v}')`), `clase a-${v}`);
+      return dom(c, `getComputedStyle(${byN(n)}).animationName`);
+    };
+    const leave = async (v, reverse) => {
+      await put({ widgets: { chat: { animIn: 'none', animOut: v, reverse, fadeAfterSec: 1 } } });
+      app.engine.handleChat(chat(++n));
+      await waitDom(c, `${byN(n)}?.classList.contains('o-${v}')`, { timeoutMs: 12000, intervalMs: 20 });
+      return dom(c, `getComputedStyle(${byN(n)}).animationName`);
+    };
+    for (const v of ANIMS) {
+      const a = await enter(v, false);
+      assert.equal(a === 'none', v === 'none', `entrada ${v}: ${a}`);
+      const o = await leave(v, false);
+      assert.equal(o === 'none', v === 'none', `salida ${v}: ${o}`);
+    }
+    // orden normal: entran por abajo y salen por arriba; invertido, al revés
+    assert.equal(await leave('bounce', false), 'outB', 'bounce sale hacia arriba');
+    assert.equal(await leave('bounce', true), 'outBR', 'bounce invertido sale hacia abajo');
+    assert.equal(await leave('flip', true), 'outFlR', 'flip invertido pliega sobre el borde de abajo');
+    // caída: siempre hacia abajo
+    assert.equal(await leave('drop', false), 'outD');
+    assert.equal(await leave('drop', true), 'outD', 'caída en orden invertido también cae hacia abajo');
+    assert.equal(await enter('drop', true), 'inD', 'entrada en caída: desde arriba en los dos órdenes');
+  } finally {
+    if (chrome) chrome.child.kill();
+    await close();
+  }
+});
