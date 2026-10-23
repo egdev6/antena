@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react';
 import { del, enc, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { BrowserSource, confirmDelete, cx, guard, Icon, IconBtn, ItemTabs, LazyInput, mmss, ScaledFrame, Sec, Switch, ViewHead, WidgetLayout } from '../../lib/ui';
-import { IC } from '../../lib/icons';
+import { IC, type IconData } from '../../lib/icons';
 import { isDesktop, listMonitors, openTeleprompter, type Monitor } from '../../lib/desktop';
 import type { TeleprompterState, TpBlock, TpCompiled, TpCompiledBlock } from '../../lib/types';
 import { origin } from './Widgets';
 
-const PREV = '<polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/>';
-const NEXT = '<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/>';
+const PREV: IconData = [['polygon', { points: '19 20 9 12 19 4 19 20' }], ['line', { x1: '5', x2: '5', y1: '19', y2: '5' }]];
+const NEXT: IconData = [['polygon', { points: '5 4 15 12 5 20 5 4' }], ['line', { x1: '19', x2: '19', y1: '5', y2: '19' }]];
 const KEYS: Record<string, string> = { ' ': 'toggle', ArrowUp: 'faster', ArrowDown: 'slower', ArrowLeft: 'prev', ArrowRight: 'next', Home: 'reset' };
 
 const control = (action: string, arg?: unknown) => post<TeleprompterState>('/api/teleprompter/control', { action, arg }).then(d => live.update(() => ({ teleprompter: d })));

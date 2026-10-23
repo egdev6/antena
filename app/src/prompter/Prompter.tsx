@@ -5,7 +5,7 @@ import { api, enc, get, post, put } from '../lib/api';
 import { live, makeChatLoader, useLive } from '../lib/live';
 import { mergeChat } from '../lib/chat-merge.mjs';
 import { ConnPill, cx, EmptyState, fmtTime, guard, Icon, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
-import { IC } from '../lib/icons';
+import { IC, type IconData } from '../lib/icons';
 import type { ChatMessage, ChatSendResult, Question, TimelineItem, TierListItem, TierListTier } from '../lib/types';
 
 const TABS: [string, string][] = [['preguntas', 'Preguntas'], ['tierlist', 'Tier list'], ['sorteo', 'Sorteo'], ['cronologia', 'Cronología']];
@@ -235,7 +235,7 @@ function Sorteo() {
 
 // ---------- cronología ----------
 const FILTERS: Record<string, string> = { all: 'Todo', pend: 'Por agradecer', marker: 'Marcas', highlight: 'Destacados', saved: 'Guardados' };
-const NOTE: Record<string, [string, string]> = { marker: ['Marca de short', IC.clapper], highlight: ['Destacado', IC.star], saved: ['Guardado', IC.pin], question: ['Pregunta', IC.question], winner: ['Ganador', IC.gift], queue: ['Cola', IC.layers] };
+const NOTE: Record<string, [string, IconData]> = { marker: ['Marca de short', IC.clapper], highlight: ['Destacado', IC.star], saved: ['Guardado', IC.pin], question: ['Pregunta', IC.question], winner: ['Ganador', IC.gift], queue: ['Cola', IC.layers] };
 const HOT = new Set(['sub', 'resub', 'giftsub', 'raid', 'superchat', 'supersticker', 'member', 'giftmember']);
 function Cronologia({ filter, setFilter }: { filter: string; setFilter: (f: string) => void }) {
   useLive(s => s);

@@ -4,15 +4,16 @@ import { post } from '../lib/api';
 import { guard, Icon, cx } from '../lib/ui';
 import { isDesktop, openDock, openPrompter } from '../lib/desktop';
 import type { AlertConfig, AlertType } from '../lib/types';
+import type { IconData } from '../lib/icons';
 
 const ICONS = {
-  directo: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
-  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
-  historial: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
-  chev: '<path d="m6 9 6 6 6-6"/>',
-  pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
-  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
-};
+  directo: [['path', { d: 'M4.9 19.1C1 15.2 1 8.8 4.9 4.9' }], ['path', { d: 'M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5' }], ['circle', { cx: '12', cy: '12', r: '2' }], ['path', { d: 'M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5' }], ['path', { d: 'M19.1 4.9C23 8.8 23 15.1 19.1 19' }]],
+  chat: [['path', { d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' }]],
+  historial: [['path', { d: 'M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8' }], ['path', { d: 'M3 3v5h5' }], ['path', { d: 'M12 7v5l4 2' }]],
+  chev: [['path', { d: 'm6 9 6 6 6-6' }]],
+  pause: [['rect', { x: '14', y: '4', width: '4', height: '16', rx: '1' }], ['rect', { x: '6', y: '4', width: '4', height: '16', rx: '1' }]],
+  play: [['polygon', { points: '6 3 20 12 6 21 6 3' }]],
+} satisfies Record<string, IconData>;
 
 function readClosed(): Set<string> { try { return new Set(JSON.parse(localStorage.getItem('egdev.nav.closed') || '[]')); } catch { return new Set(); } }
 function saveClosed(s: Set<string>) { try { localStorage.setItem('egdev.nav.closed', JSON.stringify([...s])); } catch {} }

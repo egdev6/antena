@@ -1,7 +1,7 @@
 // Piezas comunes del panel con las clases de EGDEV Foundation que ya usa panel.css.
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { LOGOS } from '../../../public/platform-icons.js';
-import { IC } from './icons';
+import { IC, type IconData } from './icons';
 
 // ---------- avisos ----------
 let toastMsg = { text: '', err: false, n: 0 };
@@ -45,9 +45,12 @@ export function PfIcon({ platform, className = 'pf-ico' }: { platform?: string; 
   return <svg className={className} viewBox={logo.viewBox} preserveAspectRatio="xMidYMid meet" role="img" aria-label={PLATFORM_NAMES[platform!]}>
     {logo.paths.map(([fill, d], i) => <path key={i} fill={fill} d={d} />)}</svg>;
 }
-export function Icon({ d, className = 'eg-icon' }: { d: string; className?: string }) {
-  return <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: d }} />;
+export function Icon({ d, className = 'eg-icon' }: { d: IconData; className?: string }) {
+  return <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
+    {d.map(([Tag, attrs], i) => <Tag key={i} {...attrs} />)}</svg>;
 }
+/** Distingue un icono de trazo (lista de [etiqueta, atributos]) de cualquier otro ReactNode. */
+const isIconData = (x: unknown): x is IconData => Array.isArray(x) && Array.isArray(x[0]) && typeof x[0][0] === 'string';
 
 // ---------- controles ----------
 /** Cabecera de una vista: miga (grupo › vista, o enlace a la vista padre), título, explicación opcional y acciones a la derecha. */
@@ -155,8 +158,8 @@ export function codeTab(e: React.KeyboardEvent<HTMLTextAreaElement>) {
 // ---------- componentes del sistema (EGDEV Foundation) ----------
 export type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'info';
 /** StatusBadge: estado con icono. */
-export function Status({ tone = 'neutral', icon, children, title }: { tone?: Tone; icon?: string | ReactNode; children: ReactNode; title?: string }) {
-  return <span className={`eg-status eg-status--${tone}`} title={title}>{typeof icon === 'string' ? <Icon d={icon} /> : icon}{children}</span>;
+export function Status({ tone = 'neutral', icon, children, title }: { tone?: Tone; icon?: IconData | ReactNode; children: ReactNode; title?: string }) {
+  return <span className={`eg-status eg-status--${tone}`} title={title}>{isIconData(icon) ? <Icon d={icon} /> : icon as ReactNode}{children}</span>;
 }
 /** Estados de conexión de la píldora: las tres superficies (panel, dock y prompter) muestran
  *  el mismo texto para el mismo hecho (#3): «Twitch · desconectado», «YouTube · desconectado»,
@@ -195,7 +198,7 @@ export function Sec({ title, aside, children, foot, footRight, flat, className, 
   </section>;
 }
 /** IconButton con etiqueta accesible. */
-export function IconBtn({ icon, label, onClick, disabled, pressed, className }: { icon: string; label: string; onClick?: () => void; disabled?: boolean; pressed?: boolean; className?: string }) {
+export function IconBtn({ icon, label, onClick, disabled, pressed, className }: { icon: IconData; label: string; onClick?: () => void; disabled?: boolean; pressed?: boolean; className?: string }) {
   return <button type="button" className={cx('eg-icon-btn', className)} aria-label={label} title={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}><Icon d={icon} /></button>;
 }
 /** Diálogo modal: Esc, el botón «Cerrar» y el fondo piden cerrar (onClose decide, p. ej. si hay
