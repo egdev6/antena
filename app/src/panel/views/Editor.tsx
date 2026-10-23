@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { del, enc, post, put, get } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { AlertConfig, AlertVariation, CommandConfig, Config, SendResult, TimerConfig } from '../../lib/types';
-import { codeTab, confirmDelete, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, Switch, toast, fmtTime } from '../../lib/ui';
+import { codeTab, confirmDelete, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, SegField, Switch, toast, fmtTime } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { go } from '../router';
 import { useUploader, UploadBar } from './General';
@@ -173,7 +173,7 @@ export function ActionFields({ act, onChange, uid }: { act: any; onChange: (a: a
     {k === 'command' && <label>Comando<select value={act.command || ''} onChange={e => upd('command', e.target.value)}><option value="">—</option>{(meld?.commands || []).map((c: string) => <option key={c} value={c}>{c.replace('meld.', '')}</option>)}</select></label>}
     {k === 'streamEvent' && <><label>Evento<select value={act.event || ''} onChange={e => upd('event', e.target.value)}><option value="">—</option>{(meld?.events || []).map((c: string) => <option key={c} value={c}>{c}</option>)}</select></label>{inp('amount', 'Cantidad', 'number')}</>}
     {(k === 'chat' || k === 'say') && inp('text', k === 'chat' ? 'Mensaje (con {user}…)' : 'Texto (con {user}…)')}
-    {k === 'chat' && <div className="lbl">Dónde<div className="field-ctl"><Seg label="Dónde" value={act.destination || 'twitch'} options={DESTINATIONS} onChange={v => upd('destination', v)} /></div></div>}
+    {k === 'chat' && <SegField label="Dónde" value={act.destination || 'twitch'} options={DESTINATIONS} onChange={v => upd('destination', v)} />}
     {inp('delaySec', 'Retardo (s)', 'number', { min: 0, step: 0.5 })}
   </div>;
 }
@@ -337,7 +337,7 @@ export function Editor({ target }: { target: Target }) {
           <div className="row2">
             {amountType && <><label>Cantidad mínima <input type="number" value={c.minAmount ?? ''} placeholder="sin mínimo" onChange={e => ed.setCond('minAmount', e.target.value)} /></label>
               <label>Cantidad máxima <input type="number" value={c.maxAmount ?? ''} placeholder="sin máximo" onChange={e => ed.setCond('maxAmount', e.target.value)} /></label></>}
-            {TIER_TYPES.includes(type) && <div className="lbl">Tier<div className="field-ctl"><Seg label="Tier" value={String(c.tier ?? '')} options={TIER_OPTIONS} onChange={v => ed.setCond('tier', v)} /></div></div>}
+            {TIER_TYPES.includes(type) && <SegField label="Tier" value={String(c.tier ?? '')} options={TIER_OPTIONS} onChange={v => ed.setCond('tier', v)} />}
             <label>Solo para estos usuarios <input value={c.users ?? ''} placeholder="nombre1, nombre2" onChange={e => ed.setCond('users', e.target.value)} /></label>
             <label>Si el mensaje contiene <input value={c.messageContains ?? ''} placeholder="palabra, otra" onChange={e => ed.setCond('messageContains', e.target.value)} /></label>
             <label>Probabilidad <span className="val">{c.chance} %</span><input type="range" min={1} max={100} value={c.chance} style={{ ['--v' as any]: c.chance + '%' }} onChange={e => ed.setCond('chance', Number(e.target.value))} /></label>
@@ -363,7 +363,7 @@ export function Editor({ target }: { target: Target }) {
           <div className="row2">
             <label>Cada (minutos) <input type="number" min={1} value={item.intervalMin} onChange={e => set('intervalMin', Number(e.target.value) || 0)} /></label>
             <label>Solo si ha habido al menos estos mensajes en el chat <input type="number" min={0} value={item.minChatLines} onChange={e => set('minChatLines', Number(e.target.value) || 0)} /></label>
-            <div className="lbl">Dónde se publica<div className="field-ctl"><Seg label="Dónde se publica" value={item.destination || 'twitch'} options={DESTINATIONS} onChange={v => set('destination', v)} /></div></div>
+            <SegField label="Dónde se publica" value={item.destination || 'twitch'} options={DESTINATIONS} onChange={v => set('destination', v)} />
           </div>
           <div className="row2 switches">
             <Switch checked={item.onlyWhenLive} onChange={x => set('onlyWhenLive', x)} title="Viene activado. Sin Meld conectado no se publica.">Solo mientras emito (sin Meld conectado, no se publica)</Switch>

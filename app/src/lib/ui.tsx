@@ -65,10 +65,16 @@ export function Check({ checked, onChange, children }: { checked: boolean; onCha
 }
 /** Selector de un valor entre pocas opciones: aspecto de pestañas subrayadas (como el editor de
  *  alertas) y semántica de radio para que se anuncie como un ajuste, no como navegación. */
-export function Seg<T extends string>({ value, options, onChange, wide, className, label }: { value: T; options: [T, ReactNode][]; onChange: (v: T) => void; wide?: boolean; className?: string; label?: string }) {
+type SegProps<T extends string> = { value: T; options: [T, ReactNode][]; onChange: (v: T) => void; wide?: boolean; className?: string; label?: string };
+export function Seg<T extends string>({ value, options, onChange, wide, className, label }: SegProps<T>) {
   return <div className={cx('eg-tabs choice-tabs', wide && 'choice-tabs--wide', className)} role="radiogroup" aria-label={label}>
     {options.map(([v, l]) => <button type="button" key={v} role="radio" className="eg-tabs__item" aria-checked={v === value} aria-selected={v === value} onClick={() => onChange(v)}>{l}</button>)}
   </div>;
+}
+/** Campo de formulario con un Seg: la etiqueta visible encima (`div.lbl`) y la misma como nombre
+ *  accesible del radiogroup, escrita una sola vez. */
+export function SegField<T extends string>({ label, ...rest }: SegProps<T> & { label: string }) {
+  return <div className="lbl">{label}<div className="field-ctl"><Seg label={label} {...rest} /></div></div>;
 }
 export function Range({ label, value, min, max, step = 1, unit = '', onChange, extra }: { label: ReactNode; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void; extra?: ReactNode }) {
   const pct = ((Number(value) - min) / ((max - min) || 1)) * 100;
