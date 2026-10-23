@@ -71,14 +71,14 @@
 <script type="module">
 import { LOGOS, platformSvg } from '/platform-icons.js';
 import { connect, DEMO, demoChat, setCss } from '/widgets/widget.js';
+import { CHAT_ANIMS } from '/widgets/chat-anims.js';
 const root = document.getElementById('root');
 let cfg = { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide' };
 // Las mismas animaciones para entrar y para salir. Las que tienen dirección siguen al orden: los
 // nuevos entran por un borde y los viejos salen por el otro (se invierte con «Chat invertido»);
 // la caída es gravedad y siempre cae hacia abajo.
-const ANIMS = ['slide', 'fade', 'pop', 'bounce', 'zoom', 'flip', 'blur', 'drop', 'none'];
-const ANIM_IN = Object.fromEntries(ANIMS.map(a => [a, 'a-' + a]));
-const ANIM_OUT = Object.fromEntries(ANIMS.map(a => [a, 'o-' + a]));
+const ANIM_IN = Object.fromEntries(CHAT_ANIMS.map(a => [a, 'a-' + a]));
+const ANIM_OUT = Object.fromEntries(CHAT_ANIMS.map(a => [a, 'o-' + a]));
 let demoN = 0;
 
 // Logos de plataforma: SVG por DOM con las rutas fijas de /platform-icons.js
@@ -149,6 +149,8 @@ function apply(w) {
   cfg = { ...cfg, ...(w?.chat || {}) };
   root.style.setProperty('--fs', (Number(cfg.fontSize) || 26) + 'px');
   root.classList.toggle('reverse', !!cfg.reverse);
+  // Config aplicada, observable desde fuera (las pruebas esperan a esto en vez de a un tiempo fijo).
+  root.dataset.animIn = cfg.animIn; root.dataset.animOut = cfg.animOut; root.dataset.fade = String(Number(cfg.fadeAfterSec) || 0);
   setCss(cfg.css);
   for (const el of [...root.children]) {
     if (!el._m) continue;

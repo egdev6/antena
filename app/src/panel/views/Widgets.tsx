@@ -5,6 +5,7 @@ import { patchWidgets } from '../../lib/patch';
 import { BrowserSource, codeTab, confirmDelete, EmptyState, guard, ItemTabs, LazyInput, Panel, PfIcon, Stage, Switch, ViewHead, WidgetLayout } from '../../lib/ui';
 import { useState, type ReactNode } from 'react';
 import type { GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
+import { CHAT_ANIMS, type ChatAnim } from '../../../../public/widgets/chat-anims.js';
 
 export const origin = () => location.origin;
 const INFO: Record<string, { title: string; path: string; size: string; w: number; h: number; desc: string }> = {
@@ -26,8 +27,10 @@ function ListChecks({ w, f, items }: { w: string; f: string; items: [string, str
   return <>{items.map(([k, l]) => <label className="check" key={k}><input type="checkbox" checked={cur.includes(k)} onChange={e => patchWidgets({ [w]: { [f]: e.target.checked ? [...cur, k] : cur.filter(x => x !== k) } })} /> {l}</label>)}</>;
 }
 
-/** Animaciones de los mensajes del chat: las mismas para entrar y para salir. */
-const CHAT_ANIMS: [string, string][] = [['slide', 'Deslizante'], ['fade', 'Desvanecida'], ['pop', 'Pop'], ['bounce', 'Rebote'], ['zoom', 'Zoom'], ['flip', 'Giro'], ['blur', 'Desenfoque'], ['drop', 'Caída'], ['none', 'Sin animación']];
+/** Animaciones de los mensajes del chat: las mismas para entrar y para salir. Los ids vienen de
+ *  public/widgets/chat-anims.js; el Record obliga a dar una etiqueta por id, ni más ni menos. */
+const CHAT_ANIM_LABELS: Record<ChatAnim, string> = { slide: 'Deslizante', fade: 'Desvanecida', pop: 'Pop', bounce: 'Rebote', zoom: 'Zoom', flip: 'Giro', blur: 'Desenfoque', drop: 'Caída', none: 'Sin animación' };
+const CHAT_ANIM_OPTIONS: [string, string][] = CHAT_ANIMS.map(a => [a, CHAT_ANIM_LABELS[a]]);
 
 /** Select de opciones de chat (#130): helper estable a nivel módulo, exclusivo del bloque chat. */
 function ChatSelect({ f, label, options }: { f: string; label: string; options: [string, string][] }) {
@@ -50,8 +53,8 @@ export function Widget({ name }: { name: string }) {
       <WField w="chat" f="hideOwner" label="Ocultar mis mensajes (lo que escribo desde antena, el móvil o el prompter)" type="switch" />
       <WField w="chat" f="showPlatform" label="Mostrar el icono de la plataforma" type="switch" />
       <WField w="chat" f="reverse" label="Chat invertido (los mensajes nuevos aparecen arriba)" type="switch" />
-      <ChatSelect f="animIn" label="Animación de entrada" options={CHAT_ANIMS} />
-      <ChatSelect f="animOut" label="Animación al desaparecer" options={CHAT_ANIMS} />
+      <ChatSelect f="animIn" label="Animación de entrada" options={CHAT_ANIM_OPTIONS} />
+      <ChatSelect f="animOut" label="Animación al desaparecer" options={CHAT_ANIM_OPTIONS} />
     </div>
     <WField w="chat" f="css" label="CSS personalizado" type="css" placeholder=".msg { border-left-color: #fff; }" />
     <p className="css-help">Clases: <code>.msg</code> <code>.msg.mod</code> <code>.who</code> <code>.text</code> <code>.pf</code></p></>;
