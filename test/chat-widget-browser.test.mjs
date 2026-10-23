@@ -281,10 +281,24 @@ test('chat overlay: el mensaje que sobra por el tope sale con la animación de s
       await waitDom(c, `!(${byN(first)})`, { timeoutMs: 12000 });
       assert.equal(await dom(c, `document.querySelectorAll('.msg').length`), 3);
     }
-    // sin animación de salida, el que sobra se quita al momento
-    await put({ widgets: { chat: { maxMessages: 2, animOut: 'none' } } });
+    // una animación de un hijo (CSS propio sobre .who) no corta la salida del mensaje: el
+    // animationend que sube desde el hijo no cuenta
+    await put({ widgets: { chat: { maxMessages: 3, animOut: 'bounce', css: '.who{animation:inF .1s both}' } } });
+    await waitDom(c, `document.getElementById('root').dataset.animOut === 'bounce'`, { timeoutMs: 12000, intervalMs: 20 });
+    await dom(c, `document.getElementById('root').replaceChildren()`);
+    for (let n = 721; n < 724; n++) app.engine.handleChat(chat(n));
+    await waitDom(c, `${visible} === 3`, { timeoutMs: 12000 });
+    app.engine.handleChat(chat(724));
+    await waitDom(c, `${byN(721)}?.classList.contains('o-bounce')`, { timeoutMs: 12000, intervalMs: 20 });
+    await sleep(300);
+    assert.ok(await dom(c, `!!(${byN(721)})`), 'sigue saliendo a los 300 ms (la salida dura 550 ms)');
+    await waitDom(c, `!(${byN(721)})`, { timeoutMs: 12000 });
+    // sin animación de salida, el que sobra se quita al momento (antes tardaba 500 ms)
+    await put({ widgets: { chat: { css: '', animOut: 'none' } } });
     await waitDom(c, `document.getElementById('root').dataset.animOut === 'none'`, { timeoutMs: 12000, intervalMs: 20 });
-    await waitDom(c, `document.querySelectorAll('.msg').length === 2`, { timeoutMs: 2000, intervalMs: 20 });
+    app.engine.handleChat(chat(725));
+    await waitDom(c, `!!(${byN(725)})`, { timeoutMs: 12000, intervalMs: 20 });
+    await waitDom(c, `!(${byN(722)}) && ${visible} === 3`, { timeoutMs: 300, intervalMs: 10 });
   } finally {
     if (chrome) chrome.child.kill();
     await close();

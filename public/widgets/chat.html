@@ -115,8 +115,11 @@ function expire(el) {
   clearTimeout(el._fade);
   el.classList.add('out', ANIM_OUT[cfg.animOut] || 'o-slide');
   if (getComputedStyle(el).animationName === 'none') { el.remove(); return; }
-  const done = () => { clearTimeout(el._out); el.remove(); };
-  el.addEventListener('animationend', done, { once: true });
+  // solo cuenta el fin de la animación del propio mensaje: animationend sube desde los hijos
+  // (por ejemplo, una animación del CSS propio sobre .who)
+  const onEnd = e => { if (e.target === el) done(); };
+  const done = () => { clearTimeout(el._out); el.removeEventListener('animationend', onEnd); el.remove(); };
+  el.addEventListener('animationend', onEnd);
   el._out = setTimeout(done, 1000);
 }
 
