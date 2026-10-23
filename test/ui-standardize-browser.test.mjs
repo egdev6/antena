@@ -288,6 +288,50 @@ test('O3.2 esqueleto común: cabecera con miga «grupo › vista» igual que la 
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
+// #16: gramática de controles. Tier (4 opciones fijas) y destino del mensaje (3) son Seg;
+// el tipo de acción sigue siendo select (lista larga) pero con su propia etiqueta.
+test('#16 Tier y destino del mensaje son Seg; el tipo de acción lleva aria-label', { timeout: 120000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    const { variation } = await api(base, 'POST', '/api/alerts/sub/variations', { name: 'Tier' });
+    await api(base, 'PUT', '/api/alerts/follow', { actions: [{ kind: 'chat', text: 'hola' }] });
+    await api(base, 'POST', '/api/shortcuts', { name: 'Chat', steps: [{ kind: 'chat', text: 'x' }] });
+    app.store.config.panel = { onboardingDone: true };
+    const seg = (scope, label) => `${scope}.querySelector('[role=radiogroup][aria-label=${JSON.stringify(label)}]')`;
+    const radios = group => `[...${group}.querySelectorAll('[role=radio]')]`;
+
+    chrome = await openChromePage(bin, `${base}/#/alerta/sub/v/${variation.id}`);
+    const tier = seg('document', 'Tier');
+    await waitDom(chrome.cdp, `!!${tier}`, { timeoutMs: 15000 });
+    eq(await dom(chrome, `${radios(tier)}.map(b => b.textContent.trim()).join('|')`), 'Cualquiera|Tier 1|Tier 2|Tier 3');
+    eq(await dom(chrome, `${radios(tier)}.filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.textContent.trim()).join('|')`), 'Cualquiera');
+    eq(await dom(chrome, `!!${tier}.closest('.field-ctl')?.parentElement.classList.contains('lbl')`), true);
+    await dom(chrome, `${radios(tier)}.find(b => b.textContent.trim() === 'Tier 2').click()`);
+    for (let i = 0; i < 60 && String(app.store.config.alerts.sub.variations[0].conditions.tier) !== '2'; i++) await sleep(100);
+    eq(String(app.store.config.alerts.sub.variations[0].conditions.tier), '2');
+    eq(await dom(chrome, `${radios(tier)}.find(b => b.getAttribute('aria-checked') === 'true')?.textContent.trim()`), 'Tier 2');
+
+    await dom(chrome, `location.hash = '#/alerta/follow'`);
+    const kind = `document.querySelector('main .actions-list .action > select')`;
+    await waitDom(chrome.cdp, `!!${kind}`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `${kind}.getAttribute('aria-label')`), 'Qué hace');
+    eq(await dom(chrome, `!!${seg(`document.querySelector('main .actions-list')`, 'Dónde')}`), true);
+
+    await dom(chrome, `location.hash = '#/atajos'`);
+    const row = `document.querySelector('[data-tour="atajos-list"] .eg-post--row')`;
+    const modal = `document.querySelector('[role=dialog][aria-modal=true]')`;
+    await waitDom(chrome.cdp, `!!${row}`, { timeoutMs: 12000 });
+    await dom(chrome, `[...${row}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Editar').click()`);
+    await waitDom(chrome.cdp, `!!${modal}?.querySelector('.action')`, { timeoutMs: 9000 });
+    const step = `${modal}.querySelector('.action')`;
+    eq(await dom(chrome, `${radios(seg(step, 'Dónde'))}.map(b => b.textContent.trim()).join('|')`), 'Twitch|YouTube|Ambos');
+    eq(await dom(chrome, `${step}.querySelectorAll('select').length`), 1);
+  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+});
+
 function eq(actual, expected) { if (actual !== expected) throw new Error(`esperaba ${JSON.stringify(expected)}, hubo ${JSON.stringify(actual)}`); }
 
 // Un solo estilo de pestaña en toda la interfaz: el subrayado del editor de alertas. Ni las

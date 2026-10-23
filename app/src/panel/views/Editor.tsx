@@ -15,6 +15,7 @@ const ANIM_IN: [string, string][] = [['pop', 'Rebote'], ['fade', 'Fundido'], ['s
 const ANIM_OUT: [string, string][] = [['fade', 'Fundido'], ['slide', 'Hacia arriba'], ['zoom', 'Encoger'], ['none', 'Ninguna']];
 const AMOUNT_TYPES = ['cheer', 'raid', 'giftsub', 'superchat', 'supersticker', 'giftmember'];
 const TIER_TYPES = ['sub', 'resub', 'giftsub'];
+const TIER_OPTIONS: [string, string][] = [['', 'Cualquiera'], ['1', 'Tier 1'], ['2', 'Tier 2'], ['3', 'Tier 3']];
 export const ACTIONS: Record<string, string> = {
   scene: 'Cambiar a escena', layer: 'Mostrar capa unos segundos', hideLayer: 'Ocultar capa', toggleLayer: 'Alternar capa',
   effect: 'Alternar efecto', command: 'Comando de Meld', streamEvent: 'Evento de widget de Meld', chat: 'Escribir en el chat', say: 'Decir en voz alta',
@@ -172,7 +173,7 @@ export function ActionFields({ act, onChange, uid }: { act: any; onChange: (a: a
     {k === 'command' && <label>Comando<select value={act.command || ''} onChange={e => upd('command', e.target.value)}><option value="">—</option>{(meld?.commands || []).map((c: string) => <option key={c} value={c}>{c.replace('meld.', '')}</option>)}</select></label>}
     {k === 'streamEvent' && <><label>Evento<select value={act.event || ''} onChange={e => upd('event', e.target.value)}><option value="">—</option>{(meld?.events || []).map((c: string) => <option key={c} value={c}>{c}</option>)}</select></label>{inp('amount', 'Cantidad', 'number')}</>}
     {(k === 'chat' || k === 'say') && inp('text', k === 'chat' ? 'Mensaje (con {user}…)' : 'Texto (con {user}…)')}
-    {k === 'chat' && <label>Dónde<select value={act.destination || 'twitch'} onChange={e => upd('destination', e.target.value)}>{DESTINATIONS.map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></label>}
+    {k === 'chat' && <div className="lbl">Dónde<div className="field-ctl"><Seg label="Dónde" value={act.destination || 'twitch'} options={DESTINATIONS} onChange={v => upd('destination', v)} /></div></div>}
     {inp('delaySec', 'Retardo (s)', 'number', { min: 0, step: 0.5 })}
   </div>;
 }
@@ -180,7 +181,7 @@ export function ActionsEditor({ list, onChange }: { list: any[]; onChange: (l: a
   const repl = (i: number, a: any) => { const l = [...list]; l[i] = a; onChange(l); };
   return <div className="actions-list">
     {list.map((act, i) => <div className="action" key={i}>
-      <select value={act.kind} onChange={e => repl(i, { kind: e.target.value, delaySec: act.delaySec })}>{Object.entries(ACTIONS).map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select>
+      <select value={act.kind} onChange={e => repl(i, { kind: e.target.value, delaySec: act.delaySec })} aria-label="Qué hace">{Object.entries(ACTIONS).map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select>
       <ActionFields act={act} uid={'a' + i} onChange={a => repl(i, a)} />
       <IconBtn icon={IC.x} label="Quitar acción" onClick={() => { const l = [...list]; l.splice(i, 1); onChange(l); }} />
     </div>)}
@@ -336,7 +337,7 @@ export function Editor({ target }: { target: Target }) {
           <div className="row2">
             {amountType && <><label>Cantidad mínima <input type="number" value={c.minAmount ?? ''} placeholder="sin mínimo" onChange={e => ed.setCond('minAmount', e.target.value)} /></label>
               <label>Cantidad máxima <input type="number" value={c.maxAmount ?? ''} placeholder="sin máximo" onChange={e => ed.setCond('maxAmount', e.target.value)} /></label></>}
-            {TIER_TYPES.includes(type) && <label>Tier <select value={c.tier ?? ''} onChange={e => ed.setCond('tier', e.target.value)}><option value="">Cualquiera</option><option value="1">Tier 1</option><option value="2">Tier 2</option><option value="3">Tier 3</option></select></label>}
+            {TIER_TYPES.includes(type) && <div className="lbl">Tier<div className="field-ctl"><Seg label="Tier" value={String(c.tier ?? '')} options={TIER_OPTIONS} onChange={v => ed.setCond('tier', v)} /></div></div>}
             <label>Solo para estos usuarios <input value={c.users ?? ''} placeholder="nombre1, nombre2" onChange={e => ed.setCond('users', e.target.value)} /></label>
             <label>Si el mensaje contiene <input value={c.messageContains ?? ''} placeholder="palabra, otra" onChange={e => ed.setCond('messageContains', e.target.value)} /></label>
             <label>Probabilidad <span className="val">{c.chance} %</span><input type="range" min={1} max={100} value={c.chance} style={{ ['--v' as any]: c.chance + '%' }} onChange={e => ed.setCond('chance', Number(e.target.value))} /></label>
@@ -362,7 +363,7 @@ export function Editor({ target }: { target: Target }) {
           <div className="row2">
             <label>Cada (minutos) <input type="number" min={1} value={item.intervalMin} onChange={e => set('intervalMin', Number(e.target.value) || 0)} /></label>
             <label>Solo si ha habido al menos estos mensajes en el chat <input type="number" min={0} value={item.minChatLines} onChange={e => set('minChatLines', Number(e.target.value) || 0)} /></label>
-            <label>Dónde se publica <select value={item.destination || 'twitch'} onChange={e => set('destination', e.target.value)}>{DESTINATIONS.map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></label>
+            <div className="lbl">Dónde se publica<div className="field-ctl"><Seg label="Dónde se publica" value={item.destination || 'twitch'} options={DESTINATIONS} onChange={v => set('destination', v)} /></div></div>
           </div>
           <div className="row2 switches">
             <Switch checked={item.onlyWhenLive} onChange={x => set('onlyWhenLive', x)} title="Viene activado. Sin Meld conectado no se publica.">Solo mientras emito (sin Meld conectado, no se publica)</Switch>

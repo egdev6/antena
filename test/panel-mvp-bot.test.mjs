@@ -58,10 +58,9 @@ async function until(fn, what) {
   throw new Error('no se cumplió: ' + what);
 }
 
-// Selectores por etiqueta para los selects controlados de Editor.tsx, sin índices de campos.
-const reactSelect = label => `Array.from(document.querySelectorAll('main select')).find(s =>
-  Array.from(s.labels || []).some(l => Array.from(l.childNodes).some(n =>
-    n.nodeType === Node.TEXT_NODE && n.textContent.trim() === ${JSON.stringify(label)})))`;
+// Seg (radiogroup) por su aria-label: el destino de un mensaje es un Seg de 3 opciones (#16).
+const reactSeg = label => `document.querySelector('main [role=radiogroup][aria-label=${JSON.stringify(label)}]')`;
+const segValue = seg => `(${seg}).querySelector('[role=radio][aria-checked="true"]')?.textContent.trim()`;
 
 test('panel React: destino de timer y acción, aviso 250/200, pausa, plataformas y fallo escapado', { timeout: 90000 }, async t => {
 try { await stat(new URL('../app/dist/index.html', import.meta.url)); }
@@ -86,20 +85,20 @@ try {
     const c = chrome.cdp;
     const ev = expr => evaluateChrome(c, expr);
     const waitDom = expr => waitChromeDom(c, expr, { timeoutMs: 9000 });
-    const timerDestination = reactSelect('Dónde se publica');
-    const actionDestination = reactSelect('Dónde');
+    const timerDestination = reactSeg('Dónde se publica');
+    const actionDestination = reactSeg('Dónde');
     const timerState = `document.querySelector('main .timer-state')`;
     const fireResult = `document.querySelector('main [aria-live="polite"]')`;
     const toast = `document.querySelector('.toast[role="status"]')`;
     const fire = () => ev(`Array.from(document.querySelectorAll('main button')).find(b => b.textContent.trim() === 'Enviar ahora').click()`);
-    const pick = (element, value) => ev(`(() => { const s = ${element}; s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    const pick = (seg, text) => ev(`Array.from((${seg}).querySelectorAll('[role=radio]')).find(b => b.textContent.trim() === ${JSON.stringify(text)}).click()`);
     const stored = () => app.store.config.timers.find(x => x.id === timer.id);
 
     // destino del mensaje: sin campo se ve Twitch; elegir «Ambos» lo guarda y avisa del límite de YouTube
     await waitDom(`!!(${timerDestination})`);
-    assert.equal(await ev(`(${timerDestination}).value`), 'twitch');
+    assert.equal(await ev(segValue(timerDestination)), 'Twitch');
     assert.equal(stored().destination, undefined, 'abrir el editor no cambia el destino implícitamente');
-    await pick(timerDestination, 'both');
+    await pick(timerDestination, 'Ambos');
     await until(() => stored().destination === 'both', 'destination=both guardado');
     await waitDom(`/YouTube/.test(${timerState}?.textContent || '') && /250\\/200/.test(${timerState}?.textContent || '')`);
 
@@ -119,8 +118,8 @@ try {
     // destino de una acción de chat de alerta: sin campo se ve Twitch; elegir YouTube lo guarda
     await ev('location.hash = "#/alerta/follow"');
     await waitDom(`!!(${actionDestination})`);
-    assert.equal(await ev(`(${actionDestination}).value`), 'twitch');
-    await pick(actionDestination, 'youtube');
+    assert.equal(await ev(segValue(actionDestination)), 'Twitch');
+    await pick(actionDestination, 'YouTube');
     await until(() => app.store.config.alerts.follow.actions[0]?.destination === 'youtube', 'destination=youtube en la acción');
     assert.equal(app.store.config.alerts.follow.actions[0].text, 'hola {user}');
 
