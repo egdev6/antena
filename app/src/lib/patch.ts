@@ -3,15 +3,23 @@ import { api } from './api';
 import { deepMerge, live } from './live';
 import { toast } from './ui';
 
+// A failed save goes back to the queue (newer edits win) and is retried with backoff: 2 s, 4 s, 8 s… up to 30 s.
+// The error toast shows once per failure streak; a successful save resets the backoff.
 export function patcher(method: string, url: string, after?: (d: any) => void, ms = 400) {
-  let pending: any = {}, t: any = null;
-  const flush = async () => {
+  let pending: any = {}, t: any = null, fails = 0, chain: Promise<void> = Promise.resolve();
+  const send = async () => {
     clearTimeout(t);
     if (!Object.keys(pending).length) return;
     const p = pending; pending = {};
     // The request goes first: `after?.(await api(…))` skips the arguments when there is no `after`.
-    try { const d = await api(method, url, p); after?.(d); } catch (e: any) { toast(e.message, true); }
+    try { const d = await api(method, url, p); fails = 0; after?.(d); } catch (e: any) {
+      pending = deepMerge(p, pending);
+      if (!fails++) toast(e.message, true);
+      clearTimeout(t); t = setTimeout(flush, Math.min(30000, 2000 * 2 ** (fails - 1)));
+    }
   };
+  // Requests run one at a time, so a retry never lands after (and over) a newer save.
+  const flush = () => (chain = chain.then(send));
   const push = (patch: any) => { pending = deepMerge(pending, patch); clearTimeout(t); t = setTimeout(flush, ms); };
   return { push, flush };
 }
