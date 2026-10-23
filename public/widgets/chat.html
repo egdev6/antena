@@ -100,12 +100,24 @@ function setPlatform(el) {
   who.append(pf);
 }
 
-function trim() { while (root.children.length > (Number(cfg.maxMessages) || 12)) root.firstElementChild.remove(); }
+// Tope de mensajes: el que sobra sale con la animación de salida, igual que al caducar.
+// Los que ya están saliendo no cuentan para el tope.
+function trim() {
+  const max = Number(cfg.maxMessages) || 12;
+  const live = [...root.children].filter(el => !el.classList.contains('out'));
+  for (const el of live.slice(0, Math.max(0, live.length - max))) expire(el);
+}
 
+// Se quita del DOM al terminar su animación de salida (o al momento si no tiene), con un
+// tope de seguridad por si animationend no llega.
 function expire(el) {
   if (el.classList.contains('out')) return;
   clearTimeout(el._fade);
-  el.classList.add('out', ANIM_OUT[cfg.animOut] || 'o-slide'); setTimeout(() => el.remove(), 500);
+  el.classList.add('out', ANIM_OUT[cfg.animOut] || 'o-slide');
+  if (getComputedStyle(el).animationName === 'none') { el.remove(); return; }
+  const done = () => { clearTimeout(el._out); el.remove(); };
+  el.addEventListener('animationend', done, { once: true });
+  el._out = setTimeout(done, 1000);
 }
 
 // La caducidad cuenta desde que entró el mensaje: cambiar la config no reinicia el reloj.
