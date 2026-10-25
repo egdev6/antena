@@ -95,23 +95,21 @@ test('O1 overlay: relleno recortado, color de plataforma, cabecera configurable 
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
-test('O1 panel: pestañas por objetivo, + Nuevo objetivo, cabecera, hint CSS y preview que se recarga con la config', { timeout: 120000 }, async t => {
+test('O1 panel: tabla de objetivos → slide, + Nuevo objetivo, cabecera, hint CSS y preview que se recarga con la config', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, app, base, close } = ctx;
   let chrome;
   try {
     app.store.config.widgets.goals = [box('uno', 'Objetivo Uno'), box('dos', 'Objetivo Dos')];
-    chrome = await openChromePage(bin, `${base}/#/widget/goals`);
-    await waitDom(chrome.cdp, `!!document.querySelector('.goal-card')`, { timeoutMs: 12000 });
-
-    // O1.7: una pestaña por objetivo y «+ Nuevo objetivo»; solo se edita la seleccionada
-    const tabs = `Array.from(document.querySelectorAll('[role=tablist][aria-label="Objetivos"] [role=tab]'))`;
-    eq(await dom(chrome, `${tabs}.map(x => x.textContent.trim()).join('|')`), 'Objetivo Uno|Objetivo Dos|+ Nuevo objetivo');
-    eq(await dom(chrome, `document.querySelectorAll('.goal-card').length`), 1);
-    eq(await dom(chrome, `document.querySelector('.goal-card h2').textContent`), 'Objetivo Uno');
-    await dom(chrome, `${tabs}[1].click()`);
-    await waitDom(chrome.cdp, `document.querySelector('.goal-card h2').textContent === 'Objetivo Dos' && ${tabs}[1].getAttribute('aria-selected') === 'true'`, { timeoutMs: 12000 });
+    // v2: los objetivos son una tabla dentro de la tarjeta «Objetivos»; cada uno abre su slide
+    chrome = await openChromePage(bin, `${base}/#/widgets/objetivos`);
+    const rows = `Array.from(document.querySelectorAll('[data-tour="goals-list"] tbody tr'))`;
+    await waitDom(chrome.cdp, `${rows}.length === 2`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `${rows}.map(r => r.querySelector('.lv-open').textContent.trim()).join('|')`), 'Objetivo Uno|Objetivo Dos');
+    await dom(chrome, `${rows}[1].querySelector('.lv-open').click()`);
+    const title = `[...document.querySelectorAll('.lv-slide')].at(-1)?.querySelector('.lv-stitle h2')?.textContent`;
+    await waitDom(chrome.cdp, `location.hash === '#/widgets/objetivos/dos' && ${title} === 'Objetivo Dos' && document.querySelectorAll('.goal-card').length === 1`, { timeoutMs: 12000 });
 
     // O1.1 (panel): el logo de la leyenda va en línea con su texto
     eq(await dom(chrome, `getComputedStyle(document.querySelector('.goal-card legend svg')).display`), 'inline-block');
@@ -135,10 +133,14 @@ test('O1 panel: pestañas por objetivo, + Nuevo objetivo, cabecera, hint CSS y p
     await eventually(() => app.store.config.widgets.goals[1].showLabel, false);
     await eventually(() => app.store.config.widgets.goals[1].showTitle, false);
 
-    // O1.7: «+ Nuevo objetivo» crea la caja y la deja seleccionada
-    await dom(chrome, `${tabs}.at(-1).click()`);
+    // «+ Nuevo objetivo» abre el slide «Nuevo»; al crear, el objetivo nuevo se abre en su slide
+    await dom(chrome, `location.hash = '#/widgets/objetivos/nuevo'`);
+    await waitDom(chrome.cdp, `!!${buttonByText('Crear objetivo')}`, { timeoutMs: 12000 });
+    await dom(chrome, `${buttonByText('Crear objetivo')}.click()`);
     await eventually(() => app.store.config.widgets.goals.length, 3);
-    await waitDom(chrome.cdp, `${tabs}.length === 4 && ${tabs}[2].getAttribute('aria-selected') === 'true' && document.querySelector('.goal-card h2').textContent === 'Nuevo objetivo'`, { timeoutMs: 12000 });
+    await waitDom(chrome.cdp, `location.hash.startsWith('#/widgets/objetivos/') && !location.hash.endsWith('/nuevo') && ${title} === 'Nuevo objetivo'`, { timeoutMs: 12000 });
+    await dom(chrome, `location.hash = '#/widgets/objetivos'`);
+    await waitDom(chrome.cdp, `${rows}.length === 3`, { timeoutMs: 12000 });
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
@@ -165,7 +167,7 @@ test('O1 panel: cambiar la plataforma de una barra se guarda con una métrica v�
       { id: 'b2', platform: 'twitch', metric: 'follows', target: 1000, visible: true },
     ] });
     app.store.config.panel = { onboardingDone: true };
-    chrome = await openChromePage(bin, `${base}/#/widget/goals`);
+    chrome = await openChromePage(bin, `${base}/#/widgets/objetivos/mixta`);
     const fs = i => `document.querySelectorAll('.goal-card fieldset')[${i}]`;
     await waitDom(chrome.cdp, `document.querySelectorAll('.goal-card fieldset').length === 2`, { timeoutMs: 15000 });
     const pick = (i, value) => `(() => { const s = ${fs(i)}.querySelector('select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', { bubbles: true })); return 'ok'; })()`;
