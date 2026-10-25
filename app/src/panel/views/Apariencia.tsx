@@ -1,13 +1,13 @@
 // Apariencia: un solo tema para todo lo que sale en pantalla (overlay de alertas, widgets y créditos).
 // El de serie es el de EGDEV; aquí se sobrescribe. Se guarda solo (src/theme.mjs) y llega en vivo a Meld.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { get, post, put } from '../../lib/api';
+import { del, get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { copy, cx, guard, PfIcon, ScaledFrame, Seg, Switch, toast, ViewHead } from '../../lib/ui';
+import { copy, cx, guard, PfIcon, ScaledFrame, Sec, Seg, Switch, toast } from '../../lib/ui';
 import type { Theme, ThemeInfo } from '../../lib/types';
+import { draftChanged, registerDraft, useManualSave } from '../../lib/draft';
+import { PageHead, SaveBar, usePageTab } from '../../lib/layout';
 
-// pestañas de la vista (mismo marcado que las del editor de alertas)
-const SECTIONS: [string, string][] = [['color', 'Color'], ['font', 'Tipografía'], ['icons', 'Iconos'], ['shape', 'Forma y efectos'], ['pos', 'Posición y movimiento'], ['sound', 'Sonido']];
 const SAMPLES: [string, string][] = [['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['viewers', 'Récord']];
 const WIDGETS: { id: string; label: string; src: string; w: number; h: number }[] = [
   { id: 'alert', label: 'Alerta', src: '/overlay?preview', w: 1920, h: 1080 },
@@ -24,41 +24,54 @@ const ICON_TYPES: [string, string][] = [['follow', 'heart'], ['sub', 'star'], ['
   ['superchat', 'coin'], ['supersticker', 'coin'], ['member', 'badge'], ['milestone', 'badge'], ['giftmember', 'gift'], ['viewers', 'twitch'], ['ytviewers', 'youtube'], ['command', 'spark']];
 const ICON_LABEL: Record<string, string> = { heart: 'Corazón', star: 'Estrella', gift: 'Regalo', gem: 'Gema', rocket: 'Cohete', spark: 'Chispa', coin: 'Moneda', badge: 'Insignia', eye: 'Ojo', bell: 'Campana', fire: 'Fuego', trophy: 'Trofeo', crown: 'Corona', zap: 'Rayo', megaphone: 'Megáfono', music: 'Música', smile: 'Sonrisa', users: 'Personas', rocket2: 'Cohete 2', thumb: 'Pulgar' };
 
-export function Apariencia() {
+const TABS = ['color', 'tipografia', 'iconos', 'forma', 'sonido'];
+const draftSrc = (src: string) => src + (src.includes('?') ? '&' : '?') + 'themeDraft';
+export function Apariencia({ parts }: { parts: string[] }) {
+  useManualSave();
+  const [tab, setTab] = usePageTab(parts, 'apariencia', TABS);
   const info = useRef<ThemeInfo | null>(null);
   const [, setLoaded] = useState(0);
   const t = useLive(s => s.theme);
   const types = useLive(s => s.types);
   const [view, setView] = useState('alert');
   const [frameKey, setFrameKey] = useState(0);
-  const [tab, setTab] = useState(SECTIONS[0][0]);
   const pending = useRef<Partial<Theme>>({});
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const load = guard(async () => { info.current = await get<ThemeInfo>('/api/theme'); live.update(() => ({ theme: info.current!.theme })); setLoaded(x => x + 1); });
-  useEffect(() => { load(); return () => { clearTimeout(timer.current); flush(); }; }, []);
+  // borrador: los cambios van a /api/theme/draft (solo lo ven las vistas previas con ?themeDraft); «Guardar» los aplica a Meld
+  const sendDraft = () => { const p = pending.current; if (Object.keys(p).length) put('/api/theme/draft', p).catch(e => toast(e.message, true)); };
+  const flush = async () => {
+    clearTimeout(timer.current);
+    const p = pending.current;
+    if (!Object.keys(p).length) return;
+    const d = await put<ThemeInfo>('/api/theme', p);
+    pending.current = {}; info.current = d; live.update(() => ({ theme: d.theme })); draftChanged();
+  };
+  const discard = () => {
+    clearTimeout(timer.current);
+    if (!Object.keys(pending.current).length) return;
+    pending.current = {}; if (info.current) live.update(() => ({ theme: info.current!.theme }));
+    del('/api/theme/draft').catch(() => {}); draftChanged();
+  };
+  useEffect(() => { load(); return registerDraft('theme', { dirty: () => Object.keys(pending.current).length > 0, keys: () => Object.keys(pending.current), save: flush, discard }); }, []);
+  useEffect(() => () => clearTimeout(timer.current), []);
   // al abrir la pestaña de alertas sale una de ejemplo para ver el tema; igual que en el editor,
   // se dispara cuando el marco termina de cargar (onload), nunca antes: si el iframe tarda, el ejemplo no se pierde (#6)
   const viewRef = useRef(view); viewRef.current = view;
   const sampleFrame = useCallback((el: HTMLIFrameElement | null) => {
     if (el) el.onload = () => setTimeout(() => { if (viewRef.current === 'alert') post('/api/test', { type: 'follow', target: 'preview' }).catch(() => {}); }, 300);
   }, []);
-  const flush = () => {
-    const p = pending.current; pending.current = {};
-    if (!Object.keys(p).length) return Promise.resolve();
-    return put<ThemeInfo>('/api/theme', p).then(d => { info.current = d; live.update(() => ({ theme: d.theme })); })
-      .catch(e => { live.update(() => ({ theme: info.current!.theme })); toast(e.message, true); });
-  };
   const set = (patch: Partial<Theme>) => {
     live.update(s => ({ theme: { ...(s.theme as Theme), ...patch, icons: patch.icons ? { ...(s.theme?.icons || {}), ...patch.icons } : s.theme?.icons || {} } }));
     pending.current = { ...pending.current, ...patch, ...(patch.icons ? { icons: { ...(pending.current.icons || {}), ...patch.icons } } : {}) };
-    clearTimeout(timer.current); timer.current = setTimeout(flush, 350);
+    draftChanged();
+    clearTimeout(timer.current); timer.current = setTimeout(sendDraft, 300);
   };
-  // el punto de partida, la importación y la restauración mandan: cancelan cualquier
-  // guardado pendiente del autoguardado para que el debounce no pise su resultado (#157),
-  // antes de pedirlo al servidor, porque su respuesta puede tardar más que el debounce (#164)
-  const cancelPending = () => { clearTimeout(timer.current); timer.current = undefined; pending.current = {}; };
+  // el punto de partida, la importación y la restauración mandan: se aplican y guardan al momento y
+  // tiran el borrador; se cancela antes de pedirlos para que un envío del borrador en cola no los pise (#157, #164)
+  const cancelPending = () => { clearTimeout(timer.current); timer.current = undefined; if (Object.keys(pending.current).length) { pending.current = {}; del('/api/theme/draft').catch(() => {}); draftChanged(); } };
   const replace = (d: ThemeInfo) => { cancelPending(); info.current = d; live.update(() => ({ theme: d.theme })); setFrameKey(k => k + 1); };
-  const sample = (type: string) => guard(async () => { await flush(); setView('alert'); await post('/api/test', { type, target: 'preview' }); })();
+  const sample = (type: string) => guard(async () => { setView('alert'); await post('/api/test', { type, target: 'preview' }); })();
   if (!t || !info.current) return <p className="hint">Cargando la apariencia…</p>;
   const I = info.current;
   const fonts = I.fonts;
@@ -73,8 +86,6 @@ export function Apariencia() {
     return <label>{label} <span className="val">{v} {unit}</span>
       <input type="range" min={min} max={max} step={step} value={v} style={{ ['--v' as any]: ((v - min) / (max - min)) * 100 + '%' }} onChange={e => set({ [k]: Number(e.target.value) } as Partial<Theme>)} /></label>;
   };
-  // same tabs as the alert editor: every pane stays mounted (only hidden), nothing typed is lost
-  const pane = (k: string, children: ReactNode) => <div role="tabpanel" id={`ap-tp-${k}`} aria-labelledby={`ap-tb-${k}`} hidden={tab !== k} className="tabpane"><section className="sec">{children}</section></div>;
   const sw = (k: keyof Theme, label: string) => <Switch checked={!!t[k]} onChange={x => set({ [k]: x } as Partial<Theme>)}>{label}</Switch>;
   const fontSel = (k: 'fontDisplay' | 'fontBody', label: string) => <label>{label}
     <select value={t[k]} onChange={e => set({ [k]: e.target.value })} style={{ fontFamily: fonts.find(f => f.id === t[k])?.css || undefined }}>
@@ -82,7 +93,10 @@ export function Apariencia() {
     </select></label>;
 
   return <>
-    <ViewHead crumb="Ajustes › Apariencia" title="Apariencia" hint="Un solo tema para todo lo que sale en el directo: alertas, chat, objetivos, ticker, preguntas, sorteo, tier list y créditos. Se guarda solo y llega al momento a Meld. El CSS propio de cada alerta o widget sigue ganando." actions={<>
+    <PageHead crumb="Ajustes" title="Apariencia"
+      desc="Un solo tema para todo lo que sale en el directo: alertas, chat, objetivos, ticker, preguntas, sorteo, tier list y créditos. La vista previa cambia al momento; Meld, al guardar. El CSS propio de cada alerta o widget sigue ganando."
+      tabs={[{ id: 'color', label: 'Color' }, { id: 'tipografia', label: 'Tipografía' }, { id: 'iconos', label: 'Iconos' }, { id: 'forma', label: 'Forma y posición' }, { id: 'sonido', label: 'Sonido' }]} tab={tab} onTab={setTab}
+      actions={<>
         <label className="sr-only" htmlFor="ap-preset">Punto de partida</label>
         <select id="ap-preset" className="ap-preset" value="" onChange={e => { const id = e.target.value; if (!id) return; if (!confirm(`¿Empezar desde «${I.presets.find(p => p.id === id)?.label}»? Se sustituye el tema actual.`)) return; guard(async () => { cancelPending(); replace(await post<ThemeInfo>('/api/theme/preset', { id })); }, 'Tema aplicado')(); }}>
           <option value="">Punto de partida…</option>{I.presets.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
@@ -96,12 +110,9 @@ export function Apariencia() {
         }, 'Tema importado')}>Importar</button>
         <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={isDefault} onClick={guard(async () => { if (!confirm('¿Volver al tema de serie de EGDEV?')) return; cancelPending(); replace(await post<ThemeInfo>('/api/theme/reset')); }, 'Tema de EGDEV restaurado')}>Restaurar EGDEV</button>
       </>} />
-    <div className="eg-tabs editor-tabs" role="tablist" aria-label="Secciones de la apariencia">
-      {SECTIONS.map(([k, l]) => <button key={k} type="button" role="tab" id={`ap-tb-${k}`} aria-controls={`ap-tp-${k}`} className="eg-tabs__item" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
-    </div>
     <div className="cols ap">
       <div className="stack">
-        {pane('color', <>
+        {tab === 'color' && <Sec title="Color" id="ap-color">
           <div className="row3">{color('accent', 'Acento')}{color('accentSoft', 'Acento suave', 'Antetítulos y detalles')}{color('surface', 'Fondo de las tarjetas')}</div>
           <div className="row3">{color('text', 'Texto principal')}{color('textSoft', 'Texto secundario')}{color('muted', 'Texto apagado')}</div>
           <div className="lbl">Fondo<div className="field-ctl"><Seg wide value={t.surfaceStyle} onChange={v => set({ surfaceStyle: v })} options={[['gradient', 'Degradado'], ['solid', 'Sólido'], ['glass', 'Cristal']]} /></div></div>
@@ -114,16 +125,15 @@ export function Apariencia() {
           </div>
           {sw('platformAccent', 'Acento de cada plataforma (Twitch y YouTube con su color)')}
           {t.platformAccent && <div className="row2">{color('twitchColor', <><PfIcon platform="twitch" /> Twitch</>)}{color('youtubeColor', <><PfIcon platform="youtube" /> YouTube</>)}</div>}
-        </>)}
+        </Sec>}
 
-        {pane('font', <>
-          <p className="hint">Sube tus fuentes (woff2, ttf…) en <a href="#/general">General y archivos</a>.</p>
+        {tab === 'tipografia' && <Sec title="Tipografía" id="ap-font" aside={<span className="hint">Sube tus fuentes (woff2, ttf…) en <a href="#/archivos">Archivos</a></span>}>
           <div className="row2">{fontSel('fontDisplay', 'Títulos y nombres')}{fontSel('fontBody', 'Textos')}</div>
           {range('textScale', 'Tamaño del texto de las alertas', 50, 200, 5, '%')}
           <div className="row2 switches">{sw('uppercase', 'Títulos en mayúsculas')}{sw('outline', 'Contorno negro (se lee sobre cualquier fondo)')}</div>
-        </>)}
+        </Sec>}
 
-        {pane('icons', <>
+        {tab === 'iconos' && <Sec title="Iconos" id="ap-icons">
           <div className="row2">
             <div className="lbl">Trazo<div className="field-ctl"><Seg wide value={t.iconStroke} onChange={v => set({ iconStroke: v })} options={[['thin', 'Fino'], ['normal', 'Normal'], ['bold', 'Grueso']]} /></div></div>
             <div className="lbl">Casilla<div className="field-ctl"><Seg wide value={t.tileShape} onChange={v => set({ tileShape: v })} options={[['square', 'Cuadrada'], ['round', 'Redonda'], ['none', 'Sin casilla']]} /></div></div>
@@ -141,7 +151,7 @@ export function Apariencia() {
                 <select aria-label={`Icono de ${types[type]?.label || type}`} value={kind} onChange={e => {
                   const v = e.target.value;
                   set({ icons: { [type]: v === 'default' ? null : v === 'emoji' ? 'emoji:🎉' : v === 'media' ? (I.images[0] ? 'media:' + I.images[0] : null) : v } as any });
-                  if (v === 'media' && !I.images.length) toast('Sube antes una imagen en General y archivos', true);
+                  if (v === 'media' && !I.images.length) toast('Sube antes una imagen en Archivos', true);
                 }}>
                   <option value="default">De serie ({ICON_LABEL[def] || (def === 'twitch' ? 'logo de Twitch' : def === 'youtube' ? 'logo de YouTube' : def)})</option>
                   {I.icons.map(ic => <option key={ic} value={ic}>{ICON_LABEL[ic] || ic}</option>)}
@@ -155,14 +165,14 @@ export function Apariencia() {
               </div>;
             })}
           </div>
-        </>)}
+        </Sec>}
 
-        {pane('shape', <>
+        {tab === 'forma' && <Sec title="Forma y efectos" id="ap-shape">
           <div className="row3">{range('round', 'Esquinas', 0, 300, 10, '%')}{range('alertWidth', 'Ancho de la alerta', 400, 1600, 20, 'px')}{range('alertScale', 'Escala de la alerta', 30, 200, 5, '%')}</div>
           <div className="row2 switches">{sw('tilt', 'Inclinación 3D')}{sw('reflection', 'Reflejo debajo')}{sw('decorations', 'Decoraciones (halo, puntos y cubo)')}{sw('timerBar', 'Barra de tiempo')}</div>
-        </>)}
+        </Sec>}
 
-        {pane('pos', <>
+        {tab === 'forma' && <Sec title="Posición y movimiento" id="ap-pos">
           <div className="row2">
             <div className="lbl">Altura<div className="field-ctl"><Seg wide value={t.position} onChange={v => set({ position: v })} options={[['top', 'Arriba'], ['center', 'Centro'], ['bottom', 'Abajo']]} /></div></div>
             <div className="lbl">Lado<div className="field-ctl"><Seg wide value={t.align} onChange={v => set({ align: v })} options={[['left', 'Izquierda'], ['center', 'Centro'], ['right', 'Derecha']]} /></div></div>
@@ -170,9 +180,9 @@ export function Apariencia() {
           <div className="row2">{range('offsetX', 'Ajuste horizontal', -960, 960, 10, 'px')}{range('offsetY', 'Ajuste vertical', -540, 540, 10, 'px')}</div>
           <div className="lbl">Entrada y salida de las alertas<div className="field-ctl"><Seg wide value={t.animation} onChange={v => set({ animation: v })} options={[['3d', 'Giro 3D'], ['slide', 'Deslizar'], ['fade', 'Fundido'], ['pop', 'Rebote'], ['none', 'Sin animación']]} /></div></div>
           <p className="hint">La posición vale para el overlay de alertas; si en Meld usas <code>/overlay?pos=top</code>, manda la URL.</p>
-        </>)}
+        </Sec>}
 
-        {pane('sound', <>
+        {tab === 'sonido' && <Sec title="Sonido" id="ap-sound">
           <div className="row2">
             <label>Sonido de serie de las alertas
               <select value={t.sound} onChange={e => set({ sound: e.target.value })}>
@@ -182,7 +192,7 @@ export function Apariencia() {
             {range('soundVolume', 'Volumen de las alertas', 0, 200, 5, '%')}
           </div>
           <p className="hint">Lo usan las alertas que tienen «Sonido de serie»; las que tienen su propio sonido lo conservan.</p>
-        </>)}
+        </Sec>}
       </div>
 
       <div className="stack ap-preview">
@@ -191,13 +201,14 @@ export function Apariencia() {
           <div className="ap-tabs" role="tablist" aria-label="Qué ver">
             {WIDGETS.map(w => <button key={w.id} type="button" role="tab" aria-selected={view === w.id} className={cx('eg-chip', view === w.id && 'is-on')} onClick={() => setView(w.id)}>{w.label}</button>)}
           </div>
-          <ScaledFrame key={W.id + frameKey} src={W.src} w={W.w} h={W.h} className="preview wprev" title={`Vista previa: ${W.label}`} frameRef={sampleFrame} />
+          <ScaledFrame key={W.id + frameKey} src={draftSrc(W.src)} w={W.w} h={W.h} className="preview wprev" title={`Vista previa: ${W.label}`} frameRef={sampleFrame} />
           {view === 'alert' && <div className="eg-stage__bar ap-samples">
             {SAMPLES.map(([type, label]) => <button key={type} type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => sample(type)}>{label}</button>)}
           </div>}
         </figure>
-        <p className="hint">{view === 'alert' ? 'Las alertas de ejemplo salen solo aquí. Para verlas en Meld, usa «Probar en el directo» en cada alerta.' : 'Con datos de ejemplo. El tema llega a la vez a todas las capas que tengas en Meld.'}</p>
+        <p className="hint">{view === 'alert' ? 'Las alertas de ejemplo salen solo aquí. Para verlas en Meld, usa «Probar en el directo» en cada alerta.' : 'Con datos de ejemplo. Al guardar, el tema llega a la vez a todas las capas que tengas en Meld.'}</p>
       </div>
     </div>
+    <SaveBar />
   </>;
 }

@@ -28,6 +28,7 @@ export const COMMAND_META = { platform: 'chat', icon: 'spark', label: 'Comando d
 // Ajustes de aspecto comunes a todas las alertas. `layout`:
 //   card  → tarjeta 3D EGDEV
 //   media → tu vídeo o imagen con el mensaje encima (texto sobre imagen)
+//   mixed → tu vídeo o imagen de fondo (a pantalla completa) y encima la tarjeta 3D EGDEV
 export const LOOK_DEFAULTS = {
   layout: 'card',
   media: '',            // archivo de media/ (webm, mp4, gif, png, webp…)
@@ -44,6 +45,7 @@ export const LOOK_DEFAULTS = {
   accentColor: '#FF0036',
   animIn: 'pop',        // pop | fade | slide | zoom | none
   animOut: 'fade',      // fade | slide | zoom | none
+  cardX: 0, cardY: 0,   // mixta: ajuste de la tarjeta sobre el fondo (px, desde la posición del tema)
   css: '',
 };
 
@@ -58,10 +60,10 @@ export const EXTRA_DEFAULTS = {
 /** Todos los campos editables de una alerta, con su tipo, para el panel y el MCP. */
 export const ALERT_FIELDS = {
   enabled: 'boolean', title: 'string', text: 'string', sub: 'string', durationMs: 'number', minAmount: 'number',
-  layout: ['card', 'media'], media: 'string', mediaSize: 'number', mediaVolume: 'number',
+  layout: ['card', 'media', 'mixed'], media: 'string', mediaSize: 'number', mediaVolume: 'number',
   sound: 'string', soundVolume: 'number', durationMode: ['fixed', 'media'], textDelayMs: 'number',
   textX: 'number', textY: 'number', textWidth: 'number', textAlign: ['left', 'center', 'right'], fontSize: 'number',
-  textColor: 'string', accentColor: 'string', animIn: ['pop', 'fade', 'slide', 'zoom', 'none'], animOut: ['fade', 'slide', 'zoom', 'none'],
+  textColor: 'string', accentColor: 'string', cardX: 'number', cardY: 'number', animIn: ['pop', 'fade', 'slide', 'zoom', 'none'], animOut: ['fade', 'slide', 'zoom', 'none'],
   css: 'string', ttsEnabled: 'boolean', ttsTemplate: 'string', ttsMinAmount: 'number', actions: 'array',
 };
 
@@ -243,9 +245,10 @@ export function mediaKind(name = '') {
 function pickLook(cfg) {
   const out = {};
   for (const k of Object.keys(LOOK_DEFAULTS)) out[k] = cfg[k] ?? LOOK_DEFAULTS[k];
-  out.layout = out.layout === 'media' && out.media ? 'media' : 'card';
+  // sin archivo, «vídeo» y «mixta» caen a la tarjeta
+  out.layout = ['media', 'mixed'].includes(out.layout) && out.media ? out.layout : 'card';
   out.mediaKind = out.media ? mediaKind(out.media) : null;
-  for (const k of ['mediaSize', 'mediaVolume', 'soundVolume', 'textDelayMs', 'textX', 'textY', 'textWidth', 'fontSize']) out[k] = Number(out[k]) || 0;
+  for (const k of ['mediaSize', 'mediaVolume', 'soundVolume', 'textDelayMs', 'textX', 'textY', 'textWidth', 'fontSize', 'cardX', 'cardY']) out[k] = Number(out[k]) || 0;
   return out;
 }
 

@@ -23,7 +23,7 @@ class FakeEventSource {
 async function bundleLive() {
   const esbuild = await import('esbuild');
   const ts = await (await import('node:fs/promises')).readFile(path.join(ROOT, 'app/src/lib/live.ts'), 'utf8');
-  const stub = 'export const useSyncExternalStore = () => () => {};\n' +
+  const stub = 'export const useSyncExternalStore = () => () => {};\nexport const useEffect = () => {};\n' +
     'export const warnUnknownClientEvent = () => false;\n' +
     'export const api = (m, p, b) => globalThis.__apiImpl(m, p, b);\n' +
     'export const withKey = (u) => u;';

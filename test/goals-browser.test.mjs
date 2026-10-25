@@ -105,7 +105,7 @@ test('panel: el bloque Goals muestra cajas y barras; crear/editar/ocultar/borrar
         { id: 'm-yt', platform: 'youtube', metric: 'superchats', target: 5, visible: true },
       ],
     }];
-    chrome = await openChromePage(bin, `${base}/#/widget/goals`);
+    chrome = await openChromePage(bin, `${base}/#/widgets/goal-mixta`);
     try {
       await waitDom(chrome.cdp, `!!document.querySelector('.goal-card')`, { timeoutMs: 12000 });
     } catch (e) {

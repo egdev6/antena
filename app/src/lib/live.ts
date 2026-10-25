@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { warnUnknownClientEvent } from '../../../src/events.mjs'; // contrato único de eventos SSE (#72)
 import { mergeChat } from './chat-merge.mjs';
 import { api, withKey } from './api';
+import { draftChanged, holding, registerDraft } from './draft';
 import type { AppState, ChatMessage, Config, LiveEventName, LiveEvents, PrompterState, Timeline } from './types';
 
 type Listener = () => void;
@@ -55,6 +56,17 @@ class Live {
   private touched: Partial<Record<keyof AppState, number>> = {};
   private cfgPending: Record<string, unknown> = {};
   private cfgTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Copia de la configuración al empezar un borrador (guardado manual): «Descartar» vuelve a ella. */
+  private cfgSnapshot: Config | null = null;
+
+  constructor() {
+    registerDraft('config', {
+      dirty: () => Object.keys(this.cfgPending).length > 0,
+      keys: () => Object.keys(this.cfgPending),
+      save: () => this.flushConfig(),
+      discard: () => this.discardConfig(),
+    });
+  }
 
   subscribe = (fn: Listener) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   emit() { this.version++; for (const fn of this.listeners) fn(); }
@@ -135,17 +147,31 @@ class Live {
 
   /** Cambia la configuración al momento y la guarda en el servidor tras 400 ms sin cambios. */
   patchConfig(patch: Record<string, unknown>) {
+    // con guardado manual (draft.ts) se guarda una copia para poder descartar y no se programa el guardado
+    if (holding() && !Object.keys(this.cfgPending).length) this.cfgSnapshot = structuredClone(this.state?.config ?? null);
     this.update(s => ({ config: deepMerge(s.config, patch) }));
     this.cfgPending = deepMerge(this.cfgPending, patch);
     clearTimeout(this.cfgTimer);
+    if (holding()) { draftChanged(); return; }
     this.cfgTimer = setTimeout(() => this.flushConfig().catch(e => this.fire('error', e)), 400);
   }
   async flushConfig() {
     clearTimeout(this.cfgTimer);
     if (!Object.keys(this.cfgPending).length) return;
     const p = this.cfgPending; this.cfgPending = {};
-    const d = await api<{ config?: Config }>('PUT', '/api/config', p);
-    if (d?.config) this.update(() => ({ config: d.config as Config }));
+    try {
+      const d = await api<{ config?: Config }>('PUT', '/api/config', p);
+      this.cfgSnapshot = null;   // guardado: ya no hay nada que descartar
+      if (d?.config) this.update(() => ({ config: d.config as Config }));
+    } catch (e) { this.cfgPending = deepMerge(p, this.cfgPending); throw e; }
+    finally { draftChanged(); }
+  }
+  /** Descarta el borrador de configuración y vuelve a lo guardado. */
+  discardConfig() {
+    clearTimeout(this.cfgTimer);
+    this.cfgPending = {};
+    if (this.cfgSnapshot) { const c = this.cfgSnapshot; this.cfgSnapshot = null; this.update(() => ({ config: c })); }
+    draftChanged();
   }
 
   connect(client = 'panel') {

@@ -1,8 +1,12 @@
-// Widgets de pantalla: chat, últimos + ticker, créditos y objetivos.
+// Widgets (v3): el catálogo de widgets en tarjetas → slide con sus ajustes (O3.3: fuente, ajustes y vista previa).
+// Los objetivos, lo único que creas tú, viven dentro de su tarjeta: tabla → objetivo (3.er nivel).
 import { enc, post, put, del } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { patchWidgets } from '../../lib/patch';
-import { BrowserSource, codeTab, confirmDelete, EmptyState, guard, ItemTabs, LazyInput, Panel, PfIcon, Stage, Switch, ViewHead, WidgetLayout } from '../../lib/ui';
+import { BrowserSource, codeTab, confirmDelete, copy, EmptyState, guard, LazyInput, Panel, PfIcon, Stage, Switch, WidgetLayout } from '../../lib/ui';
+import { useManualSave } from '../../lib/draft';
+import { Box, Card, CardGroup, Dot, ListPanel, NameCell, PageHead, SaveBar, Slide, Tags } from '../../lib/layout';
+import { go } from '../router';
 import { useState, type ReactNode } from 'react';
 import type { GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
 import { CHAT_ANIMS, type ChatAnim } from '../../../../public/widgets/chat-anims.js';
@@ -39,7 +43,7 @@ function ChatSelect({ f, label, options }: { f: string; label: string; options: 
 }
 
 export function Widget({ name }: { name: string }) {
-  if (name === 'goals') return <Goals />;
+  useManualSave();
   const info = INFO[name];
   if (!info) return <p className="hint">Widget desconocido.</p>;
   let form: ReactNode = null;
@@ -78,8 +82,9 @@ export function Widget({ name }: { name: string }) {
     <p className="css-help">Clases: <code>.roll</code> <code>.head</code> <code>.grp</code> <code>.grp li</code> <code>.end</code> <code>.kick</code> <code>.big</code> <code>.sub</code> <code>.hl</code></p>
     <div className="row"><button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(() => post('/api/credits/play'))}>Lanzar créditos</button><button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/credits/stop'))}>Parar</button></div>
     <p className="hint mt">Parámetros: <code>?transparent</code> (sin fondo) · <code>?autoplay</code> · <code>?loop</code>. Se lanzan desde aquí, desde el MCP, con una acción o con un atajo del Stream Deck.</p></>;
-  return <>
-    <ViewHead crumb={<>Widgets › {info.title}</>} title={info.title} hint={info.desc} />
+  return <Slide crumb={<><a href="#/widgets">Widgets</a> › {info.title}</>} title={info.title} back="#/widgets" wide
+    foot={<SaveBar right={<span className="hint">La vista previa muestra lo guardado.</span>} />}>
+    <p className="hint">{info.desc}</p>
     <WidgetLayout
       source={<BrowserSource url={origin() + info.path} size={info.size} label={name === 'latest' ? 'Últimos' : undefined} also={name === 'latest' ? [{ url: origin() + '/widget/ticker', size: '1920×64', label: 'Ticker' }] : []} />}
       preview={<>
@@ -88,7 +93,117 @@ export function Widget({ name }: { name: string }) {
       </>}>
       <Panel>{form}</Panel>
     </WidgetLayout>
+  </Slide>;
+}
+
+/** Widgets (v3): el catálogo de widgets en tarjetas. Lo que creas tú (los objetivos) vive dentro de su tarjeta. */
+export function Widgets({ parts }: { parts: string[] }) {
+  const goals: GoalConfig[] = useLive(s => s.config.widgets?.goals || []);
+  const w = useLive(s => (s.config.widgets || {}) as any);
+  const I = useLive(s => s.interactive);
+  const tp = useLive(s => s.teleprompter);
+  const open = parts[1];
+  const css = (x?: string) => (x ? [{ t: 'CSS propio', on: true }] : []);
+  const shownGoals = goals.filter(g => g.visible !== false).length;
+  const bars = goals.reduce((t, g) => t + g.bars.length, 0);
+  const pend = (I?.questions?.list || []).filter((q: any) => q.status === 'pending').length;
+  const url = (p: string) => <span className="lv-cmeta">{p}</span>;
+  const copyBtn = (p: string) => <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(origin() + p)}>Copiar URL</button>;
+  const fixed = (id: string, thumb: ReactNode, tags: { t: ReactNode; on?: boolean }[], action?: ReactNode) => {
+    const i = INFO[id];
+    return <Card key={id} href={`#/widgets/${id}`} label={`Abrir ${i.title}`} open={open === id} thumb={thumb} title={i.title} aside={<span className="lv-cmeta">{i.size}</span>}
+      foot={<>{url(i.path)}<span className="sp" />{action || copyBtn(i.path)}</>}><Tags items={tags} /></Card>;
+  };
+  return <>
+    <PageHead crumb={`Configurar · ${Object.keys(INFO).length + 5} widgets`} title="Widgets"
+      desc="Cada uno es una fuente de navegador para Meld (sus URL también están en Fuentes para Meld). Cuando la app trae un widget nuevo, aparece aquí como una tarjeta más." />
+    <div className="lv-groups">
+      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={4} note="Se ajustan aquí y se dejan puestas en Meld" wide>
+        {fixed('chat', <div className="lv-wchat"><i style={{ width: '62%' }} /><i style={{ width: '80%' }} /><i style={{ width: '48%' }} /><i style={{ width: '72%' }} /><i style={{ width: '56%' }} /></div>,
+          [...((w.chat?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.chat?.css)])}
+        <Card href="#/widgets/objetivos" label="Abrir Objetivos" open={open === 'objetivos'} title="Objetivos" aside={<span className="lv-cmeta">1 capa por objetivo</span>}
+          thumb={<div className="lv-wgoal">{(goals.flatMap(g => g.bars).slice(0, 3).length ? goals.flatMap(g => g.bars).slice(0, 3) : [null, null]).map((b, i) => <i key={i}><b style={{ width: [70, 55, 38][i] + '%', background: b && b.visible === false ? '#8a8f98' : undefined }} /></i>)}</div>}
+          foot={<>{url('/widget/goal?id=…')}<span className="sp" /><a className="eg-btn eg-btn--ghost eg-btn--sm" href="#/widgets/objetivos">{goals.length ? 'Ver objetivos' : 'Crear el primero'}</a></>}>
+          <Tags items={goals.length ? [{ t: goals.length === 1 ? '1 objetivo' : `${goals.length} objetivos`, on: true }, { t: `${shownGoals} en pantalla` }, { t: bars === 1 ? '1 barra' : `${bars} barras` }] : [{ t: 'Sin objetivos todavía' }]} />
+        </Card>
+        {fixed('latest', <><div className="lv-wbar"><i /><i /><i /></div><div className="lv-wtick" /></>,
+          [{ t: (w.latest?.items || []).length ? `${(w.latest.items as string[]).length} tipos de apoyo` : 'Últimos apoyos' }, { t: 'con ticker' }, ...css(w.latest?.css || w.ticker?.css)])}
+        {fixed('credits', <div className="lv-wcred"><b>GRACIAS</b><i /><i /><i /><i /></div>, [{ t: w.credits?.title || 'Créditos del directo' }, ...css(w.credits?.css)],
+          <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>)}
+      </CardGroup>
+      <CardGroup title="Se manejan en directo" count={4} note="Su tarjeta lleva a su página de En directo" wide>
+        <Card href="#/preguntas" label="Ir a Preguntas" title="Preguntas" aside={<Dot tone={pend ? 'ok' : 'off'}>{pend ? `${pend} en cola` : 'Cola vacía'}</Dot>}
+          thumb={<div className="lv-wq"><small>Pregunta del chat</small>{I?.questions?.current?.text || '¿Cómo testeáis los hooks?'}</div>}
+          foot={<>{url('/widget/question')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: String(I?.config?.questions?.command || '!pregunta') }]} /></Card>
+        <Card href="#/tierlist" label="Ir a Tier list" title="Tier list" aside={<Dot tone={I?.vote ? 'live' : I?.shownTierlist ? 'ok' : 'off'}>{I?.vote ? 'Votando' : I?.shownTierlist ? 'En pantalla' : 'Oculta'}</Dot>}
+          thumb={<div className="lv-wbar col"><i /><i /><i /></div>}
+          foot={<>{url('/widget/tierlist')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: (I?.tierlists || []).length === 1 ? '1 lista' : `${(I?.tierlists || []).length} listas` }]} /></Card>
+        <Card href="#/sorteo" label="Ir a Sorteo" title="Sorteo" aside={<Dot tone={I?.giveaway?.open ? 'ok' : 'off'}>{I?.giveaway?.open ? `Abierto · ${I.giveaway.count}` : 'Cerrado'}</Dot>}
+          thumb={<div className="lv-wcred"><b>SORTEO</b><i /><i /></div>}
+          foot={<>{url('/widget/giveaway')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: String(I?.config?.giveaway?.command || '!sorteo') }]} /></Card>
+        <Card href="#/teleprompter" label="Ir a Teleprompter" title="Teleprompter" aside={<span className="lv-tag">Solo lo ves tú</span>}
+          thumb={<div className="lv-wchat plain"><i style={{ width: '90%' }} /><i style={{ width: '84%', background: 'rgba(255,255,255,.3)' }} /><i style={{ width: '70%' }} /></div>}
+          foot={<>{url('/widget/teleprompter')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: (tp?.scripts || []).length === 1 ? '1 guion' : `${(tp?.scripts || []).length} guiones` }]} /></Card>
+      </CardGroup>
+    </div>
+    {open && INFO[open] ? <Widget key={open} name={open} /> : null}
+    {open === 'objetivos' ? <ObjetivosSlide parts={parts} goals={goals} /> : null}
   </>;
+}
+
+/** 2.º nivel: la tabla de tus objetivos, con «+ Nuevo objetivo». Cada objetivo abre un 3.er nivel. */
+function ObjetivosSlide({ parts, goals }: { parts: string[]; goals: GoalConfig[] }) {
+  const sub = parts[2];
+  const metrics = useLive(s => s.metrics || {});
+  const values: GoalValue[] = useLive(s => s.widgets?.goals || []);
+  const label = (k: string) => (metrics[k] as { label?: string } | undefined)?.label || k;
+  const rows = goals.map(g => {
+    const href = `#/widgets/objetivos/${enc(g.id)}`;
+    const vs = values.find(x => x.id === g.id);
+    return { id: g.id, href, open: sub === g.id, cls: g.visible === false ? 'is-off' : undefined, cells: {
+      name: <NameCell href={href} name={g.title} sub={`/widget/goal?id=${g.id}`} />,
+      state: <Dot tone={g.visible === false ? 'off' : 'ok'}>{g.visible === false ? 'Oculto' : 'En pantalla'}</Dot>,
+      bars: <Tags items={g.bars.map(b => ({ t: `${b.platform === 'youtube' ? 'YT' : 'TW'} · ${label(b.metric).toLowerCase()} ${vs?.bars?.find(x => x.id === b.id)?.value ?? 0}/${b.target}`, on: b.visible !== false }))} />,
+      copy: <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(`${origin()}/widget/goal?id=${enc(g.id)}`)}>Copiar URL</button>,
+    } };
+  });
+  return <>
+    <Slide crumb={<><a href="#/widgets">Widgets</a> › Objetivos</>} title="Objetivos" back="#/widgets" wide
+      head={<a className="eg-btn eg-btn--primary eg-btn--sm" href="#/widgets/objetivos/nuevo">+ Nuevo objetivo</a>}>
+      <div className="lv-cols aside">
+        <div className="lv-col">
+          <ListPanel tour="goals-list" title="Mis objetivos" note="Cada uno es su propia capa en Meld. Pulsa uno para editar sus barras."
+            cols={[{ key: 'name', label: 'Objetivo' }, { key: 'state', label: 'Estado' }, { key: 'bars', label: 'Barras' }, { key: 'copy', label: '' }]}
+            rows={rows} empty={<>Todavía no hay objetivos. <a href="#/widgets/objetivos/nuevo">Crea el primero</a>.</>} />
+        </div>
+        <aside className="lv-col"><Box title="Cómo funcionan"><p className="hint">Una caja, varias metas: añade barras de Twitch y YouTube a un mismo objetivo. Los contadores se mueven solos con el directo; +1, −1 y «Fijar» se aplican al momento.</p></Box></aside>
+      </div>
+    </Slide>
+    {sub === 'nuevo' ? <NuevoObjetivo /> : sub && goals.some(g => g.id === sub) ? <GoalSlide key={sub} id={sub} /> : null}
+  </>;
+}
+
+function NuevoObjetivo() {
+  const metrics = useLive(s => s.metrics || {});
+  const [d, setD] = useState({ title: '', platform: 'twitch', metric: 'follows', target: 10 });
+  const create = guard(async () => {
+    const r = await post<{ goal: GoalConfig }>('/api/goals', { title: d.title.trim() || 'Nuevo objetivo', platform: d.platform, metric: d.metric, target: d.target });
+    live.update(s => ({ config: { ...s.config, widgets: { ...s.config.widgets, goals: [...(s.config.widgets?.goals || []), r.goal] } } }));
+    go(`#/widgets/objetivos/${enc(r.goal.id)}`);
+  });
+  return <Slide crumb={<><a href="#/widgets">Widgets</a> › <a href="#/widgets/objetivos">Objetivos</a> › Nuevo</>} title="Nuevo objetivo" back="#/widgets/objetivos"
+    tabs={[{ id: 'min', label: 'Lo mínimo' }, { id: 'rest', label: 'Barras y CSS, al crear', locked: true }]} tab="min" onTab={() => {}}
+    foot={<footer className="lv-sfoot sticky"><span className="sp" /><a className="eg-btn eg-btn--ghost eg-btn--sm" href="#/widgets/objetivos">Cancelar</a><button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}>Crear objetivo</button></footer>}>
+    <Box title="Lo mínimo">
+      <label>Título <input autoFocus value={d.title} onChange={e => setD({ ...d, title: e.target.value })} placeholder="Meta de hoy" /></label>
+      <div className="row3">
+        <label>Plataforma <select value={d.platform} onChange={e => setD({ ...d, platform: e.target.value, metric: GOAL_METRICS[e.target.value][0] })}>{GOAL_PLATFORMS.map(p => <option key={p} value={p}>{p === 'youtube' ? 'YouTube' : 'Twitch'}</option>)}</select></label>
+        <label>Qué cuenta <select value={d.metric} onChange={e => setD({ ...d, metric: e.target.value })}>{GOAL_METRICS[d.platform].map(k => <option key={k} value={k}>{(metrics[k] as { label?: string } | undefined)?.label || k}</option>)}</select></label>
+        <label>Meta <input type="number" min={1} value={d.target} onChange={e => setD({ ...d, target: Math.max(1, Number(e.target.value) || 1) })} /></label>
+      </div>
+      <p className="hint">Se crea con una barra. Después puedes añadir más (por ejemplo, una de YouTube) en el mismo objetivo.</p>
+    </Box>
+  </Slide>;
 }
 
 // Métricas válidas por plataforma (contrato de src/goals.mjs; los enums del schema son la fuente).
@@ -98,14 +213,12 @@ const GOAL_METRICS: Record<string, string[]> = {
   youtube: ['superchats', 'members', 'events'],
 };
 
-function Goals() {
+function GoalSlide({ id }: { id: string }) {
   const goals: GoalConfig[] = useLive(s => s.config.widgets?.goals || []);
   const values: GoalValue[] = useLive(s => s.widgets?.goals || []);
   const metrics = useLive(s => s.metrics || {});
   const [setVal, setSetVal] = useState<Record<string, string>>({});
-  // O1.7: una pestaña por objetivo; sin selección (o si se borró) se edita el primero.
-  const [sel, setSel] = useState<string | null>(null);
-  const g = goals.find(x => x.id === sel) || goals[0];
+  const g = goals.find(x => x.id === id);
   const reloadGoals = (list: GoalConfig[]) => live.update(s => ({ config: { ...s.config, widgets: { ...s.config.widgets, goals: list } } }));
   // Optimistic save: if the server rejects the change, the panel goes back to the saved list
   // instead of showing a value that does not exist (the error still reaches guard's toast).
@@ -128,16 +241,16 @@ function Goals() {
   const setValue = (boxId: string, barId: string, value: number) => live.update(s => ({
     widgets: { ...s.widgets, goals: (s.widgets?.goals || []).map(g => (g.id === boxId ? { ...g, bars: g.bars.map(b => (b.id === barId ? { ...b, value } : b)) } : g)) },
   }));
+  if (!g) return null;
   return <>
-    <ViewHead tour="goals-head" crumb="Widgets › Objetivos" title="Objetivos" hint="Una caja, varias metas. Añade barras de Twitch y YouTube con su propio progreso. Cada caja es una fuente de navegador para Meld." />
-    <ItemTabs label="Objetivos" tour="goals-tabs" items={goals.map(x => ({ id: x.id, label: x.title, badge: x.visible === false ? 'oculto' : undefined }))} selected={g?.id} onSelect={setSel} newLabel="+ Nuevo objetivo"
-      onNew={guard(async () => { const d = await post<{ goal: GoalConfig }>('/api/goals', { title: 'Nuevo objetivo', metric: 'follows', target: 10 }); reloadGoals([...goals, d.goal]); setSel(d.goal.id); })} />
-    {g ? (() => {
+    {(() => {
       const vs = values.find(x => x.id === g.id);
       const visibleBars = g.visible === false ? 0 : g.bars.filter(b => b.visible !== false).length;
       const previewHeight = 210 + 60 * visibleBars;
-      return <article className="goal-card" key={g.id} data-tour="goals-editor">
-        <header className="goal-card-head"><h2>{g.title}</h2><span className="hint">{visibleBars} barras visibles · {g.visible === false ? 'Caja oculta' : 'En pantalla'}</span></header>
+      return <Slide key={g.id} crumb={<><a href="#/widgets">Widgets</a> › <a href="#/widgets/objetivos">Objetivos</a> › Objetivo</>} title={g.title} back="#/widgets/objetivos" close="#/widgets" wide
+        foot={<footer className="lv-sfoot sticky"><button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(g.title, 'este objetivo')) return; const d = await del<{ goals: GoalConfig[] }>('/api/goals/' + enc(g.id)); reloadGoals(d.goals); go('#/widgets/objetivos'); })}>Borrar objetivo…</button><span className="sp" /><span className="lv-dirty">Los objetivos se guardan al momento: sus barras cuentan en directo.</span></footer>}>
+        <article className="goal-card" data-tour="goals-editor">
+        <p className="hint">{visibleBars} barras visibles · {g.visible === false ? 'Caja oculta' : 'En pantalla'}</p>
         <WidgetLayout
           source={<BrowserSource url={`${origin()}/widget/goal?id=${enc(g.id)}`} size={`1000×${previewHeight}`} hint="En Meld: + › Browser. Cada caja de objetivos es una fuente propia." />}
           /* O1.5: la preview se vuelve a montar al cambiar la config de la caja (no con cada valor) */
@@ -174,11 +287,9 @@ function Goals() {
           <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const d = await post<{ bar: GoalBar }>(`/api/goals/${enc(g.id)}/bars`, { platform: 'twitch', metric: 'follows', target: 10 }); reloadGoals(goals.map(x => (x.id === g.id ? { ...x, bars: [...x.bars, d.bar] } : x))); })}>+ Añadir barra</button>
           <details className="goal-css"><summary>CSS personalizado</summary><label>CSS <LazyInput as="textarea" className="code" spellCheck={false} style={{ minHeight: 70 }} placeholder=".title { color: #FF8FA6; }" value={g.css || ''} onCommit={x => saveGoal(g.id, { css: x })} /></label>
             <p className="css-help">Clases: <code>.goal</code> <code>.goal.done</code> <code>.kick</code> <code>.title</code> <code>.bar</code> <code>.bar.pf-twitch</code> <code>.bar.pf-youtube</code> <code>.fill</code> <code>.pf-ico</code> <code>.metric</code> <code>.pct</code></p></details>
-          <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(g.title, 'este objetivo')) return; const d = await del<{ goals: GoalConfig[] }>('/api/goals/' + enc(g.id)); reloadGoals(d.goals); })}>Borrar objetivo</button>
         </Panel>
-        </WidgetLayout></article>;
-    })() : <EmptyState>Sin objetivos.</EmptyState>}
+        </WidgetLayout></article></Slide>;
+    })()}
   </>;
 }
 
-// verificación de caché de diagnóstico: sin cambios funcionales

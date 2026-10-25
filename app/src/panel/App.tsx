@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { live, useLive } from '../lib/live';
 import { flushAll } from '../lib/patch';
+import { holding } from '../lib/draft';
 import { toast, Toaster } from '../lib/ui';
 import { useHash } from './router';
 import { Onboarding } from './Onboarding';
@@ -10,31 +11,29 @@ import { Vistas } from './views/index';
 import { platformsText } from './views/Editor';
 
 function View({ parts }: { parts: string[] }) {
-  const [a, b, c, d] = parts;
   const V = Vistas;
-  switch (a) {
+  switch (parts[0]) {
     case 'directo': return <V.Directo />;
     case 'chat': return <V.Chat />;
+    case 'preguntas': return <V.Preguntas parts={parts} />;
+    case 'tierlist': return <V.TierList parts={parts} />;
+    case 'sorteo': return <V.Sorteo parts={parts} />;
+    case 'teleprompter': return <V.Teleprompter parts={parts} />;
+    case 'alertas': return <V.Alertas parts={parts} />;
+    case 'comandos': return <V.Comandos parts={parts} />;
+    case 'mensajes': return <V.Mensajes parts={parts} />;
+    case 'widgets': return <V.Widgets parts={parts} />;
+    case 'atajos': return <V.Atajos parts={parts} />;
+    case 'fuentes': return <V.Fuentes parts={parts} />;
+    case 'meld': return <V.Meld parts={parts} />;
+    case 'prompter': return <V.PrompterAjustes parts={parts} />;
     case 'historial': return <V.Historial />;
-    case 'alerta': return c === 'v' && d ? <V.Editor key={`v-${b}-${d}`} target={{ kind: 'variation', type: b, id: d }} /> : <V.Editor key={`a-${b}`} target={{ kind: 'alert', type: b }} />;
-    case 'comandos': return <V.Comandos />;
-    case 'comando': return <V.Editor key={`c-${b}`} target={{ kind: 'command', id: b }} />;
-    case 'mensajes': return <V.Mensajes />;
-    case 'mensaje': return <V.Editor key={`t-${b}`} target={{ kind: 'timer', id: b }} />;
-    case 'widget':
-      if (b === 'questions') return <V.Preguntas />;
-      if (b === 'tierlist') return <V.TierList />;
-      if (b === 'giveaway') return <V.Sorteo />;
-      if (b === 'teleprompter') return <V.Teleprompter />;
-      return <V.Widget key={b} name={b} />;
-    case 'fuentes': return <V.Fuentes />;
-    case 'meld': return <V.Meld />;
-    case 'atajos': return <V.Atajos />;
-    case 'prompter': return <V.PrompterAjustes />;
-    case 'apariencia': return <V.Apariencia />;
-    case 'filtros': return <V.Filtros />;
-    case 'conexiones': return <V.Conexiones />;
-    case 'general': return <V.General />;
+    case 'directos': return <V.Directos parts={parts} />;
+    case 'archivos': return <V.Archivos parts={parts} />;
+    case 'apariencia': return <V.Apariencia parts={parts} />;
+    case 'conexiones': return <V.Conexiones parts={parts} />;
+    case 'filtros': return <V.Filtros parts={parts} />;
+    case 'general': return <V.General parts={parts} />;
     case 'acerca': return <V.AcercaDe />;
     default: return <V.Directo />;
   }
@@ -64,11 +63,10 @@ export function App() {
       const from = origin?.kind === 'command' ? `del comando ${origin.trigger || ''}`.trim() : origin ? `de la alerta «${live.state?.types?.[origin.type]?.label || origin.type}»` : '';
       toast(`Fallo en la acción de chat ${from}: ${platformsText(platforms)}`);
     });
-    // al cambiar de vista o cerrar, se guarda lo pendiente
-    const flush = () => { flushAll().catch(() => {}); };
-    window.addEventListener('hashchange', flush);
+    // fuera del guardado manual (Directo, Chat…) lo que quede pendiente se guarda al cerrar
+    const flush = () => { if (!holding()) flushAll().catch(() => {}); };
     window.addEventListener('beforeunload', flush);
-    return () => { off(); offChat(); window.removeEventListener('hashchange', flush); window.removeEventListener('beforeunload', flush); };
+    return () => { off(); offChat(); window.removeEventListener('beforeunload', flush); };
   }, []);
   if (error) return <div className="boot err"><h1>No se puede conectar con antena</h1><p>{error}</p><button className="btn" onClick={() => location.reload()}>Reintentar</button></div>;
   if (!ready) return <div className="boot"><img className="brand-mark" src="/brand/logo.png" alt="" /><p>Cargando…</p></div>;

@@ -43,19 +43,15 @@ test('tarjeta común del panel: cabecera, separadores finos y pie opcional', { t
     const sep = await ev(cssOf(c, '.app main .sec:not(.sec--flat) .sec-h', 'borderBottomWidth'));
     assert.equal(sep, '1px', 'la cabecera separa del contenido con un filete de 1px');
 
-    // pie opcional: en Mensajes programados, texto atenuado a izquierda y derecha
+    // pie opcional (v2: pie del listado): en Mensajes programados, texto atenuado con filete
     await ev(`location.hash = '#/mensajes'`);
-    await waitDom(c, `!!document.querySelector('.app main .sec-foot')`, { timeoutMs: 12000 });
+    await waitDom(c, `!!document.querySelector('.app main .lv-panel .lv-foot')`, { timeoutMs: 12000 });
     const foot = await ev(`(() => {
-      const f = document.querySelector('.app main .sec-foot');
+      const f = document.querySelector('.app main .lv-panel .lv-foot');
       const s = getComputedStyle(f);
-      return {
-        izq: f.children[0]?.textContent || '', der: f.children[1]?.textContent || '',
-        sep: s.borderTopWidth, muted: s.color, atenuado: s.color !== getComputedStyle(f.closest('.sec')).color,
-      };
+      return { texto: f.textContent || '', sep: s.borderTopWidth, atenuado: s.color !== getComputedStyle(f.closest('.lv-panel')).color };
     })()`);
-    assert.ok(foot.izq.length > 0, 'el pie tiene texto a la izquierda');
-    assert.ok(foot.der.length > 0, 'el pie tiene texto a la derecha');
+    assert.ok(foot.texto.length > 0, 'el pie tiene texto');
     assert.equal(foot.sep, '1px', 'el pie se separa del contenido con un filete de 1px');
     assert.equal(foot.atenuado, true, 'el texto del pie va atenuado');
   } finally {

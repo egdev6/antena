@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { IC } from '../lib/icons';
 import { useLive } from '../lib/live';
 import { post } from '../lib/api';
 import { guard, Icon, cx } from '../lib/ui';
 import { isDesktop, openDock, openPrompter } from '../lib/desktop';
-import type { AlertConfig, AlertType } from '../lib/types';
 import type { IconData } from '../lib/icons';
+import { alertWarnings } from './views/Alertas';
 
 const ICONS = {
   directo: [['path', { d: 'M4.9 19.1C1 15.2 1 8.8 4.9 4.9' }], ['path', { d: 'M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5' }], ['circle', { cx: '12', cy: '12', r: '2' }], ['path', { d: 'M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5' }], ['path', { d: 'M19.1 4.9C23 8.8 23 15.1 19.1 19' }]],
@@ -25,51 +26,45 @@ export function Sidebar({ current }: { current: string }) {
   const [closed, setClosed] = useState(readClosed);
   const I = s.interactive || {};
   const meldOn = s.status?.meld?.state === 'conectado';
-  const dot = (on: boolean) => <span className={`eg-status-dot eg-status-dot--${on ? 'running' : 'stopped'}`} aria-hidden="true" />;
   const tag = (t: string, live = false) => <span className={cx('eg-menu__tag', live && 'eg-menu__tag--live')}>{t}</span>;
   const count = (v: number) => (v ? <span className="eg-menu__count">{v}</span> : null);
-  const types = Object.entries<AlertType>(s.types || {});
-  const alertItem = ([k, t]: [string, AlertType]): Item => {
-    const a = s.config.alerts[k] || {};
-    return { href: `#/alerta/${k}`, label: t.label, lead: dot(!!a.enabled), tail: <>{a.layout === 'media' && a.media ? tag('vídeo') : null}{count(a.variations?.length || 0)}</> };
-  };
+  const warns = alertWarnings(s).length;
   const groups: [string, string, Item[], boolean?][] = [
     ['directo', 'En directo', [
       { href: '#/directo', label: 'Directo', lead: <Icon d={ICONS.directo} /> },
       { href: '#/chat', label: 'Chat', lead: <Icon d={ICONS.chat} /> },
-      { href: '#/historial', label: 'Historial', lead: <Icon d={ICONS.historial} /> },
-    ], !!s.status?.meld?.streaming],
-    ['twitch', 'Alertas de Twitch', types.filter(([, t]) => t.platform === 'twitch').map(alertItem)],
-    ['youtube', 'Alertas de YouTube', types.filter(([, t]) => t.platform === 'youtube').map(alertItem)],
-    ['chat', 'Chat', [
+      { href: '#/preguntas', label: 'Preguntas', tail: I.questions?.pending ? tag(`${I.questions.pending} en cola`, true) : null },
+      { href: '#/tierlist', label: 'Tier list', tail: I.vote ? tag('votando', true) : null },
+      { href: '#/sorteo', label: 'Sorteo', tail: I.giveaway?.open ? tag('abierto', true) : null },
+      { href: '#/teleprompter', label: 'Teleprompter', tail: s.teleprompter?.playback?.playing ? tag('leyendo', true) : null },
+    ], !!(s.status?.meld?.streaming || I.questions?.pending || I.vote || I.giveaway?.open)],
+    ['configurar', 'Configurar', [
+      { href: '#/alertas', label: 'Alertas', tail: warns ? <span className="eg-menu__tag eg-menu__tag--warn" title="Alertas con avisos">{warns}</span> : count(Object.keys(s.types || {}).length) },
       { href: '#/comandos', label: 'Comandos de chat', tail: count(s.config.commands?.length) },
       { href: '#/mensajes', label: 'Mensajes programados', tail: count(s.config.timers?.length) },
+      { href: '#/widgets', label: 'Widgets', tail: count(8) },
+      { href: '#/atajos', label: 'Atajos y Stream Deck', tail: count(s.config.shortcuts?.length) },
     ]],
-    ['widgets', 'Widgets', [
-      { href: '#/widget/questions', label: 'Preguntas', tail: I.questions?.pending ? tag(`${I.questions.pending} en cola`, true) : null },
-      { href: '#/widget/teleprompter', label: 'Teleprompter', tail: s.teleprompter?.playback?.playing ? tag('leyendo', true) : null },
-      { href: '#/widget/tierlist', label: 'Tier list', tail: I.vote ? tag('votando', true) : null },
-      { href: '#/widget/giveaway', label: 'Sorteo', tail: I.giveaway?.open ? tag('abierto', true) : null },
-      { href: '#/widget/chat', label: 'Chat en pantalla' },
-      { href: '#/widget/goals', label: 'Objetivos' },
-      { href: '#/widget/latest', label: 'Últimos y ticker' },
-      { href: '#/widget/credits', label: 'Créditos' },
-    ], !!(I.questions?.pending || I.vote || I.giveaway?.open)],
-    ['meld', 'Meld y Stream Deck', [
+    ['produccion', 'Producción', [
       { href: '#/fuentes', label: 'Fuentes para Meld' },
       { href: '#/meld', label: 'Meld Studio', tail: <span className={`eg-status-dot eg-status-dot--${meldOn ? 'running' : 'stopped'}`} aria-label={meldOn ? 'conectado' : 'sin conectar'} style={{ marginLeft: 'auto' }} /> },
-      { href: '#/atajos', label: 'Atajos y Stream Deck', tail: count(s.config.shortcuts?.length) },
-      { href: '#/prompter', label: 'Prompter' },
+      { href: '#/prompter', label: 'Prompter y dock' },
+    ]],
+    ['registro', 'Registro', [
+      { href: '#/historial', label: 'Historial de alertas', lead: <Icon d={ICONS.historial} /> },
+      { href: '#/directos', label: 'Directos anteriores' },
+      { href: '#/archivos', label: 'Archivos', tail: count(s.media?.length || 0) },
     ]],
     ['ajustes', 'Ajustes', [
       { href: '#/apariencia', label: 'Apariencia' },
-      { href: '#/filtros', label: 'Filtros y voz' },
       { href: '#/conexiones', label: 'Conexiones' },
-      { href: '#/general', label: 'General y archivos' },
+      { href: '#/filtros', label: 'Filtros y voz' },
+      { href: '#/general', label: 'General' },
       { href: '#/acerca', label: 'Acerca de' },
     ]],
   ];
-  const active = (href: string) => href === current || (current.startsWith('#/comando/') && href === '#/comandos') || (current.startsWith('#/mensaje/') && href === '#/mensajes');
+  // la entrada activa: la página (primer tramo de la dirección), aunque haya un slide abierto
+  const active = (href: string) => href.split('/')[1] === current.split('/')[1];
   const toggle = (id: string, alt: boolean) => {
     const next = new Set(closed);
     if (alt) {
@@ -101,6 +96,7 @@ export function Sidebar({ current }: { current: string }) {
       })}
     </nav>
     <div className="side-foot">
+      <CreateMenu />
       {isDesktop() && <div className="row tight">
         <button className="eg-btn eg-btn--ghost eg-btn--sm" style={{ flex: 1 }} onClick={guard(() => openPrompter(s.config.prompter?.monitor))}>Prompter</button>
         <button className="eg-btn eg-btn--ghost eg-btn--sm" style={{ flex: 1 }} onClick={guard(() => openDock())}>Dock</button>
@@ -119,4 +115,20 @@ export function Sidebar({ current }: { current: string }) {
       </div>
     </div>
   </aside>;
+}
+
+/** «Crear»: todo lo que se puede crear, desde cualquier página (abre el slide en modo «Nuevo»). */
+const CREATE: [string, string][] = [
+  ['#/comandos/nuevo', 'Comando de chat'], ['#/mensajes/nuevo', 'Mensaje programado'], ['#/alertas', 'Variación de una alerta…'],
+  ['#/widgets/objetivos/nuevo', 'Objetivo'], ['#/atajos/nuevo', 'Atajo de Stream Deck'], ['#/tierlist/nueva', 'Tier list'], ['#/teleprompter/guiones/nuevo', 'Guion del teleprompter'],
+];
+function CreateMenu() {
+  const [open, setOpen] = useState(false);
+  return <div className="side-create" onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}>
+    {open && <div className="menu" role="menu" aria-label="Crear">
+      <p>Crear</p>
+      {CREATE.map(([href, label]) => <a key={href} role="menuitem" href={href} onClick={() => setOpen(false)}>{label}</a>)}
+    </div>}
+    <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" style={{ width: '100%' }} aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(!open)}><Icon d={IC.plus} className="eg-btn__icon" />Crear</button>
+  </div>;
 }

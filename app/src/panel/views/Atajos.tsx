@@ -3,8 +3,11 @@
 import { useEffect, useState } from 'react';
 import { del, enc, get, post, put } from '../../lib/api';
 import { live } from '../../lib/live';
-import { confirmDelete, copy, cx, EmptyState, guard, IconBtn, LazyInput, Modal, Panel, toast, ViewHead } from '../../lib/ui';
+import { confirmDelete, copy, cx, guard, IconBtn, Panel, toast } from '../../lib/ui';
 import { IC } from '../../lib/icons';
+import { draftChanged, registerDraft, useManualSave } from '../../lib/draft';
+import { Box, ListPanel, NameCell, PageHead, SaveBar, Slide, Tags } from '../../lib/layout';
+import { go } from '../router';
 import { ACTIONS, ActionFields } from './Editor';
 
 export const SD_HELP: Record<string, string> = {
@@ -53,111 +56,100 @@ function StepsEditor({ steps, info, onChange }: { steps: Step[]; info: Info; onC
   </div>;
 }
 
-// Editor de un atajo (dentro del modal): nombre, dirección, color y pasos; los pasos se guardan con «Guardar pasos».
-function ShortcutCard({ sc, info, base, onSaved, onDeleted, onDirty }: { sc: Shortcut; info: Info; base: string; onSaved: (s: Shortcut) => void; onDeleted: () => void; onDirty: (dirty: boolean) => void }) {
-  const [steps, setSteps] = useState<Step[]>(sc.steps);
-  const [dirty, setDirtyState] = useState(false);
-  const setDirty = (v: boolean) => { setDirtyState(v); onDirty(v); };
+type Draft = { name: string; color?: string; steps: Step[] };
+function ShortcutSlide({ sc, info, base, onSaved, onDeleted }: { sc: Shortcut; info: Info; base: string; onSaved: (s: Shortcut) => void; onDeleted: () => void }) {
+  useManualSave();
+  const [d, setD] = useState<Draft | null>(null);
   const [msg, setMsg] = useState<{ t: string; err?: boolean } | null>(null);
-  useEffect(() => { if (!dirty) setSteps(sc.steps); }, [sc.steps]);
+  const ref = useState({ d: null as Draft | null })[0]; ref.d = d;
+  const cur: Draft = d || { name: sc.name, color: sc.color, steps: sc.steps };
   const url = `${base}/sd/custom/${sc.id}`;
-  const save = async (patch: Partial<Shortcut>) => { const d = await put<{ shortcut: Shortcut }>('/api/shortcuts/' + enc(sc.id), patch); onSaved(d.shortcut); return d.shortcut; };
-  const saveSteps = guard(async () => { await save({ steps }); setDirty(false); setMsg({ t: 'Guardado' }); });
+  const save = async () => { if (!ref.d) return; const r = await put<{ shortcut: Shortcut }>('/api/shortcuts/' + enc(sc.id), ref.d); ref.d = null; setD(null); onSaved(r.shortcut); draftChanged(); };
+  useEffect(() => registerDraft('atajo:' + sc.id, { dirty: () => !!ref.d, keys: () => (ref.d ? Object.keys(ref.d) : []), save, discard: () => { ref.d = null; setD(null); draftChanged(); } }), [sc.id]);
+  const set = (patch: Partial<Draft>) => { const n = { ...cur, ...patch }; ref.d = n; setD(n); setMsg(null); draftChanged(); };
   const run = guard(async () => {
-    if (dirty) { await save({ steps }); setDirty(false); }
+    await save();
     const r = await post<{ errors?: string[]; results?: unknown[] }>(`/api/shortcuts/${enc(sc.id)}/run`);
     setMsg(r.errors?.length ? { t: `Hecho a medias: ${r.errors.join(' · ')}`, err: true } : { t: `Hecho: ${(r.results || []).length} ${(r.results || []).length === 1 ? 'paso' : 'pasos'}` });
   });
-  return <article className="shortcut-card" style={{ ['--sc' as any]: sc.color || 'var(--eg-accent, #FF3B5C)' }}>
-    <header>
-      <span className="sc-swatch" aria-hidden="true" />
-      <LazyInput className="title-input sm" aria-label="Nombre del atajo" value={sc.name} onCommit={v => save({ name: v }).catch(e => toast(e.message, true))} />
-      <div className="row tight">
-        <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={run}>Probar</button>
-        <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(sc.name, 'este atajo')) return; await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar</button>
-      </div>
-    </header>
-    <div className="overlay-url"><code>{url}</code><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(url)}>Copiar</button></div>
-    <div className="row tight colors" role="radiogroup" aria-label="Color en el dock">
-      {COLORS.map(c => <button key={c || 'none'} role="radio" aria-checked={(sc.color || '') === c} title={c || 'Sin color'} className={cx('color-dot', (sc.color || '') === c && 'on')} style={{ background: c || 'transparent' }} onClick={guard(() => save({ color: c }))} />)}
+  return <Slide crumb={<><a href="#/atajos">Atajos y Stream Deck</a> › Atajo</>} back="#/atajos" wide
+    title={<input className="lv-title-input" aria-label="Nombre del atajo" value={cur.name} onChange={e => set({ name: e.target.value })} />}
+    foot={<SaveBar left={<button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(sc.name, 'este atajo')) return; ref.d = null; setD(null); go('#/atajos'); await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar atajo…</button>}
+      right={<button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={run}>Guardar y probar</button>} />}>
+    <div className="lv-cols aside">
+      <div className="lv-col"><Box title={<>Pasos · {cur.steps.length}</>} aside={msg ? <span className={cx('hint', msg.err && 'err-inline')} aria-live="polite">{msg.t}</span> : null}>
+        <StepsEditor steps={cur.steps} info={info} onChange={l => set({ steps: l })} />
+        <div><button className="eg-btn eg-btn--ghost eg-btn--sm" disabled={cur.steps.length >= 20} onClick={() => set({ steps: [...cur.steps, { kind: 'builtin', action: 'marca' }] })}>+ Añadir paso</button></div>
+      </Box></div>
+      <aside className="lv-col">
+        <Box title="Dirección para el Stream Deck"><div className="overlay-url"><code>{url}</code><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(url)}>Copiar</button></div><p className="hint">No cambia aunque cambies el nombre.</p></Box>
+        <Box title="Color en el dock"><div className="row tight colors" role="radiogroup" aria-label="Color en el dock">
+          {COLORS.map(c => <button key={c || 'none'} role="radio" aria-checked={(cur.color || '') === c} title={c || 'Sin color'} className={cx('color-dot', (cur.color || '') === c && 'on')} style={{ background: c || 'transparent' }} onClick={() => set({ color: c })} />)}
+        </div></Box>
+      </aside>
     </div>
-    <StepsEditor steps={steps} info={info} onChange={l => { setSteps(l); setDirty(true); setMsg(null); }} />
-    <div className="row middle mt-s">
-      <button className="eg-btn eg-btn--ghost eg-btn--sm" disabled={steps.length >= 20} onClick={() => { setSteps([...steps, { kind: 'builtin', action: 'marca' }]); setDirty(true); }}>+ Añadir paso</button>
-      {dirty && <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={saveSteps}>Guardar pasos</button>}
-      {msg && <span className={cx('hint', msg.err && 'err-inline')} aria-live="polite">{msg.t}</span>}
-    </div>
-  </article>;
+  </Slide>;
 }
 
-export function Atajos() {
-  const [info, setInfo] = useState<Info | null>(null);
+const TEMPLATES: [string, string, string, Step[]][] = [
+  ['vacio', 'Desde cero', 'Un paso: marcar un short', [{ kind: 'builtin', action: 'marca' }]],
+  ['empezar', 'Empezar el directo', 'Escena de inicio + mensaje en el chat', [{ kind: 'scene', scene: '', delaySec: 0 }, { kind: 'chat', text: '¡Empezamos! Os esperamos en el chat', destination: 'both', delaySec: 0 }]],
+  ['pausa', 'Pausa café', 'Pausar alertas + escena de pausa', [{ kind: 'builtin', action: 'pausa' }, { kind: 'scene', scene: '', delaySec: 0 }]],
+  ['sorteo', 'Sorteo', 'Abrir sorteo + prompter en Sorteo', [{ kind: 'builtin', action: 'abrir-sorteo' }, { kind: 'builtin', action: 'prompter', arg: 'sorteo' }]],
+];
+function NuevoAtajo({ count, onCreated }: { count: number; onCreated: (s: Shortcut) => void }) {
   const [name, setName] = useState('');
-  // modal: null cerrado, 'new' para crear, o el id del atajo que se edita
-  const [modal, setModal] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [tpl, setTpl] = useState('vacio');
+  const create = guard(async () => {
+    const t = TEMPLATES.find(x => x[0] === tpl)!;
+    const d = await post<{ shortcut: Shortcut }>('/api/shortcuts', { name: name.trim() || (tpl === 'vacio' ? `Atajo ${count + 1}` : t[1]), steps: t[3] });
+    onCreated(d.shortcut); go(`#/atajos/${enc(d.shortcut.id)}`);
+  });
+  return <Slide crumb={<><a href="#/atajos">Atajos y Stream Deck</a> › Nuevo</>} title="Nuevo atajo" back="#/atajos"
+    tabs={[{ id: 'min', label: 'Lo mínimo' }, { id: 'rest', label: 'Pasos, al crear', locked: true }]} tab="min" onTab={() => {}}
+    foot={<footer className="lv-sfoot sticky"><span className="sp" /><a className="eg-btn eg-btn--ghost eg-btn--sm" href="#/atajos">Cancelar</a><button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}>Crear atajo</button></footer>}>
+    <Box title="Lo mínimo"><label>Nombre <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="Empezar el directo" /></label></Box>
+    <Box title="Plantilla de partida"><div className="lv-tiles" role="radiogroup" aria-label="Plantilla">{TEMPLATES.map(([id, t, dsc]) => <button key={id} type="button" role="radio" className="lv-tile" aria-checked={tpl === id} aria-pressed={tpl === id} onClick={() => setTpl(id)}><b>{t}</b><span>{dsc}</span></button>)}</div></Box>
+  </Slide>;
+}
+
+export function Atajos({ parts }: { parts: string[] }) {
+  const [info, setInfo] = useState<Info | null>(null);
   const base = location.origin;
   const load = () => get<Info>('/api/shortcuts').then(setInfo).catch(e => toast(e.message, true));
   useEffect(() => { load(); }, []);
-  // los atajos también viven en la configuración (el dock y la barra lateral los leen de ahí)
+  const tab = parts[1] === 'serie' ? 'serie' : parts[1] === 'streamdeck' ? 'streamdeck' : 'mios';
+  const open = tab === 'mios' ? parts[1] : undefined;
   const sync = (custom: Shortcut[]) => { setInfo(i => (i ? { ...i, custom } : i)); live.update(s => ({ config: { ...s.config, shortcuts: custom } })); };
   if (!info) return <p className="hint">Cargando…</p>;
-  const close = () => { setModal(null); setDirty(false); setName(''); };
-  const requestClose = () => { if (!dirty || confirm('Tienes pasos sin guardar. ¿Cerrar sin guardarlos?')) close(); };
-  const create = guard(async () => {
-    const d = await post<{ shortcut: Shortcut }>('/api/shortcuts', { name: name.trim() || `Atajo ${info.custom.length + 1}`, steps: [{ kind: 'builtin', action: 'marca' }] });
-    sync([...info.custom, d.shortcut]); setName(''); setModal(d.shortcut.id);
-  });
-  const run = (sc: Shortcut) => guard(async () => {
-    const r = await post<{ errors?: string[]; results?: unknown[] }>(`/api/shortcuts/${enc(sc.id)}/run`);
-    const n = (r.results || []).length;
-    if (r.errors?.length) toast(`Hecho a medias: ${r.errors.join(' · ')}`, true); else toast(`Hecho: ${n} ${n === 1 ? 'paso' : 'pasos'}`);
-  })();
-  const remove = (sc: Shortcut) => guard(async () => {
-    if (!confirmDelete(sc.name, 'este atajo')) return;
-    await del('/api/shortcuts/' + enc(sc.id));
-    if (modal === sc.id) close();
-    sync(info.custom.filter(x => x.id !== sc.id));
-  })();
-  const editing = modal && modal !== 'new' ? info.custom.find(x => x.id === modal) : undefined;
+  const sc = info.custom.find(x => x.id === open);
   return <>
-    <ViewHead tour="atajos-head" crumb="Meld y Stream Deck › Atajos y Stream Deck" title="Atajos y Stream Deck" hint="Cada atajo es una dirección: un botón del Stream Deck la llama y se hacen sus pasos en orden. También salen como botones en el dock de Meld."
-      actions={<button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={() => setModal('new')}>+ Nuevo atajo</button>} />
-    <div className="grid2">
-      <div className="stack">
-        <Panel title="Cómo ponerlo en el Stream Deck" tour="atajos-streamdeck">
-          <ol className="steps">
-            <li>Instala un plugin de peticiones web (por ejemplo «API Ninja» o «Web Requests»).</li>
-            <li>Arrastra su acción a un botón y pega la dirección del atajo. Vale GET o POST, sin cuerpo.</li>
-            <li>Escenas, micro y efectos sueltos van más rápidos con el plugin oficial de Meld; usa los atajos para lo que combina varias cosas.</li>
-          </ol>
-          <p className="hint">Si cambias el nombre, la dirección sigue siendo la misma: usa el identificador, no el nombre.</p>
-        </Panel>
-        <Panel title={<>Mis atajos <span className="hint">{info.custom.length}</span></>} tour="atajos-list">
-          {info.custom.length ? <div className="rows">{info.custom.map(sc => <article key={sc.id} className="eg-post eg-post--row shortcut-row" style={{ ['--sc' as any]: sc.color || 'var(--eg-accent, #FF3B5C)' }}>
-            <span className="sc-swatch" aria-hidden="true" />
-            <div className="eg-post__content"><b>{sc.name}</b>
-              <span className="eg-post__meta"><code>/sd/custom/{sc.id}</code> · {sc.steps.length} {sc.steps.length === 1 ? 'paso' : 'pasos'}</span></div>
-            <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => run(sc)}>Probar</button>
-            <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => setModal(sc.id)}>Editar</button>
-            <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={() => remove(sc)}>Borrar</button>
-          </article>)}</div>
-            : <EmptyState>Aún no tienes atajos. Ideas: «Empezar» (escena de inicio + abrir preguntas + mensaje en el chat), «Pausa café» (escena de pausa + pausar alertas), «Sorteo» (abrir sorteo + prompter en la pestaña de sorteo).</EmptyState>}
-        </Panel>
-      </div>
-      <Panel title="Atajos de serie">
-        <ul className="sd-list">{info.actions.map(a => <li key={a}><code>/sd/{a}</code><span className="hint">{sdLabel(a)}</span><span className="vbtns"><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/sd/' + a), 'Hecho')}>Probar</button><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(`${base}/sd/${a}`)}>Copiar</button></span></li>)}</ul>
-      </Panel>
-    </div>
-    {modal === 'new' && <Modal title="Nuevo atajo" onClose={requestClose}>
-      <p className="hint">Ponle un nombre; después eliges sus pasos.</p>
-      <div className="row tight"><input className="grow" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="Empezar el directo" aria-label="Nombre del atajo nuevo" /><button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}>Crear atajo</button></div>
-    </Modal>}
-    {editing && <Modal title="Editar atajo" onClose={requestClose} className="shortcut-modal">
-      <ShortcutCard key={editing.id} sc={editing} info={info} base={base}
-        onSaved={n => sync(info.custom.map(x => (x.id === n.id ? n : x)))}
-        onDeleted={() => { close(); sync(info.custom.filter(x => x.id !== editing.id)); }}
-        onDirty={setDirty} />
-    </Modal>}
+    <PageHead tour="atajos-head" crumb={`Configurar · ${info.custom.length} atajos propios`} title="Atajos y Stream Deck"
+      desc="Cada atajo es una dirección: un botón del Stream Deck la llama y se hacen sus pasos en orden. También salen como botones en el dock de Meld."
+      actions={<a className="eg-btn eg-btn--primary eg-btn--sm" href="#/atajos/nuevo">+ Nuevo atajo</a>}
+      tabs={[{ id: 'mios', label: 'Mis atajos', count: info.custom.length }, { id: 'serie', label: 'De serie', count: info.actions.length }, { id: 'streamdeck', label: 'Cómo ponerlo en el Stream Deck' }]} tab={tab}
+      onTab={t => go(t === 'mios' ? '#/atajos' : `#/atajos/${t}`)} />
+    {tab === 'mios' && <ListPanel tour="atajos-list" title="Mis atajos" note="Ideas: «Empezar», «Pausa café», «Sorteo». Hay plantillas al crear."
+      cols={[{ key: 'name', label: 'Atajo' }, { key: 'steps', label: 'Pasos' }, { key: 'url', label: 'Dirección', hide: true }, { key: 'run', label: '' }]}
+      rows={info.custom.map(x => { const href = `#/atajos/${enc(x.id)}`; return { id: x.id, href, open: open === x.id, cells: {
+        name: <NameCell href={href} name={x.name} lead={<span className="lv-swatch" style={{ background: x.color || 'var(--eg-accent, #FF3B5C)' }} />} />,
+        steps: <Tags items={x.steps.slice(0, 3).map(st => ({ t: stepText(st) })).concat(x.steps.length > 3 ? [{ t: `+${x.steps.length - 3}` }] : [])} />,
+        url: <span className="lv-mono">/sd/custom/{x.id}</span>,
+        run: <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post(`/api/shortcuts/${enc(x.id)}/run`), 'Hecho')}>Probar</button>,
+      } }; })} empty="Aún no tienes atajos." />}
+    {tab === 'serie' && <ListPanel title="Atajos de serie" note="Ya existen: solo hay que copiar la dirección."
+      cols={[{ key: 'path', label: 'Dirección' }, { key: 'what', label: 'Qué hace' }, { key: 'btns', label: '' }]}
+      rows={info.actions.map(a => ({ id: a, cells: { path: <span className="lv-mono">/sd/{a}</span>, what: sdLabel(a),
+        btns: <div className="row tight"><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/sd/' + a), 'Hecho')}>Probar</button><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(`${base}/sd/${a}`)}>Copiar</button></div> } }))} empty="—" />}
+    {tab === 'streamdeck' && <Panel title="Cómo ponerlo en el Stream Deck" tour="atajos-streamdeck">
+      <ol className="steps">
+        <li>Instala un plugin de peticiones web (por ejemplo «API Ninja» o «Web Requests»).</li>
+        <li>Arrastra su acción a un botón y pega la dirección del atajo. Vale GET o POST, sin cuerpo.</li>
+        <li>Escenas, micro y efectos sueltos van más rápidos con el plugin oficial de Meld; usa los atajos para lo que combina varias cosas.</li>
+      </ol>
+      <p className="hint">Si cambias el nombre, la dirección sigue siendo la misma: usa el identificador, no el nombre.</p>
+    </Panel>}
+    {open === 'nuevo' ? <NuevoAtajo count={info.custom.length} onCreated={n => sync([...info.custom, n])} />
+      : sc ? <ShortcutSlide key={sc.id} sc={sc} info={info} base={base} onSaved={n => sync(info.custom.map(x => (x.id === n.id ? n : x)))} onDeleted={() => sync(info.custom.filter(x => x.id !== sc.id))} /> : null}
   </>;
 }

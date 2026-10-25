@@ -68,7 +68,8 @@ export interface AlertVariation {
 }
 export interface AlertConfig {
   enabled?: boolean;
-  layout?: 'card' | 'media';
+  layout?: 'card' | 'media' | 'mixed';
+  cardX?: number; cardY?: number;
   media?: string;
   sound?: string;
   soundVolume?: number;

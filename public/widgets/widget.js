@@ -1,6 +1,7 @@
 // Utilidades comunes de los widgets: conexión, modo demo y CSS propio.
 export const qs = new URLSearchParams(location.search);
 export const DEMO = qs.has('demo');
+const THEME_DRAFT = qs.has('themeDraft');
 if (qs.has('debug') || DEMO) document.body.classList.add('debug');
 document.documentElement.style.setProperty('--scale', Number(qs.get('scale')) || 1);
 
@@ -14,11 +15,13 @@ export function setCss(css) { style.textContent = css || ''; }
  *  client: kind de SSE («widget» por defecto; el teleprompter usa su propio kind para no
  *  recibir contenido de otros widgets ni mandárselo). */
 export function connect(handlers, client = 'widget') {
-  const es = new EventSource('/api/stream?client=' + encodeURIComponent(client));
-  // Apariencia: al cambiar el tema se recarga /theme.css (sin recargar la página)
+  const es = new EventSource('/api/stream?client=' + encodeURIComponent(client) + (THEME_DRAFT ? '&themeDraft=1' : ''));
+  // Apariencia: al cambiar el tema se recarga /theme.css (sin recargar la página). Con ?themeDraft
+  // (vista previa del panel) se ve también el borrador sin guardar; en Meld, solo lo guardado.
   es.addEventListener('theme', e => {
     const t = JSON.parse(e.data), link = document.getElementById('eg-theme');
-    const href = '/theme.css?v=' + encodeURIComponent(t.version || '');
+    if (t.draft && !THEME_DRAFT) return;
+    const href = '/theme.css?' + (THEME_DRAFT ? 'draft=1&' : '') + 'v=' + encodeURIComponent(t.version || '');
     if (link && !link.href.endsWith(href)) link.href = href;
     handlers.theme?.(t);
   });

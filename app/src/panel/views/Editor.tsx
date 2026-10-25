@@ -7,6 +7,8 @@ import { codeTab, confirmDelete, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_
 import { IC } from '../../lib/icons';
 import { go } from '../router';
 import { useUploader, UploadBar } from './General';
+import { confirmLeave, draftChanged, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
+import { ListPanel, NameCell, SaveBar, Slide, Tags, type TabDef } from '../../lib/layout';
 import { RecordPane, VIEWER_TYPES } from './Espectadores';
 
 export type Target = { kind: 'alert'; type: string } | { kind: 'variation'; type: string; id: string } | { kind: 'command'; id: string } | { kind: 'timer'; id: string };
@@ -113,14 +115,36 @@ function testBody(t: Target, where: 'preview' | 'live') {
   return { type: t.type, variationId: t.kind === 'variation' ? t.id : undefined, target: where };
 }
 
+// Campo → pestaña, para el punto de «cambios sin guardar» de cada pestaña.
+const FIELD_TAB: Record<string, string> = {
+  conditions: 'when', trigger: 'cmd', permission: 'cmd', cooldownSec: 'cmd', userCooldownSec: 'cmd', platforms: 'cmd',
+  message: 'chat', intervalMin: 'chat', minChatLines: 'chat', destination: 'chat', onlyWhenLive: 'chat', announce: 'chat', announceColor: 'chat', showAlert: 'chat',
+  title: 'message', text: 'message', sub: 'message', minAmount: 'message',
+  sound: 'sound', soundVolume: 'sound', ttsEnabled: 'sound', ttsTemplate: 'sound', ttsMinAmount: 'sound',
+  actions: 'actions', css: 'css', name: 'head', enabled: 'head',
+};
+export const fieldTab = (f: string) => FIELD_TAB[f] || 'design';
+const FIELD_LABEL: Record<string, string> = { media: 'vídeo o imagen', layout: 'diseño', sound: 'sonido', soundVolume: 'volumen', title: 'antetítulo', text: 'texto', sub: 'línea de apoyo', actions: 'acciones', css: 'CSS', ttsEnabled: 'voz', ttsTemplate: 'voz', durationMs: 'duración', accentColor: 'color', textColor: 'color', cardX: 'posición', cardY: 'posición', textDelayMs: 'retraso' };
+function replaceTarget(s: any, t: Target, value: any) {
+  const cfg = { ...s.config };
+  const mapList = (list: any[], id: string) => list.map(x => (x.id === id ? value : x));
+  if (t.kind === 'alert') cfg.alerts = { ...cfg.alerts, [t.type]: value };
+  if (t.kind === 'variation') { const a = cfg.alerts[t.type]; cfg.alerts = { ...cfg.alerts, [t.type]: { ...a, variations: mapList(a.variations || [], t.id) } }; }
+  if (t.kind === 'command') cfg.commands = mapList(cfg.commands || [], t.id);
+  if (t.kind === 'timer') cfg.timers = mapList(cfg.timers || [], t.id);
+  return { config: cfg };
+}
+
+/** Guardado MANUAL (v2): los cambios quedan en borrador hasta «Guardar»; la vista previa enseña el borrador. */
 function useEditor(t: Target) {
   const pending = useRef<any>({});
+  const snapshot = useRef<any>(null);
   const timer = useRef<any>(null);
   const autoPreview = useRef(true);
   const tRef = useRef(t); tRef.current = t;
   const flush = async () => {
     clearTimeout(timer.current);
-    const p = pending.current; pending.current = {};
+    const p = pending.current;
     if (!Object.keys(p).length) return;
     const tg = tRef.current;
     if (tg.kind === 'alert') { const d = await put<{ config: AlertConfig }>(`/api/alerts/${tg.type}`, p); live.update(s => ({ config: { ...s.config, alerts: { ...s.config.alerts, [tg.type]: d.config } } })); }
@@ -134,23 +158,41 @@ function useEditor(t: Target) {
       const d = await put<{ timer: TimerConfig; warnings?: { message: string }[] }>(`/api/timers/${enc(tg.id)}`, p);
       live.update(s => ({ config: { ...s.config, timers: s.config.timers.map((x: any) => (x.id === tg.id ? d.timer : x)) }, timers: (s.timers || []).map(x => (x.id === tg.id ? { ...x, ...d.timer, runtime: { ...x.runtime, warnings: d.warnings || [] } } : x)) }));
     }
+    pending.current = {}; snapshot.current = null;
+    draftChanged();
   };
+  const discard = () => {
+    clearTimeout(timer.current);
+    if (snapshot.current) { const snap = snapshot.current; live.update(s => replaceTarget(s, tRef.current, snap)); }
+    pending.current = {}; snapshot.current = null;
+    draftChanged();
+    if (autoPreview.current) guard(preview)();
+  };
+  /** Vista previa con lo que hay en pantalla, guardado o no (el servidor no guarda nada). */
   const preview = async () => {
     const tg = tRef.current;
     if (tg.kind === 'timer' && !editorCfg(live.state, tg).showAlert) return;
-    await flush();
-    await post('/api/test', testBody(tg, 'preview'));
+    const draft = Object.keys(pending.current).length ? findTarget(live.state, tg) : undefined;
+    await post('/api/test', { ...testBody(tg, 'preview'), draft });
   };
-  const schedule = () => {
+  const changed = (f: string, v: any, apply: () => void) => {
+    if (!snapshot.current) snapshot.current = structuredClone(findTarget(live.state, tRef.current));
+    pending.current[f] = v;
+    apply();
+    draftChanged();
     clearTimeout(timer.current);
-    timer.current = setTimeout(guard(async () => { await flush(); if (autoPreview.current) await preview(); }), 400);
+    if (autoPreview.current) timer.current = setTimeout(guard(preview), 450);
   };
-  const set = (f: string, v: any) => { pending.current[f] = v; live.update(s => applyLocal(s, tRef.current, f, v)); schedule(); };
-  const setCond = (k: string, v: any) => { pending.current.conditions = { ...(pending.current.conditions || {}), [k]: v }; live.update(s => applyLocal(s, tRef.current, 'conditions', { [k]: v })); clearTimeout(timer.current); timer.current = setTimeout(guard(flush), 500); };
-  // al salir o cambiar de lo que se edita, se guarda lo pendiente
+  const set = (f: string, v: any) => changed(f, v, () => live.update(s => applyLocal(s, tRef.current, f, v)));
+  const setCond = (k: string, v: any) => changed('conditions', { ...(pending.current.conditions || {}), [k]: v }, () => live.update(s => applyLocal(s, tRef.current, 'conditions', { [k]: v })));
+  // fuente de borrador: SaveBar guarda o descarta esto junto con lo demás de la pantalla
   const key = JSON.stringify(t);
-  useEffect(() => () => { guard(flush)(); }, [key]);
-  return { set, setCond, flush, preview, autoPreview };
+  useEffect(() => registerDraft('editor:' + key, {
+    dirty: () => Object.keys(pending.current).length > 0,
+    keys: () => Object.keys(pending.current).map(fieldTab),
+    save: flush, discard,
+  }), [key]);
+  return { set, setCond, flush, preview, discard, autoPreview, dirtyTabs: () => new Set(Object.keys(pending.current).map(fieldTab)) };
 }
 
 // ---------- acciones al salir ----------
@@ -191,6 +233,8 @@ export function ActionsEditor({ list, onChange }: { list: any[]; onChange: (l: a
 // ---------- editor ----------
 export function Editor({ target }: { target: Target }) {
   const s = useLive(x => x);
+  useManualSave();
+  useDraftVersion();
   const ed = useEditor(target);
   const up = useUploader();
   const [cssTab, setCssTab] = useState<'own' | 'global'>('own');
@@ -223,9 +267,12 @@ export function Editor({ target }: { target: Target }) {
   const overrides = v?.overrides || {};
   const mediaKind = (s.media || []).find(m => m.name === a.media)?.kind;
   const isMedia = a.layout === 'media';
-  const isVideo = isMedia && mediaKind === 'video';
+  const isMixed = a.layout === 'mixed';
+  const isVideo = (isMedia || isMixed) && mediaKind === 'video';
   const showAlert = kind !== 'timer' || !!a.showAlert;
-  const when = { card: !isMedia, media: isMedia, video: isVideo, fixed: !isVideo || a.durationMode !== 'media' };
+  const when = { card: !isMedia && !isMixed, media: isMedia, mixed: isMixed, bg: isMedia || isMixed, video: isVideo, fixed: !isVideo || a.durationMode !== 'media' };
+  const mediaThumb = a.media && mediaKind === 'image' ? <img src={`/media/${enc(a.media)}`} alt="" /> : a.media && mediaKind === 'video' ? <video src={`/media/${enc(a.media)}`} muted preload="metadata" /> : <Icon d={IC.camera} className="eg-icon eg-icon--lg" />;
+  const pickLayout = (l: string) => { set('layout', l); if (l !== 'card' && mediaKind === 'video' && a.layout === 'card') set('durationMode', 'media'); };
 
   const set = ed.set;
   const unset = (f: string) => kind === 'variation' && f in overrides ? <button className="unset" title="Volver a heredar de la alerta" onClick={guard(async (e: any) => { e.preventDefault(); set(f, null); await ed.flush(); })}>↺</button> : null;
@@ -262,48 +309,40 @@ export function Editor({ target }: { target: Target }) {
     const d = await up.run(files as File[]);
     if (!d) return;
     set(f, d.name);
-    if (f === 'media') { set('layout', 'media'); if ((live.state?.media || []).find(m => m.name === d.name)?.kind === 'video') set('durationMode', 'media'); }
-    await ed.flush();
+    if (f === 'media') { if (live.state && editorCfg(live.state, target).layout !== 'mixed') set('layout', 'media'); if ((live.state?.media || []).find(m => m.name === d.name)?.kind === 'video') set('durationMode', 'media'); }
   });
 
-  // ---------- cabecera ----------
-  const head = kind === 'alert' ? <>
-    <div><span className="crumb">Alertas de {t.platform === 'youtube' ? 'YouTube' : 'Twitch'} › {t.label}</span><h1>{t.label}</h1></div>
-    <div className="actions">
-      <Switch checked={a.enabled} onChange={x => set('enabled', x)}>Activada</Switch>
-      <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => {
-        if (!confirm('¿Restaurar esta alerta a sus valores por defecto? Se borran también sus variaciones.')) return;
-        await ed.flush(); const d = await post<{ config: Config }>(`/api/alerts/${type}/reset`); live.update(() => ({ config: d.config }));
-      })}>Restaurar</button>
-      <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await ed.flush(); const d = await post<{ overlays?: number }>('/api/test', testBody(target, 'live')); toast(d.overlays ? 'Enviada al directo' : 'Enviada, pero no hay ningún overlay abierto en Meld'); })}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>
-    </div></> : kind === 'variation' ? <>
-    <div><span className="crumb"><a href={`#/alerta/${type}`}>{t.label}</a> › Variación</span>
-      <input className="title-input" value={v.name} aria-label="Nombre de la variación" onChange={e => set('name', e.target.value)} /></div>
-    <div className="actions">
-      <Switch checked={v.enabled !== false} onChange={x => set('enabled', x)}>Activa</Switch>
-      <a className="eg-btn eg-btn--ghost eg-btn--sm" href={`#/alerta/${type}`}>Volver a la alerta</a>
-      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => {
-        if (!confirmDelete(v.name, 'esta variación')) return;
-        const d = await del<{ variations: AlertVariation[] }>(`/api/alerts/${type}/variations/${enc(v.id)}`);
-        live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: d.variations } } } }));
-        go(`#/alerta/${type}`);
-      })}>Borrar</button>
-      <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await ed.flush(); const d = await post<{ overlays?: number }>('/api/test', testBody(target, 'live')); toast(d.overlays ? 'Enviada al directo' : 'Enviada, pero no hay ningún overlay abierto en Meld'); })}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>
-    </div></> : kind === 'timer' ? <>
-    <div><span className="crumb"><a href="#/mensajes">Mensajes programados</a> › Mensaje</span>
-      <input className="title-input" value={item.name} aria-label="Nombre del mensaje" onChange={e => set('name', e.target.value)} /></div>
-    <div className="actions">
-      <Switch checked={item.enabled !== false} onChange={x => set('enabled', x)}>Activo</Switch>
-      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.name, 'este mensaje programado')) return; const d = await del<{ timers: TimerConfig[] }>(`/api/timers/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, timers: d.timers } })); go('#/mensajes'); })}>Borrar</button>
-      <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await ed.flush(); await fireTimer(item.id, (text, err) => setFireMsg({ text, err: !!err })); })}>Enviar ahora</button>
-    </div></> : <>
-    <div><span className="crumb"><a href="#/comandos">Comandos de chat</a> › Comando</span>
-      <input className="title-input" value={item.trigger} aria-label="Disparador" onChange={e => set('trigger', e.target.value.trim())} /></div>
-    <div className="actions">
-      <Switch checked={item.enabled !== false} onChange={x => set('enabled', x)}>Activo</Switch>
-      <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.trigger, 'este comando')) return; const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar</button>
-      <button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await ed.flush(); await post('/api/test', testBody(target, 'live')); }, 'Enviado al directo')}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>
-    </div></>;
+  // ---------- slide: cabecera y pie (guardado manual) ----------
+  const listHref = kind === 'command' ? '#/comandos' : kind === 'timer' ? '#/mensajes' : '#/alertas';
+  const back = kind === 'variation' ? `#/alertas/${type}` : listHref;
+  const testLive = guard(async () => {
+    const d = await post<{ overlays?: number }>('/api/test', { ...testBody(target, 'live') });
+    toast(d.overlays ? 'Enviada al directo (lo guardado)' : 'Enviada, pero no hay ningún overlay abierto en Meld');
+  });
+  const pf = t.platform === 'youtube' ? 'YouTube' : t.platform === 'twitch' ? 'Twitch' : '';
+  const crumb = kind === 'alert' ? <><a href="#/alertas">Alertas</a> › {pf}</>
+    : kind === 'variation' ? <><a href="#/alertas">Alertas</a> › <a href={`#/alertas/${type}`}>{t.label}</a> › Variación</>
+    : kind === 'timer' ? <><a href="#/mensajes">Mensajes programados</a> › Mensaje</> : <><a href="#/comandos">Comandos de chat</a> › Comando</>;
+  const title = kind === 'alert' ? t.label
+    : kind === 'variation' ? <input className="title-input" value={v.name} aria-label="Nombre de la variación" onChange={e => set('name', e.target.value)} />
+    : kind === 'timer' ? <input className="title-input" value={item.name} aria-label="Nombre del mensaje" onChange={e => set('name', e.target.value)} />
+    : <input className="title-input" value={item.trigger} aria-label="Disparador" onChange={e => set('trigger', e.target.value.trim())} />;
+  const headSwitch = <Switch checked={kind === 'alert' ? !!a.enabled : (kind === 'variation' ? v.enabled !== false : item.enabled !== false)} onChange={x => set('enabled', x)}>{kind === 'alert' ? 'Activada' : kind === 'variation' ? 'Activa' : 'Activo'}</Switch>;
+  const footLeft = kind === 'alert' ? <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => {
+      if (!confirm('¿Restaurar esta alerta a sus valores de serie? Se borran también sus variaciones.')) return;
+      ed.discard(); const d = await post<{ config: Config }>(`/api/alerts/${type}/reset`); live.update(() => ({ config: d.config }));
+    }, 'Alerta restaurada')}>Restaurar de serie…</button>
+    : kind === 'variation' ? <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => {
+      if (!confirmDelete(v.name, 'esta variación')) return;
+      ed.discard(); const d = await del<{ variations: AlertVariation[] }>(`/api/alerts/${type}/variations/${enc(v.id)}`);
+      live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: d.variations } } } }));
+      go(`#/alertas/${type}`);
+    })}>Borrar variación…</button>
+    : kind === 'timer' ? <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.name, 'este mensaje programado')) return; ed.discard(); const d = await del<{ timers: TimerConfig[] }>(`/api/timers/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, timers: d.timers } })); go('#/mensajes'); })}>Borrar mensaje…</button>
+    : <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.trigger, 'este comando')) return; ed.discard(); const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar comando…</button>;
+  const footRight = kind === 'timer'
+    ? <button className="eg-btn eg-btn--primary eg-btn--sm" title="Envía lo guardado" onClick={guard(async () => { await fireTimer(item.id, (text, err) => setFireMsg({ text, err: !!err })); })}>Enviar ahora</button>
+    : <button className="eg-btn eg-btn--primary eg-btn--sm" title="Prueba lo guardado en Meld" onClick={testLive}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>;
 
   const c = kind === 'variation' ? { ...s.conditionDefaults, ...v.conditions } : null;
   const nActions = (a.actions || []).length, nVars = (a.variations || []).length;
@@ -321,14 +360,14 @@ export function Editor({ target }: { target: Target }) {
     ] as [string, ReactNode][] : []),
   ];
   const cur = tabs.some(([k]) => k === tab) ? tab : tabs[0][0];
+  const dirtyTabs = ed.dirtyTabs();
+  const tabDefs: TabDef[] = tabs.map(([k, l]) => ({ id: k, label: l, dirty: dirtyTabs.has(k) }));
   // todas las pestañas quedan montadas (solo se ocultan): el formulario no pierde lo escrito al cambiar
   const pane = (k: string, children: ReactNode) => <div role="tabpanel" id={`tp-${k}`} aria-labelledby={`tb-${k}`} hidden={cur !== k} className="tabpane">{children}</div>;
   const box = (title: ReactNode, children: ReactNode, aside?: ReactNode) => <section className="subbox"><div className="subbox-h"><span>{title}</span>{aside}</div>{children}</section>;
-  return <>
-    <header className="view-head">{head}</header>
-    {tabs.length > 1 && <div className="eg-tabs editor-tabs" role="tablist" aria-label="Partes">
-      {tabs.map(([k, l]) => <button key={k} type="button" role="tab" id={`tb-${k}`} aria-controls={`tp-${k}`} className="eg-tabs__item" aria-selected={cur === k} onClick={() => setTab(k)}>{l}</button>)}
-    </div>}
+  return <Slide crumb={crumb} title={title} back={back} close={listHref} head={headSwitch}
+    tabs={tabDefs.length > 1 ? tabDefs : undefined} tab={cur} onTab={setTab}
+    foot={<SaveBar left={footLeft} right={footRight} />}>
     <div className={cx('editor', !showAlert && 'solo')}>
       <div className="form-col">
         {kind === 'alert' && VIEWER_TYPES[type] && pane('rec', <RecordPane type={type} />)}
@@ -380,24 +419,28 @@ export function Editor({ target }: { target: Target }) {
         {showAlert && <>
           {pane('design', <>
             <div className="lbl" data-field="layout">Tipo de alerta{unset('layout')}
-              <div className="tiles2" role="radiogroup" aria-label="Tipo de alerta">
-                <button type="button" role="radio" className="eg-tile" aria-pressed={a.layout !== 'media'} aria-checked={a.layout !== 'media'} onClick={() => set('layout', 'card')}>
+              <div className="tiles2 tiles3" role="radiogroup" aria-label="Tipo de alerta">
+                <button type="button" role="radio" className="eg-tile" aria-pressed={when.card} aria-checked={when.card} onClick={() => pickLayout('card')}>
                   <span className="eg-tile__thumb"><span className="tile-card">Tarjeta 3D</span></span>
                   <span className="eg-tile__name">Tarjeta 3D EGDEV</span><span className="eg-tile__meta">De serie, con brillo y giro</span></button>
-                <button type="button" role="radio" className="eg-tile" aria-pressed={a.layout === 'media'} aria-checked={a.layout === 'media'} onClick={() => set('layout', 'media')}>
-                  <span className="eg-tile__thumb">{a.media && mediaKind === 'image' ? <img src={`/media/${enc(a.media)}`} alt="" /> : a.media && mediaKind === 'video' ? <video src={`/media/${enc(a.media)}`} muted preload="metadata" /> : <Icon d={IC.camera} className="eg-icon eg-icon--lg" />}</span>
+                <button type="button" role="radio" className="eg-tile" aria-pressed={isMedia} aria-checked={isMedia} onClick={() => pickLayout('media')}>
+                  <span className="eg-tile__thumb">{mediaThumb}</span>
                   <span className="eg-tile__name">Mi vídeo o imagen</span><span className="eg-tile__meta">Con el texto encima</span></button>
+                <button type="button" role="radio" className="eg-tile" aria-pressed={isMixed} aria-checked={isMixed} onClick={() => pickLayout('mixed')}>
+                  <span className="eg-tile__thumb tile-mixed">{mediaThumb}<span className="tile-card">Tarjeta</span></span>
+                  <span className="eg-tile__name">Vídeo + tarjeta</span><span className="eg-tile__meta">Fondo propio y la tarjeta encima</span></button>
               </div>
             </div>
-            {when.media && <>
-              <div className={cx('lbl', kind === 'variation' && 'media' in overrides && 'ovr')} data-field="media">{mediaKind === 'image' ? 'Imagen' : 'Vídeo o imagen'}{unset('media')}
+            {when.bg && <>
+              <div className={cx('lbl', kind === 'variation' && 'media' in overrides && 'ovr')} data-field="media">{isMixed ? 'Fondo (vídeo o imagen)' : mediaKind === 'image' ? 'Imagen' : 'Vídeo o imagen'}{unset('media')}
                 <div className="picker">
                   <select value={a.media || ''} onChange={e => set('media', e.target.value)}><option value="">— Elige un vídeo o una imagen —</option>{visuals.map((m: any) => <option key={m.name} value={m.name}>{m.name}</option>)}</select>
                   <label className="eg-btn eg-btn--ghost eg-btn--sm upload">Subir<input type="file" accept="video/*,image/*" hidden onChange={onUpload('media')} /></label>
                 </div>
                 <span className="hint">Se guarda en la carpeta media/ de la app.</span>
               </div>
-              <div className="row2">{R('mediaSize', 'Tamaño', 10, 200, 1, '%')}{when.video && R('mediaVolume', 'Volumen del vídeo', 0, 100, 1, '%')}</div>
+              {isMixed && !a.media && <p className="hint err-inline">Elige un vídeo o una imagen: sin fondo, la alerta sale solo con la tarjeta.</p>}
+              <div className="row2">{R('mediaSize', isMixed ? 'Tamaño del fondo (100 % = pantalla completa)' : 'Tamaño', 10, 200, 1, '%')}{when.video && R('mediaVolume', 'Volumen del vídeo', 0, 100, 1, '%')}</div>
             </>}
             {when.video && <div className="lbl">Duración<div className="field-ctl"><Seg value={a.durationMode} onChange={x => set('durationMode', x)} options={[['media', 'Lo que dure el vídeo'], ['fixed', 'Tiempo fijo']]} /></div></div>}
             <div className="row2">
@@ -405,8 +448,13 @@ export function Editor({ target }: { target: Target }) {
               {when.media && F('animIn', 'Animación de entrada', <><select value={a.animIn} onChange={e => set('animIn', e.target.value)}>{ANIM_IN.map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></>)}
               {when.media && F('animOut', 'Animación de salida', <><select value={a.animOut} onChange={e => set('animOut', e.target.value)}>{ANIM_OUT.map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></>)}
               {when.media && R('textDelayMs', 'Retardo del texto', 0, 6, 0.1, 's', true)}
+              {when.mixed && R('textDelayMs', 'Retraso de la tarjeta', 0, 6, 0.1, 's', true)}
             </div>
             {when.card && <p className="hint">La tarjeta 3D de la marca: icono, antetítulo, nombre y línea de apoyo. Cambia su aspecto en la pestaña CSS.</p>}
+            {when.mixed && box('Posición de la tarjeta', <>
+              <div className="row2">{R('cardX', 'Ajuste horizontal', -900, 900, 10, 'px')}{R('cardY', 'Ajuste vertical', -500, 500, 10, 'px')}</div>
+              <p className="hint">Parte de la posición del tema (Apariencia › Forma y posición) y la mueve sobre el fondo. 0/0 = donde sale la tarjeta normal. El fondo ocupa toda la capa de 1920×1080: un webm con transparencia deja ver la escena.</p>
+            </>)}
             {when.media && box('Posición y estilo del texto', <>
               <div className="row3">{R('textX', 'X', 0, 100, 1, '%')}{R('textY', 'Y', 0, 100, 1, '%')}{R('textWidth', 'Ancho', 20, 140, 1, '%')}</div>
               <div className="row2">{R('fontSize', 'Tamaño de fuente', 20, 160, 1, 'px')}
@@ -453,29 +501,33 @@ export function Editor({ target }: { target: Target }) {
           </>)}
 
           {kind === 'alert' && pane('vars', <>
-            <div className="row middle">
-              <p className="hint grow">Solo guardan lo que cambia (otro vídeo, sonido o texto) según la cantidad, el tier, el usuario o el mensaje. Gana la primera que encaja.</p>
-              <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => {
-                await ed.flush();
+            <ListPanel title="Variaciones" note="Solo guardan lo que cambia (otro vídeo, sonido o texto) según la cantidad, el tier, el usuario o el mensaje. Gana la primera que encaja."
+              tools={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" style={{ marginLeft: 'auto' }} onClick={guard(async () => {
+                if (!confirmLeave()) return;
                 const d = await post<{ variation: AlertVariation }>(`/api/alerts/${type}/variations`, { name: `Variación ${(a.variations?.length || 0) + 1}`, conditions: AMOUNT_TYPES.includes(type) ? { minAmount: 100 } : {} });
                 live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: [...(st.config.alerts[type].variations || []), d.variation] } } } }));
-                go(`#/alerta/${type}/v/${d.variation.id}`);
-              })}><Icon d={IC.plus} className="eg-btn__icon" />Añadir variación</button>
-            </div>
-            <div className="rows">{nVars ? a.variations.map((x: any, i: number, arr: any[]) => <article key={x.id} className={cx('eg-post eg-post--row', x.enabled === false && 'is-off')}>
-              <div className="eg-post__content"><b>{x.name}</b><span className="eg-post__meta">{condSummary(x.conditions)}{Object.keys(x.overrides || {}).length ? ` · cambia ${Object.keys(x.overrides).length} ${Object.keys(x.overrides).length === 1 ? 'cosa' : 'cosas'}` : ''}</span></div>
-              {[-1, 1].map(dir => <IconBtn key={dir} icon={dir < 0 ? IC.up : IC.down} label={dir < 0 ? 'Subir' : 'Bajar'} disabled={dir < 0 ? i === 0 : i === arr.length - 1} onClick={guard(async () => {
-                const ids = arr.map(z => z.id); const j = i + dir; [ids[i], ids[j]] = [ids[j], ids[i]];
-                const d = await post<{ variations: AlertVariation[] }>(`/api/alerts/${type}/variations-order`, { ids });
-                live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: d.variations } } } }));
-              })} />)}
-              <label className="switch" aria-label={`${x.name} activa`}><input type="checkbox" checked={x.enabled !== false} onChange={guard(async e => {
-                const d = await put<{ variation: AlertVariation }>(`/api/alerts/${type}/variations/${enc(x.id)}`, { enabled: e.target.checked });
-                live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: (st.config.alerts[type]?.variations || []).map((z: any) => (z.id === x.id ? d.variation : z)) } } } }));
-              })} /><i></i></label>
-              <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" title={`Probar ${x.name}`} onClick={guard(() => post('/api/test', { type, variationId: x.id, target: 'preview' }))}><Icon d={IC.play} className="eg-btn__icon" />Probar</button>
-              <a className="eg-btn eg-btn--ghost eg-btn--sm" href={`#/alerta/${type}/v/${x.id}`}>Editar</a>
-            </article>) : <EmptyState>Sin variaciones.</EmptyState>}</div>
+                go(`#/alertas/${type}/v/${d.variation.id}`);
+              })}><Icon d={IC.plus} className="eg-btn__icon" />Nueva variación</button>}
+              cols={[{ key: 'name', label: 'Variación' }, { key: 'changes', label: 'Cambia' }, { key: 'on', label: 'Activa' }, { key: 'order', label: 'Orden', hide: true }, { key: 'test', label: '' }]}
+              empty="Sin variaciones."
+              rows={(a.variations || []).map((x: any, i: number, arr: any[]) => ({
+                id: x.id, href: `#/alertas/${type}/v/${x.id}`, cls: x.enabled === false ? 'is-off' : undefined,
+                cells: {
+                  name: <NameCell href={`#/alertas/${type}/v/${x.id}`} name={x.name} sub={condSummary(x.conditions)} />,
+                  changes: <Tags items={Object.keys(x.overrides || {}).slice(0, 4).map(k => ({ t: FIELD_LABEL[k] || k, on: true }))} />,
+                  on: <label className="switch" aria-label={`${x.name} activa`}><input type="checkbox" checked={x.enabled !== false} onChange={guard(async e => {
+                    const d = await put<{ variation: AlertVariation }>(`/api/alerts/${type}/variations/${enc(x.id)}`, { enabled: e.target.checked });
+                    live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: (st.config.alerts[type]?.variations || []).map((z: any) => (z.id === x.id ? d.variation : z)) } } } }));
+                  })} /><i></i></label>,
+                  order: <span className="row tight">{[-1, 1].map(dir => <IconBtn key={dir} icon={dir < 0 ? IC.up : IC.down} label={dir < 0 ? 'Subir' : 'Bajar'} disabled={dir < 0 ? i === 0 : i === arr.length - 1} onClick={guard(async () => {
+                    const ids = arr.map(z => z.id); const j = i + dir; [ids[i], ids[j]] = [ids[j], ids[i]];
+                    const d = await post<{ variations: AlertVariation[] }>(`/api/alerts/${type}/variations-order`, { ids });
+                    live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: d.variations } } } }));
+                  })} />)}</span>,
+                  test: <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" title={`Probar ${x.name} en la vista previa`} onClick={guard(() => post('/api/test', { type, variationId: x.id, target: 'preview' }))}><Icon d={IC.play} className="eg-btn__icon" />Probar</button>,
+                },
+              }))} />
+            <p className="hint">Activar, ordenar y crear variaciones se aplica al momento. Lo de dentro de cada una se guarda con su botón Guardar.</p>
           </>)}
 
           {pane('css', <>
@@ -510,5 +562,5 @@ export function Editor({ target }: { target: Target }) {
       </div>}
     </div>
     <UploadBar name={up.name} progress={up.progress} />
-  </>;
+  </Slide>;
 }

@@ -100,8 +100,9 @@ test('deepMerge de la app React (live.ts) ignora __proto__, constructor y protot
     .replace(/import\s*\{[^}]*\}\s*from\s*['"]react['"];?/, 'const useSyncExternalStore = () => () => {};')
     .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/api['"];?/, 'const api = async () => ({}); const withKey = (u) => u;')
     .replace(/import\s*\{[^}]*\}\s*from\s*['"][^'"]*events\.mjs['"];?/, 'const warnUnknownClientEvent = () => false;')
-    .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/chat-merge\.mjs['"];?/, 'const mergeChat = () => [];');
-  assert.ok(!/from ['"](react|\.\/api|\.\/chat-merge\.mjs|[^'"]*events\.mjs)['"]/.test(stub), 'se eliminan los imports');
+    .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/chat-merge\.mjs['"];?/, 'const mergeChat = () => [];')
+    .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/draft['"];?/, 'const draftChanged = () => {}; const holding = () => false; const registerDraft = () => () => {};');
+  assert.ok(!/from ['"](react|\.\/api|\.\/draft|\.\/chat-merge\.mjs|[^'"]*events\.mjs)['"]/.test(stub), 'se eliminan los imports');
   const dir = await mkdtemp(path.join(tmpdir(), 'antena-stub-'));
   const file = path.join(dir, 'live.mjs');
   await writeFile(file, stub);
