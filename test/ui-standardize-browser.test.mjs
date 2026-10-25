@@ -158,7 +158,8 @@ test('atajos (v2): lista en «Mis atajos» con Probar, «+ Nuevo atajo» en la c
     await dom(chrome, `${slide}.querySelectorAll('.action')[0].querySelector('[aria-label="Bajar"]').click()`);
     await waitDom(chrome.cdp, `!${save}.disabled`, { timeoutMs: 9000 });
     await dom(chrome, `${save}.click()`);
-    await waitDom(chrome.cdp, `${save}.disabled`, { timeoutMs: 9000 });
+    // «disabled» también ocurre mientras se guarda; esperar la confirmación del pie.
+    await waitDom(chrome.cdp, `${save}.disabled && document.querySelector('.lv-slide .lv-sfoot [role="status"]')?.textContent === 'Todo guardado'`, { timeoutMs: 9000 });
     eq(app.store.config.shortcuts[0].steps.map(x => x.action).join('|'), 'pausa|marca');
 
     // salir con pasos sin guardar pregunta; si se rechaza el slide sigue abierto, si se acepta se descartan
@@ -330,7 +331,7 @@ test('#16 Tier y destino del mensaje son Seg; el tipo de acción lleva aria-labe
     eq(await dom(chrome, `${radios(tier)}.find(b => b.getAttribute('aria-checked') === 'true')?.textContent.trim()`), 'Tier 2');
 
     // guardado terminado antes de salir (si no, el aviso de cambios sin guardar bloquea la navegación)
-    await waitDom(chrome.cdp, `document.querySelector('.lv-slide .lv-sfoot .eg-btn--secondary').disabled`, { timeoutMs: 9000 });
+    await waitDom(chrome.cdp, `document.querySelector('.lv-slide .lv-sfoot .eg-btn--secondary').disabled && document.querySelector('.lv-slide .lv-sfoot [role="status"]')?.textContent === 'Todo guardado'`, { timeoutMs: 9000 });
     await dom(chrome, acceptConfirms);
     await dom(chrome, `location.hash = '#/alertas/follow'`);
     await waitDom(chrome.cdp, `[...document.querySelectorAll('.lv-slide [role=tab]')].some(t => t.textContent.startsWith('Acciones al salir'))`, { timeoutMs: 12000 });
