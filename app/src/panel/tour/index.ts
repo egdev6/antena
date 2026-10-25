@@ -2,7 +2,7 @@ import { live } from '../../lib/live';
 import { startTour } from './engine';
 
 /** Marca el onboarding como visto y lo guarda en el servidor (config.panel.onboardingDone). */
-export const markOnboardingDone = () => live.patchConfig({ panel: { onboardingDone: true } });
+export const markOnboardingDone = () => live.saveConfigNow({ panel: { onboardingDone: true } }).catch(() => {});
 
 /** Lanza el tour; al terminarlo o cerrarlo queda marcado como visto. */
 export const launchTour = () => startTour({ onEnd: markOnboardingDone });

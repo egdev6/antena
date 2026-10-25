@@ -57,14 +57,15 @@ test('O3.3 páginas de widgets: fuente de navegador primero a la izquierda y vis
 
     // [ruta, url que debe copiar el bloque]; todas tienen vista previa
     const pages = [
-      ['#/widget/questions', '/widget/question'],
-      ['#/widget/teleprompter', '/widget/teleprompter'],
-      ['#/widget/tierlist', '/widget/tierlist'],
-      ['#/widget/giveaway', '/widget/giveaway'],
-      ['#/widget/chat', '/widget/chat'],
-      ['#/widget/goals', `/widget/goal?id=${encodeURIComponent(goal.id)}`],
-      ['#/widget/latest', '/widget/latest'],
-      ['#/widget/credits', '/widget/credits'],
+      // jerarquía v2: los interactivos en su pestaña de ajustes, los widgets fijos y cada objetivo en su slide
+      ['#/preguntas/ajustes', '/widget/question'],
+      ['#/teleprompter', '/widget/teleprompter'],
+      ['#/tierlist/ajustes', '/widget/tierlist'],
+      ['#/sorteo/ajustes', '/widget/giveaway'],
+      ['#/widgets/chat', '/widget/chat'],
+      [`#/widgets/objetivos/${encodeURIComponent(goal.id)}`, `/widget/goal?id=${encodeURIComponent(goal.id)}`],
+      ['#/widgets/latest', '/widget/latest'],
+      ['#/widgets/credits', '/widget/credits'],
     ];
     for (const [hash, url] of pages) {
       await dom(chrome, `location.hash = ${JSON.stringify(hash)}`);
@@ -88,23 +89,26 @@ test('O3.3 páginas de widgets: fuente de navegador primero a la izquierda y vis
     }
 
     // Últimos y ticker: dos fuentes en el mismo bloque y dos vistas previas a la derecha
-    await dom(chrome, `location.hash = '#/widget/latest'`);
+    await dom(chrome, `location.hash = '#/widgets/latest'`);
     await waitDom(chrome.cdp, `!!document.querySelector('main .browser-source')`, { timeoutMs: 12000 });
     assert.equal(await dom(chrome, `Array.from(document.querySelectorAll('main .browser-source .overlay-url code')).map(c => c.textContent).join(' ')`), `${base}/widget/latest ${base}/widget/ticker`);
     assert.equal(await dom(chrome, `document.querySelectorAll('main .preview-col iframe').length`), 2);
 
-    // Tier list sin listas: la pestaña «+ Nueva» también enseña la vista previa (datos de ejemplo)
-    await dom(chrome, `location.hash = '#/widget/tierlist'`);
-    await waitDom(chrome.cdp, `!!document.querySelector('#h-new')`, { timeoutMs: 12000 });
+    // Tier list sin ninguna en pantalla: la vista previa de ajustes enseña datos de ejemplo;
+    // al poner una lista en pantalla, enseña esa
+    await dom(chrome, `location.hash = '#/tierlist/ajustes'`);
+    await waitDom(chrome.cdp, `!!document.querySelector('main .preview-col iframe')`, { timeoutMs: 12000 });
     assert.match(await dom(chrome, `document.querySelector('main .preview-col iframe')?.getAttribute('src') ?? ''`), /^\/widget\/tierlist\?demo$/);
     const { tierlist } = await api(base, 'POST', '/api/tierlists', { title: 'Lista O33', items: ['a'] });
-    await waitDom(chrome.cdp, `document.querySelectorAll('[role=tablist][aria-label="Tier lists"] [role=tab]').length === 2`, { timeoutMs: 12000 });
-    await dom(chrome, `document.querySelector('[role=tablist][aria-label="Tier lists"] [role=tab]').click()`);
     await waitDom(chrome.cdp, `(document.querySelector('main .preview-col iframe')?.getAttribute('src') ?? '').includes(${JSON.stringify('id=' + encodeURIComponent(tierlist.id))})`, { timeoutMs: 12000 });
 
     // las anclas del tour siguen en su sitio
-    await dom(chrome, `location.hash = '#/widget/goals'`);
-    await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="goals-editor"] .widget-layout') && !!document.querySelector('[data-tour="goals-tabs"]') && !!document.querySelector('[data-tour="goals-head"]')`, { timeoutMs: 12000 });
+    await dom(chrome, `location.hash = '#/widgets'`);
+    await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="widgets-catalog"]')`, { timeoutMs: 12000 });
+    await dom(chrome, `location.hash = '#/widgets/objetivos'`);
+    await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="goals-list"]')`, { timeoutMs: 12000 });
+    await dom(chrome, `location.hash = ${JSON.stringify('#/widgets/objetivos/' + encodeURIComponent(goal.id))}`);
+    await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="goals-editor"] .widget-layout')`, { timeoutMs: 12000 });
   } finally {
     chrome?.child.kill(); await chrome?.cdp.close();
     app.timers.stop(); app.server.closeAllConnections(); app.server.close();

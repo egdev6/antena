@@ -81,12 +81,12 @@ export function Comandos({ parts }: { parts: string[] }) {
       chips={[['all', 'Todos'], ['actions', 'Con acciones'], ['perm', 'Con permiso'], ['off', 'Apagados']]} chip={f.chip} onChip={f.setChip}
       cols={[{ key: 'name', label: 'Comando' }, { key: 'state', label: 'Estado' }, { key: 'perm', label: 'Quién' }, { key: 'tags', label: 'Lleva' }, { key: 'wait', label: 'Espera', hide: true }, { key: 'test', label: '' }]}
       rows={rows} empty={list.length ? 'Ningún comando coincide.' : <>Todavía no hay comandos. Prueba con <code>!discord</code> o <code>!web</code>. <a href="#/comandos/nuevo">Crear el primero</a></>} />
-    <section className="lv-panel" aria-labelledby="cm-sim" style={{ marginTop: 16 }}>
+    <section className="lv-panel lv-gap" aria-labelledby="cm-sim">
       <div className="lv-panel-h"><h2 id="cm-sim">Probar sin estar en directo</h2><p>Simula un mensaje del chat para ver qué comando salta.</p></div>
-      <div style={{ padding: '4px 14px 14px' }}>
+      <div className="lv-panel-b">
         <div className="row2"><label>Usuario <input value={sim.user} onChange={e => setSim({ ...sim, user: e.target.value })} /></label><label>Mensaje <input value={sim.text} placeholder="!discord" onChange={e => setSim({ ...sim, text: e.target.value })} /></label></div>
         <div className="row"><label className="check"><input type="checkbox" checked={sim.mod} onChange={e => setSim({ ...sim, mod: e.target.checked })} /> Es moderador</label>
-          <button className="eg-btn eg-btn--ghost eg-btn--sm" style={{ marginLeft: 'auto' }} onClick={guard(() => post('/api/chat/simulate', sim), 'Mensaje simulado enviado')}>Enviar al chat simulado</button></div>
+          <button className="eg-btn eg-btn--ghost eg-btn--sm push" onClick={guard(() => post('/api/chat/simulate', sim), 'Mensaje simulado enviado')}>Enviar al chat simulado</button></div>
       </div>
     </section>
     {open === 'nuevo' ? <NuevoComando /> : open && list.some(c => c.id === open) ? <Editor key={`c-${open}`} target={{ kind: 'command', id: open }} /> : null}

@@ -502,7 +502,7 @@ export function Editor({ target }: { target: Target }) {
 
           {kind === 'alert' && pane('vars', <>
             <ListPanel title="Variaciones" note="Solo guardan lo que cambia (otro vídeo, sonido o texto) según la cantidad, el tier, el usuario o el mensaje. Gana la primera que encaja."
-              tools={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" style={{ marginLeft: 'auto' }} onClick={guard(async () => {
+              tools={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm push" onClick={guard(async () => {
                 if (!confirmLeave()) return;
                 const d = await post<{ variation: AlertVariation }>(`/api/alerts/${type}/variations`, { name: `Variación ${(a.variations?.length || 0) + 1}`, conditions: AMOUNT_TYPES.includes(type) ? { minAmount: 100 } : {} });
                 live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: [...(st.config.alerts[type].variations || []), d.variation] } } } }));

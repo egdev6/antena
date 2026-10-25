@@ -166,6 +166,13 @@ class Live {
     } catch (e) { this.cfgPending = deepMerge(p, this.cfgPending); throw e; }
     finally { draftChanged(); }
   }
+  /** Guarda al momento, fuera del borrador manual: para marcas del propio panel (p. ej. el tour visto)
+   *  que no son una edición del usuario y no deben esperar a «Guardar» ni perderse con «Descartar». */
+  async saveConfigNow(patch: Record<string, unknown>) {
+    this.update(s => ({ config: deepMerge(s.config, patch) }));
+    if (this.cfgSnapshot) this.cfgSnapshot = deepMerge(this.cfgSnapshot, patch);
+    await api('PUT', '/api/config', patch);
+  }
   /** Descarta el borrador de configuración y vuelve a lo guardado. */
   discardConfig() {
     clearTimeout(this.cfgTimer);

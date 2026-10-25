@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from 'react';
 import { enc, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { guard, Icon, PfIcon } from '../../lib/ui';
+import { EmptyState, guard, Icon, PfIcon } from '../../lib/ui';
 import { IC, type IconData } from '../../lib/icons';
 import { Card, CardGroup, CardSwitch, Dot, Kpis, MediaPreview, PageHead, Tags, useListFilter } from '../../lib/layout';
 import type { AppState } from '../../lib/types';
@@ -113,7 +113,7 @@ export function Alertas({ parts }: { parts: string[] }) {
         const list = shown.filter(x => x.meta.platform === pf);
         return list.length ? <CardGroup key={pf} title={title} count={list.length} note={note}>{list.map(card)}</CardGroup> : null;
       })}
-      {!shown.length && <p className="lv-empty">Ninguna alerta coincide.</p>}
+      {!shown.length && <div className="lv-empty"><EmptyState>Ninguna alerta coincide.</EmptyState></div>}
     </div>
     {open && s.types?.[open] && (sub === 'v' && vid
       ? <Editor key={`v-${open}-${vid}`} target={{ kind: 'variation', type: open, id: vid }} />

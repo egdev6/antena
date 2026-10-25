@@ -1,7 +1,7 @@
 // Jerarquía v2 (lienzo «antena — Rediseño» › v2): cabecera de página, indicadores, listado en tabla,
 // slide a todo el ancho con pestañas y barra de guardado manual. Mismo patrón que Vigía v4.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { cx, guard, Icon } from './ui';
+import { cx, EmptyState, guard, Icon } from './ui';
 import { IC } from './icons';
 import { dirtyKeys, discardAll, isDirty, saveAll, useDraftVersion } from './draft';
 import { go } from '../panel/router';
@@ -61,7 +61,7 @@ export function ListPanel({ title, note, search, onSearch, placeholder = 'Buscar
           <td className="lv-chev" aria-hidden="true">{r.href ? '→' : ''}</td>
         </tr>)}</tbody>
       </table>
-      {!rows.length && <p className="lv-empty">{empty}</p>}
+      {!rows.length && <div className="lv-empty"><EmptyState>{empty}</EmptyState></div>}
     </div>
     {foot ? <p className="lv-foot">{foot}</p> : null}
   </section>;

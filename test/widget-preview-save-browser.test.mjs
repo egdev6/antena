@@ -1,6 +1,7 @@
 // Changing a widget field FROM THE PANEL must reach the server (PUT /api/widgets) and the
 // preview iframe. The other browser tests change the config through the API, so the panel path
-// (WField → patchWidgets → patcher) had no coverage and never sent the PUT.
+// (WField → patchWidgets → patcher) had no coverage and never sent the PUT. With manual save (v2)
+// the PUT goes out when «Guardar» is pressed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
@@ -23,7 +24,7 @@ test('widget chat: a field changed from the panel is saved and reaches the previ
   const base = `http://127.0.0.1:${app.server.address().port}`;
   let chrome;
   try {
-    chrome = await openChromePage(bin, `${base}/#/widget/chat`);
+    chrome = await openChromePage(bin, `${base}/#/widgets/chat`);
     const c = chrome.cdp;
     await waitDom(c, `!!(${fontInput}) && ${previewFs} === '26px'`, { timeoutMs: 15000 });
 
@@ -32,6 +33,10 @@ test('widget chat: a field changed from the panel is saved and reaches the previ
     await c.send('Input.insertText', { text: '40' });
     assert.equal(await evaluateChrome(c, `${fontInput}.value`), '40');
 
+    // manual save (v2): the change stays as a draft until «Guardar»
+    await sleep(600);
+    assert.notEqual(app.store.config.widgets?.chat?.fontSize, 40, 'nothing is stored before «Guardar»');
+    await evaluateChrome(c, `document.querySelector('.lv-sfoot .eg-btn--secondary').click()`);
     for (let i = 0; i < 50 && app.store.config.widgets?.chat?.fontSize !== 40; i++) await sleep(100);
     assert.equal(app.store.config.widgets?.chat?.fontSize, 40, 'the panel saves the change with PUT /api/widgets');
     await waitDom(c, `${previewFs} === '40px'`, { timeoutMs: 8000 });

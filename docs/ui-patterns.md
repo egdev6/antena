@@ -44,7 +44,8 @@ when closing). Previews show the draft when they can (alerts, commands and messa
 `draft`; the theme through `/api/theme/draft`, read only by `?themeDraft` layers); widget previews show what
 is saved. Live operations stay immediate and say so in the footer: enabling or ordering variations, the
 «Activa» switch of an alert card, placing in the tier list, opening or drawing the giveaway, moving questions,
-goal counters and goals themselves, connecting and deleting files.
+goal counters and goals themselves, connecting and deleting files. Marks the panel sets on its own (the tour
+seen, `live.saveConfigNow`) are saved at once too, never held in the draft.
 
 ## View skeleton
 
@@ -229,7 +230,9 @@ views.
 
 Use `EmptyState` for an empty list or section: it renders `eg-post eg-post--empty empty-state` (dashed box,
 muted text, no pointer cursor). Do not use `li.empty`, `li.hint` or a loose `p.hint` for «nothing here yet».
-Render the list element only when it has items, so the empty state is never inside a `ul`/`ol`.
+Render the list element only when it has items, so the empty state is never inside a `ul`/`ol`. `ListPanel`
+already does this: its `empty` text is shown in an `EmptyState` under the table, and a «Crear el primero» link
+there points to the «Nuevo» slide.
 
 One approved exception (#4): in the Chat view the empty state lives **inside** `ol.chatlog`. The list is a
 guided tour anchor (`data-tour="chat-log"`) and must always exist, and a child inside it stops the `:empty`

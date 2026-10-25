@@ -43,14 +43,14 @@ test('#4 chat vacío: caja de estado vacío con CTA a conexiones, no texto suelt
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
-test('#4 archivos vacíos en General: caja con CTA «Subir archivos» y desaparece al subir', { timeout: 90000 }, async t => {
+test('#4 archivos vacíos en Archivos: caja con CTA «Subir archivos» y desaparece al subir', { timeout: 90000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { app, base, close } = ctx;
   let chrome;
   try {
     app.store.config.panel = { onboardingDone: true };
-    chrome = await openChromePage(ctx.bin, `${base}/#/general`);
+    chrome = await openChromePage(ctx.bin, `${base}/#/archivos`);
     await waitDom(chrome.cdp, `${EMPTY}.some(x => x.startsWith('Todavía no hay archivos'))`, { timeoutMs: 12000 });
     const cta = `document.querySelector('main .empty-state')?.querySelector('label.upload')`;
     eq(await dom(chrome, `${cta}?.textContent.trim()`), 'Subir archivos', 'CTA «Subir archivos» dentro de la caja');
@@ -60,7 +60,7 @@ test('#4 archivos vacíos en General: caja con CTA «Subir archivos» y desapare
     const up = await fetch(base + '/api/media/upload?name=test.png', { method: 'POST', body: PNG });
     if (!up.ok) throw new Error('upload: ' + up.status);
     await dom(chrome, `setTimeout(() => location.reload(), 0); 'ok'`);
-    await waitDom(chrome.cdp, `!!document.querySelector('main ul.files li')`, { timeoutMs: 12000 });
+    await waitDom(chrome.cdp, `!!document.querySelector('main table.lv-list tbody tr')`, { timeoutMs: 12000 });
     eq(await dom(chrome, `document.querySelectorAll('main .empty-state').length`), 0, 'con archivos no queda la caja');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
@@ -75,8 +75,8 @@ test('#4 recorrido del panel: ninguna vista dice «Aún no hay»', { timeout: 12
     chrome = await openChromePage(ctx.bin, `${base}/#/comandos`);
     await waitDom(chrome.cdp, `!!document.querySelector('main h1')`, { timeoutMs: 12000 });
     const rutas = ['#/directo', '#/chat', '#/historial', '#/comandos', '#/mensajes',
-      '#/widget/questions', '#/widget/teleprompter', '#/widget/tierlist', '#/widget/giveaway', '#/widget/chat', '#/widget/goals', '#/widget/latest', '#/widget/credits',
-      '#/fuentes', '#/meld', '#/atajos', '#/prompter', '#/apariencia', '#/filtros', '#/conexiones', '#/general', '#/acerca'];
+      '#/preguntas', '#/teleprompter', '#/tierlist', '#/sorteo', '#/alertas', '#/widgets', '#/widgets/chat', '#/widgets/objetivos', '#/widgets/latest', '#/widgets/credits',
+      '#/fuentes', '#/meld', '#/atajos', '#/prompter', '#/directos', '#/archivos', '#/apariencia', '#/filtros', '#/conexiones', '#/general', '#/acerca'];
     for (const hash of rutas) {
       await dom(chrome, `location.hash = ${JSON.stringify(hash)}`);
       // Directo es la excepción sin h1 (title-input): vale la cabecera de vista
@@ -87,7 +87,7 @@ test('#4 recorrido del panel: ninguna vista dice «Aún no hay»', { timeout: 12
     // las tres cajas nuevas existen donde toca: chat, archivos y la cronología de Directo
     await dom(chrome, `location.hash = '#/chat'`);
     await waitDom(chrome.cdp, `${EMPTY}.some(x => x.startsWith('Todavía no hay mensajes'))`, { timeoutMs: 12000 });
-    await dom(chrome, `location.hash = '#/general'`);
+    await dom(chrome, `location.hash = '#/archivos'`);
     await waitDom(chrome.cdp, `${EMPTY}.some(x => x.startsWith('Todavía no hay archivos'))`, { timeoutMs: 12000 });
     await dom(chrome, `location.hash = '#/directo'`);
     await waitDom(chrome.cdp, `${EMPTY}.some(x => x.startsWith('Todavía no hay mensajes'))`, { timeoutMs: 12000 });
