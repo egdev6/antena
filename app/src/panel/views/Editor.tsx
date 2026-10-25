@@ -2,12 +2,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { del, enc, post, put, get } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import type { AlertConfig, AlertVariation, CommandConfig, Config, SendResult, TimerConfig } from '../../lib/types';
+import { ManualDraft } from '../../lib/manual-draft';
+import type { AlertConfig, AlertVariation, AppState, CommandConfig, Config, SendResult, TimerConfig } from '../../lib/types';
 import { codeTab, confirmDelete, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, SegField, Switch, toast, fmtTime } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { go } from '../router';
 import { useUploader, UploadBar } from './General';
-import { confirmLeave, draftChanged, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
+import { confirmLeave, isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
 import { ListPanel, NameCell, SaveBar, Slide, Tags, type TabDef } from '../../lib/layout';
 import { RecordPane, VIEWER_TYPES } from './Espectadores';
 
@@ -137,62 +138,64 @@ function replaceTarget(s: any, t: Target, value: any) {
 
 /** Guardado MANUAL (v2): los cambios quedan en borrador hasta «Guardar»; la vista previa enseña el borrador. */
 function useEditor(t: Target) {
-  const pending = useRef<any>({});
-  const snapshot = useRef<any>(null);
-  const timer = useRef<any>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const active = useRef(true);
   const autoPreview = useRef(true);
-  const tRef = useRef(t); tRef.current = t;
-  const flush = async () => {
-    clearTimeout(timer.current);
-    const p = pending.current;
-    if (!Object.keys(p).length) return;
-    const tg = tRef.current;
-    if (tg.kind === 'alert') { const d = await put<{ config: AlertConfig }>(`/api/alerts/${tg.type}`, p); live.update(s => ({ config: { ...s.config, alerts: { ...s.config.alerts, [tg.type]: d.config } } })); }
-    if (tg.kind === 'variation') {
-      const { name, enabled, conditions, ...overrides } = p;
-      const d = await put<{ variation: AlertVariation }>(`/api/alerts/${tg.type}/variations/${enc(tg.id)}`, { name, enabled, conditions, overrides: Object.keys(overrides).length ? overrides : undefined });
-      live.update(s => { const a = s.config.alerts[tg.type]; return { config: { ...s.config, alerts: { ...s.config.alerts, [tg.type]: { ...a, variations: (a.variations || []).map(x => (x.id === tg.id ? d.variation : x)) } } } }; });
-    }
-    if (tg.kind === 'command') { const d = await put<{ command: CommandConfig }>(`/api/commands/${enc(tg.id)}`, p); live.update(s => ({ config: { ...s.config, commands: s.config.commands.map((x: any) => (x.id === tg.id ? d.command : x)) } })); }
-    if (tg.kind === 'timer') {
-      const d = await put<{ timer: TimerConfig; warnings?: { message: string }[] }>(`/api/timers/${enc(tg.id)}`, p);
-      live.update(s => ({ config: { ...s.config, timers: s.config.timers.map((x: any) => (x.id === tg.id ? d.timer : x)) }, timers: (s.timers || []).map(x => (x.id === tg.id ? { ...x, ...d.timer, runtime: { ...x.runtime, warnings: d.warnings || [] } } : x)) }));
-    }
-    pending.current = {}; snapshot.current = null;
-    draftChanged();
+  // Editors are keyed by entity. Jobs keep that captured entity, never a mutable tRef.
+  const [buffer] = useState(() => {
+    const overlay = (state: AppState, patch: Record<string, unknown>) => {
+      let next = state;
+      for (const [field, value] of Object.entries(patch)) next = { ...next, ...applyLocal(next, t, field, value) };
+      return next;
+    };
+    return new ManualDraft<Record<string, unknown>, AlertConfig | AlertVariation | CommandConfig | TimerConfig>({
+      empty: () => ({}), merge: (older, newer) => ({ ...older, ...newer }),
+      take: () => findTarget(live.state, t),
+      keys: patch => Object.keys(patch).map(fieldTab),
+      persist: async patch => {
+        if (t.kind === 'alert') return (await put<{ config: AlertConfig }>(`/api/alerts/${t.type}`, patch)).config;
+        if (t.kind === 'variation') {
+          const { name, enabled, conditions, ...overrides } = patch;
+          return (await put<{ variation: AlertVariation }>(`/api/alerts/${t.type}/variations/${enc(t.id)}`, { name, enabled, conditions, overrides: Object.keys(overrides).length ? overrides : undefined })).variation;
+        }
+        if (t.kind === 'command') return (await put<{ command: CommandConfig }>(`/api/commands/${enc(t.id)}`, patch)).command;
+        const result = await put<{ timer: TimerConfig; warnings?: { message: string }[] }>(`/api/timers/${enc(t.id)}`, patch);
+        if (active.current) live.update(s => ({ timers: (s.timers || []).map(x => x.id === t.id ? { ...x, ...result.timer, runtime: { ...x.runtime, warnings: result.warnings || [] } } : x) }));
+        return result.timer;
+      },
+      publish: (saved, newer) => live.update(s => ({ config: overlay({ ...s, ...replaceTarget(s, t, saved) }, newer).config })),
+      restore: saved => live.update(s => replaceTarget(s, t, saved)),
+      protect: overlay,
+    });
+  });
+  const preview = async () => {
+    if (!active.current || (t.kind === 'timer' && !editorCfg(live.state, t).showAlert)) return;
+    await post('/api/test', { ...testBody(t, 'preview'), draft: buffer.dirty() ? findTarget(live.state, t) : undefined });
   };
+  const queuePreview = (ms: number) => { clearTimeout(timer.current); timer.current = setTimeout(guard(preview), ms); };
   const discard = () => {
-    clearTimeout(timer.current);
-    if (snapshot.current) { const snap = snapshot.current; live.update(s => replaceTarget(s, tRef.current, snap)); }
-    pending.current = {}; snapshot.current = null;
-    draftChanged();
+    if (isSaving()) return;
+    clearTimeout(timer.current); buffer.discard();
     if (autoPreview.current) guard(preview)();
   };
-  /** Vista previa con lo que hay en pantalla, guardado o no (el servidor no guarda nada). */
-  const preview = async () => {
-    const tg = tRef.current;
-    if (tg.kind === 'timer' && !editorCfg(live.state, tg).showAlert) return;
-    const draft = Object.keys(pending.current).length ? findTarget(live.state, tg) : undefined;
-    await post('/api/test', { ...testBody(tg, 'preview'), draft });
+  const set = (field: string, value: unknown) => {
+    buffer.push({ [field]: value });
+    live.update(s => applyLocal(s, t, field, value));
+    if (autoPreview.current) queuePreview(450);
   };
-  const changed = (f: string, v: any, apply: () => void) => {
-    if (!snapshot.current) snapshot.current = structuredClone(findTarget(live.state, tRef.current));
-    pending.current[f] = v;
-    apply();
-    draftChanged();
-    clearTimeout(timer.current);
-    if (autoPreview.current) timer.current = setTimeout(guard(preview), 450);
+  const setCond = (key: string, value: unknown) => {
+    const conditions = buffer.changes().conditions;
+    set('conditions', { ...(conditions && typeof conditions === 'object' ? conditions : {}), [key]: value });
   };
-  const set = (f: string, v: any) => changed(f, v, () => live.update(s => applyLocal(s, tRef.current, f, v)));
-  const setCond = (k: string, v: any) => changed('conditions', { ...(pending.current.conditions || {}), [k]: v }, () => live.update(s => applyLocal(s, tRef.current, 'conditions', { [k]: v })));
-  // fuente de borrador: SaveBar guarda o descarta esto junto con lo demás de la pantalla
-  const key = JSON.stringify(t);
-  useEffect(() => registerDraft('editor:' + key, {
-    dirty: () => Object.keys(pending.current).length > 0,
-    keys: () => Object.keys(pending.current).map(fieldTab),
-    save: flush, discard,
-  }), [key]);
-  return { set, setCond, flush, preview, discard, autoPreview, dirtyTabs: () => new Set(Object.keys(pending.current).map(fieldTab)) };
+  useEffect(() => {
+    const unregister = registerDraft('editor:' + JSON.stringify(t), {
+      dirty: buffer.dirty, keys: buffer.keys, protect: buffer.protect,
+      prepareSave: () => { clearTimeout(timer.current); return buffer.prepareSave(); }, discard,
+    });
+    return () => { active.current = false; clearTimeout(timer.current); unregister(); buffer.dispose(); };
+  }, [buffer]);
+  const flush = () => { clearTimeout(timer.current); return buffer.save(); };
+  return { set, setCond, flush, preview, queuePreview, discard, autoPreview, dirtyTabs: () => new Set(buffer.keys()) };
 }
 
 // ---------- acciones al salir ----------
@@ -243,8 +246,7 @@ export function Editor({ target }: { target: Target }) {
   const lastField = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const cssRef = useRef<HTMLTextAreaElement>(null);
   const gcssRef = useRef<HTMLTextAreaElement>(null);
-  const previewRef = useRef(ed.preview); previewRef.current = ed.preview;
-  const frameRef = useCallback((el: HTMLIFrameElement | null) => { if (el) el.onload = () => setTimeout(guard(() => previewRef.current()), 300); }, []);
+  const frameRef = useCallback((el: HTMLIFrameElement | null) => { if (el) el.onload = () => ed.queuePreview(300); }, []);
   const item = findTarget(s, target);
   // timers: refresca el estado (cuenta atrás) cada 5 s
   useEffect(() => {
@@ -275,7 +277,7 @@ export function Editor({ target }: { target: Target }) {
   const pickLayout = (l: string) => { set('layout', l); if (l !== 'card' && mediaKind === 'video' && a.layout === 'card') set('durationMode', 'media'); };
 
   const set = ed.set;
-  const unset = (f: string) => kind === 'variation' && f in overrides ? <button className="unset" title="Volver a heredar de la alerta" onClick={guard(async (e: any) => { e.preventDefault(); set(f, null); await ed.flush(); })}>↺</button> : null;
+  const unset = (f: string) => kind === 'variation' && f in overrides ? <button className="unset" title="Volver a heredar de la alerta" onClick={(e) => { e.preventDefault(); set(f, null); }}>↺</button> : null;
   // función (no componente) para que React no remonte los campos y no se pierda el foco al escribir
   const F = (f: string, label: ReactNode, children: ReactNode, className?: string) =>
     <label data-field={f} className={cx(className, kind === 'variation' && f in overrides && 'ovr')}>{label}{unset(f)}{children}</label>;
@@ -302,7 +304,7 @@ export function Editor({ target }: { target: Target }) {
     const pos = (pre + sep + code + '\n').length;
     requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(pos, pos); });
   };
-  const saveGlobalCss = (css: string) => { live.patchConfig({ overlay: { css } }); if (ed.autoPreview.current) setTimeout(guard(ed.preview), 500); };
+  const saveGlobalCss = (css: string) => { live.patchConfig({ overlay: { css } }); if (ed.autoPreview.current) ed.queuePreview(500); };
   const onUpload = (f: 'sound' | 'media') => guard(async (e: any) => {
     const files = [...(e.target.files || [])]; e.target.value = '';
     if (!files.length) return;
@@ -328,18 +330,18 @@ export function Editor({ target }: { target: Target }) {
     : kind === 'timer' ? <input className="title-input" value={item.name} aria-label="Nombre del mensaje" onChange={e => set('name', e.target.value)} />
     : <input className="title-input" value={item.trigger} aria-label="Disparador" onChange={e => set('trigger', e.target.value.trim())} />;
   const headSwitch = <Switch checked={kind === 'alert' ? !!a.enabled : (kind === 'variation' ? v.enabled !== false : item.enabled !== false)} onChange={x => set('enabled', x)}>{kind === 'alert' ? 'Activada' : kind === 'variation' ? 'Activa' : 'Activo'}</Switch>;
-  const footLeft = kind === 'alert' ? <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => {
-      if (!confirm('¿Restaurar esta alerta a sus valores de serie? Se borran también sus variaciones.')) return;
+  const footLeft = kind === 'alert' ? <button className="eg-btn eg-btn--ghost eg-btn--sm" disabled={isSaving()} onClick={guard(async () => {
+      if (isSaving() || !confirm('¿Restaurar esta alerta a sus valores de serie? Se borran también sus variaciones.')) return;
       ed.discard(); const d = await post<{ config: Config }>(`/api/alerts/${type}/reset`); live.update(() => ({ config: d.config }));
     }, 'Alerta restaurada')}>Restaurar de serie…</button>
-    : kind === 'variation' ? <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => {
-      if (!confirmDelete(v.name, 'esta variación')) return;
+    : kind === 'variation' ? <button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => {
+      if (isSaving() || !confirmDelete(v.name, 'esta variación')) return;
       ed.discard(); const d = await del<{ variations: AlertVariation[] }>(`/api/alerts/${type}/variations/${enc(v.id)}`);
       live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: d.variations } } } }));
       go(`#/alertas/${type}`);
     })}>Borrar variación…</button>
-    : kind === 'timer' ? <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.name, 'este mensaje programado')) return; ed.discard(); const d = await del<{ timers: TimerConfig[] }>(`/api/timers/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, timers: d.timers } })); go('#/mensajes'); })}>Borrar mensaje…</button>
-    : <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(item.trigger, 'este comando')) return; ed.discard(); const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar comando…</button>;
+    : kind === 'timer' ? <button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => { if (isSaving() || !confirmDelete(item.name, 'este mensaje programado')) return; ed.discard(); const d = await del<{ timers: TimerConfig[] }>(`/api/timers/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, timers: d.timers } })); go('#/mensajes'); })}>Borrar mensaje…</button>
+    : <button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => { if (isSaving() || !confirmDelete(item.trigger, 'este comando')) return; ed.discard(); const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar comando…</button>;
   const footRight = kind === 'timer'
     ? <button className="eg-btn eg-btn--primary eg-btn--sm" title="Envía lo guardado" onClick={guard(async () => { await fireTimer(item.id, (text, err) => setFireMsg({ text, err: !!err })); })}>Enviar ahora</button>
     : <button className="eg-btn eg-btn--primary eg-btn--sm" title="Prueba lo guardado en Meld" onClick={testLive}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>;
@@ -502,7 +504,7 @@ export function Editor({ target }: { target: Target }) {
 
           {kind === 'alert' && pane('vars', <>
             <ListPanel title="Variaciones" note="Solo guardan lo que cambia (otro vídeo, sonido o texto) según la cantidad, el tier, el usuario o el mensaje. Gana la primera que encaja."
-              tools={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm push" onClick={guard(async () => {
+              tools={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm push" disabled={isSaving()} onClick={guard(async () => {
                 if (!confirmLeave()) return;
                 const d = await post<{ variation: AlertVariation }>(`/api/alerts/${type}/variations`, { name: `Variación ${(a.variations?.length || 0) + 1}`, conditions: AMOUNT_TYPES.includes(type) ? { minAmount: 100 } : {} });
                 live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: [...(st.config.alerts[type].variations || []), d.variation] } } } }));
@@ -515,11 +517,13 @@ export function Editor({ target }: { target: Target }) {
                 cells: {
                   name: <NameCell href={`#/alertas/${type}/v/${x.id}`} name={x.name} sub={condSummary(x.conditions)} />,
                   changes: <Tags items={Object.keys(x.overrides || {}).slice(0, 4).map(k => ({ t: FIELD_LABEL[k] || k, on: true }))} />,
-                  on: <label className="switch" aria-label={`${x.name} activa`}><input type="checkbox" checked={x.enabled !== false} onChange={guard(async e => {
+                  on: <label className="switch" aria-label={`${x.name} activa`}><input type="checkbox" checked={x.enabled !== false} disabled={isSaving()} onChange={guard(async e => {
+                    if (isSaving()) return;
                     const d = await put<{ variation: AlertVariation }>(`/api/alerts/${type}/variations/${enc(x.id)}`, { enabled: e.target.checked });
                     live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: (st.config.alerts[type]?.variations || []).map((z: any) => (z.id === x.id ? d.variation : z)) } } } }));
                   })} /><i></i></label>,
-                  order: <span className="row tight">{[-1, 1].map(dir => <IconBtn key={dir} icon={dir < 0 ? IC.up : IC.down} label={dir < 0 ? 'Subir' : 'Bajar'} disabled={dir < 0 ? i === 0 : i === arr.length - 1} onClick={guard(async () => {
+                  order: <span className="row tight">{[-1, 1].map(dir => <IconBtn key={dir} icon={dir < 0 ? IC.up : IC.down} label={dir < 0 ? 'Subir' : 'Bajar'} disabled={isSaving() || (dir < 0 ? i === 0 : i === arr.length - 1)} onClick={guard(async () => {
+                    if (isSaving()) return;
                     const ids = arr.map(z => z.id); const j = i + dir; [ids[i], ids[j]] = [ids[j], ids[i]];
                     const d = await post<{ variations: AlertVariation[] }>(`/api/alerts/${type}/variations-order`, { ids });
                     live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: d.variations } } } }));

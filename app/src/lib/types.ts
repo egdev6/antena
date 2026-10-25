@@ -99,7 +99,7 @@ export interface AlertConfig {
   variations?: AlertVariation[];
   [k: string]: unknown;
 }
-export interface AlertType { label: string; platform?: string; [k: string]: unknown }
+export interface AlertType { label: string; icon: string; platform?: string; [k: string]: unknown }
 
 // ---------- comandos, mensajes programados y atajos ----------
 export interface CommandConfig {
@@ -113,6 +113,7 @@ export interface CommandConfig {
   platforms?: string[];
   cooldownSec?: number;
   userCooldownSec?: number;
+  actions?: AlertAction[];
   [k: string]: unknown;
 }
 export interface TimerRuntime {

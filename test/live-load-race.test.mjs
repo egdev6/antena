@@ -20,20 +20,21 @@ class FakeEventSource {
 }
 
 // Empaqueta live.ts con esbuild y stubs de react/api/events: devuelve el módulo cargado.
-async function bundleLive() {
+async function bundleLive(withPatchers = false) {
   const esbuild = await import('esbuild');
   const ts = await (await import('node:fs/promises')).readFile(path.join(ROOT, 'app/src/lib/live.ts'), 'utf8');
   const stub = 'export const useSyncExternalStore = () => () => {};\nexport const useEffect = () => {};\n' +
     'export const warnUnknownClientEvent = () => false;\n' +
     'export const api = (m, p, b) => globalThis.__apiImpl(m, p, b);\n' +
-    'export const withKey = (u) => u;';
+    'export const withKey = (u) => u; export const toast = () => {};';
   const bundled = await esbuild.build({
-    stdin: { contents: ts, resolveDir: path.join(ROOT, 'app/src/lib'), loader: 'ts', sourcefile: 'live.ts' },
+    stdin: { contents: withPatchers ? `export * from './live'; export * from './patch'; export * from './draft';` : ts,
+      resolveDir: path.join(ROOT, 'app/src/lib'), loader: 'ts', sourcefile: withPatchers ? 'fixture.ts' : 'live.ts' },
     bundle: true, format: 'esm', write: false,
     plugins: [{
       name: 'stub',
       setup(b) {
-        b.onResolve({ filter: /^(react|\.\/api|.*events\.mjs)$/ }, a => ({ path: a.path, namespace: 'stub' }));
+        b.onResolve({ filter: /^(react|\.\/api|\.\/ui|.*events\.mjs)$/ }, a => ({ path: a.path, namespace: 'stub' }));
         b.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: stub, loader: 'js' }));
       },
     }],
@@ -44,6 +45,69 @@ async function bundleLive() {
   return import(pathToFileURL(file).href);   // en Windows, import() exige file://
 }
 
+for (const alreadySaving of [false, true]) {
+  test(`flushAll espera las tres fuentes pendientes (ocupado=${alreadySaving})`, async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { live, patchWidgets, patchIx, flushAll, saveAll, discardAll, isDirty } = await bundleLive(true);
+    t.after(() => { discardAll(); delete globalThis.__apiImpl; });
+    live.state = { config: { widgets: {} }, interactive: { config: { questions: {} } } };
+    const requests = [];
+    globalThis.__apiImpl = (_method, url, body) => new Promise(resolve => requests.push({ url, body, resolve }));
+    const turn = () => new Promise(resolve => setImmediate(resolve));
+    live.patchConfig({ panel: { onboardingDone: true } });
+    let prior;
+    if (alreadySaving) {
+      prior = saveAll();
+      await turn();
+      assert.equal(requests.length, 1);
+    }
+    patchWidgets({ chat: { enabled: true } });
+    patchIx('questions', { enabled: true });
+    if (alreadySaving) assert.equal(saveAll(), prior, 'doble clic manual no encola el nuevo borrador');
+    let settled = false;
+    const flushed = flushAll().then(() => { settled = true; });
+    await turn();
+    assert.deepEqual(requests.map(r => r.url), ['/api/config']);
+    assert.equal(settled, false, 'config bloqueada mantiene flushAll pendiente');
+    requests[0].resolve({ config: { widgets: {}, panel: { onboardingDone: true } } });
+    await turn();
+    assert.equal(settled, false, 'flushAll no resuelve dejando widgets/interactivos sin persistir');
+    assert.equal(requests[1]?.url, '/api/widgets');
+    assert.deepEqual(requests[1].body, { chat: { enabled: true } });
+    requests[1].resolve({ widgets: requests[1].body });
+    await turn();
+    assert.equal(settled, false, 'también espera la persistencia interactiva');
+    assert.equal(requests[2]?.url, '/api/interactive/config');
+    assert.deepEqual(requests[2].body, { questions: { enabled: true } });
+    requests[2].resolve(requests[2].body);
+    await flushed;
+    await prior;
+    assert.equal(requests.length, 3);
+    assert.equal(isDirty(), false);
+    t.mock.timers.tick(30000);
+    await turn();
+    assert.equal(requests.length, 3, 'no quedan temporizadores duplicando las escrituras');
+  });
+}
+
+test('flushAll propaga errores y conserva el borrador sin reintento automático', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { live, patchWidgets, patchIx, flushAll, discardAll, isDirty } = await bundleLive(true);
+  t.after(() => { discardAll(); delete globalThis.__apiImpl; });
+  live.state = { config: { widgets: {} }, interactive: { config: { questions: {} } } };
+  const requests = [];
+  const failure = new Error('persistencia rechazada');
+  globalThis.__apiImpl = (_method, url) => { requests.push(url); return Promise.reject(failure); };
+  live.patchConfig({ panel: { onboardingDone: true } });
+  patchWidgets({ chat: { enabled: true } });
+  patchIx('questions', { enabled: true });
+  await assert.rejects(flushAll(), error => error === failure);
+  assert.equal(isDirty(), true, 'la fuente fallida y las no enviadas conservan su intención');
+  t.mock.timers.tick(30000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(requests, ['/api/config'], 'sin bucle de reintentos tras el fallo explícito');
+});
+
 test('cargas solapadas que resuelven en orden inverso no pierden el chat en curso', async t => {
   globalThis.EventSource = FakeEventSource;
   const { live } = await bundleLive();
@@ -52,7 +116,7 @@ test('cargas solapadas que resuelven en orden inverso no pierden el chat en curs
   // cada GET /api/state y /api/chat?limit=200 (#115: ventana propia del panel) queda a la
   // espera de que el test lo resuelva; el orden es state y luego chat dentro de cada carga.
   const pendings = [], chats = [];
-  globalThis.__apiImpl = (m, p) => {
+  globalThis.__apiImpl = (_m, p) => {
     if (p === '/api/timeline' || p === '/api/prompter') return Promise.resolve({});
     if (p === '/api/chat?limit=200') return new Promise(r => chats.push(r));
     return new Promise(r => pendings.push(r));
@@ -92,7 +156,7 @@ test('la carga más antigua que resuelve al final no pisa config, history ni sta
   t.after(() => { delete globalThis.EventSource; delete globalThis.__apiImpl; delete globalThis.__fakeEs; });
 
   const pendings = [], chats = [];
-  globalThis.__apiImpl = (m, p) => {
+  globalThis.__apiImpl = (_m, p) => {
     if (p === '/api/timeline' || p === '/api/prompter') return Promise.resolve({});
     if (p === '/api/chat?limit=200') return new Promise(r => chats.push(r));
     return new Promise(r => pendings.push(r));
@@ -133,7 +197,7 @@ test('un snapshot en vuelo que resuelve tarde no revierte un cambio optimista de
   t.after(() => { delete globalThis.EventSource; delete globalThis.__apiImpl; delete globalThis.__fakeEs; });
 
   const pendings = [], chats = [];
-  globalThis.__apiImpl = (m, p) => {
+  globalThis.__apiImpl = (_m, p) => {
     if (p === '/api/timeline' || p === '/api/prompter') return Promise.resolve({});
     if (p === '/api/chat?limit=200') return new Promise(r => chats.push(r));
     return new Promise(r => pendings.push(r));

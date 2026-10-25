@@ -2,10 +2,11 @@
 // El de serie es el de EGDEV; aquí se sobrescribe. Se guarda solo (src/theme.mjs) y llega en vivo a Meld.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { del, get, post, put } from '../../lib/api';
-import { live, useLive } from '../../lib/live';
+import { deepMerge, live, useLive } from '../../lib/live';
+import { ManualDraft } from '../../lib/manual-draft';
 import { copy, cx, guard, PfIcon, ScaledFrame, Sec, Seg, Switch, toast } from '../../lib/ui';
 import type { Theme, ThemeInfo } from '../../lib/types';
-import { draftChanged, registerDraft, useManualSave } from '../../lib/draft';
+import { isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
 import { PageHead, SaveBar, usePageTab } from '../../lib/layout';
 
 const SAMPLES: [string, string][] = [['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['viewers', 'Récord']];
@@ -28,6 +29,8 @@ const TABS = ['color', 'tipografia', 'iconos', 'forma', 'sonido'];
 const draftSrc = (src: string) => src + (src.includes('?') ? '&' : '?') + 'themeDraft';
 export function Apariencia({ parts }: { parts: string[] }) {
   useManualSave();
+  useDraftVersion();
+  const saving = isSaving();
   const [tab, setTab] = usePageTab(parts, 'apariencia', TABS);
   const info = useRef<ThemeInfo | null>(null);
   const [, setLoaded] = useState(0);
@@ -35,41 +38,53 @@ export function Apariencia({ parts }: { parts: string[] }) {
   const types = useLive(s => s.types);
   const [view, setView] = useState('alert');
   const [frameKey, setFrameKey] = useState(0);
-  const pending = useRef<Partial<Theme>>({});
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const load = guard(async () => { info.current = await get<ThemeInfo>('/api/theme'); live.update(() => ({ theme: info.current!.theme })); setLoaded(x => x + 1); });
-  // borrador: los cambios van a /api/theme/draft (solo lo ven las vistas previas con ?themeDraft); «Guardar» los aplica a Meld
-  const sendDraft = () => { const p = pending.current; if (Object.keys(p).length) put('/api/theme/draft', p).catch(e => toast(e.message, true)); };
-  const flush = async () => {
-    clearTimeout(timer.current);
-    const p = pending.current;
-    if (!Object.keys(p).length) return;
-    const d = await put<ThemeInfo>('/api/theme', p);
-    pending.current = {}; info.current = d; live.update(() => ({ theme: d.theme })); draftChanged();
-  };
+  const sampleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const active = useRef(true);
+  const [buffer] = useState(() => new ManualDraft<Partial<Theme>, ThemeInfo>({
+    empty: () => ({}), merge: deepMerge, take: () => info.current!,
+    persist: patch => put<ThemeInfo>('/api/theme', patch),
+    publish: (saved, newer) => { info.current = saved; live.update(() => ({ theme: deepMerge(saved.theme, newer) })); },
+    restore: saved => { info.current = saved; live.update(() => ({ theme: saved.theme })); },
+    protect: (state, intent) => ({ ...state, theme: deepMerge(state.theme, intent) }),
+  }));
+  const load = guard(async () => {
+    const loaded = await get<ThemeInfo>('/api/theme');
+    if (!active.current) return;
+    info.current = loaded; live.update(() => ({ theme: loaded.theme })); setLoaded(x => x + 1);
+  });
+  // Preview-only draft writes are not durable saves of B.
+  const sendDraft = () => { if (buffer.dirty()) put('/api/theme/draft', buffer.changes()).catch(e => toast(e.message, true)); };
   const discard = () => {
-    clearTimeout(timer.current);
-    if (!Object.keys(pending.current).length) return;
-    pending.current = {}; if (info.current) live.update(() => ({ theme: info.current!.theme }));
-    del('/api/theme/draft').catch(() => {}); draftChanged();
+    if (isSaving()) return;
+    clearTimeout(timer.current); buffer.discard();
+    del('/api/theme/draft').catch(() => {});
   };
-  useEffect(() => { load(); return registerDraft('theme', { dirty: () => Object.keys(pending.current).length > 0, keys: () => Object.keys(pending.current), save: flush, discard }); }, []);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    load();
+    const unregister = registerDraft('theme', {
+      dirty: buffer.dirty, keys: buffer.keys, protect: buffer.protect,
+      prepareSave: () => { clearTimeout(timer.current); return buffer.prepareSave(); }, discard,
+    });
+    return () => { active.current = false; clearTimeout(timer.current); clearTimeout(sampleTimer.current); unregister(); buffer.dispose(); };
+  }, [buffer]);
   // al abrir la pestaña de alertas sale una de ejemplo para ver el tema; igual que en el editor,
   // se dispara cuando el marco termina de cargar (onload), nunca antes: si el iframe tarda, el ejemplo no se pierde (#6)
   const viewRef = useRef(view); viewRef.current = view;
   const sampleFrame = useCallback((el: HTMLIFrameElement | null) => {
-    if (el) el.onload = () => setTimeout(() => { if (viewRef.current === 'alert') post('/api/test', { type: 'follow', target: 'preview' }).catch(() => {}); }, 300);
+    if (el) el.onload = () => {
+      clearTimeout(sampleTimer.current);
+      sampleTimer.current = setTimeout(() => { if (active.current && viewRef.current === 'alert') post('/api/test', { type: 'follow', target: 'preview' }).catch(() => {}); }, 300);
+    };
   }, []);
   const set = (patch: Partial<Theme>) => {
-    live.update(s => ({ theme: { ...(s.theme as Theme), ...patch, icons: patch.icons ? { ...(s.theme?.icons || {}), ...patch.icons } : s.theme?.icons || {} } }));
-    pending.current = { ...pending.current, ...patch, ...(patch.icons ? { icons: { ...(pending.current.icons || {}), ...patch.icons } } : {}) };
-    draftChanged();
+    buffer.push(patch);
+    live.update(s => ({ theme: deepMerge(s.theme, patch) }));
     clearTimeout(timer.current); timer.current = setTimeout(sendDraft, 300);
   };
   // el punto de partida, la importación y la restauración mandan: se aplican y guardan al momento y
   // tiran el borrador; se cancela antes de pedirlos para que un envío del borrador en cola no los pise (#157, #164)
-  const cancelPending = () => { clearTimeout(timer.current); timer.current = undefined; if (Object.keys(pending.current).length) { pending.current = {}; del('/api/theme/draft').catch(() => {}); draftChanged(); } };
+  const cancelPending = () => { if (!isSaving()) discard(); };
   const replace = (d: ThemeInfo) => { cancelPending(); info.current = d; live.update(() => ({ theme: d.theme })); setFrameKey(k => k + 1); };
   const sample = (type: string) => guard(async () => { setView('alert'); await post('/api/test', { type, target: 'preview' }); })();
   if (!t || !info.current) return <p className="hint">Cargando la apariencia…</p>;
@@ -98,17 +113,18 @@ export function Apariencia({ parts }: { parts: string[] }) {
       tabs={[{ id: 'color', label: 'Color' }, { id: 'tipografia', label: 'Tipografía' }, { id: 'iconos', label: 'Iconos' }, { id: 'forma', label: 'Forma y posición' }, { id: 'sonido', label: 'Sonido' }]} tab={tab} onTab={setTab}
       actions={<>
         <label className="sr-only" htmlFor="ap-preset">Punto de partida</label>
-        <select id="ap-preset" className="ap-preset" value="" onChange={e => { const id = e.target.value; if (!id) return; if (!confirm(`¿Empezar desde «${I.presets.find(p => p.id === id)?.label}»? Se sustituye el tema actual.`)) return; guard(async () => { cancelPending(); replace(await post<ThemeInfo>('/api/theme/preset', { id })); }, 'Tema aplicado')(); }}>
+        <select id="ap-preset" className="ap-preset" disabled={saving} value="" onChange={e => { if (isSaving()) return; const id = e.target.value; if (!id) return; if (!confirm(`¿Empezar desde «${I.presets.find(p => p.id === id)?.label}»? Se sustituye el tema actual.`)) return; guard(async () => { cancelPending(); replace(await post<ThemeInfo>('/api/theme/preset', { id })); }, 'Tema aplicado')(); }}>
           <option value="">Punto de partida…</option>{I.presets.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => { const { version, ...rest } = t; void version; copy(JSON.stringify(rest, null, 2)); }}>Exportar</button>
-        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => {
+        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={saving} onClick={guard(async () => {
+          if (isSaving()) return;
           const txt = prompt('Pega aquí el JSON de un tema exportado:'); if (!txt) return;
           let theme; try { theme = JSON.parse(txt); } catch { throw new Error('Ese texto no es un JSON válido'); }
           cancelPending();
           replace(await post<ThemeInfo>('/api/theme/import', { theme }));
         }, 'Tema importado')}>Importar</button>
-        <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={isDefault} onClick={guard(async () => { if (!confirm('¿Volver al tema de serie de EGDEV?')) return; cancelPending(); replace(await post<ThemeInfo>('/api/theme/reset')); }, 'Tema de EGDEV restaurado')}>Restaurar EGDEV</button>
+        <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={saving || isDefault} onClick={guard(async () => { if (isSaving() || !confirm('¿Volver al tema de serie de EGDEV?')) return; cancelPending(); replace(await post<ThemeInfo>('/api/theme/reset')); }, 'Tema de EGDEV restaurado')}>Restaurar EGDEV</button>
       </>} />
     <div className="cols ap">
       <div className="stack">

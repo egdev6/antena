@@ -1,11 +1,12 @@
 // Atajos: botones del Stream Deck. Los de serie (/sd/…) y los personalizados (/sd/custom/<id>),
 // que encadenan pasos: acciones de antena (marca, pausa, pregunta…) y de Meld (escena, capa, chat…).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ManualDraft } from '../../lib/manual-draft';
 import { del, enc, get, post, put } from '../../lib/api';
 import { live } from '../../lib/live';
 import { confirmDelete, copy, cx, guard, IconBtn, Panel, toast } from '../../lib/ui';
 import { IC } from '../../lib/icons';
-import { draftChanged, registerDraft, useManualSave } from '../../lib/draft';
+import { isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
 import { Box, ListPanel, NameCell, PageHead, SaveBar, Slide, Tags } from '../../lib/layout';
 import { go } from '../router';
 import { ACTIONS, ActionFields } from './Editor';
@@ -59,23 +60,36 @@ function StepsEditor({ steps, info, onChange }: { steps: Step[]; info: Info; onC
 type Draft = { name: string; color?: string; steps: Step[] };
 function ShortcutSlide({ sc, info, base, onSaved, onDeleted }: { sc: Shortcut; info: Info; base: string; onSaved: (s: Shortcut) => void; onDeleted: () => void }) {
   useManualSave();
+  useDraftVersion();
   const [d, setD] = useState<Draft | null>(null);
   const [msg, setMsg] = useState<{ t: string; err?: boolean } | null>(null);
-  const ref = useState({ d: null as Draft | null })[0]; ref.d = d;
+  const savedRef = useRef(sc); savedRef.current = sc;
+  const [buffer] = useState(() => new ManualDraft<Partial<Draft>, Shortcut>({
+    empty: () => ({}), merge: (older, newer) => ({ ...older, ...newer }),
+    take: () => savedRef.current,
+    persist: async patch => (await put<{ shortcut: Shortcut }>('/api/shortcuts/' + enc(sc.id), patch)).shortcut,
+    publish: (saved, newer) => { savedRef.current = saved; onSaved(saved); setD(Object.keys(newer).length ? { ...saved, ...newer } : null); },
+    restore: saved => { onSaved(saved); setD(null); },
+  }));
   const cur: Draft = d || { name: sc.name, color: sc.color, steps: sc.steps };
   const url = `${base}/sd/custom/${sc.id}`;
-  const save = async () => { if (!ref.d) return; const r = await put<{ shortcut: Shortcut }>('/api/shortcuts/' + enc(sc.id), ref.d); ref.d = null; setD(null); onSaved(r.shortcut); draftChanged(); };
-  useEffect(() => registerDraft('atajo:' + sc.id, { dirty: () => !!ref.d, keys: () => (ref.d ? Object.keys(ref.d) : []), save, discard: () => { ref.d = null; setD(null); draftChanged(); } }), [sc.id]);
-  const set = (patch: Partial<Draft>) => { const n = { ...cur, ...patch }; ref.d = n; setD(n); setMsg(null); draftChanged(); };
+  useEffect(() => {
+    const unregister = registerDraft('atajo:' + sc.id, buffer);
+    return () => { unregister(); buffer.dispose(); };
+  }, [buffer]);
+  const set = (patch: Partial<Draft>) => { buffer.push(patch); setD({ ...cur, ...patch }); setMsg(null); };
   const run = guard(async () => {
-    await save();
+    if (isSaving()) return;
+    await buffer.save();
+    if (!buffer.isActive()) return;
     const r = await post<{ errors?: string[]; results?: unknown[] }>(`/api/shortcuts/${enc(sc.id)}/run`);
+    if (!buffer.isActive()) return;
     setMsg(r.errors?.length ? { t: `Hecho a medias: ${r.errors.join(' · ')}`, err: true } : { t: `Hecho: ${(r.results || []).length} ${(r.results || []).length === 1 ? 'paso' : 'pasos'}` });
   });
   return <Slide crumb={<><a href="#/atajos">Atajos y Stream Deck</a> › Atajo</>} back="#/atajos" wide
     title={<input className="lv-title-input" aria-label="Nombre del atajo" value={cur.name} onChange={e => set({ name: e.target.value })} />}
-    foot={<SaveBar left={<button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(sc.name, 'este atajo')) return; ref.d = null; setD(null); go('#/atajos'); await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar atajo…</button>}
-      right={<button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={run}>Guardar y probar</button>} />}>
+    foot={<SaveBar left={<button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => { if (isSaving() || !confirmDelete(sc.name, 'este atajo')) return; buffer.discard(); go('#/atajos'); await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar atajo…</button>}
+      right={<button type="button" className="eg-btn eg-btn--primary eg-btn--sm" disabled={isSaving()} onClick={run}>Guardar y probar</button>} />}>
     <div className="lv-cols aside">
       <div className="lv-col"><Box title={<>Pasos · {cur.steps.length}</>} aside={msg ? <span className={cx('hint', msg.err && 'err-inline')} aria-live="polite">{msg.t}</span> : null}>
         <StepsEditor steps={cur.steps} info={info} onChange={l => set({ steps: l })} />

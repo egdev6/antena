@@ -1,6 +1,7 @@
 // Teleprompter (lienzo «antena — Rediseño» › Teleprompter): guion por bloques que avanza solo.
 // La vista previa es el propio /widget/teleprompter (?embed) escalado: lo que ves aquí es lo que sale en la ventana.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ManualDraft } from '../../lib/manual-draft';
 import { del, enc, get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { BrowserSource, confirmDelete, cx, guard, Icon, IconBtn, ItemTabs, mmss, ScaledFrame, Sec, Switch, WidgetLayout } from '../../lib/ui';
@@ -8,7 +9,7 @@ import { IC, type IconData } from '../../lib/icons';
 import { isDesktop, listMonitors, openTeleprompter, type Monitor } from '../../lib/desktop';
 import type { TeleprompterState, TpBlock, TpCompiled } from '../../lib/types';
 import { origin } from './Widgets';
-import { draftChanged, registerDraft, useManualSave } from '../../lib/draft';
+import { isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
 import { Box, Dot, ListPanel, NameCell, PageHead, SaveBar, Slide, usePageTab } from '../../lib/layout';
 import { go } from '../router';
 
@@ -189,34 +190,46 @@ function NuevoGuion() {
 }
 function GuionSlide({ id }: { id: string }) {
   useManualSave();
+  useDraftVersion();
   const activeId = useLive(s => s.teleprompter?.activeId);
   const n = useLive(s => s.teleprompter?.scripts.length || 0);
   const [saved, setSaved] = useState<GuionDraft | null>(null);
   const [d, setD] = useState<GuionDraft | null>(null);
-  const ref = useState({ d: null as GuionDraft | null })[0]; ref.d = d;
-  const load = () => get<{ script: GuionDraft }>(`/api/teleprompter/scripts/${enc(id)}`).then(r => setSaved(r.script));
-  useEffect(() => { guard(load)(); }, [id]);
-  useEffect(() => registerDraft('guion:' + id, {
-    dirty: () => !!ref.d, keys: () => (ref.d ? ['guion'] : []),
-    save: async () => {
-      if (!ref.d) return;
-      const r = await put<TeleprompterState>(`/api/teleprompter/scripts/${enc(id)}`, ref.d);
-      live.update(() => ({ teleprompter: r })); setSaved(ref.d); setD(null); ref.d = null; draftChanged();
+  const savedRef = useRef(saved); savedRef.current = saved;
+  const mounted = useRef(true);
+  const [buffer] = useState(() => new ManualDraft<Partial<GuionDraft>, GuionDraft>({
+    empty: () => ({}), merge: (older, newer) => ({ ...older, ...newer }),
+    take: () => savedRef.current!, keys: () => ['guion'],
+    persist: async patch => {
+      const state = await put<TeleprompterState>(`/api/teleprompter/scripts/${enc(id)}`, patch);
+      if (mounted.current) live.update(() => ({ teleprompter: state }));
+      // The returned active script can be a different entity. Read this saved script.
+      return (await get<{ script: GuionDraft }>(`/api/teleprompter/scripts/${enc(id)}`)).script;
     },
-    discard: () => { setD(null); ref.d = null; draftChanged(); },
-  }), [id]);
+    publish: (baseline, newer) => { savedRef.current = baseline; setSaved(baseline); setD(Object.keys(newer).length ? { ...baseline, ...newer } : null); },
+    restore: baseline => { setSaved(baseline); setD(null); },
+  }));
+  useEffect(() => {
+    let active = true;
+    guard(async () => {
+      const result = await get<{ script: GuionDraft }>(`/api/teleprompter/scripts/${enc(id)}`);
+      if (active) { savedRef.current = result.script; setSaved(result.script); }
+    })();
+    const unregister = registerDraft('guion:' + id, buffer);
+    return () => { active = false; mounted.current = false; unregister(); buffer.dispose(); };
+  }, [buffer, id]);
   if (!saved) return <Slide crumb={<a href="#/teleprompter/guiones">Guiones</a>} title="Cargando…" back="#/teleprompter/guiones"><p className="hint">Cargando el guion…</p></Slide>;
   const cur = d || saved;
-  const set = (patch: Partial<GuionDraft>) => { const next = { title: cur.title, blocks: cur.blocks, ...patch }; ref.d = next; setD(next); draftChanged(); };
+  const set = (patch: Partial<GuionDraft>) => { buffer.push(patch); setD({ ...cur, ...patch }); };
   const setBlock = (i: number, patch: Partial<TpBlock>) => set({ blocks: cur.blocks.map((b, j) => (j === i ? { ...b, ...patch } : b)) });
   const move = (i: number, dd: number) => { const blocks = [...cur.blocks]; const [b] = blocks.splice(i, 1); blocks.splice(i + dd, 0, b); set({ blocks }); };
   const words = cur.blocks.reduce((t, b) => t + (b.text.match(/[^\s[\]]+/g) || []).length, 0);
   return <Slide crumb={<><a href="#/teleprompter/guiones">Guiones</a> › {activeId === id ? 'Activo' : 'Guardado'}</>} wide back="#/teleprompter/guiones"
     title={<input className="lv-title-input" aria-label="Título del guion" value={cur.title} onChange={e => set({ title: e.target.value })} />}
-    foot={<SaveBar left={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={n < 2} title={n < 2 ? 'Es el único guion' : undefined} onClick={guard(async () => {
-      if (!confirmDelete(saved.title, 'este guion')) return; setD(null); ref.d = null; draftChanged(); go('#/teleprompter/guiones');
+    foot={<SaveBar left={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving() || n < 2} title={n < 2 ? 'Es el único guion' : undefined} onClick={guard(async () => {
+      if (isSaving() || !confirmDelete(saved.title, 'este guion')) return; buffer.discard(); go('#/teleprompter/guiones');
       const r = await del<TeleprompterState>(`/api/teleprompter/scripts/${enc(id)}`); live.update(() => ({ teleprompter: r }));
-    })}>Borrar guion…</button>} right={activeId === id ? null : <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const r = await post<TeleprompterState>('/api/teleprompter/select', { id }); live.update(() => ({ teleprompter: r })); }, 'Guion activo')}>Usar en el teleprompter</button>} />}>
+    })}>Borrar guion…</button>} right={activeId === id ? null : <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={isSaving()} onClick={guard(async () => { if (isSaving()) return; const r = await post<TeleprompterState>('/api/teleprompter/select', { id }); live.update(() => ({ teleprompter: r })); }, 'Guion activo')}>Usar en el teleprompter</button>} />}>
     <div className="lv-cols aside">
       <div className="lv-col">{cur.blocks.map((b, i) => <Box key={b.id} title={<>Bloque {i + 1}</>} aside={<div className="row tight">
         <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={() => move(i, -1)} />

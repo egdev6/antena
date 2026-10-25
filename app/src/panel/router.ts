@@ -16,15 +16,25 @@ const REDIRECTS: [RegExp, string][] = [
   [/^widgets\/nuevo$/, 'widgets/objetivos/nuevo'],
 ];
 const fix = (h: string) => { for (const [re, to] of REDIRECTS) if (re.test(h)) return h.replace(re, to); return h; };
-const read = () => fix((location.hash || '#/directo').slice(2)).split('/').map(decodeURIComponent);
+const route = (hash: string) => fix((hash || '#/directo').slice(2)).split('/').map(decodeURIComponent);
+const read = () => route(location.hash);
+
+// Solo estas páginas usan usePageTab: el segundo segmento es una pestaña,
+// no la entidad de un catálogo. Los slides anidados (p. ej. guiones) sí son otra unidad.
+const TAB_PAGES = new Set(['apariencia', 'fuentes', 'general', 'meld', 'filtros', 'prompter', 'preguntas', 'sorteo', 'teleprompter']);
+const editingUnit = (hash: string) => {
+  const parts = route(hash);
+  return JSON.stringify(TAB_PAGES.has(parts[0]) && parts.length <= 2 ? [parts[0]] : parts);
+};
 
 let current = location.hash || '#/directo';
 export function useHash(): string[] {
   const [parts, setParts] = useState(read);
   useEffect(() => {
     const on = () => {
-      // cambios sin guardar: se pregunta antes de salir (y se vuelve a donde estaba si no)
-      if (location.hash !== current && !confirmLeave()) { history.replaceState(null, '', current); return; }
+      // Cambiar de pestaña o de alias no abandona el borrador. Salir/cambiar de
+      // entidad consulta la guardia central (también durante un guardado en curso).
+      if (editingUnit(location.hash) !== editingUnit(current) && !confirmLeave()) { history.replaceState(null, '', current); return; }
       const before = current.split('/').slice(0, 2).join('/');
       current = location.hash || '#/directo';
       setParts(read());

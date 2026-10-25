@@ -47,6 +47,22 @@ is saved. Live operations stay immediate and say so in the footer: enabling or o
 goal counters and goals themselves, connecting and deleting files. Marks the panel sets on its own (the tour
 seen, `live.saveConfigNow`) are saved at once too, never held in the draft.
 
+The manual-save contract for each editing unit is:
+
+- «Descartar» restores the whole unit to its state before the first pending change, not just the visible
+  field or tab. Internal tabs and route aliases for the same entity keep the draft; leaving the unit or
+  switching entities asks for confirmation when there are pending changes.
+- «Guardar» captures **all** pending save intentions at the moment of the click, across the unit's sources.
+  Requests run sequentially; later edits do not change the captured payloads or join that save implicitly.
+- Local fields stay editable while saving. If A is the captured draft and B is edited while A is in flight,
+  confirming A does not auto-save B: the newer edits stay pending and need another explicit «Guardar».
+- While a save request is in flight, disable «Guardar», «Descartar», destructive actions and exit actions.
+  Check the saving guard before any close or leave confirmation, including Esc, the backdrop and navigation;
+  do not let a close handler bypass it.
+- After A succeeds, it becomes the confirmed baseline: «Descartar» on the still-pending B restores A, not
+  the state from before A. A failed request keeps the draft and reports the error; retrying requires an
+  explicit «Guardar», never an automatic retry or a success state that hides unsaved work.
+
 ## View skeleton
 
 Views outside the v2 hierarchy start with `ViewHead`, so all headers share the same order:

@@ -62,7 +62,7 @@ test('v2 tier lists: lista → slide, + Nueva tier list y borrado', { timeout: 9
     await waitDom(chrome.cdp, `location.hash === '#/tierlist/nueva' && ${slideTitle} === 'Nueva tier list'`, { timeoutMs: 12000 });
     await dom(chrome, setInput('.lv-slide label input', 'Lista C'));
     await dom(chrome, `${buttonByText('Crear tier list')}.click()`);
-    await waitDom(chrome.cdp, `${slideTitle} === 'Lista C' && ${rowNames} === 'Lista A|Lista B|Lista C'`, { timeoutMs: 12000 });
+    await waitDom(chrome.cdp, `${slideTitle} === 'Lista C' && ${rowNames} === 'Lista A|Lista B|Lista C' && !!${buttonByText('Borrar lista…')}`, { timeoutMs: 12000 });
 
     // borrar: pregunta, cierra el slide y la lista queda sin ella
     await dom(chrome, acceptConfirms);
@@ -101,7 +101,7 @@ test('v2 teleprompter: pestañas para elegir el activo, guiones en lista → sli
     await dom(chrome, `${tabsOf(L)}.at(-1).click()`);
     await waitDom(chrome.cdp, `location.hash === '#/teleprompter/guiones/nuevo' && ${slideTitle} === 'Nuevo guion'`, { timeoutMs: 12000 });
     await dom(chrome, `${buttonByText('Crear guion')}.click()`);
-    await waitDom(chrome.cdp, `${slideTitle} === 'Nuevo guion' && ${rowNames}.split('|').length === 3`, { timeoutMs: 12000 });
+    await waitDom(chrome.cdp, `${slideTitle} === 'Nuevo guion' && ${rowNames}.split('|').length === 3 && !!${buttonByText('Borrar guion…')}`, { timeoutMs: 12000 });
 
     // borrar: pregunta y vuelve a la lista
     await dom(chrome, acceptConfirms);
@@ -179,7 +179,7 @@ test('atajos (v2): lista en «Mis atajos» con Probar, «+ Nuevo atajo» en la c
     await waitDom(chrome.cdp, `location.hash === '#/atajos/nuevo' && !!${slide}?.querySelector('label input')`, { timeoutMs: 9000 });
     await dom(chrome, setInput('.lv-slide label input', 'Tres'));
     await dom(chrome, `${buttonByText('Crear atajo')}.click()`);
-    await waitDom(chrome.cdp, `${slide}?.querySelector('input[aria-label="Nombre del atajo"]')?.value === 'Tres' && ${rows}.length === 3`, { timeoutMs: 9000 });
+    await waitDom(chrome.cdp, `${slide}?.querySelector('input[aria-label="Nombre del atajo"]')?.value === 'Tres' && ${rows}.length === 3 && !!${buttonByText('Borrar atajo…')}`, { timeoutMs: 9000 });
 
     // borrar desde su slide
     await dom(chrome, acceptConfirms);

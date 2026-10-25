@@ -1,61 +1,79 @@
-// Parches acumulados que se mandan al servidor tras un rato sin cambios (widgets, interactivos…).
-// Con guardado manual (draft.ts) se quedan en borrador hasta «Guardar»; «Descartar» vuelve a la copia.
+// Optimistic widget/interactive edits. Manual saves freeze their intent at click time;
+// only automatic saves outside a manual editing unit retain exponential retries.
 import { api } from './api';
 import { deepMerge, live } from './live';
 import { toast } from './ui';
-import { draftChanged, holding, registerDraft } from './draft';
+import { flushSources, holding, registerDraft, type DraftSource } from './draft';
+import { ManualDraft } from './manual-draft';
+import type { AppState, WidgetsConfig } from './types';
 
-// Fuera del guardado manual, un guardado fallido vuelve a la cola (gana lo más nuevo) y se reintenta
-// con espera creciente: 2 s, 4 s, 8 s… hasta 30 s. El aviso de error sale una vez por racha de fallos;
-// un guardado bueno reinicia la espera. Con «Guardar» (borrador) el fallo se avisa al momento y el
-// borrador sigue ahí para volver a intentarlo: no hay reintento automático a escondidas.
-export function patcher(method: string, url: string, after?: (d: any) => void, ms = 400, snap?: { take: () => any; restore: (v: any) => void }) {
-  let pending: any = {}, t: any = null, fails = 0, chain: Promise<void> = Promise.resolve(), copy: any = undefined;
-  const send = async (manual: boolean) => {
-    clearTimeout(t);
-    if (!Object.keys(pending).length) return;
-    const p = pending; pending = {};
-    // la petición va primero: `after?.(await api(…))` se salta los argumentos si no hay `after`
-    try { const d = await api(method, url, p); fails = 0; copy = undefined; after?.(d); } catch (e: any) {
-      pending = deepMerge(p, pending);
-      if (manual) { toast(e.message, true); throw e; }
-      if (!fails++) toast(e.message, true);
-      clearTimeout(t); t = setTimeout(() => { flush().catch(() => {}); }, Math.min(30000, 2000 * 2 ** (fails - 1)));
-    } finally { draftChanged(); }
+type Patch = Record<string, unknown>;
+type Snapshot<B extends object> = {
+  take: () => B;
+  restore: (saved: B) => void;
+  persist?: (sent: Patch) => Promise<B>;
+  protect: (state: AppState, intent: Patch) => AppState;
+};
+export function patcher<B extends object>(method: string, url: string, snap: Snapshot<B>, ms = 400) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let failures = 0;
+  let chain: Promise<unknown> = Promise.resolve();
+  const buffer = new ManualDraft<Patch, B>({
+    empty: () => ({}), merge: deepMerge, take: snap.take,
+    persist: async sent => {
+      const response = snap.persist ? await snap.persist(sent) : await api<B>(method, url, sent);
+      failures = 0;
+      return response;
+    },
+    publish: (saved, newer) => snap.restore(deepMerge(saved, newer)),
+    restore: snap.restore, protect: snap.protect,
+  });
+  const sendAutomatic = async () => {
+    clearTimeout(timer);
+    // A timer queued outside manual mode must not save a newly opened manual draft.
+    if (holding()) return;
+    try {
+      await buffer.save();
+      if (buffer.dirty() && !holding()) timer = setTimeout(flushQuietly, ms);
+    } catch (error) {
+      if (!failures++) toast(error instanceof Error ? error.message : 'No se pudo guardar', true);
+      if (!holding()) timer = setTimeout(flushQuietly, Math.min(30000, 2000 * 2 ** (failures - 1)));
+    }
   };
-  // las peticiones van de una en una: un reintento nunca llega después (y encima) de un guardado más nuevo
-  const run = (manual: boolean) => { const next = chain.then(() => send(manual)); chain = next.catch(() => {}); return next; };
-  const flush = () => run(false);
-  const save = () => run(true);
-  const push = (patch: any) => {
-    if (holding() && !Object.keys(pending).length && snap) copy = structuredClone(snap.take());
-    pending = deepMerge(pending, patch);
-    clearTimeout(t);
-    if (holding()) { draftChanged(); return; }
-    t = setTimeout(() => { flush().catch(() => {}); }, ms);
+  const flush = () => { chain = chain.then(sendAutomatic, sendAutomatic); return chain; };
+  const flushQuietly = () => { void flush(); };
+  const push = (patch: Patch) => {
+    buffer.push(patch); // snapshot precedes the caller's optimistic mutation (S1)
+    clearTimeout(timer);
+    if (!holding()) timer = setTimeout(flushQuietly, ms);
   };
-  const discard = () => { clearTimeout(t); pending = {}; if (copy !== undefined && snap) snap.restore(copy); copy = undefined; draftChanged(); };
-  registerDraft(url, { dirty: () => Object.keys(pending).length > 0, keys: () => Object.keys(pending), save, discard });
-  return { push, flush, discard };
+  const discard = () => { clearTimeout(timer); buffer.discard(); };
+  const source: DraftSource = {
+    dirty: buffer.dirty, keys: buffer.keys, protect: buffer.protect,
+    prepareSave: () => { clearTimeout(timer); return buffer.prepareSave(); }, discard,
+  };
+  registerDraft(url, source);
+  return { push, flush, discard, source };
 }
 
-/** Configuración de widgets (config.widgets): cambia al momento y se guarda con PUT /api/widgets. */
-const W = patcher('PUT', '/api/widgets', undefined, 400, {
-  take: () => live.state?.config.widgets,
-  restore: v => live.update(s => ({ config: { ...s.config, widgets: v } })),
+const W = patcher('PUT', '/api/widgets', {
+  take: () => live.state!.config.widgets,
+  restore: saved => live.update(s => ({ config: { ...s.config, widgets: saved } })),
+  persist: async sent => (await api<{ widgets: WidgetsConfig }>('PUT', '/api/widgets', sent)).widgets,
+  protect: (state, intent) => ({ ...state, config: { ...state.config, widgets: deepMerge(state.config.widgets, intent) } }),
 });
-export function patchWidgets(patch: any) {
+export function patchWidgets(patch: Patch) {
+  W.push(patch); // captures the original before mutating live; later edits keep that copy
   live.update(s => ({ config: { ...s.config, widgets: deepMerge(s.config.widgets, patch) } }));
-  W.push(patch);
 }
 
-/** Configuración de preguntas, tier list y sorteo. */
-const IX = patcher('PUT', '/api/interactive/config', cfg => live.update(s => ({ interactive: { ...s.interactive, config: cfg } })), 400, {
-  take: () => live.state?.interactive?.config,
-  restore: v => live.update(s => ({ interactive: { ...s.interactive, config: v } })),
+const IX = patcher('PUT', '/api/interactive/config', {
+  take: () => live.state!.interactive.config,
+  restore: saved => live.update(s => ({ interactive: { ...s.interactive, config: saved } })),
+  protect: (state, intent) => ({ ...state, interactive: { ...state.interactive, config: deepMerge(state.interactive.config, intent) } }),
 });
-export function patchIx(section: string, patch: any) {
+export function patchIx(section: string, patch: Patch) {
+  IX.push({ [section]: patch }); // capture before the first optimistic edit (S1)
   live.update(s => ({ interactive: { ...s.interactive, config: { ...s.interactive.config, [section]: { ...s.interactive.config[section], ...patch } } } }));
-  IX.push({ [section]: patch });
 }
-export const flushAll = () => Promise.all([W.flush(), IX.flush(), live.flushConfig()]);
+export const flushAll = () => flushSources([live.configSource, W.source, IX.source]);

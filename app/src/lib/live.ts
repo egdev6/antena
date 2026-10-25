@@ -3,7 +3,8 @@ import { useSyncExternalStore } from 'react';
 import { warnUnknownClientEvent } from '../../../src/events.mjs'; // contrato único de eventos SSE (#72)
 import { mergeChat } from './chat-merge.mjs';
 import { api, withKey } from './api';
-import { draftChanged, holding, registerDraft } from './draft';
+import { holding, protectDrafts, registerDraft, type DraftSource } from './draft';
+import { ManualDraft } from './manual-draft';
 import type { AppState, ChatMessage, Config, LiveEventName, LiveEvents, PrompterState, Timeline } from './types';
 
 type Listener = () => void;
@@ -54,18 +55,27 @@ class Live {
    *  picked in the teleprompter while the SSE 'open' snapshot is in flight is newer than
    *  that snapshot, which must not bring the previous script back. */
   private touched: Partial<Record<keyof AppState, number>> = {};
-  private cfgPending: Record<string, unknown> = {};
   private cfgTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Copia de la configuración al empezar un borrador (guardado manual): «Descartar» vuelve a ella. */
-  private cfgSnapshot: Config | null = null;
+  private configDraft: ManualDraft<Record<string, unknown>, Config>;
+  readonly configSource: DraftSource;
 
   constructor() {
-    registerDraft('config', {
-      dirty: () => Object.keys(this.cfgPending).length > 0,
-      keys: () => Object.keys(this.cfgPending),
-      save: () => this.flushConfig(),
-      discard: () => this.discardConfig(),
+    this.configDraft = new ManualDraft({
+      empty: () => ({}), merge: deepMerge,
+      take: () => this.state!.config,
+      persist: async patch => (await api<{ config: Config }>('PUT', '/api/config', patch)).config,
+      publish: (saved, newer) => this.update(() => ({ config: deepMerge(saved, newer) })),
+      // Other sources may have saved another config section after this snapshot.
+      restore: (saved, discarded) => this.update(s => ({ config: { ...s.config,
+        ...Object.fromEntries(Object.entries(saved).filter(([key]) => Object.hasOwn(discarded, key))) } })),
+      protect: (state, intent) => ({ ...state, config: deepMerge(state.config, intent) }),
     });
+    this.configSource = {
+      dirty: this.configDraft.dirty, keys: this.configDraft.keys,
+      prepareSave: () => { clearTimeout(this.cfgTimer); return this.configDraft.prepareSave(); },
+      discard: () => this.discardConfig(), protect: this.configDraft.protect,
+    };
+    registerDraft('config', this.configSource);
   }
 
   subscribe = (fn: Listener) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
@@ -85,7 +95,7 @@ class Live {
     // Un cambio local de config marca época: los snapshots pedidos antes de él quedan obsoletos.
     if (patch.config) this.cfgTouch++;
     for (const k of Object.keys(patch) as (keyof AppState)[]) if (WHOLE.includes(k) || k === 'meld') this.touched[k] = (this.touched[k] ?? 0) + 1;
-    this.state = { ...s, ...patch };
+    this.state = protectDrafts({ ...s, ...patch });
     this.emit();
   }
 
@@ -126,7 +136,7 @@ class Live {
       const kept: Partial<AppState> = prev ? Object.fromEntries(WHOLE.filter(k => this.touched[k] !== touchedAtStart[k]).map(k => [k, prev[k]])) : {};
       // meld: only the session arrives by SSE; the rest (commands, events) comes from the snapshot.
       if (prev && this.touched.meld !== touchedAtStart.meld) kept.meld = { ...snap.meld, session: prev.meld?.session };
-      this.state = { ...snap, ...kept, config, widgets: { ...snap.widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } };
+      this.state = protectDrafts({ ...snap, ...kept, config, widgets: { ...snap.widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } });
     } finally { this.inflightChat.delete(inFlight); this.inflightRemoved.delete(removed); }
     try {
       const tl = await api<Timeline>('GET', '/api/timeline');
@@ -147,38 +157,30 @@ class Live {
 
   /** Cambia la configuración al momento y la guarda en el servidor tras 400 ms sin cambios. */
   patchConfig(patch: Record<string, unknown>) {
-    // con guardado manual (draft.ts) se guarda una copia para poder descartar y no se programa el guardado
-    if (holding() && !Object.keys(this.cfgPending).length) this.cfgSnapshot = structuredClone(this.state?.config ?? null);
+    this.configDraft.push(patch); // capture baseline before the optimistic mutation
     this.update(s => ({ config: deepMerge(s.config, patch) }));
-    this.cfgPending = deepMerge(this.cfgPending, patch);
     clearTimeout(this.cfgTimer);
-    if (holding()) { draftChanged(); return; }
+    if (holding()) return;
     this.cfgTimer = setTimeout(() => this.flushConfig().catch(e => this.fire('error', e)), 400);
   }
   async flushConfig() {
     clearTimeout(this.cfgTimer);
-    if (!Object.keys(this.cfgPending).length) return;
-    const p = this.cfgPending; this.cfgPending = {};
-    try {
-      const d = await api<{ config?: Config }>('PUT', '/api/config', p);
-      this.cfgSnapshot = null;   // guardado: ya no hay nada que descartar
-      if (d?.config) this.update(() => ({ config: d.config as Config }));
-    } catch (e) { this.cfgPending = deepMerge(p, this.cfgPending); throw e; }
-    finally { draftChanged(); }
+    await this.configDraft.save();
+    if (!holding() && this.configDraft.dirty()) {
+      this.cfgTimer = setTimeout(() => this.flushConfig().catch(e => this.fire('error', e)), 400);
+    }
   }
   /** Guarda al momento, fuera del borrador manual: para marcas del propio panel (p. ej. el tour visto)
    *  que no son una edición del usuario y no deben esperar a «Guardar» ni perderse con «Descartar». */
   async saveConfigNow(patch: Record<string, unknown>) {
     this.update(s => ({ config: deepMerge(s.config, patch) }));
-    if (this.cfgSnapshot) this.cfgSnapshot = deepMerge(this.cfgSnapshot, patch);
+    this.configDraft.updateBaseline(saved => deepMerge(saved, patch));
     await api('PUT', '/api/config', patch);
   }
   /** Descarta el borrador de configuración y vuelve a lo guardado. */
   discardConfig() {
     clearTimeout(this.cfgTimer);
-    this.cfgPending = {};
-    if (this.cfgSnapshot) { const c = this.cfgSnapshot; this.cfgSnapshot = null; this.update(() => ({ config: c })); }
-    draftChanged();
+    this.configDraft.discard();
   }
 
   connect(client = 'panel') {
