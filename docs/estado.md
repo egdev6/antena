@@ -17,7 +17,7 @@ sigue sin dependencias (Node ≥ 22); React, esbuild y Tauri son solo de compila
   ticker, créditos, pregunta, tier list y sorteo, servidas por URL local.
 - **Alertas de Twitch y YouTube:** doce tipos normalizados (follow, sub, resub, giftsub,
   cheer, raid, redemption; superchat, supersticker, member, milestone, giftmember) con
-  diseños, variaciones, voz y acciones en Meld.
+  tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en Meld.
 - **Chat y moderación local:** Twitch y YouTube unificados, envío a una o a las dos
   plataformas con resultado por plataforma, filtro local y reflejo de la moderación de Twitch.
 - **Comandos y timers multicanal:** comandos con permisos y esperas, y mensajes programados
@@ -36,6 +36,11 @@ sigue sin dependencias (Node ≥ 22); React, esbuild y Tauri son solo de compila
   monitor primario del sistema.
 - **Prompter:** vista 1024×600 para el Elgato Prompter con chat, preguntas, tier list,
   sorteo y cronología. La app la abre a pantalla completa en la pantalla de 1024×600.
+- **Panel v2 (jerarquía):** listado → panel a todo el ancho con pestañas en Alertas (y
+  variaciones como segundo nivel), Comandos, Mensajes, Widgets, Atajos, Tier list, Guiones del
+  teleprompter, Directos anteriores, Archivos y Conexiones; pestañas de página en el resto;
+  creación unificada con plantillas y guardado manual (Guardar/Descartar) con aviso al salir.
+  El catálogo fijo (alertas, conexiones, widgets) se ve en tarjetas; los objetivos, dentro de la suya.
 - **Fuentes para Meld:** `GET /api/sources` y la vista «Fuentes para Meld» listan cada capa
   con su URL y tamaño (un objetivo por cada uno configurado), más el dock y el prompter.
 - **Atajos personalizados:** pasos encadenados (acciones `/sd/…`, pestaña del prompter y
@@ -187,6 +192,10 @@ persistencia tienen regresiones de navegador React, exigidas por la línea base 
   anti-spam está probada con lecturas simuladas.
 
 ## Límites y deudas conocidas
+
+- Panel v2: las vistas previas de los widgets (chat, últimos, créditos) muestran lo guardado,
+  no el borrador; los objetivos y la tier list se guardan al momento porque se usan en directo.
+  El panel no tiene comprobación de tipos en CI (no hay `@types/react`).
 
 - Un cierre ordenado conserva lo aceptado, pero **SIGKILL** puede perder la última ventana
   pendiente; no hay `fsync` ni resistencia a corte de luz.

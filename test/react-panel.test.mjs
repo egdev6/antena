@@ -44,7 +44,7 @@ test('panel React: etiquetas de la cronología, «Probar» con texto y marca má
 
     // editor de alertas: el botón de probar la variación muestra el texto «Probar»
     await ev(`location.hash = '#/alerta/follow'`);
-    await clickWhen(c, `Array.from(document.querySelectorAll('.eg-tabs__item')).find(b => b.textContent.includes('Variaciones'))`);
+    await clickWhen(c, `Array.from(document.querySelectorAll('.lv-tab')).find(b => b.textContent.includes('Variaciones'))`);
     await waitDom(c, `Array.from(document.querySelectorAll('button')).some(b => b.textContent.trim() === 'Probar')`, { timeoutMs: 9000 });
     const probar = await ev(`Array.from(document.querySelectorAll('button')).filter(b => b.textContent.trim() === 'Probar').length`);
     assert.ok(probar >= 1, 'el botón «Probar» de la variación muestra su texto');

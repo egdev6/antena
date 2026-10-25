@@ -28,7 +28,7 @@ Alertas, chat y widgets de directo para **Meld Studio**, en local, gratis y con 
 antena se queda entera en tu PC y le da a tu directo una capa completa de alertas e interacción:
 
 - **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits, raids, recompensas) y YouTube (Super Chats, Super Stickers, miembros, hitos y membresías regaladas).
-- **Dos diseños por alerta:** la tarjeta 3D EGDEV, o tu vídeo o imagen (webm con transparencia) con el mensaje encima, colocado donde quieras y con CSS propio.
+- **Tres diseños por alerta:** la tarjeta 3D EGDEV; tu vídeo o imagen (webm con transparencia) con el mensaje encima, colocado donde quieras; o **vídeo + tarjeta**: tu vídeo o imagen de fondo a pantalla completa y encima la tarjeta 3D, con retraso de entrada y ajuste de posición. Todos con CSS propio.
 - **Variaciones:** otra versión de la alerta según la cantidad, el tier, el usuario, el mensaje o una probabilidad.
 - **Voz (TTS)** de los mensajes, **filtro** de palabras, enlaces y usuarios, y **pausa** con cola.
 - **Acciones en Meld** al salir una alerta: cambiar de escena (y volver), mostrar u ocultar capas, efectos, confeti, ruleta, guardar clip, escribir en el chat, hablar…
@@ -283,7 +283,7 @@ Las **marcas de short** quedan en la cronología con su minuto y, si estás emit
 
 ### Apariencia
 
-En **Ajustes › Apariencia** se cambia el tema de **todo lo que sale en pantalla**: overlay de alertas, chat, objetivos, últimos, ticker, pregunta, tier list, sorteo y créditos. Hay un único tema; el de serie es el de EGDEV y lo que cambies aquí lo sobrescribe. Se guarda solo (a los 350 ms del último cambio) y llega al momento a las capas abiertas en Meld, sin recargarlas. Si el guardado falla, el panel vuelve al último tema guardado y avisa; un punto de partida, una importación o «Restaurar EGDEV» cancelan cualquier guardado pendiente y mandan ellos.
+En **Ajustes › Apariencia** se cambia el tema de **todo lo que sale en pantalla**: overlay de alertas, chat, objetivos, últimos, ticker, pregunta, tier list, sorteo y créditos. Hay un único tema; el de serie es el de EGDEV y lo que cambies aquí lo sobrescribe. Mientras lo cambias, solo se ve en la vista previa del panel (un borrador en `/api/theme/draft` que solo cargan las vistas con `?themeDraft`); al pulsar **Guardar** llega a la vez a todas las capas abiertas en Meld, sin recargarlas. Si el guardado falla, el borrador sigue ahí y el panel avisa; un punto de partida, una importación o «Restaurar EGDEV» se aplican y guardan al momento y tiran el borrador.
 
 - **Color:** acento, acento suave, fondo de las tarjetas (degradado, sólido o cristal, con su opacidad), textos, borde (del acento o propio), intensidad del brillo y, si quieres, el color de cada plataforma.
 - **Tipografía:** fuente de títulos y de textos (las de la marca, las del sistema o una tuya en woff2/woff/ttf/otf subida en General y archivos), tamaño del texto de las alertas, mayúsculas y contorno negro.
@@ -339,11 +339,17 @@ Meld no admite paneles propios, pero su **panel de chat** carga una dirección. 
 
 La interfaz (panel, prompter y dock) está en React, en `app/src`, y se compila con `pnpm app:build`. Usa **EGDEV Foundation** (Material v2 + Grafito): `public/ds/tokens.css` y `public/ds/bundle.css` son copias del artefacto del sistema de diseño, y `panel.css` solo aplica sus recetas (superficies tonales, borde de luz, sombras de dos capas, pozos en los campos, botón primario con degradado). Para actualizar el sistema, se sustituyen esos dos archivos. El prompter mantiene el lienzo negro para leerse bien a través del cristal. Los logos de Twitch y YouTube se pintan a color (fuente única en `public/platform-icons.js`) en el panel, el prompter, el dock y los widgets de chat y objetivos. Los overlays y widgets del directo quedan fuera: su rediseño en registro Show está pendiente en el sistema.
 
+**Jerarquía (v2).** Cada página sigue el mismo patrón: cabecera con una sola acción principal («+ Nuevo comando», «+ Nuevo mensaje»…), hasta cuatro indicadores, y un listado en tabla con buscador y filtros. Al pulsar una fila se abre un **panel a todo el ancho** con pestañas (atrás ←, ✕ o Esc para cerrar). Las variaciones abren un segundo nivel sobre su alerta (*Alertas › Raid › Variación*). Las páginas sin listado (Apariencia, Preguntas, Sorteo, Filtros y voz, General, Meld Studio, Prompter y dock) se reparten en **pestañas de página**, enlazables (`#/apariencia/iconos`). Crear es igual en todas partes: «+ Nuevo X» abre el mismo panel en modo «Nuevo» con lo mínimo y una plantilla de partida; el resto de pestañas se abren al crear. El menú lateral tiene además un botón **Crear**.
+
+**Tarjetas para el catálogo (v3).** Lo que ofrece la app y crece solo cuando la app trae funciones nuevas se ve en tarjetas agrupadas: **Alertas** (por plataforma, el récord de espectadores con la suya), **Conexiones** (Plataformas · Producción y acceso) y **Widgets** (Capas de pantalla · Se manejan en directo). Cada tarjeta lleva miniatura, estado, etiquetas y su acción principal; la de una alerta con vídeo muestra el primer fotograma y, al pasar el ratón, una vista previa en bucle y sin sonido. El interruptor «Activa» de cada alerta se aplica al momento. Lo que creas tú sigue en tabla y vive dentro de su tarjeta: los objetivos se abren desde la tarjeta «Objetivos» (`#/widgets/objetivos`).
+
+**Guardado manual.** En las páginas de configuración nada se guarda hasta pulsar **Guardar**; el pie dice cuántos cambios quedan y **Descartar** vuelve a lo guardado. Las pestañas con cambios llevan un punto. Si sales de la página con cambios, el panel pregunta antes (y el navegador, al cerrar). Las vistas previas de alertas, comandos y mensajes y la del tema enseñan el borrador; las de los widgets enseñan lo guardado. Lo que es operación del directo se aplica al momento: activar/ordenar variaciones, colocar en la tier list, abrir o sortear, mover preguntas, contadores de objetivos, conectar y borrar archivos. Las direcciones antiguas (`#/alerta/…`, `#/comando/…`, `#/widget/…`) siguen funcionando.
+
 Las listas del menú lateral se pliegan con un clic en su título y el panel recuerda cuáles dejaste cerradas. **Alt+clic** deja abierta solo esa lista. Con una lista plegada sigue a la vista la sección en la que estás, y un punto rojo avisa si dentro hay algo en marcha (votación, sorteo abierto, preguntas en cola).
 
 ### Desde el móvil
 
-**General y archivos › Acceso desde el móvil.** Al activarlo, el panel escucha en la red local y te da un enlace con clave (`http://192.168.x.x:4500/?key=…`). Ábrelo una vez en el móvil y queda recordado. «Generar otra clave» invalida los enlaces anteriores.
+**Ajustes › General › Acceso desde el móvil** (también en Ajustes › Conexiones). Al activarlo, el panel escucha en la red local y te da un enlace con clave (`http://192.168.x.x:4500/?key=…`). Ábrelo una vez en el móvil y queda recordado. «Generar otra clave» invalida los enlaces anteriores.
 
 ### Servidor MCP
 
@@ -422,7 +428,7 @@ Para escribir, el chat tiene que estar escuchándose (es el del directo en march
 
 ### Archivos
 
-Vídeos, imágenes y sonidos se suben desde el panel (o con `importar_archivo` por MCP) y se guardan en `media/`. Formatos: webm, mp4, gif, png, webp, mp3, ogg, wav; hasta 300 MB. El panel muestra el tamaño de cada archivo y el total de la carpeta.
+Vídeos, imágenes y sonidos se suben desde el panel (o con `importar_archivo` por MCP) y se guardan en `media/`. Formatos: webm, mp4, gif, png, webp, mp3, ogg, wav; hasta 300 MB. En **Registro › Archivos** cada archivo muestra su tamaño, el total de la carpeta y **dónde se usa** (alertas y sus variaciones, comandos, mensajes); el filtro «Sin usar» ayuda a limpiar.
 
 ### Variables
 

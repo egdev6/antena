@@ -246,6 +246,13 @@ export class Teleprompter extends EventEmitter {
     return { script: s, ...this.snapshot() };
   }
 
+  /** Un guion con sus bloques, para editarlo sin tener que activarlo. */
+  getScript(id) {
+    const s = this.cfg.scripts.find(x => x.id === id);
+    if (!s) throw httpErr(404, `No existe el guion «${id}»`);
+    return { id: s.id, title: s.title, blocks: (s.blocks || []).map(b => ({ id: b.id, title: b.title, text: b.text })) };
+  }
+
   updateScript(id, data = {}) {
     const t = this.#ensure();
     const i = t.scripts.findIndex(s => s.id === id);

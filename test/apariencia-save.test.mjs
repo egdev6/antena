@@ -1,4 +1,4 @@
-// #157 Apariencia: carrera del autoguardado (350 ms) y fallo del guardado.
+// #157 Apariencia: carrera entre el borrador y un punto de partida, y fallo del guardado (guardado manual, v2).
 // Por la interfaz pública (panel React en Chrome): cambiar un color y, antes del
 // debounce, aplicar un punto de partida debe dejar el tema del preset en el
 // servidor; y si PUT /api/theme falla, el panel vuelve al último tema guardado
@@ -64,7 +64,7 @@ test('apariencia: el punto de partida gana a un cambio pendiente del autoguardad
   }
 });
 
-test('apariencia: si PUT /api/theme falla, el panel vuelve al último tema guardado y avisa', { timeout: 120000 }, async t => {
+test('apariencia: si «Guardar» falla, avisa y el borrador sigue; «Descartar» vuelve al tema guardado', { timeout: 120000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-apariencia-157-'));
@@ -83,7 +83,7 @@ test('apariencia: si PUT /api/theme falla, el panel vuelve al último tema guard
     const ev = expr => import('./helpers/chrome-dom.mjs').then(m => m.evaluateChrome(c, expr));
     await waitDom(c, `!!document.querySelector('#ap-preset')`, { timeoutMs: 12000 });
     const ultimo = (await temaGuardado()).accent;
-    // PUT /api/theme falla: el fallo llega al resolverse el debounce
+    // PUT /api/theme falla (el borrador, PUT /api/theme/draft, sí funciona)
     await ev(`(() => {
       const real = window.fetch;
       window.fetch = (url, opts) => {
@@ -97,11 +97,18 @@ test('apariencia: si PUT /api/theme falla, el panel vuelve al último tema guard
       const input = document.querySelector('.ap-color input.mono');
       (${setNativeValue})(input, '#123456');
     })()`);
-    // el tema vivo vuelve al guardado y hay toast de error
+    // guardado manual: nada se guarda hasta «Guardar»
+    await waitDom(c, `!document.querySelector('.lv-sfoot .eg-btn--secondary').disabled`, { timeoutMs: 9000 });
+    assert.equal((await temaGuardado()).accent, ultimo, 'sin pulsar Guardar el tema guardado no cambia');
+    await ev(`document.querySelector('.lv-sfoot .eg-btn--secondary').click()`);
+    // falla: toast de error, el borrador sigue en pantalla y el tema guardado no cambió
     await waitDom(c, `document.querySelector('.toast.err.on')?.textContent.includes('no se pudo guardar el tema')`, { timeoutMs: 9000 });
-    const enPantalla = await ev(`document.querySelector('.ap-color input.mono').value`);
-    assert.equal(enPantalla, ultimo, 'el panel muestra de nuevo el último tema guardado');
+    assert.equal(await ev(`document.querySelector('.ap-color input.mono').value`), '#123456', 'el borrador no se pierde');
+    assert.equal(await ev(`document.querySelector('.lv-dirty').classList.contains('is-on')`), true, 'sigue habiendo cambios sin guardar');
     assert.equal((await temaGuardado()).accent, ultimo, 'el tema guardado no cambió');
+    // «Descartar» vuelve al último tema guardado
+    await ev(`[...document.querySelectorAll('.lv-sfoot button')].find(b => b.textContent.trim() === 'Descartar').click()`);
+    await waitDom(c, `document.querySelector('.ap-color input.mono').value === ${JSON.stringify(ultimo)}`, { timeoutMs: 9000 });
   } finally {
     chrome?.cdp.close(); chrome?.child.kill();
     await new Promise(r => app.server.close(r));

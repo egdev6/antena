@@ -79,7 +79,7 @@ const condiciones = {
 const hojasAlerta = {
   enabled: bool, title: str, text: str, sub: str,
   durationMs: num({ min: 0 }), minAmount: num({ min: 0 }),
-  layout: en(['card', 'media']), media: str, mediaSize: num({ min: 0 }), mediaVolume: num({ min: 0, max: 100 }),
+  layout: en(['card', 'media', 'mixed']), cardX: num({ min: -1920, max: 1920 }), cardY: num({ min: -1080, max: 1080 }), media: str, mediaSize: num({ min: 0 }), mediaVolume: num({ min: 0, max: 100 }),
   sound: str, soundVolume: num({ min: 0, max: 100 }), durationMode: en(['fixed', 'media']), textDelayMs: num({ min: 0 }),
   textX: num({ min: 0, max: 100 }), textY: num({ min: 0, max: 100 }), textWidth: num({ min: 0 }),   // textX/Y: porcentajes reales
   textAlign: en(['left', 'center', 'right']), fontSize: num({ min: 0 }),

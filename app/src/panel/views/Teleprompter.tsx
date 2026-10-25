@@ -1,13 +1,17 @@
 // Teleprompter (lienzo «antena — Rediseño» › Teleprompter): guion por bloques que avanza solo.
 // La vista previa es el propio /widget/teleprompter (?embed) escalado: lo que ves aquí es lo que sale en la ventana.
-import { useEffect, useState } from 'react';
-import { del, enc, post, put } from '../../lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { ManualDraft } from '../../lib/manual-draft';
+import { del, enc, get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { BrowserSource, confirmDelete, cx, guard, Icon, IconBtn, ItemTabs, LazyInput, mmss, ScaledFrame, Sec, Switch, ViewHead, WidgetLayout } from '../../lib/ui';
+import { BrowserSource, confirmDelete, cx, guard, Icon, IconBtn, ItemTabs, mmss, ScaledFrame, Sec, Switch, WidgetLayout } from '../../lib/ui';
 import { IC, type IconData } from '../../lib/icons';
 import { isDesktop, listMonitors, openTeleprompter, type Monitor } from '../../lib/desktop';
-import type { TeleprompterState, TpBlock, TpCompiled, TpCompiledBlock } from '../../lib/types';
+import type { TeleprompterState, TpBlock, TpCompiled } from '../../lib/types';
 import { origin } from './Widgets';
+import { isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
+import { Box, Dot, ListPanel, NameCell, PageHead, SaveBar, Slide, usePageTab } from '../../lib/layout';
+import { go } from '../router';
 
 const PREV: IconData = [['polygon', { points: '19 20 9 12 19 4 19 20' }], ['line', { x1: '5', x2: '5', y1: '19', y2: '5' }]];
 const NEXT: IconData = [['polygon', { points: '5 4 15 12 5 20 5 4' }], ['line', { x1: '19', x2: '19', y1: '5', y2: '19' }]];
@@ -15,7 +19,6 @@ const KEYS: Record<string, string> = { ' ': 'toggle', ArrowUp: 'faster', ArrowDo
 
 const control = (action: string, arg?: unknown) => post<TeleprompterState>('/api/teleprompter/control', { action, arg }).then(d => live.update(() => ({ teleprompter: d })));
 const settings = (patch: Record<string, unknown>) => put<TeleprompterState>('/api/teleprompter/settings', patch).then(d => live.update(() => ({ teleprompter: d })));
-const saveScript = (sc: TpCompiled, patch: { title?: string; blocks?: Array<TpBlock | TpCompiledBlock> }) => put<TeleprompterState>(`/api/teleprompter/scripts/${enc(String(sc.id))}`, { title: patch.title ?? sc.title, blocks: patch.blocks ?? sc.blocks }).then(d => live.update(() => ({ teleprompter: d })));
 
 /** Reloj local corregido con la hora del servidor: para el «quedan» y el estado. */
 function usePosition(tp?: TeleprompterState) {
@@ -30,9 +33,9 @@ function usePosition(tp?: TeleprompterState) {
   return { pos, countdown: p.playing ? Math.max(0, Math.ceil((p.anchorAt - now) / 1000)) : 0 };
 }
 
-export function Teleprompter() {
+export function Teleprompter({ parts }: { parts: string[] }) {
   const tp = useLive(s => s.teleprompter);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [tab, setTab] = usePageTab(parts, 'teleprompter', ['directo', 'guiones']);
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const desk = isDesktop();
   useEffect(() => { if (desk) listMonitors().then(m => setMonitors(m ?? [])).catch(() => {}); }, [desk]);
@@ -55,29 +58,12 @@ export function Teleprompter() {
   let cur = 0; sc.blocks.forEach((b, i) => { if (b.start <= pos + 1e-6) cur = i; });
   const left = Math.max(0, sc.total - pos) / st.wpm * 60;
   const status = countdown ? `Empieza en ${countdown}` : pb.playing ? 'Avanzando' : pos >= sc.total && sc.total ? 'Terminado' : 'Parado';
-  const editId = editing && script?.blocks.some(b => b.id === editing) ? editing : script?.blocks[cur]?.id || script?.blocks[0]?.id || null;
-  const editIdx = script ? script.blocks.findIndex(b => b.id === editId) : -1;
-  const edit = editIdx >= 0 ? script!.blocks[editIdx] : null;
   const url = origin() + '/widget/teleprompter';
 
-  const setBlock = (id: string, patch: Partial<TpBlock>) => {
-    guard(() => saveScript(script!, { blocks: script!.blocks.map(b => (b.id === id ? { ...b, ...patch } : b)) }))();
-  };
-  const moveBlock = (i: number, d: number) => {
-    const blocks = [...script!.blocks]; const [b] = blocks.splice(i, 1); blocks.splice(i + d, 0, b);
-    return saveScript(script!, { blocks });
-  };
-  const addBlock = guard(async () => {
-    const id = 'b' + Date.now().toString(36);
-    await saveScript(script!, { blocks: [...script!.blocks, { id, title: `Bloque ${script!.blocks.length + 1}`, text: '' }] });
-    setEditing(id);
-  });
   const pickScript = guard(async (id: string) => {
-    const d = await post<TeleprompterState>('/api/teleprompter/select', { id }); live.update(() => ({ teleprompter: d })); setEditing(null);
+    const d = await post<TeleprompterState>('/api/teleprompter/select', { id }); live.update(() => ({ teleprompter: d }));
   });
-  const newScript = guard(async () => {
-    const d = await post<TeleprompterState>('/api/teleprompter/scripts', { title: 'Nuevo guion' }); live.update(() => ({ teleprompter: d })); setEditing(null);
-  });
+  const newScript = () => go('#/teleprompter/guiones/nuevo');
   const openWindow = guard(async () => {
     if (desk) await openTeleprompter(st.monitor || null, true);
     else window.open('/widget/teleprompter', 'egdev-teleprompter', 'popup,width=1280,height=720');
@@ -85,8 +71,22 @@ export function Teleprompter() {
   const playBtn = (cls: string) => <button type="button" className={cls} onClick={guard(() => control('toggle'))}>
     <Icon d={pb.playing ? IC.pause : IC.play} className="eg-btn__icon" />{pb.playing ? 'Parar' : 'Empezar'}</button>;
 
+  const tabs = [{ id: 'directo', label: 'En directo' }, { id: 'guiones', label: 'Guiones', count: tp.scripts.length }];
+  if (tab === 'guiones') return <>
+    <PageHead crumb="En directo · solo lo ves tú" title="Teleprompter" tabs={tabs} tab={tab} onTab={setTab}
+      actions={<a className="eg-btn eg-btn--primary eg-btn--sm" href="#/teleprompter/guiones/nuevo">+ Nuevo guion</a>} />
+    <ListPanel title="Guiones" note="El activo es el que sale en el teleprompter. Pulsa uno para editarlo."
+      cols={[{ key: 'name', label: 'Guion' }, { key: 'state', label: 'Estado' }, { key: 'use', label: '' }]}
+      rows={tp.scripts.map(x => { const href = `#/teleprompter/guiones/${enc(x.id)}`; return { id: x.id, href, open: parts[2] === x.id, cells: {
+        name: <NameCell href={href} name={x.title} sub={x.id === tp.activeId ? `${sc.blocks.length} ${sc.blocks.length === 1 ? 'bloque' : 'bloques'} · ${mmss(sc.total / st.wpm * 60)} a ${st.wpm} palabras/min` : undefined} />,
+        state: x.id === tp.activeId ? <Dot tone="ok">Activo</Dot> : <Dot tone="off">Guardado</Dot>,
+        use: x.id === tp.activeId ? null : <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => pickScript(x.id)}>Usar</button>,
+      } }; })} empty={<>No hay guiones. <a href="#/teleprompter/guiones/nuevo">Crear el primero</a></>} />
+    {parts[2] === 'nuevo' ? <NuevoGuion /> : parts[2] && tp.scripts.some(x => x.id === parts[2]) ? <GuionSlide key={parts[2]} id={parts[2]} /> : null}
+  </>;
   return <>
-    <ViewHead crumb="Widgets › Teleprompter" title="Teleprompter" hint="Solo lo ves tú: el guion avanza por bloques a tu ritmo de lectura, en su propia ventana o en una capa de Meld que no se emite." actions={<>
+    <PageHead crumb="En directo · solo lo ves tú" title="Teleprompter" tabs={tabs} tab={tab} onTab={setTab}
+      desc="El guion avanza por bloques a tu ritmo de lectura, en su propia ventana o en una capa de Meld que no se emite." actions={<>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={openWindow}><Icon d={IC.external} className="eg-btn__icon" />Abrir en ventana</button>
         {playBtn('eg-btn eg-btn--primary eg-btn--sm')}
       </>} />
@@ -108,37 +108,13 @@ export function Teleprompter() {
           </div>
         </figure>}>
 
-        {script && <Sec flat title="Guion" id="h-guion" aside={<span className="hint">{mmss(sc.total / st.wpm * 60)} a {st.wpm} palabras/min</span>}>
-          <div className="row tight">
-            <label className="sr-only" htmlFor="tp-title">Título del guion</label>
-            <LazyInput id="tp-title" className="grow" value={script.title} onCommit={v => guard(() => saveScript(script, { title: v }))()} />
-            <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={tp.scripts.length < 2} title={tp.scripts.length < 2 ? 'Es el único guion' : undefined} onClick={guard(async () => {
-              if (!confirmDelete(script.title, 'este guion')) return;
-              const d = await del<TeleprompterState>(`/api/teleprompter/scripts/${enc(String(script.id))}`); live.update(() => ({ teleprompter: d })); setEditing(null);
-            })}>Borrar guion</button>
-          </div>
+        {script && <Sec flat title={<>Guion · {script.title}</>} id="h-guion" aside={<><span className="hint">{mmss(sc.total / st.wpm * 60)} a {st.wpm} palabras/min</span><a className="eg-btn eg-btn--ghost eg-btn--sm" href={`#/teleprompter/guiones/${enc(String(script.id))}`}>Editar guion</a></>}>
           <div className="rows">
-            {script.blocks.map((b, i) => {
-              const info = sc.blocks[i];
-              return <article key={b.id} className={cx('eg-post eg-post--row', i === cur && 'is-active', b.id === editId && 'tp-editing')}>
-                <div className="eg-post__content"><b>{b.title || `Bloque ${i + 1}`}</b><span className="eg-post__meta">{info?.words ?? 0} palabras · {mmss((info?.words ?? 0) / st.wpm * 60)}{i === cur ? ' · leyendo' : ''}</span></div>
-                <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => control('block', b.id))}>Ir</button>
-                <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" aria-pressed={b.id === editId} onClick={() => setEditing(b.id)}>Editar</button>
-                <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={guard(() => moveBlock(i, -1))} />
-                <IconBtn icon={IC.down} label="Bajar" disabled={i === script.blocks.length - 1} onClick={guard(() => moveBlock(i, 1))} />
-                <IconBtn icon={IC.x} label="Quitar bloque" disabled={script.blocks.length < 2} onClick={guard(async () => {
-                  if (b.text.trim() && !confirm(b.title?.trim() ? `¿Quitar «${b.title.trim()}»?` : '¿Quitar este bloque?')) return;
-                  await saveScript(script, { blocks: script.blocks.filter(x => x.id !== b.id) });
-                })} />
-              </article>;
-            })}
+            {script.blocks.map((b, i) => <article key={b.id} className={cx('eg-post eg-post--row', i === cur && 'is-active')}>
+              <div className="eg-post__content"><b>{b.title || `Bloque ${i + 1}`}</b><span className="eg-post__meta">{b.words ?? 0} palabras · {mmss((b.words ?? 0) / st.wpm * 60)}{i === cur ? ' · leyendo' : ''}</span></div>
+              <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => control('block', b.id))}>Ir</button>
+            </article>)}
           </div>
-          <div><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={addBlock}><Icon d={IC.plus} className="eg-btn__icon" />Añadir bloque</button></div>
-          {edit && <div className="tp-edit" key={edit.id}>
-            <label>Bloque {editIdx + 1} · título <LazyInput value={edit.title} onCommit={v => setBlock(edit.id, { title: v })} /></label>
-            <label>Texto <LazyInput as="textarea" className="tp-prose" spellCheck value={edit.text} onCommit={v => setBlock(edit.id, { text: v })} placeholder="Escribe aquí lo que vas a decir. Una línea en blanco separa párrafos." /></label>
-            <p className="hint">Lo que va entre [corchetes] sale en amarillo y no se lee en voz alta: son notas para ti.</p>
-          </div>}
         </Sec>}
 
         <section className="eg-module-card eg-module-card--banded tp-card" aria-labelledby="h-lec">
@@ -194,4 +170,77 @@ function TpRange({ label, unit, value, min, max, step, onCommit }: { label: stri
     <input type="range" min={min} max={max} step={step} value={v} style={{ ['--v' as any]: ((v - min) / (max - min)) * 100 + '%' }}
       onPointerDown={() => setDrag(true)} onChange={e => setV(Number(e.target.value))}
       onPointerUp={commit} onKeyUp={commit} onBlur={() => drag && commit()} /></label>;
+}
+
+// ---------- guiones (v2): listado → slide con guardado manual ----------
+type GuionDraft = { title: string; blocks: TpBlock[] };
+function NuevoGuion() {
+  const [title, setTitle] = useState('');
+  const create = guard(async () => {
+    const d = await post<TeleprompterState & { script: { id: string } }>('/api/teleprompter/scripts', { title: title.trim() || 'Nuevo guion' });
+    live.update(() => ({ teleprompter: d }));
+    go(`#/teleprompter/guiones/${enc(d.activeId || d.scripts.at(-1)!.id)}`);
+  });
+  return <Slide crumb={<><a href="#/teleprompter/guiones">Guiones</a> › Nuevo</>} title="Nuevo guion" back="#/teleprompter/guiones"
+    tabs={[{ id: 'min', label: 'Lo mínimo' }, { id: 'rest', label: 'Bloques, al crear', locked: true }]} tab="min" onTab={() => {}}
+    foot={<footer className="lv-sfoot sticky"><span className="sp" /><a className="eg-btn eg-btn--ghost eg-btn--sm" href="#/teleprompter/guiones">Cancelar</a><button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}>Crear guion</button></footer>}>
+    <Box title="Lo mínimo"><label>Título <input autoFocus value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder="Directo · Agent Teams" /></label>
+      <p className="hint">Se crea con un bloque vacío y pasa a ser el guion activo del teleprompter.</p></Box>
+  </Slide>;
+}
+function GuionSlide({ id }: { id: string }) {
+  useManualSave();
+  useDraftVersion();
+  const activeId = useLive(s => s.teleprompter?.activeId);
+  const n = useLive(s => s.teleprompter?.scripts.length || 0);
+  const [saved, setSaved] = useState<GuionDraft | null>(null);
+  const [d, setD] = useState<GuionDraft | null>(null);
+  const savedRef = useRef(saved); savedRef.current = saved;
+  const mounted = useRef(true);
+  const [buffer] = useState(() => new ManualDraft<Partial<GuionDraft>, GuionDraft>({
+    empty: () => ({}), merge: (older, newer) => ({ ...older, ...newer }),
+    take: () => savedRef.current!, keys: () => ['guion'],
+    persist: async patch => {
+      const state = await put<TeleprompterState>(`/api/teleprompter/scripts/${enc(id)}`, patch);
+      if (mounted.current) live.update(() => ({ teleprompter: state }));
+      // The returned active script can be a different entity. Read this saved script.
+      return (await get<{ script: GuionDraft }>(`/api/teleprompter/scripts/${enc(id)}`)).script;
+    },
+    publish: (baseline, newer) => { savedRef.current = baseline; setSaved(baseline); setD(Object.keys(newer).length ? { ...baseline, ...newer } : null); },
+    restore: baseline => { setSaved(baseline); setD(null); },
+  }));
+  useEffect(() => {
+    let active = true;
+    guard(async () => {
+      const result = await get<{ script: GuionDraft }>(`/api/teleprompter/scripts/${enc(id)}`);
+      if (active) { savedRef.current = result.script; setSaved(result.script); }
+    })();
+    const unregister = registerDraft('guion:' + id, buffer);
+    return () => { active = false; mounted.current = false; unregister(); buffer.dispose(); };
+  }, [buffer, id]);
+  if (!saved) return <Slide crumb={<a href="#/teleprompter/guiones">Guiones</a>} title="Cargando…" back="#/teleprompter/guiones"><p className="hint">Cargando el guion…</p></Slide>;
+  const cur = d || saved;
+  const set = (patch: Partial<GuionDraft>) => { buffer.push(patch); setD({ ...cur, ...patch }); };
+  const setBlock = (i: number, patch: Partial<TpBlock>) => set({ blocks: cur.blocks.map((b, j) => (j === i ? { ...b, ...patch } : b)) });
+  const move = (i: number, dd: number) => { const blocks = [...cur.blocks]; const [b] = blocks.splice(i, 1); blocks.splice(i + dd, 0, b); set({ blocks }); };
+  const words = cur.blocks.reduce((t, b) => t + (b.text.match(/[^\s[\]]+/g) || []).length, 0);
+  return <Slide crumb={<><a href="#/teleprompter/guiones">Guiones</a> › {activeId === id ? 'Activo' : 'Guardado'}</>} wide back="#/teleprompter/guiones"
+    title={<input className="lv-title-input" aria-label="Título del guion" value={cur.title} onChange={e => set({ title: e.target.value })} />}
+    foot={<SaveBar left={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving() || n < 2} title={n < 2 ? 'Es el único guion' : undefined} onClick={guard(async () => {
+      if (isSaving() || !confirmDelete(saved.title, 'este guion')) return; buffer.discard(); go('#/teleprompter/guiones');
+      const r = await del<TeleprompterState>(`/api/teleprompter/scripts/${enc(id)}`); live.update(() => ({ teleprompter: r }));
+    })}>Borrar guion…</button>} right={activeId === id ? null : <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={isSaving()} onClick={guard(async () => { if (isSaving()) return; const r = await post<TeleprompterState>('/api/teleprompter/select', { id }); live.update(() => ({ teleprompter: r })); }, 'Guion activo')}>Usar en el teleprompter</button>} />}>
+    <div className="lv-cols aside">
+      <div className="lv-col">{cur.blocks.map((b, i) => <Box key={b.id} title={<>Bloque {i + 1}</>} aside={<div className="row tight">
+        <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={() => move(i, -1)} />
+        <IconBtn icon={IC.down} label="Bajar" disabled={i === cur.blocks.length - 1} onClick={() => move(i, 1)} />
+        <IconBtn icon={IC.x} label="Quitar bloque" disabled={cur.blocks.length < 2} onClick={() => { if (b.text.trim() && !confirm(b.title?.trim() ? `¿Quitar «${b.title.trim()}»?` : '¿Quitar este bloque?')) return; set({ blocks: cur.blocks.filter((_, j) => j !== i) }); }} /></div>}>
+        <label>Título <input value={b.title} onChange={e => setBlock(i, { title: e.target.value })} /></label>
+        <label>Texto <textarea className="tp-prose" spellCheck value={b.text} onChange={e => setBlock(i, { text: e.target.value })} placeholder="Escribe aquí lo que vas a decir. Una línea en blanco separa párrafos." /></label>
+      </Box>)}
+        <div><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={() => set({ blocks: [...cur.blocks, { id: 'b' + Date.now().toString(36), title: `Bloque ${cur.blocks.length + 1}`, text: '' }] })}><Icon d={IC.plus} className="eg-btn__icon" />Añadir bloque</button></div>
+      </div>
+      <aside className="lv-col"><Box title="Notas"><p className="hint">Lo que va entre [corchetes] sale en amarillo y no se lee: son notas para ti. Los cambios llegan al teleprompter al pulsar Guardar.</p><p className="hint">{words} palabras · {cur.blocks.length} {cur.blocks.length === 1 ? 'bloque' : 'bloques'}</p></Box></aside>
+    </div>
+  </Slide>;
 }

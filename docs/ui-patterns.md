@@ -3,9 +3,69 @@
 Rules for the React panel (`app/src/panel`). The goal: the same task looks and behaves the same in every
 view. Shared pieces live in `app/src/lib/ui.tsx`; UI copy stays in Spanish.
 
+## Hierarchy (v2) and cards (v3)
+
+The panel follows one hierarchy, drawn on the canvas «antena — Rediseño» (pages «v2 · jerarquía» and
+«v3 · tarjetas»). Shared pieces live in `app/src/lib/layout.tsx`.
+
+- **Page header** (`PageHead`): eyebrow (`crumb`), title, an optional hint and **one** main action
+  («+ Nuevo X»). It can carry page tabs. `ViewHead` stays for the views that keep the classic skeleton
+  (Directo, Chat, AcercaDe).
+- **Indicators** (`Kpis`): up to four, one of them can be a warning.
+- **What you create → table** (`ListPanel`): search, filter chips and rows with name, subtitle, status dot
+  (`Dot`), tags (`Tags`) and `→`. Commands, scheduled messages, shortcuts, tier lists, teleprompter
+  scripts, goals, past streams, files and the alert history.
+- **What the app offers → cards** (`CardGroup` + `Card`): the catalog, which only grows when the app gets
+  a new feature: alert types (grouped by platform), connections (Plataformas · Producción y acceso) and
+  widgets (Capas de pantalla · Se manejan en directo). Every card has the same anatomy: thumbnail, name,
+  status, tags and a footer with its main action; the whole card links to its slide, and footer controls sit
+  above that link. A new feature = one more card in its group. What the user creates inside a catalog item
+  lives inside its card (the «Objetivos» card opens the goals table, like variations inside an alert).
+- **Detail → full-width slide** (`Slide`): back ←, crumb, title, ✕ and Esc; tabs with a dirty dot; a sticky
+  footer (`SaveBar`) with the pending state, «Descartar», «Guardar» and the view's own actions («Probar en
+  el directo»). A second level opens a second slide over the first one (*Alertas › Raid › Variación*,
+  *Widgets › Objetivos › Objetivo*). Addresses: `#/<page>/<id>[/<tab>]`; the old ones redirect
+  (`panel/router.ts`).
+- **Pages without a list → page tabs**, linkable (`#/apariencia/iconos`, `usePageTab`): Apariencia,
+  Preguntas, Sorteo, Filtros y voz, General, Meld Studio, Prompter y dock, Fuentes.
+- **Creating** is the same everywhere: «+ Nuevo X» opens the slide in «Nuevo» mode with the minimum fields
+  and a starting template (`lv-tiles`); the other tabs are locked until «Crear». The sidebar footer has a
+  «Crear» menu with every «+ Nuevo».
+- **Thumbnails**: an alert card shows its design (the mini card with the theme accent, the real first frame
+  of its video, or the background with the card on top); hovering or focusing the card plays a looping,
+  silent preview (`MediaPreview`).
+
+### Manual save
+
+Configuration pages and slides do not save as you type: the change stays as a draft until «Guardar», and
+«Descartar» goes back to what was saved (`lib/draft.ts`, registered sources: config, widgets, interactive,
+the alert editor, the theme, a script, a shortcut). Leaving with a draft asks first (and so does the browser
+when closing). Previews show the draft when they can (alerts, commands and messages through `/api/test` with
+`draft`; the theme through `/api/theme/draft`, read only by `?themeDraft` layers); widget previews show what
+is saved. Live operations stay immediate and say so in the footer: enabling or ordering variations, the
+«Activa» switch of an alert card, placing in the tier list, opening or drawing the giveaway, moving questions,
+goal counters and goals themselves, connecting and deleting files. Marks the panel sets on its own (the tour
+seen, `live.saveConfigNow`) are saved at once too, never held in the draft.
+
+The manual-save contract for each editing unit is:
+
+- «Descartar» restores the whole unit to its state before the first pending change, not just the visible
+  field or tab. Internal tabs and route aliases for the same entity keep the draft; leaving the unit or
+  switching entities asks for confirmation when there are pending changes.
+- «Guardar» captures **all** pending save intentions at the moment of the click, across the unit's sources.
+  Requests run sequentially; later edits do not change the captured payloads or join that save implicitly.
+- Local fields stay editable while saving. If A is the captured draft and B is edited while A is in flight,
+  confirming A does not auto-save B: the newer edits stay pending and need another explicit «Guardar».
+- While a save request is in flight, disable «Guardar», «Descartar», destructive actions and exit actions.
+  Check the saving guard before any close or leave confirmation, including Esc, the backdrop and navigation;
+  do not let a close handler bypass it.
+- After A succeeds, it becomes the confirmed baseline: «Descartar» on the still-pending B restores A, not
+  the state from before A. A failed request keeps the draft and reports the error; retrying requires an
+  explicit «Guardar», never an automatic retry or a success state that hides unsaved work.
+
 ## View skeleton
 
-Every view starts with `ViewHead`, so all headers share the same order:
+Views outside the v2 hierarchy start with `ViewHead`, so all headers share the same order:
 
 1. `crumb`: `<sidebar group> › <sidebar label>` (for example «Meld y Stream Deck › Atajos y Stream Deck»).
    Sidebar groups are not routes, so this crumb is plain text. Sub-routes link back to their parent view
@@ -107,6 +167,11 @@ Objetivos, Últimos y ticker, Créditos) uses one layout, `WidgetLayout`, below 
 
 ## Collections: item tabs vs list + sub-route
 
+> Since v2, collections the user creates are a `ListPanel` table that opens a `Slide` (see Hierarchy
+> above): goals, scripts, tier lists and shortcuts moved there. `ItemTabs` remains for picking the active
+> object during the stream (the teleprompter's «En directo» tab). The rules below still describe the
+> pieces, but the hierarchy wins where they disagree.
+
 Use **item tabs** (`ItemTabs`) when a view edits one object at a time from a small set the user creates:
 one tab per object, the selected one is edited below, and the last tab is «+ Nuevo …» / «+ Nueva».
 
@@ -150,11 +215,11 @@ and, once created, switches to editing it. `Modal` closes on Esc, its «Cerrar»
 but `onClose` decides (it can refuse), and it gives the focus back to the button that opened it. Toasts sit
 above modals (`z-index`), so errors inside a modal stay visible.
 
-### Saving: explicit steps
+### Saving
 
-Most editors save as you type (`LazyInput`, `live.patchConfig`). Shortcut steps are the exception: they keep
-an explicit «Guardar pasos» button because a half-built chain of steps should not run from the Stream Deck.
-Closing the shortcut modal with unsaved steps asks «Tienes pasos sin guardar. ¿Cerrar sin guardarlos?».
+Since v2 every editor saves explicitly (see Manual save above): shortcuts included, so a half-built chain of
+steps never runs from the Stream Deck. Leaving a slide with a draft asks «Tienes cambios sin guardar. ¿Salir y
+descartarlos?».
 
 ## Rows and reordering
 
@@ -181,7 +246,9 @@ views.
 
 Use `EmptyState` for an empty list or section: it renders `eg-post eg-post--empty empty-state` (dashed box,
 muted text, no pointer cursor). Do not use `li.empty`, `li.hint` or a loose `p.hint` for «nothing here yet».
-Render the list element only when it has items, so the empty state is never inside a `ul`/`ol`.
+Render the list element only when it has items, so the empty state is never inside a `ul`/`ol`. `ListPanel`
+already does this: its `empty` text is shown in an `EmptyState` under the table, and a «Crear el primero» link
+there points to the «Nuevo» slide.
 
 One approved exception (#4): in the Chat view the empty state lives **inside** `ol.chatlog`. The list is a
 guided tour anchor (`data-tour="chat-log"`) and must always exist, and a child inside it stops the `:empty`

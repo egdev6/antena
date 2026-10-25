@@ -1,6 +1,6 @@
 // Bienvenida del panel: la primera vez (config.panel.onboardingDone) un saludo corto ofrece
 // el tour guiado. «Ahora no» lo marca como visto; terminar o cerrar el tour, también.
-// «General y archivos» relanza el tour directamente, sin pasar por aquí.
+// «Ajustes › General › Tour guiado» relanza el tour directamente, sin pasar por aquí.
 import { useEffect, useRef, useState } from 'react';
 import { useLive } from '../lib/live';
 import { launchTour, markOnboardingDone } from './tour';
@@ -18,7 +18,7 @@ export function Onboarding() {
       <img className="tour-greet__mark" src="/brand/logo.png" alt="" aria-hidden="true" />
       <span className="kicker">Bienvenido a antena</span>
       <h1 id="tour-greet-t">¿Te enseño cómo funciona?</h1>
-      <p id="tour-greet-d" className="hint">Un tour corto por el panel: el directo, el chat, los objetivos, Meld, los atajos y las conexiones. Puedes repetirlo cuando quieras desde <b>General y archivos</b>.</p>
+      <p id="tour-greet-d" className="hint">Un tour corto por el panel: el directo, el chat, los widgets, Meld, los atajos y las conexiones. Puedes repetirlo cuando quieras desde <b>Ajustes › General › Tour guiado</b>.</p>
       <div className="tour-greet__actions">
         <button type="button" className="eg-btn eg-btn--ghost" onClick={markOnboardingDone}>Ahora no</button>
         <button type="button" ref={startBtn} className="eg-btn eg-btn--primary" onClick={start}>Empezar el tour</button>

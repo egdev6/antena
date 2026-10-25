@@ -104,17 +104,17 @@ test('a 1024 la barra lateral corta grupo e items por palabra y el placeholder d
     await viewport(c, 1024);
     await waitDom(c, `document.querySelectorAll('#nav a[href^="#/"]').length > 20`, { timeoutMs: 15000 });
 
-    // grupo «Alertas de YouTube»: entero o cortado por palabra, nunca «ALERTAS DE YOUTU…»
-    await waitDom(c, `!!document.querySelector('#nav [data-grp=youtube] .grp-l')`, { timeoutMs: 9000 });
-    const grupo = JSON.parse(await dom(c, LABEL(`document.querySelector('#nav [data-grp=youtube] .grp-l')`)));
-    assert.equal(grupo.full, 'Alertas de YouTube');
-    assert.ok(cortaPorPalabra(grupo), `el grupo «Alertas de YouTube» se corta a mitad de palabra: ${JSON.stringify(grupo)}`);
+    // grupo «Producción» (jerarquía v2): entero o cortado por palabra, nunca a mitad
+    await waitDom(c, `!!document.querySelector('#nav [data-grp=produccion] .grp-l')`, { timeoutMs: 9000 });
+    const grupo = JSON.parse(await dom(c, LABEL(`document.querySelector('#nav [data-grp=produccion] .grp-l')`)));
+    assert.equal(grupo.full, 'Producción');
+    assert.ok(cortaPorPalabra(grupo), `el grupo «Producción» se corta a mitad de palabra: ${JSON.stringify(grupo)}`);
 
-    // item «Récord de espectadores»: igual
-    await waitDom(c, `!!document.querySelector('#nav a[href="#/alerta/viewers"] .eg-menu__label')`, { timeoutMs: 9000 });
-    const item = JSON.parse(await dom(c, LABEL(`document.querySelector('#nav a[href="#/alerta/viewers"] .eg-menu__label')`)));
-    assert.equal(item.full, 'Récord de espectadores');
-    assert.ok(cortaPorPalabra(item), `el item «Récord de espectadores» se corta a mitad de palabra: ${JSON.stringify(item)}`);
+    // item más largo, «Mensajes programados»: igual
+    await waitDom(c, `!!document.querySelector('#nav a[href="#/mensajes"] .eg-menu__label')`, { timeoutMs: 9000 });
+    const item = JSON.parse(await dom(c, LABEL(`document.querySelector('#nav a[href="#/mensajes"] .eg-menu__label')`)));
+    assert.equal(item.full, 'Mensajes programados');
+    assert.ok(cortaPorPalabra(item), `el item «Mensajes programados» se corta a mitad de palabra: ${JSON.stringify(item)}`);
 
     // chat: placeholder corto y el aviso fuera del placeholder, como hint de la vista
     await dom(c, `location.hash = '#/chat'`);

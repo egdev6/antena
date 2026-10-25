@@ -16,6 +16,7 @@ export function registerTeleprompterRoutes({ route, teleprompter }) {
   route('POST', '/api/teleprompter/select', async ({ id } = {}) => T.select(String(id || '')));
   route('POST', '/api/teleprompter/control', async ({ action, arg } = {}) => T.control(String(action || ''), arg));
   route('POST', '/api/teleprompter/scripts', async (body = {}) => T.createScript(body || {}));
+  route('GET', '/api/teleprompter/scripts/:id', async ({ id }) => ({ script: T.getScript(decodeId(id)) }));
   route('PUT', '/api/teleprompter/scripts/:id', async ({ id }, body) => T.updateScript(decodeId(id), body || {}));
   route('DELETE', '/api/teleprompter/scripts/:id', async ({ id }) => T.deleteScript(decodeId(id)));
 }

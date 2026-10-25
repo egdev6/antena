@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { post, upload, enc } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { Access, MediaItem } from '../../lib/types';
-import { confirmDelete, CopyUrl, EmptyState, guard, Panel, Range, Switch, toast, ViewHead } from '../../lib/ui';
-import type { UploadResult } from '../../lib/types';
+import { CopyUrl, guard, Panel, Range, Switch, toast } from '../../lib/ui';
 import { launchTour } from '../tour';
+import { useManualSave } from '../../lib/draft';
+import { PageHead, SaveBar, usePageTab } from '../../lib/layout';
+import type { UploadResult } from '../../lib/types';
 
 export function UploadBar({ name, progress }: { name: string; progress: number }) {
   if (!name) return null;
@@ -46,21 +48,16 @@ export function MediaThumb({ m }: { m: any }) {
   return <span className="au">♪ audio</span>;
 }
 
-export function General() {
+export function General({ parts }: { parts: string[] }) {
+  useManualSave();
   const c = useLive(s => s.config);
-  const media = useLive(s => s.media || []);
   const access = useLive(s => s.access || { lan: false, urls: [] });
-  const up = useUploader();
   const setAccess = (a: Access) => live.update(() => ({ access: a }));
-  const subir = guard(async (e: React.ChangeEvent<HTMLInputElement>) => { await up.run([...(e.target.files || [])]); e.target.value = ''; });
-  const ctaSubir = <label className="eg-btn eg-btn--secondary eg-btn--sm upload">Subir archivos<input type="file" multiple accept="video/*,image/*,audio/*,.woff2,.woff,.ttf,.otf" hidden onChange={subir} /></label>;
+  const [tab, setTab] = usePageTab(parts, 'general', ['overlay', 'directos', 'movil', 'tour']);
   return <>
-    <ViewHead tour="general-head" crumb="Ajustes › General y archivos" title="General y archivos" />
-    <Panel title="Tour guiado" tour="general-tour">
-      <p className="hint">Un recorrido paso a paso que señala para qué sirve cada zona: el directo, el chat, los objetivos, Meld, los atajos y las conexiones.</p>
-      <button className="eg-btn eg-btn--ghost" onClick={launchTour}>Ver el tour de nuevo</button>
-    </Panel>
-    <Panel title="Capa de alertas">
+    <PageHead tour="general-head" crumb="Ajustes" title="General" desc="Capa de alertas, cuántos directos se guardan, acceso desde el móvil y el tour guiado. Los archivos están en Registro › Archivos."
+      tabs={[{ id: 'overlay', label: 'Capa de alertas' }, { id: 'directos', label: 'Directos' }, { id: 'movil', label: 'Acceso desde el móvil' }, { id: 'tour', label: 'Tour guiado' }]} tab={tab} onTab={setTab} />
+    {tab === 'overlay' && <Panel title="Capa de alertas">
       <CopyUrl url={`${location.origin}/overlay`} />
       <p className="hint">En Meld: <b>+ › Browser</b>, 1920×1080 y activa <b>Add audio track</b>. Todas las capas están en <a href="#/fuentes">Fuentes para Meld</a>. Parámetros: <code>?pos=top|center|bottom</code> <code>&amp;scale=0.8</code> <code>&amp;mute</code> <code>&amp;debug</code></p>
       <div className="row2 mt">
@@ -72,18 +69,20 @@ export function General() {
         </div>
       </div>
       <p className="hint">Con una ráfaga se agrupan los regalos del mismo donante y, si aun así se supera el tope, se descartan las más antiguas sin ver (quedan en la cronología). 0 = sin tope.</p>
-    </Panel>
-    <Panel title="Acceso desde el móvil" aside={<Switch checked={!!access.lan} onChange={guard(async (v: boolean) => setAccess(await post<Access>('/api/access', { lan: v })))}>Activado</Switch>}>
-      <p className="hint">Abre el panel desde el móvil conectado a la misma wifi para lanzar, pausar o saltar alertas durante el directo. Se protege con una clave.</p>
+    </Panel>}
+    {tab === 'directos' && <Panel title="Directos archivados">
+      <label>Cuántos directos anteriores se guardan <input type="number" min={0} max={1000} value={(c as any).sessions?.retention ?? 0} onChange={e => live.patchConfig({ sessions: { retention: Math.max(0, Math.min(1000, Number(e.target.value) || 0)) } } as any)} /></label>
+      <p className="hint">Al empezar un directo nuevo, el anterior se archiva. Los más antiguos se borran al pasar de este número (0 = se guardan todos). Están en <a href="#/directos">Directos anteriores</a>.</p>
+    </Panel>}
+    {tab === 'movil' && <Panel title="Acceso desde el móvil" aside={<Switch checked={!!access.lan} onChange={guard(async (v: boolean) => setAccess(await post<Access>('/api/access', { lan: v })))}>Activado</Switch>}>
+      <p className="hint">Abre el panel desde el móvil conectado a la misma wifi para lanzar, pausar o saltar alertas durante el directo. Se protege con una clave. Este interruptor se aplica al momento.</p>
       <ul className="access-urls">{access.lan ? (access.urls?.length ? access.urls.map((u: string) => <li key={u}><CopyUrl url={u} /></li>) : <li className="hint">No encuentro ninguna red local.</li>) : <li className="hint">Desactivado: el panel solo se abre desde este PC.</li>}</ul>
       <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { if (confirm('Los móviles que ya tenían acceso tendrán que abrir el enlace nuevo. ¿Seguir?')) setAccess(await post('/api/access', { regenerate: true })); })}>Generar otra clave</button>
-    </Panel>
-    <Panel title="Archivos" aside={<label className="eg-btn eg-btn--ghost upload">Subir archivos<input type="file" multiple accept="video/*,image/*,audio/*,.woff2,.woff,.ttf,.otf" hidden onChange={subir} /></label>}>
-      <p className="hint">Vídeos (webm con transparencia, mp4), imágenes (gif, png, webp) y sonidos (mp3, ogg, wav). Se guardan en la carpeta <code>media/</code> de la app{media.length > 0 ? <> · total: <b>{formatBytes(media.reduce((s: number, m: MediaItem) => s + (m.size || 0), 0))}</b></> : null}.</p>
-      {media.length ? <ul className="files">{media.map(m => <li key={m.name}><div className="thumb"><MediaThumb m={m} /></div>
-        <div className="meta"><span title={m.name}>{m.name}{m.size ? <> · {formatBytes(m.size)}</> : null}</span><button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(m.name, 'este archivo')) return; const d = await post<{ media: MediaItem[] }>('/api/media/delete', { name: m.name }); live.update(() => ({ media: d.media })); })}>Borrar</button></div></li>)}</ul>
-      : <EmptyState action={ctaSubir}>Todavía no hay archivos. Sube los vídeos, imágenes y sonidos que usan tus alertas.</EmptyState>}
-    </Panel>
-    <UploadBar name={up.name} progress={up.progress} />
+    </Panel>}
+    {tab === 'tour' && <Panel title="Tour guiado" tour="general-tour">
+      <p className="hint">Un recorrido paso a paso que señala para qué sirve cada zona: el directo, el chat, los widgets, Meld, los atajos y las conexiones.</p>
+      <button className="eg-btn eg-btn--ghost" onClick={launchTour}>Ver el tour de nuevo</button>
+    </Panel>}
+    {(tab === 'overlay' || tab === 'directos') && <SaveBar />}
   </>;
 }

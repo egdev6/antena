@@ -73,6 +73,17 @@ test('el diseño «media» sin recurso cae a la tarjeta', () => {
   assert.equal(b.look.layout, 'media'); assert.equal(b.look.mediaKind, 'image'); assert.equal(b.look.fontSize, 72);
 });
 
+test('el diseño «mixed» (fondo + tarjeta) lleva su ajuste y sin recurso cae a la tarjeta', () => {
+  const a = buildAlert('raid', { user: 'x', amount: 5 }, { alerts: { raid: { layout: 'mixed', media: '' } } });
+  assert.equal(a.look.layout, 'card');
+  const b = buildAlert('raid', { user: 'x', amount: 5 }, { alerts: { raid: { layout: 'mixed', media: 'fondo.webm', cardX: '40', cardY: -120, textDelayMs: 800 } } });
+  assert.equal(b.look.layout, 'mixed'); assert.equal(b.look.mediaKind, 'video');
+  assert.equal(b.look.cardX, 40); assert.equal(b.look.cardY, -120); assert.equal(b.look.textDelayMs, 800);
+  // por defecto la tarjeta sale donde la pone el tema
+  const c = buildAlert('raid', { user: 'x', amount: 5 }, { alerts: { raid: { layout: 'mixed', media: 'f.png' } } });
+  assert.equal(c.look.cardX, 0); assert.equal(c.look.cardY, 0);
+});
+
 test('deepMerge conserva valores por defecto', () => {
   const m = deepMerge({ a: { x: 1, y: 2 }, b: 1 }, { a: { y: 3 } });
   assert.deepEqual(m, { a: { x: 1, y: 3 }, b: 1 });

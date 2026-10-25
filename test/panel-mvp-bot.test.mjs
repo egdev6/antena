@@ -90,7 +90,10 @@ try {
     const timerState = `document.querySelector('main .timer-state')`;
     const fireResult = `document.querySelector('main [aria-live="polite"]')`;
     const toast = `document.querySelector('.toast[role="status"]')`;
-    const fire = () => ev(`Array.from(document.querySelectorAll('main button')).find(b => b.textContent.trim() === 'Enviar ahora').click()`);
+    // v2: el listado también tiene «Enviar ahora» por fila; el del slide (con el resultado) es el último
+    const fire = () => ev(`Array.from(document.querySelectorAll('main button')).filter(b => b.textContent.trim() === 'Enviar ahora').at(-1).click()`);
+    // v2: guardado manual, los cambios se guardan con el botón «Guardar» del pie
+    const save = () => ev(`document.querySelector('.lv-sfoot .eg-btn--secondary').click()`);
     const pick = (seg, text) => ev(`Array.from((${seg}).querySelectorAll('[role=radio]')).find(b => b.textContent.trim() === ${JSON.stringify(text)}).click()`);
     const stored = () => app.store.config.timers.find(x => x.id === timer.id);
 
@@ -99,6 +102,9 @@ try {
     assert.equal(await ev(segValue(timerDestination)), 'Twitch');
     assert.equal(stored().destination, undefined, 'abrir el editor no cambia el destino implícitamente');
     await pick(timerDestination, 'Ambos');
+    await sleep(100);
+    assert.equal(stored().destination, undefined, 'sin pulsar Guardar no se guarda');
+    await save();
     await until(() => stored().destination === 'both', 'destination=both guardado');
     await waitDom(`/YouTube/.test(${timerState}?.textContent || '') && /250\\/200/.test(${timerState}?.textContent || '')`);
 
@@ -120,6 +126,7 @@ try {
     await waitDom(`!!(${actionDestination})`);
     assert.equal(await ev(segValue(actionDestination)), 'Twitch');
     await pick(actionDestination, 'YouTube');
+    await save();
     await until(() => app.store.config.alerts.follow.actions[0]?.destination === 'youtube', 'destination=youtube en la acción');
     assert.equal(app.store.config.alerts.follow.actions[0].text, 'hola {user}');
 

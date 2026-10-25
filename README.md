@@ -28,7 +28,7 @@ Stream alerts, chat and widgets for **Meld Studio** — local, free and with the
 antena runs entirely on your PC and gives your stream a full alert and interaction layer:
 
 - **Alerts** from Twitch (followers, subs, resubs, gifted subs, bits, raids, rewards) and YouTube (Super Chats, Super Stickers, members, milestones and gifted memberships).
-- **Two designs per alert:** the EGDEV 3D card, or your own video or image (webm with transparency) with the message on top, placed wherever you want and with your own CSS.
+- **Three designs per alert:** the EGDEV 3D card; your own video or image (webm with transparency) with the message on top, placed wherever you want; or **video + card**: your video or image as a full-screen background with the 3D card on top, with an entry delay and position offset. All with your own CSS.
 - **Variations:** another version of the alert depending on the amount, the tier, the user, the message or a probability.
 - **Voice (TTS)** for messages, **filtering** of words, links and users, and **pause** with queue.
 - **Actions in Meld** when an alert fires: change scene (and switch back), show or hide layers, effects, confetti, roulette, save a clip, write in chat, speak…
@@ -283,7 +283,7 @@ What it carries:
 
 ### Appearance
 
-In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. There is a single theme; the default is the EGDEV one and whatever you change here overrides it. It saves itself (350 ms after the last change) and reaches the layers already open in Meld instantly, without reloading them. If saving fails, the panel goes back to the last saved theme and warns; a starting point, an import or «Restore EGDEV» cancels any pending save and takes over.
+In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. There is a single theme; the default is the EGDEV one and whatever you change here overrides it. While you change it, only the panel preview shows it (a draft in `/api/theme/draft` that only `?themeDraft` previews load); pressing **Save** sends it to every layer open in Meld at once, without reloading them. If saving fails, the draft stays and the panel warns; a starting point, an import or «Restore EGDEV» are applied and saved right away and drop the draft.
 
 - **Color:** accent, soft accent, card background (gradient, solid or glass, with its opacity), texts, border (accent or its own), glow intensity and, if you want, the color of each platform.
 - **Typography:** title and body fonts (the brand's, the system's or your own in woff2/woff/ttf/otf uploaded in General and files), alert text size, uppercase and black outline.
@@ -339,11 +339,17 @@ Meld does not support custom panels, but its **chat panel** loads a URL. Put `ht
 
 The interface (panel, prompter and dock) is React, in `app/src`, and is built with `pnpm app:build`. It uses **EGDEV Foundation** (Material v2 + Grafito): `public/ds/tokens.css` and `public/ds/bundle.css` are copies of the design system artifact, and `panel.css` only applies its recipes (tonal surfaces, light border, two-layer shadows, wells in fields, primary button with gradient). To update the system, those two files are replaced. The prompter keeps the black canvas so it reads well through the glass. The Twitch and YouTube logos are painted in color (single font in `public/platform-icons.js`) in the panel, the prompter, the dock and the chat and goal widgets. The stream overlays and widgets are out of scope: their Show-register redesign is pending in the system.
 
+**Hierarchy (v2).** Every page follows the same pattern: a header with a single main action («+ New command», «+ New message»…), up to four indicators, and a table with search and filters. Clicking a row opens a **full-width panel** with tabs (back ←, ✕ or Esc to close). Variations open a second level over their alert (*Alerts › Raid › Variation*). Pages without a list (Appearance, Questions, Giveaway, Filters and voice, General, Meld Studio, Prompter and dock) are split into linkable **page tabs** (`#/apariencia/iconos`). Creating works the same everywhere: «+ New X» opens the same panel in «New» mode with the minimum fields and a starting template; the other tabs open after creating. The sidebar also has a **Create** button.
+
+**Cards for the catalog (v3).** What the app offers, which only grows when the app gets new features, is shown as grouped cards: **Alerts** (by platform, the viewer record with its own), **Connections** (Platforms · Production and access) and **Widgets** (Screen layers · Handled live). Each card has a thumbnail, status, tags and its main action; an alert with a video shows its first frame and, on hover, a looping silent preview. Each alert's «Active» switch applies right away. What you create stays in tables and lives inside its card: goals open from the «Goals» card (`#/widgets/objetivos`).
+
+**Manual save.** On configuration pages nothing is saved until you press **Save**; the footer says how many changes are pending and **Discard** goes back to what was saved. Tabs with changes show a dot. Leaving the page with changes asks first (and so does the browser when closing). Alert, command, message and theme previews show the draft; widget previews show what is saved. Live operations apply right away: enabling/ordering variations, placing in the tier list, opening or drawing the giveaway, moving questions, goal counters, connecting and deleting files. Old addresses (`#/alerta/…`, `#/comando/…`, `#/widget/…`) still work.
+
 The sidebar lists collapse with a click on their title and the panel remembers which ones you left closed. **Alt+click** leaves only that list open. With a list collapsed, the section you are in stays visible, and a red dot warns if something inside is running (vote, open giveaway, questions in queue).
 
 ### From your phone
 
-**General and files › Access from your phone.** When enabled, the panel listens on the local network and gives you a key-protected link (`http://192.168.x.x:4500/?key=…`). Open it once on your phone and it is remembered. «Generate another key» invalidates previous links.
+**Settings › General › Access from your phone** (also in Settings › Connections). When enabled, the panel listens on the local network and gives you a key-protected link (`http://192.168.x.x:4500/?key=…`). Open it once on your phone and it is remembered. «Generate another key» invalidates previous links.
 
 ### MCP server
 
@@ -422,7 +428,7 @@ To write, the chat has to be listening (it is the ongoing stream's chat). Each m
 
 ### Files
 
-Videos, images and sounds are uploaded from the panel (or with `importar_archivo` via MCP) and saved in `media/`. Formats: webm, mp4, gif, png, webp, mp3, ogg, wav; up to 300 MB. The panel shows each file's size and the folder total.
+Videos, images and sounds are uploaded from the panel (or with `importar_archivo` via MCP) and saved in `media/`. Formats: webm, mp4, gif, png, webp, mp3, ogg, wav; up to 300 MB. In **Log › Files** each file shows its size, the folder total and **where it is used** (alerts and their variations, commands, messages); the «Unused» filter helps clean up.
 
 ### Variables
 

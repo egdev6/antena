@@ -1,6 +1,7 @@
-// A failed save from the panel must not lose the change: the patcher puts the patch back in the
-// queue and retries with backoff. Here the first PUT /api/widgets fails (500) and the value typed
-// in the panel still has to end up stored, with a single error toast for the failure streak.
+// A failed save from the panel must not lose the change. With manual save (v2) the widget editor
+// keeps the change as a draft: the first «Guardar» hits a failing PUT /api/widgets (500), shows an
+// error toast and the draft stays; pressing «Guardar» again stores it. (Outside manual save the
+// patcher in app/src/lib/patch.ts retries on its own with backoff.)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
@@ -13,7 +14,7 @@ import { evaluateChrome } from './helpers/chrome-dom.mjs';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const fontInput = `Array.from(document.querySelectorAll('main label')).find(l => l.textContent.startsWith('Tamaño de letra'))?.querySelector('input')`;
 
-test('widget chat: a PUT that fails once is retried and the panel change is stored', { timeout: 90000 }, async t => {
+test('widget chat: a «Guardar» that fails keeps the draft and the next one stores it', { timeout: 90000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-patcher-retry-'));
@@ -37,7 +38,7 @@ test('widget chat: a PUT that fails once is retried and the panel change is stor
   const base = `http://127.0.0.1:${app.server.address().port}`;
   let chrome;
   try {
-    chrome = await openChromePage(bin, `${base}/#/widget/chat`);
+    chrome = await openChromePage(bin, `${base}/#/widgets/chat`);
     const c = chrome.cdp;
     await waitDom(c, `!!(${fontInput})`, { timeoutMs: 15000 });
     // counts the error toasts shown (each toast() call bumps the text, even if it is the same)
@@ -47,10 +48,19 @@ test('widget chat: a PUT that fails once is retried and the panel change is stor
     await c.send('Input.insertText', { text: '40' });
     assert.equal(await evaluateChrome(c, `${fontInput}.value`), '40');
 
+    const saveBtn = `document.querySelector('.lv-sfoot .eg-btn--secondary')`;
+    await waitDom(c, `!!${saveBtn} && !${saveBtn}.disabled`, { timeoutMs: 9000 });
+    await sleep(600);
+    assert.equal(puts.length, 0, 'nothing is sent before «Guardar»');
+    await evaluateChrome(c, `${saveBtn}.click()`);
+    await waitDom(c, `window.__errToasts >= 1`, { timeoutMs: 9000 });
+    assert.equal(puts.length, 1, 'the first save hits the failing PUT');
+    assert.notEqual(app.store.config.widgets?.chat?.fontSize, 40, 'the failed save stores nothing');
+    assert.equal(await evaluateChrome(c, `${fontInput}.value`), '40', 'the draft is kept');
+    await evaluateChrome(c, `${saveBtn}.click()`);
     for (let i = 0; i < 100 && app.store.config.widgets?.chat?.fontSize !== 40; i++) await sleep(100);
-    assert.ok(puts.length >= 2, `the failed PUT is retried (PUTs seen: ${puts.length})`);
-    assert.equal(app.store.config.widgets?.chat?.fontSize, 40, 'the change survives the failed PUT and is stored by the retry');
-    assert.ok(await evaluateChrome(c, `window.__errToasts >= 1`), 'the failure is reported with an error toast');
+    assert.equal(puts.length, 2, 'the second «Guardar» sends again');
+    assert.equal(app.store.config.widgets?.chat?.fontSize, 40, 'the change survives the failed PUT and is stored');
     assert.equal(await evaluateChrome(c, `${fontInput}.value`), '40');
   } finally {
     if (chrome) { chrome.child.kill(); await chrome.cdp.close(); }

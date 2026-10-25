@@ -464,15 +464,21 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
 
   // probar, alertas libres, cola
-  route('POST', '/api/test', async ({ type, vars, target = 'live', variationId, commandId, timerId }) => {
+  // `draft` (guardado manual del panel): la alerta, variación, comando o mensaje SIN guardar, solo para
+  // la vista previa. Se construye sobre una copia de la configuración; nada se guarda.
+  route('POST', '/api/test', async ({ type, vars, target = 'live', variationId, commandId, timerId, draft }) => {
     let a;
-    if (timerId) a = { ...buildCustomAlert(alertFields(timerOf(timerId)), { ...timers.vars(), ...(vars || {}) }, store.config), test: true };
-    else if (commandId) a = buildCommandAlert(commandOf(commandId), { ...SAMPLES.command, ...(vars || {}) }, store.config, { test: true });
+    const useDraft = draft && typeof draft === 'object' && !Array.isArray(draft) && target === 'preview';
+    const cfg = useDraft ? structuredClone(store.config) : store.config;
+    if (timerId) a = { ...buildCustomAlert(alertFields(useDraft ? { ...timerOf(timerId), ...draft } : timerOf(timerId)), { ...timers.vars(), ...(vars || {}) }, cfg), test: true };
+    else if (commandId) a = buildCommandAlert(useDraft ? { ...commandOf(commandId), ...draft } : commandOf(commandId), { ...SAMPLES.command, ...(vars || {}) }, cfg, { test: true });
     else {
       if (!ALERT_TYPES[type]) throw httpError(400, 'Tipo desconocido');
-      const v = variationId ? variationOf(type, variationId) : null;
+      if (useDraft && !variationId) cfg.alerts[type] = { ...cfg.alerts[type], ...draft };
+      if (useDraft && variationId) cfg.alerts[type] = { ...cfg.alerts[type], variations: (cfg.alerts[type]?.variations || []).map(x => (x.id === variationId ? { ...x, ...draft } : x)) };
+      const v = variationId ? (cfg.alerts[type]?.variations || []).find(x => x.id === variationId) || variationOf(type, variationId) : null;
       const sample = { ...SAMPLES[type], ...(v ? conditionSample(v.conditions) : {}), ...(vars || {}) };
-      a = buildAlert(type, sample, store.config, { test: true, variationId: v?.id });
+      a = buildAlert(type, sample, cfg, { test: true, variationId: v?.id });
     }
     engine.deliver(a, { target: target === 'preview' ? 'preview' : 'live' });
     return { ok: true, overlays: bus.overlayCount(), alert: summary(a) };
@@ -576,7 +582,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   registerViewersRoutes({ route, store, viewers });
   registerTeleprompterRoutes({ route, teleprompter });
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
-  registerThemeRoutes({ route, store, listMedia, onChange: () => {} });   // el aviso sale de store 'change' (también vale para cambiar_config)
+  const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
+    onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });
 
 
   // ---------- archivos: módulo propio (patrón de rutas por áreas, #71/#107) ----------
@@ -830,14 +837,17 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         if (kind === 'widget') res.write(`event: interactive\ndata: ${JSON.stringify(interactive.snapshot())}\n\n`);
         if (kind === 'teleprompter') res.write(`event: teleprompter\ndata: ${JSON.stringify(teleprompter.snapshot())}\n\n`);
         if (kind === 'overlay') res.write(`event: pause\ndata: ${JSON.stringify(engine.pauseState())}\n\n`);
-        if (kind !== 'panel') res.write(`event: theme\ndata: ${JSON.stringify(publicTheme(store.config.theme))}\n\n`);
+        if (kind !== 'panel') {
+          const d = url.searchParams.has('themeDraft') ? themeRoutes.getDraft() : null;
+          res.write(`event: theme\ndata: ${JSON.stringify(d ? { ...publicTheme(d), draft: true } : publicTheme(store.config.theme))}\n\n`);
+        }
         pushStatus();
         return;
       }
       if (req.method === 'POST' && url.pathname === '/api/media/upload') return json(res, 200, await upload(req, url));
       if (url.pathname === '/theme.css') {
         res.writeHead(200, { 'Content-Type': MIME['.css'], 'Cache-Control': 'no-store' });
-        return res.end(themeCss(store.config.theme));
+        return res.end(themeCss((url.searchParams.has('draft') && themeRoutes.getDraft()) || store.config.theme));
       }
       if (url.pathname === '/api/session/summary.md') {
         const d = await session.get(url.searchParams.get('id'));

@@ -119,6 +119,12 @@ body.debug{background:#1b1d22 url('data:image/svg+xml;utf8,<svg xmlns="http://ww
 @keyframes textin{from{opacity:0;transform:translate(-50%,calc(-50% + .35em)) scale(.92)}to{opacity:1;transform:translate(-50%,-50%)}}
 
 /* animaciones de entrada y salida del diseño 2 */
+/* diseño 3: mixta (vídeo o imagen de fondo + tarjeta EGDEV encima) */
+.alert-bg{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;opacity:0;transition:opacity .35s ease-out}
+.alert-bg.on{opacity:1}
+.alert-bg.out{opacity:0;transition-duration:.45s}
+.alert-bg .alert-media{width:calc(100vw * var(--bg-size,1));height:calc(100vh * var(--bg-size,1));object-fit:contain}
+.alert-mixed{translate:var(--card-x,0px) var(--card-y,0px)}
 .alert-media-layout{opacity:0}
 .alert-media-layout.in-none.on{opacity:1}
 .alert-media-layout.in-fade.on{animation:fadein .45s ease-out forwards}
@@ -143,6 +149,7 @@ body.debug{background:#1b1d22 url('data:image/svg+xml;utf8,<svg xmlns="http://ww
 <style id="custom-css"></style>
 </head>
 <body>
+<div class="bg-layer" id="bg"></div>
 <div class="stage" id="stage"></div>
 
 <template id="tpl-card">
@@ -206,7 +213,7 @@ function applyTheme(t) {
   if (!qs.get('pos')) { stage.classList.remove('top', 'center', 'bottom'); stage.classList.add(['top', 'center', 'bottom'].includes(THEME.position) ? THEME.position : 'center'); }
   if (!qs.get('align')) { stage.classList.remove('left', 'right'); if (['left', 'right'].includes(THEME.align)) stage.classList.add(THEME.align); }
   const link = document.getElementById('eg-theme');
-  const href = '/theme.css?v=' + encodeURIComponent(THEME.version || '');
+  const href = '/theme.css?' + (qs.has('themeDraft') ? 'draft=1&' : '') + 'v=' + encodeURIComponent(THEME.version || '');
   if (link && !link.href.endsWith(href)) link.href = href;
 }
 /** Icono de la casilla: el elegido en el tema para ese tipo o el de serie. */
@@ -225,6 +232,7 @@ function tileIcon(a) {
 const qs = new URLSearchParams(location.search);
 const PREVIEW = qs.has('preview');
 const stage = document.getElementById('stage');
+const bgLayer = document.getElementById('bg');
 const customCss = document.getElementById('custom-css');
 stage.classList.add(['top','center','bottom'].includes(qs.get('pos')) ? qs.get('pos') : 'center');
 document.documentElement.style.setProperty('--scale', Number(qs.get('scale')) || 1);
@@ -257,7 +265,7 @@ function fillText(node, a) {
 }
 
 // ---------- diseño 1: tarjeta ----------
-function renderCard(a) {
+function renderCard(a, delayMs = 0) {
   const node = document.getElementById('tpl-card').content.firstElementChild.cloneNode(true);
   node.classList.add('type-' + a.type, 'pf-' + (a.platform || 'egdev'));
   // icono: el del tema para este tipo, o el de serie
@@ -275,8 +283,9 @@ function renderCard(a) {
   const name = node.querySelector('.alert-name');
   fit(name);
   document.fonts?.ready.then(() => fit(name));
-  node.querySelector('.timer i').animate([{transform:'scaleX(1)'},{transform:'scaleX(0)'}], { duration: a.durationMs, easing: 'linear', delay: 400, fill: 'forwards' });
-  requestAnimationFrame(() => node.classList.add('on'));
+  node.querySelector('.timer i').animate([{transform:'scaleX(1)'},{transform:'scaleX(0)'}], { duration: a.durationMs, easing: 'linear', delay: 400 + delayMs, fill: 'forwards' });
+  if (delayMs > 0) setTimeout(() => requestAnimationFrame(() => node.classList.add('on')), delayMs);
+  else requestAnimationFrame(() => node.classList.add('on'));
   return { node, ready: Promise.resolve(a.durationMs + 400), outMs: 560 };
 }
 
@@ -335,10 +344,51 @@ function renderMedia(a) {
   return { node, ready, outMs: 480, video: L.mediaKind === 'video' ? el : null };
 }
 
+// ---------- diseño 3: vídeo o imagen de fondo y la tarjeta encima ----------
+function renderMixed(a) {
+  const L = a.look;
+  const bg = document.createElement('div');
+  bg.className = 'alert-bg type-' + a.type;
+  bg.style.setProperty('--bg-size', Math.max(0.05, L.mediaSize / 100));
+  const src = '/media/' + encodeURIComponent(L.media);
+  let el;
+  if (L.mediaKind === 'video') {
+    el = document.createElement('video');
+    el.src = src; el.playsInline = true; el.preload = 'auto';
+    el.volume = MUTE ? 0 : Math.min(1, (a.volume ?? .6) * L.mediaVolume / 100);
+    el.muted = MUTE || L.mediaVolume === 0;
+  } else { el = document.createElement('img'); el.src = src; el.alt = ''; }
+  el.className = 'alert-media';
+  bg.append(el);
+  bgLayer.replaceChildren(bg);
+
+  const loaded = new Promise(resolve => {
+    if (L.mediaKind === 'video') { el.addEventListener('loadedmetadata', resolve, { once: true }); el.addEventListener('error', resolve, { once: true }); }
+    else if (el.complete) resolve(); else { el.onload = resolve; el.onerror = resolve; }
+    setTimeout(resolve, 3000);
+  });
+  // la duración puede ser la del vídeo: la barra de tiempo de la tarjeta la sigue
+  const ready = loaded.then(() => {
+    const useVideo = L.durationMode === 'media' && L.mediaKind === 'video' && isFinite(el.duration) && el.duration > 0;
+    const ms = useVideo ? Math.min(el.duration * 1000, 60000) : a.durationMs + 400;
+    if (current?.a !== a) { bg.remove(); return ms; }   // se saltó o se sustituyó mientras cargaba
+    const card = renderCard({ ...a, durationMs: Math.max(1000, ms - 400 - L.textDelayMs) }, L.textDelayMs);
+    card.node.classList.add('alert-mixed');
+    card.node.style.setProperty('--card-x', L.cardX + 'px');
+    card.node.style.setProperty('--card-y', L.cardY + 'px');
+    current.node = card.node;
+    requestAnimationFrame(() => bg.classList.add('on'));
+    if (L.mediaKind === 'video') el.play().catch(() => { el.muted = true; el.play().catch(() => {}); });
+    return ms;
+  });
+  return { node: document.createElement('div'), bg, ready, outMs: 560, video: L.mediaKind === 'video' ? el : null };
+}
+
 function show(a) {
   // CSS común a todas las alertas + el de esta alerta (o variación)
   customCss.textContent = [a.globalCss, a.look?.css].filter(Boolean).join('\n');
-  const r = a.look?.layout === 'media' ? renderMedia(a) : renderCard(a);
+  const lay = a.look?.layout;
+  const r = lay === 'media' ? renderMedia(a) : lay === 'mixed' ? renderMixed(a) : renderCard(a);
   current = { a, ...r };
   playSound(a);
   r.ready.then(ms => {
@@ -365,11 +415,12 @@ if ('speechSynthesis' in window) speechSynthesis.getVoices();
 function hide() {
   if (!current) return;
   clearTimeout(current.timer);
-  const { node, outMs, video } = current;
+  const { node, outMs, video, bg } = current;
   node.classList.remove('on'); node.classList.add('out');
+  if (bg) { bg.classList.remove('on'); bg.classList.add('out'); }
   if (video) fadeOut(video, outMs);
   current = null;
-  setTimeout(() => { node.remove(); setTimeout(next, GAP); }, outMs);
+  setTimeout(() => { node.remove(); bg?.remove(); setTimeout(next, GAP); }, outMs);
 }
 
 function fadeOut(v, ms) {
@@ -411,11 +462,11 @@ function playSound(a) {
 
 // ---------- conexión ----------
 if (PREVIEW) stage.insertAdjacentHTML('beforebegin', '<div class="hint" id="hint">Vista previa</div>');
-const es = new EventSource('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay'));
+const es = new EventSource('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay') + (qs.has('themeDraft') ? '&themeDraft=1' : ''));
 es.addEventListener('alert', e => {
   document.getElementById('hint')?.remove();
   const a = JSON.parse(e.data);
-  if (PREVIEW) { queue.length = 0; if (current) { clearTimeout(current.timer); current.node.remove(); current = null; } }
+  if (PREVIEW) { queue.length = 0; if (current) { clearTimeout(current.timer); current.node.remove(); current.bg?.remove(); current = null; } }
   // #66: una alerta agrupada en el motor actualiza la que ya está en cola; nunca se encola dos veces
   if (a.merged) {
     const i = queue.findIndex(x => x.id === a.id);
@@ -434,7 +485,7 @@ es.addEventListener('control', e => {
   }
   if (action === 'clear') { queue.length = 0; hide(); if ('speechSynthesis' in window) speechSynthesis.cancel(); }
 });
-es.addEventListener('theme', e => applyTheme(JSON.parse(e.data)));
+es.addEventListener('theme', e => { const t = JSON.parse(e.data); if (t.draft && !qs.has('themeDraft')) return; applyTheme(t); });
 es.addEventListener('say', e => { if (!PREVIEW) speak(JSON.parse(e.data)); });
 </script>
 </body>

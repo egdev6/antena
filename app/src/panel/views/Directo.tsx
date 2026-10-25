@@ -161,7 +161,7 @@ export function Directo() {
       </div>
       <div className="stack">
         <ChatBox />
-        <Sec title="Objetivos" id="h-goals" aside={<a className="eg-btn eg-btn--ghost eg-btn--sm" href="#/widget/goals">Editar</a>}><GoalBars /></Sec>
+        <Sec title="Objetivos" id="h-goals" aside={<a className="eg-btn eg-btn--ghost eg-btn--sm" href="#/widgets/objetivos">Editar</a>}><GoalBars /></Sec>
         <Sec title="Directos anteriores" id="h-past">
           {(past || []).length ? <div className="rows">{(past || []).map(p => <article className="eg-post eg-post--row" key={p!.id}>
             <div className="eg-post__content"><b>{p!.title || 'Sin título'}</b><span className="eg-post__meta">{fmtDateTime(p!.startedAt)} · {p!.events} eventos</span></div>

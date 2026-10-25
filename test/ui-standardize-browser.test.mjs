@@ -34,7 +34,13 @@ const selectedTab = label => `(${tabsOf(label)}.find(x => x.getAttribute('aria-s
 // confirm() nativo: en headless se acepta siempre y se guarda el texto para comprobar la redacción
 const acceptConfirms = `(() => { window.__confirms = []; window.confirm = m => { window.__confirms.push(m); return true; }; return 'ok'; })()`;
 
-test('O3.2 tier lists: pestañas, cambio de editor, + Nueva y borrado', { timeout: 90000 }, async t => {
+// Jerarquía v2: las colecciones (tier lists, guiones) son una lista y cada elemento se abre en un
+// slide; «+ Nueva…» abre el slide de creación y al crear se abre el nuevo; al borrar se vuelve a la lista.
+const rowNames = `[...document.querySelectorAll('main .lv-list tbody tr .lv-open')].map(a => a.textContent.trim()).join('|')`;
+const slideTitle = `(document.querySelector('.lv-slide .lv-stitle h2')?.textContent.trim() || document.querySelector('.lv-slide .lv-stitle h2 input')?.value || '')`;
+const setInput = (sel, v) => `(() => { const i = document.querySelector(${JSON.stringify(sel)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(v)}); i.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()`;
+
+test('v2 tier lists: lista → slide, + Nueva tier list y borrado', { timeout: 90000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, app, base, close } = ctx;
@@ -42,34 +48,32 @@ test('O3.2 tier lists: pestañas, cambio de editor, + Nueva y borrado', { timeou
   try {
     await api(base, 'POST', '/api/tierlists', { title: 'Lista A', items: ['x'] });
     await api(base, 'POST', '/api/tierlists', { title: 'Lista B', items: ['y'] });
-    chrome = await openChromePage(bin, `${base}/#/widget/tierlist`);
-    const L = 'Tier lists';
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3`, { timeoutMs: 12000 });
-    eq(await dom(chrome, tabTexts(L)), 'Lista Aen pantalla|Lista B|+ Nueva');
-    eq(await dom(chrome, selectedTab(L)), 'Lista Aen pantalla');
-    const title = `document.querySelector('#h-list')?.closest('section')?.querySelector('label input')?.value`;
-    eq(await dom(chrome, title), 'Lista A');
+    app.store.config.panel = { onboardingDone: true };
+    chrome = await openChromePage(bin, `${base}/#/tierlist`);
+    await waitDom(chrome.cdp, `${rowNames} === 'Lista A|Lista B'`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `!!document.querySelector('.lv-slide')`), false);
 
-    await dom(chrome, `${tabsOf(L)}[1].click()`);
-    await waitDom(chrome.cdp, `${title} === 'Lista B' && ${selectedTab(L)} === 'Lista B'`, { timeoutMs: 12000 });
+    // abrir una: el slide de esa lista
+    await dom(chrome, `[...document.querySelectorAll('main .lv-list .lv-open')][1].click()`);
+    await waitDom(chrome.cdp, `${slideTitle} === 'Lista B'`, { timeoutMs: 12000 });
 
-    // «+ Nueva»: formulario de creación; al crear queda seleccionada la nueva
-    await dom(chrome, `${tabsOf(L)}.at(-1).click()`);
-    await waitDom(chrome.cdp, `!!document.querySelector('#h-new') && ${selectedTab(L)} === '+ Nueva'`, { timeoutMs: 12000 });
-    await dom(chrome, `(() => { const i = document.querySelector('#h-new').closest('section').querySelector('input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Lista C'); i.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()`);
-    await dom(chrome, `${buttonByText('Crear')}.click()`);
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 4 && ${selectedTab(L)} === 'Lista C' && ${title} === 'Lista C'`, { timeoutMs: 12000 });
+    // «+ Nueva tier list»: slide de creación; al crear se abre la nueva
+    await dom(chrome, `[...document.querySelectorAll('main .view-head a')].find(a => a.textContent.trim() === '+ Nueva tier list').click()`);
+    await waitDom(chrome.cdp, `location.hash === '#/tierlist/nueva' && ${slideTitle} === 'Nueva tier list'`, { timeoutMs: 12000 });
+    await dom(chrome, setInput('.lv-slide label input', 'Lista C'));
+    await dom(chrome, `${buttonByText('Crear tier list')}.click()`);
+    await waitDom(chrome.cdp, `${slideTitle} === 'Lista C' && ${rowNames} === 'Lista A|Lista B|Lista C' && !!${buttonByText('Borrar lista…')}`, { timeoutMs: 12000 });
 
-    // borrar: la lista desaparece y la selección pasa a «+ Nueva» (una selección válida)
+    // borrar: pregunta, cierra el slide y la lista queda sin ella
     await dom(chrome, acceptConfirms);
-    await dom(chrome, `${buttonByText('Borrar lista')}.click()`);
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3 && ${selectedTab(L)} === '+ Nueva' && !!document.querySelector('#h-new')`, { timeoutMs: 12000 });
+    await dom(chrome, `${buttonByText('Borrar lista…')}.click()`);
+    await waitDom(chrome.cdp, `location.hash === '#/tierlist' && !document.querySelector('.lv-slide') && ${rowNames} === 'Lista A|Lista B'`, { timeoutMs: 12000 });
     eq(await dom(chrome, `window.__confirms[0]`), '¿Borrar «Lista C»?');
     eq(app.interactive.s.tierlists.map(x => x.title).join('|'), 'Lista A|Lista B');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
-test('O3.2 teleprompter: pestañas por guion, + Nuevo guion y el último no se borra', { timeout: 90000 }, async t => {
+test('v2 teleprompter: pestañas para elegir el activo, guiones en lista → slide y el último no se borra', { timeout: 90000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, app, base, close } = ctx;
@@ -77,7 +81,8 @@ test('O3.2 teleprompter: pestañas por guion, + Nuevo guion y el último no se b
   try {
     const first = (await api(base, 'GET', '/api/teleprompter')).scripts[0];
     await api(base, 'POST', '/api/teleprompter/scripts', { title: 'Guion B', select: false });
-    chrome = await openChromePage(bin, `${base}/#/widget/teleprompter`);
+    app.store.config.panel = { onboardingDone: true };
+    chrome = await openChromePage(bin, `${base}/#/teleprompter`);
     const L = 'Guiones';
     await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3`, { timeoutMs: 12000 });
     eq(await dom(chrome, tabTexts(L)), `${first.title}|Guion B|+ Nuevo guion`);
@@ -86,33 +91,36 @@ test('O3.2 teleprompter: pestañas por guion, + Nuevo guion y el último no se b
     const tabClasses = `[...document.querySelector('[role=tablist][aria-label=${JSON.stringify(L)}]').classList].filter(c => c.startsWith('eg-tabs')).join(' ')`;
     eq(await dom(chrome, tabClasses), 'eg-tabs');
     eq(await dom(chrome, `!!document.querySelector('select#tp-guion')`), false);
-    const title = `document.querySelector('#tp-title')?.value`;
-    eq(await dom(chrome, title), first.title);
 
+    // elegir otra pestaña cambia el guion activo
     await dom(chrome, `${tabsOf(L)}[1].click()`);
-    await waitDom(chrome.cdp, `${title} === 'Guion B' && ${selectedTab(L)} === 'Guion B'`, { timeoutMs: 12000 });
+    await waitDom(chrome.cdp, `${selectedTab(L)} === 'Guion B'`, { timeoutMs: 12000 });
     eq(app.teleprompter.snapshot().script.title, 'Guion B');
 
-    // «+ Nuevo guion» lo crea y lo deja seleccionado
+    // «+ Nuevo guion» abre el slide de creación en la pestaña Guiones; al crear se abre el nuevo
     await dom(chrome, `${tabsOf(L)}.at(-1).click()`);
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 4 && ${selectedTab(L)} === 'Nuevo guion' && ${title} === 'Nuevo guion'`, { timeoutMs: 12000 });
+    await waitDom(chrome.cdp, `location.hash === '#/teleprompter/guiones/nuevo' && ${slideTitle} === 'Nuevo guion'`, { timeoutMs: 12000 });
+    await dom(chrome, `${buttonByText('Crear guion')}.click()`);
+    await waitDom(chrome.cdp, `${slideTitle} === 'Nuevo guion' && ${rowNames}.split('|').length === 3 && !!${buttonByText('Borrar guion…')}`, { timeoutMs: 12000 });
 
-    // borrar: queda seleccionado otro guion válido
+    // borrar: pregunta y vuelve a la lista
     await dom(chrome, acceptConfirms);
-    await dom(chrome, `${buttonByText('Borrar guion')}.click()`);
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 3 && ${selectedTab(L)} === ${JSON.stringify(first.title)} && ${title} === ${JSON.stringify(first.title)}`, { timeoutMs: 12000 });
+    await dom(chrome, `${buttonByText('Borrar guion…')}.click()`);
+    await waitDom(chrome.cdp, `location.hash === '#/teleprompter/guiones' && !document.querySelector('.lv-slide') && ${rowNames} === ${JSON.stringify(first.title + '|Guion B')}`, { timeoutMs: 12000 });
     eq(await dom(chrome, `window.__confirms[0]`), '¿Borrar «Nuevo guion»?');
 
     // el último guion no se puede borrar
-    await dom(chrome, `${tabsOf(L)}[1].click()`);
-    await waitDom(chrome.cdp, `${title} === 'Guion B'`, { timeoutMs: 12000 });
-    await dom(chrome, `${buttonByText('Borrar guion')}.click()`);
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 2 && ${selectedTab(L)} === ${JSON.stringify(first.title)}`, { timeoutMs: 12000 });
-    eq(await dom(chrome, `${buttonByText('Borrar guion')}.disabled`), true);
+    await dom(chrome, `[...document.querySelectorAll('main .lv-list .lv-open')].find(a => a.textContent.trim() === 'Guion B').click()`);
+    await waitDom(chrome.cdp, `${slideTitle} === 'Guion B' && !!${buttonByText('Borrar guion…')}`, { timeoutMs: 12000 });
+    await dom(chrome, `${buttonByText('Borrar guion…')}.click()`);
+    await waitDom(chrome.cdp, `${rowNames} === ${JSON.stringify(first.title)}`, { timeoutMs: 12000 });
+    await dom(chrome, `document.querySelector('main .lv-list .lv-open').click()`);
+    await waitDom(chrome.cdp, `${slideTitle} === ${JSON.stringify(first.title)} && !!${buttonByText('Borrar guion…')}`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `${buttonByText('Borrar guion…')}.disabled`), true);
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
-test('atajos: lista bajo «Cómo ponerlo» con Probar/Editar/Borrar, «+ Nuevo atajo» en la cabecera y el editor en un modal', { timeout: 120000 }, async t => {
+test('atajos (v2): lista en «Mis atajos» con Probar, «+ Nuevo atajo» en la cabecera y cada atajo en su slide', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, app, base, close } = ctx;
@@ -124,63 +132,60 @@ test('atajos: lista bajo «Cómo ponerlo» con Probar/Editar/Borrar, «+ Nuevo a
     chrome = await openChromePage(bin, `${base}/#/atajos`);
     await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
     const list = `document.querySelector('[data-tour="atajos-list"]')`;
-    const rows = `[...${list}.querySelectorAll('.eg-post--row')]`;
-    const modal = `document.querySelector('[role=dialog][aria-modal=true]')`;
+    const rows = `[...${list}.querySelectorAll('tbody tr')]`;
+    const slide = `document.querySelector('.lv-slide')`;
     const btnIn = (scope, text) => `[...${scope}.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(text)})`;
+    const save = `document.querySelector('.lv-slide .lv-sfoot .eg-btn--secondary')`;
     await waitDom(chrome.cdp, `!!${list} && ${rows}.length === 2`, { timeoutMs: 15000 });
 
-    // sin pestañas; «+ Nuevo atajo» vive en la cabecera
+    // pestañas de página, sin pestañas por atajo; «+ Nuevo atajo» vive en la cabecera
+    eq((await dom(chrome, tabTexts('Partes de la página'))).replace(/\d+/g, ''), 'Mis atajos|De serie|Cómo ponerlo en el Stream Deck');
     eq(await dom(chrome, `!!document.querySelector('[role=tablist][aria-label="Atajos"]')`), false);
-    eq(await dom(chrome, `!!${btnIn(`document.querySelector('.view-head')`, '+ Nuevo atajo')}`), true);
-    // la lista va debajo de «Cómo ponerlo en el Stream Deck», en la misma columna; «Atajos de serie» a la derecha
-    eq(await dom(chrome, `(() => { const how = document.querySelector('[data-tour="atajos-streamdeck"]').getBoundingClientRect(), l = ${list}.getBoundingClientRect(), serie = [...document.querySelectorAll('main h2')].find(h => h.textContent.includes('Atajos de serie')).closest('.panel').getBoundingClientRect(); return l.top >= how.bottom && Math.abs(l.left - how.left) < 2 && serie.left > how.right; })()`), true);
-    eq(await dom(chrome, `${rows}.map(r => r.querySelector('b').textContent + ':' + [...r.querySelectorAll('button')].map(b => b.textContent.trim()).join('/')).join('|')`), 'Uno:Probar/Editar/Borrar|Dos:Probar/Editar/Borrar');
-    eq(await dom(chrome, `${rows}[0].querySelector('code').textContent`), `/sd/custom/${app.store.config.shortcuts[0].id}`);
-    eq(await dom(chrome, `!!${modal}`), false);
+    eq(await dom(chrome, `[...document.querySelectorAll('.view-head a')].some(a => a.textContent.trim() === '+ Nuevo atajo')`), true);
+    eq(await dom(chrome, rowNames), 'Uno|Dos');
+    eq(await dom(chrome, `${rows}.every(r => !!${btnIn('r', 'Probar')})`), true);
+    eq(await dom(chrome, `${rows}[0].querySelector('.lv-mono').textContent`), `/sd/custom/${app.store.config.shortcuts[0].id}`);
+    eq(await dom(chrome, `!!${slide}`), false);
 
     // Probar desde la lista ejecuta sus pasos y lo avisa
     await dom(chrome, `${btnIn(`${rows}[0]`, 'Probar')}.click()`);
-    await waitDom(chrome.cdp, `document.querySelector('.toast.on')?.textContent.includes('Hecho: 2 pasos')`, { timeoutMs: 9000 });
+    await waitDom(chrome.cdp, `document.querySelector('.toast.on')?.textContent.includes('Hecho')`, { timeoutMs: 9000 });
     eq(app.session.data.notes.some(n => n.kind === 'marker'), true);
 
-    // Editar abre el modal con ese atajo; los pasos se reordenan y se guardan con «Guardar pasos»
-    // (focus + click like a real click, so the modal can give the focus back to «Editar» on close)
-    await dom(chrome, `(() => { const b = ${btnIn(`${rows}[0]`, 'Editar')}; b.focus(); b.click(); return 'ok'; })()`);
-    await waitDom(chrome.cdp, `!!${modal} && ${modal}.querySelector('input[aria-label="Nombre del atajo"]')?.value === 'Uno'`, { timeoutMs: 9000 });
-    eq(await dom(chrome, `document.activeElement && ${modal}.contains(document.activeElement)`), true);
-    await dom(chrome, `${modal}.querySelectorAll('.action')[0].querySelector('[aria-label="Bajar"]').click()`);
-    await waitDom(chrome.cdp, `!!${btnIn(modal, 'Guardar pasos')}`, { timeoutMs: 9000 });
-    await dom(chrome, `${btnIn(modal, 'Guardar pasos')}.click()`);
-    await waitDom(chrome.cdp, `!${btnIn(modal, 'Guardar pasos')}`, { timeoutMs: 9000 });
+    // abrir un atajo: su slide; los pasos se reordenan y se guardan con «Guardar»
+    await dom(chrome, `${rows}[0].querySelector('.lv-open').click()`);
+    await waitDom(chrome.cdp, `${slide}?.querySelector('input[aria-label="Nombre del atajo"]')?.value === 'Uno'`, { timeoutMs: 9000 });
+    await dom(chrome, `${slide}.querySelectorAll('.action')[0].querySelector('[aria-label="Bajar"]').click()`);
+    await waitDom(chrome.cdp, `!${save}.disabled`, { timeoutMs: 9000 });
+    await dom(chrome, `${save}.click()`);
+    // «disabled» también ocurre mientras se guarda; esperar la confirmación del pie.
+    await waitDom(chrome.cdp, `${save}.disabled && document.querySelector('.lv-slide .lv-sfoot [role="status"]')?.textContent === 'Todo guardado'`, { timeoutMs: 9000 });
     eq(app.store.config.shortcuts[0].steps.map(x => x.action).join('|'), 'pausa|marca');
 
-    // cerrar con pasos sin guardar pregunta; si se rechaza el modal sigue abierto, si se acepta se descartan
-    await dom(chrome, `${modal}.querySelectorAll('.action')[0].querySelector('[aria-label="Bajar"]').click()`);
-    await waitDom(chrome.cdp, `!!${btnIn(modal, 'Guardar pasos')}`, { timeoutMs: 9000 });
+    // salir con pasos sin guardar pregunta; si se rechaza el slide sigue abierto, si se acepta se descartan
+    await dom(chrome, `${slide}.querySelectorAll('.action')[0].querySelector('[aria-label="Bajar"]').click()`);
+    await waitDom(chrome.cdp, `!${save}.disabled`, { timeoutMs: 9000 });
     await dom(chrome, `(() => { window.__confirms = []; window.confirm = m => { window.__confirms.push(m); return false; }; return 'ok'; })()`);
-    await dom(chrome, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+    await dom(chrome, `document.querySelector('.lv-drawer').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
     await sleep(300);
-    eq(await dom(chrome, `!!${modal}`), true);
-    eq(await dom(chrome, `window.__confirms[0]`), 'Tienes pasos sin guardar. ¿Cerrar sin guardarlos?');
+    eq(await dom(chrome, `!!${slide}`), true);
+    eq(await dom(chrome, `window.__confirms[0]`), 'Tienes cambios sin guardar. ¿Salir y descartarlos?');
     await dom(chrome, acceptConfirms);
-    await dom(chrome, `${modal}.querySelector('[aria-label="Cerrar"]').click()`);
-    await waitDom(chrome.cdp, `!${modal}`, { timeoutMs: 9000 });
+    await dom(chrome, `document.querySelector('.lv-slide a[aria-label="Volver"]').click()`);
+    await waitDom(chrome.cdp, `!${slide} && location.hash === '#/atajos'`, { timeoutMs: 9000 });
     eq(app.store.config.shortcuts[0].steps.map(x => x.action).join('|'), 'pausa|marca');
-    eq(await dom(chrome, `document.activeElement?.textContent.trim()`), 'Editar');
 
-    // «+ Nuevo atajo»: el modal pide el nombre y, al crear, pasa a editar el atajo nuevo
-    await dom(chrome, `${btnIn(`document.querySelector('.view-head')`, '+ Nuevo atajo')}.click()`);
-    await waitDom(chrome.cdp, `!!${modal}?.querySelector('input[aria-label="Nombre del atajo nuevo"]')`, { timeoutMs: 9000 });
-    await dom(chrome, `(() => { const i = ${modal}.querySelector('input[aria-label="Nombre del atajo nuevo"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Tres'); i.dispatchEvent(new Event('input', { bubbles: true })); return 'ok'; })()`);
-    await dom(chrome, `${btnIn(modal, 'Crear atajo')}.click()`);
-    await waitDom(chrome.cdp, `${modal}?.querySelector('input[aria-label="Nombre del atajo"]')?.value === 'Tres' && ${rows}.length === 3`, { timeoutMs: 9000 });
-    await dom(chrome, `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-    await waitDom(chrome.cdp, `!${modal}`, { timeoutMs: 9000 });
+    // «+ Nuevo atajo»: el slide pide el nombre y, al crear, abre el atajo nuevo
+    await dom(chrome, `[...document.querySelectorAll('.view-head a')].find(a => a.textContent.trim() === '+ Nuevo atajo').click()`);
+    await waitDom(chrome.cdp, `location.hash === '#/atajos/nuevo' && !!${slide}?.querySelector('label input')`, { timeoutMs: 9000 });
+    await dom(chrome, setInput('.lv-slide label input', 'Tres'));
+    await dom(chrome, `${buttonByText('Crear atajo')}.click()`);
+    await waitDom(chrome.cdp, `${slide}?.querySelector('input[aria-label="Nombre del atajo"]')?.value === 'Tres' && ${rows}.length === 3 && !!${buttonByText('Borrar atajo…')}`, { timeoutMs: 9000 });
 
-    // Borrar desde la lista
+    // borrar desde su slide
     await dom(chrome, acceptConfirms);
-    await dom(chrome, `${btnIn(`${rows}[2]`, 'Borrar')}.click()`);
-    await waitDom(chrome.cdp, `${rows}.length === 2`, { timeoutMs: 9000 });
+    await dom(chrome, `${buttonByText('Borrar atajo…')}.click()`);
+    await waitDom(chrome.cdp, `!${slide} && ${rows}.length === 2`, { timeoutMs: 9000 });
     eq(await dom(chrome, `window.__confirms[0]`), '¿Borrar «Tres»?');
     eq(app.store.config.shortcuts.map(x => x.name).join('|'), 'Uno|Dos');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
@@ -200,13 +205,13 @@ test('O3.2 EmptyState: las listas vacías usan el mismo estado vacío (eg-post--
     eq(await dom(chrome, `document.querySelectorAll('li.empty, li.hint').length`), 0);
     await dom(chrome, `location.hash = '#/historial'`);
     await waitDom(chrome.cdp, `${empty}.includes('Todavía no ha llegado ninguna alerta.')`, { timeoutMs: 12000 });
-    await dom(chrome, `location.hash = '#/widget/giveaway'`);
+    await dom(chrome, `location.hash = '#/sorteo'`);
     await waitDom(chrome.cdp, `${empty}.includes('Aún no se ha sorteado.') && ${empty}.includes('Sin sorteos anteriores.')`, { timeoutMs: 12000 });
     eq(await dom(chrome, `getComputedStyle(document.querySelector('main .empty-state')).cursor`), 'default');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
-test('O3.2 botones eg-btn en todas las vistas y filas eg-post--row en Comandos y Mensajes', { timeout: 120000 }, async t => {
+test('botones eg-btn en todas las vistas y Comandos y Mensajes como lista → slide (v2)', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, base, close } = ctx;
@@ -216,13 +221,16 @@ test('O3.2 botones eg-btn en todas las vistas y filas eg-post--row en Comandos y
     await api(base, 'POST', '/api/timers', { name: 'Recordatorio', message: 'Sigue el canal' });
     await api(base, 'POST', '/api/shortcuts', { name: 'Uno', steps: [{ kind: 'builtin', action: 'marca' }] });
     chrome = await openChromePage(bin, `${base}/#/comandos`);
-    const row = `document.querySelector('main .rows .eg-post--row')`;
-    await waitDom(chrome.cdp, `${row}?.querySelector('.eg-post__content code')?.textContent === '!web'`, { timeoutMs: 12000 });
-    eq(await dom(chrome, `Array.from(${row}.querySelectorAll('.eg-btn.eg-btn--ghost.eg-btn--sm')).map(b => b.textContent.trim()).join('|')`), 'Probar|Editar');
+    const row = `document.querySelector('main .lv-list tbody tr')`;
+    // cada fila: nombre que abre el slide y la acción rápida como eg-btn
+    await waitDom(chrome.cdp, `${row}?.querySelector('.lv-open')?.textContent === '!web'`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `Array.from(${row}.querySelectorAll('.eg-btn.eg-btn--ghost.eg-btn--sm')).map(b => b.textContent.trim()).join('|')`), 'Probar');
+    await dom(chrome, `${row}.querySelector('.lv-open').click()`);
+    await waitDom(chrome.cdp, `!!document.querySelector('.lv-slide')`, { timeoutMs: 12000 });
     await dom(chrome, `location.hash = '#/mensajes'`);
-    await waitDom(chrome.cdp, `${row}?.querySelector('.eg-post__content b')?.textContent === 'Recordatorio'`, { timeoutMs: 12000 });
-    eq(await dom(chrome, `Array.from(${row}.querySelectorAll('.eg-btn')).map(b => b.textContent.trim()).join('|')`), 'Enviar ahora|Editar');
-    for (const hash of ['#/comandos', '#/mensajes', '#/atajos', '#/conexiones', '#/general', '#/fuentes', '#/historial', '#/chat', '#/prompter', '#/meld', '#/filtros']) {
+    await waitDom(chrome.cdp, `${row}?.querySelector('.lv-open')?.textContent === 'Recordatorio'`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `Array.from(${row}.querySelectorAll('.eg-btn')).map(b => b.textContent.trim()).join('|')`), 'Enviar ahora');
+    for (const hash of ['#/comandos', '#/mensajes', '#/atajos', '#/alertas', '#/widgets', '#/conexiones', '#/general', '#/fuentes', '#/historial', '#/directos', '#/archivos', '#/chat', '#/prompter', '#/meld', '#/filtros']) {
       await dom(chrome, `location.hash = ${JSON.stringify(hash)}`);
       await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(hash)} && !!document.querySelector('main h1') && !document.querySelector('main p.hint')?.textContent.startsWith('Cargando')`, { timeoutMs: 12000 });
       eq(await dom(chrome, `${JSON.stringify(hash)} + ':' + document.querySelectorAll('main .btn').length`), `${hash}:0`);
@@ -236,21 +244,20 @@ test('O3.2 css-help: cada campo de CSS lista las clases de su widget', { timeout
   const { bin, base, close } = ctx;
   let chrome;
   try {
-    chrome = await openChromePage(bin, `${base}/#/widget/latest`);
+    chrome = await openChromePage(bin, `${base}/#/widgets/latest`);
     const helps = `Array.from(document.querySelectorAll('main .css-help')).map(h => h.textContent)`;
     const has = (i, classes) => `(${helps}[${i}] || '').length > 0 && ${JSON.stringify(classes)}.every(c => ${helps}[${i}].includes(c))`;
     await waitDom(chrome.cdp, `${helps}.length === 2`, { timeoutMs: 12000 });
     eq(await dom(chrome, has(0, ['.root', '.item', '.kick', '.big', '.extra', '.flash'])), true);
     eq(await dom(chrome, has(1, ['.band', '.label', '.track', '.run', '.it', '.k'])), true);
-    await dom(chrome, `location.hash = '#/widget/credits'`);
+    await dom(chrome, `location.hash = '#/widgets/credits'`);
     await waitDom(chrome.cdp, `${helps}.length === 1 && ${has(0, ['.roll', '.head', '.grp', '.end', '.kick', '.big', '.sub', '.hl'])}`, { timeoutMs: 12000 });
-    await dom(chrome, `location.hash = '#/alerta/follow'`);
-    await waitDom(chrome.cdp, `!!document.querySelector('#tb-css')`, { timeoutMs: 12000 });
-    await dom(chrome, `document.querySelector('#tb-css').click()`);
-    await waitDom(chrome.cdp, `!document.querySelector('#tp-css').hidden && !!document.querySelector('#tp-css .css-help')`, { timeoutMs: 12000 });
-    eq(await dom(chrome, `['.alert', '.alert-box', '.alert-title', '.alert-name', '.alert-sub'].every(c => document.querySelector('#tp-css .css-help').textContent.includes(c))`), true);
+    // el editor de alertas (slide) tiene su pestaña CSS con la ayuda de clases
+    await dom(chrome, `location.hash = '#/alertas/follow/css'`);
+    await waitDom(chrome.cdp, `!!document.querySelector('.lv-slide .css-help')`, { timeoutMs: 12000 });
+    eq(await dom(chrome, `['.alert', '.alert-box', '.alert-title', '.alert-name', '.alert-sub'].every(c => document.querySelector('.lv-slide .css-help').textContent.includes(c))`), true);
     // #15: el CSS propio del prompter también lista sus clases, justo debajo de su campo
-    await dom(chrome, `location.hash = '#/prompter'`);
+    await dom(chrome, `location.hash = '#/prompter/vista'`);
     const prHelp = `document.querySelector('main textarea.code')?.closest('label')?.nextElementSibling`;
     await waitDom(chrome.cdp, `${prHelp}?.classList.contains('css-help') === true`, { timeoutMs: 12000 });
     eq(await dom(chrome, `['.pr', '.pr-top', '.pr-main', '.pr-chat', '.eg-timeline__item', '.pr-send', '.pr-side', '.pr-pane', '.pr-tierbtn'].every(c => ${prHelp}.textContent.includes(c))`), true);
@@ -265,7 +272,7 @@ test('#15 la espera de Espectadores es un Status neutro, no un p.hint suelto', a
   eq(wait.includes('className="hint"'), false);
 });
 
-test('O3.2 esqueleto común: cabecera con miga «grupo › vista» igual que la barra lateral, interruptores y sin márgenes en línea', { timeout: 180000 }, async t => {
+test('esqueleto común: la miga empieza por el grupo de la barra lateral, interruptores y sin márgenes en línea', { timeout: 180000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, base, close } = ctx;
@@ -274,18 +281,20 @@ test('O3.2 esqueleto común: cabecera con miga «grupo › vista» igual que la 
     chrome = await openChromePage(bin, `${base}/#/chat`);
     await waitDom(chrome.cdp, `document.querySelectorAll('#nav a.eg-menu__item').length > 20`, { timeoutMs: 12000 });
     const links = await dom(chrome, `JSON.stringify(Array.from(document.querySelectorAll('#nav .nav-grp')).flatMap(g => Array.from(g.querySelectorAll('a.eg-menu__item')).map(a => [a.getAttribute('href'), g.querySelector('.grp-l').textContent.trim(), a.querySelector('.eg-menu__label').textContent.trim()])))`);
-    eq(JSON.parse(links).length > 25, true);
+    eq(JSON.parse(links).length > 20, true);
     const bad = [];
     for (const [href, group, label] of JSON.parse(links)) {
       if (href === '#/directo') continue;   // el tablero lleva el estado del directo en la miga
       await dom(chrome, `location.hash = ${JSON.stringify(href)}`);
       await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(href)} && !!document.querySelector('main .view-head h1') && !document.querySelector('main > p.hint')`, { timeoutMs: 12000 });
       const got = JSON.parse(await dom(chrome, `JSON.stringify({ crumb: document.querySelector('main .view-head .crumb')?.textContent.trim(), h1: document.querySelector('main .view-head h1')?.textContent.trim() || document.querySelector('main .view-head h1 input')?.value, order: Array.from(document.querySelector('main .view-head > div').children).map(e => e.tagName).join(','), margins: Array.from(document.querySelectorAll('main [style]')).filter(e => /margin/.test(e.getAttribute('style'))).length, checks: document.querySelectorAll('main .switch').length })`));
-      if (got.crumb !== `${group} › ${label}` || got.h1 !== label || !/^SPAN,H1(,P)?$/.test(got.order) || got.margins) bad.push({ href, ...got, want: `${group} › ${label}` });
+      // v2: «grupo», «grupo · resumen» (p. ej. «Configurar · 3 comandos») o «grupo › vista»
+      const crumbOk = got.crumb === group || got.crumb?.startsWith(`${group} · `) || got.crumb === `${group} › ${label}`;
+      if (!crumbOk || got.h1 !== label || !/^SPAN,H1(,P)?$/.test(got.order) || got.margins) bad.push({ href, ...got, want: `${group} › ${label}` });
     }
     eq(JSON.stringify(bad), '[]');
     // ajustes de sí/no: interruptor (Switch), no casilla suelta
-    for (const [hash, n] of [['#/filtros', 1], ['#/prompter', 3], ['#/meld', 1], ['#/widget/chat', 4]]) {
+    for (const [hash, n] of [['#/filtros', 1], ['#/prompter/vista', 3], ['#/meld', 1], ['#/widgets/chat', 4]]) {
       await dom(chrome, `location.hash = ${JSON.stringify(hash)}`);
       await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(hash)} && !!document.querySelector('main .view-head h1')`, { timeoutMs: 12000 });
       eq(await dom(chrome, `${JSON.stringify(hash)} + ':' + (document.querySelectorAll('main label.switch').length >= ${n}) + ':' + document.querySelectorAll('main label.check:not(:has(+ label.check)):not(label.check + label.check)').length`), `${hash}:true:0`);
@@ -308,27 +317,35 @@ test('#16 Tier y destino del mensaje son Seg; el tipo de acción lleva aria-labe
     const seg = (scope, label) => `${scope}.querySelector('[role=radiogroup][aria-label=${JSON.stringify(label)}]')`;
     const radios = group => `[...${group}.querySelectorAll('[role=radio]')]`;
 
-    chrome = await openChromePage(bin, `${base}/#/alerta/sub/v/${variation.id}`);
+    chrome = await openChromePage(bin, `${base}/#/alertas/sub/v/${variation.id}`);
     const tier = seg('document', 'Tier');
     await waitDom(chrome.cdp, `!!${tier}`, { timeoutMs: 15000 });
     eq(await dom(chrome, `${radios(tier)}.map(b => b.textContent.trim()).join('|')`), 'Cualquiera|Tier 1|Tier 2|Tier 3');
     eq(await dom(chrome, `${radios(tier)}.filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.textContent.trim()).join('|')`), 'Cualquiera');
     eq(await dom(chrome, `!!${tier}.closest('.field-ctl')?.parentElement.classList.contains('lbl')`), true);
     await dom(chrome, `${radios(tier)}.find(b => b.textContent.trim() === 'Tier 2').click()`);
+    // guardado manual (v2): se guarda con «Guardar»
+    await waitDom(chrome.cdp, `!document.querySelector('.lv-slide .lv-sfoot .eg-btn--secondary').disabled`, { timeoutMs: 9000 });
+    await dom(chrome, `document.querySelector('.lv-slide .lv-sfoot .eg-btn--secondary').click()`);
     await until(() => String(app.store.config.alerts.sub.variations[0].conditions.tier) === '2', "conditions.tier = '2' guardado");
     eq(await dom(chrome, `${radios(tier)}.find(b => b.getAttribute('aria-checked') === 'true')?.textContent.trim()`), 'Tier 2');
 
-    await dom(chrome, `location.hash = '#/alerta/follow'`);
+    // guardado terminado antes de salir (si no, el aviso de cambios sin guardar bloquea la navegación)
+    await waitDom(chrome.cdp, `document.querySelector('.lv-slide .lv-sfoot .eg-btn--secondary').disabled && document.querySelector('.lv-slide .lv-sfoot [role="status"]')?.textContent === 'Todo guardado'`, { timeoutMs: 9000 });
+    await dom(chrome, acceptConfirms);
+    await dom(chrome, `location.hash = '#/alertas/follow'`);
+    await waitDom(chrome.cdp, `[...document.querySelectorAll('.lv-slide [role=tab]')].some(t => t.textContent.startsWith('Acciones al salir'))`, { timeoutMs: 12000 });
+    await dom(chrome, `[...document.querySelectorAll('.lv-slide [role=tab]')].find(t => t.textContent.startsWith('Acciones al salir')).click()`);
     const kind = `document.querySelector('main .actions-list .action > select')`;
     await waitDom(chrome.cdp, `!!${kind}`, { timeoutMs: 12000 });
     eq(await dom(chrome, `${kind}.getAttribute('aria-label')`), 'Qué hace');
     eq(await dom(chrome, `!!${seg(`document.querySelector('main .actions-list')`, 'Dónde')}`), true);
 
     await dom(chrome, `location.hash = '#/atajos'`);
-    const row = `document.querySelector('[data-tour="atajos-list"] .eg-post--row')`;
-    const modal = `document.querySelector('[role=dialog][aria-modal=true]')`;
+    const row = `document.querySelector('[data-tour="atajos-list"] tbody tr')`;
+    const modal = `document.querySelector('.lv-slide')`;
     await waitDom(chrome.cdp, `!!${row}`, { timeoutMs: 12000 });
-    await dom(chrome, `[...${row}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Editar').click()`);
+    await dom(chrome, `${row}.querySelector('.lv-open').click()`);
     await waitDom(chrome.cdp, `!!${modal}?.querySelector('.action')`, { timeoutMs: 9000 });
     const step = `${modal}.querySelector('.action')`;
     eq(await dom(chrome, `${radios(seg(step, 'Dónde'))}.map(b => b.textContent.trim()).join('|')`), 'Twitch|YouTube|Ambos');
@@ -368,15 +385,17 @@ test('pestañas y selectores usan el estilo subrayado del editor, nunca el segme
     await dom(chrome, `[...${group}.children].find(b => b.getAttribute('aria-checked') !== 'true').click()`);
     await waitDom(chrome.cdp, `[...${group}.children].filter(b => b.getAttribute('aria-selected') === 'true').length === 1`, { timeoutMs: 12000 });
 
+    // el cambio deja un borrador en Apariencia (guardado manual): se descarta al salir
+    await dom(chrome, acceptConfirms);
     await dom(chrome, `location.hash = '#/chat'`);
     await waitDom(chrome.cdp, `!!document.querySelector('.send-to')`, { timeoutMs: 12000 });
     eq(await dom(chrome, `[...document.querySelector('.send-to').classList].filter(c => c.startsWith('eg-tabs')).join(' ')`), 'eg-tabs');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
-// Apariencia se divide en pestañas como el editor de alertas: una por sección, un solo panel
-// visible a la vez y la vista previa siempre a la vista.
-test('Apariencia: secciones en pestañas con el estilo del editor y la vista previa fija', { timeout: 90000 }, async t => {
+// Apariencia (v2) se divide en pestañas de página, una por sección, con la dirección propia
+// (#/apariencia/sonido) y la vista previa siempre a la vista.
+test('Apariencia: secciones en pestañas de página y la vista previa fija', { timeout: 90000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, close } = ctx;
@@ -384,19 +403,16 @@ test('Apariencia: secciones en pestañas con el estilo del editor y la vista pre
   let chrome;
   try {
     chrome = await openChromePage(bin, `${base}/#/apariencia`);
-    const L = 'Secciones de la apariencia';
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 6`, { timeoutMs: 15000 });
-    eq(await dom(chrome, tabTexts(L)), 'Color|Tipografía|Iconos|Forma y efectos|Posición y movimiento|Sonido');
-    eq(await dom(chrome, `document.querySelector('[role=tablist][aria-label=${JSON.stringify(L)}]').className`), 'eg-tabs editor-tabs');
+    const L = 'Partes de la página';
+    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 5`, { timeoutMs: 15000 });
+    eq(await dom(chrome, tabTexts(L)), 'Color|Tipografía|Iconos|Forma y posición|Sonido');
     eq(await dom(chrome, selectedTab(L)), 'Color');
-    const visible = `[...document.querySelectorAll('[role=tabpanel][id^=ap-tp-]')].filter(p => !p.hidden).map(p => p.id).join(',')`;
-    eq(await dom(chrome, visible), 'ap-tp-color');
-    eq(await dom(chrome, `!!document.querySelector('#ap-tp-color .ap-color input.mono')`), true);
+    eq(await dom(chrome, `!!document.querySelector('.ap-color input.mono')`), true);
 
     await dom(chrome, `${tabsOf(L)}.find(x => x.textContent.trim() === 'Sonido').click()`);
-    await waitDom(chrome.cdp, `${selectedTab(L)} === 'Sonido'`, { timeoutMs: 9000 });
-    eq(await dom(chrome, visible), 'ap-tp-sound');
-    eq(await dom(chrome, `document.querySelector('#ap-tp-sound select')?.closest('label')?.textContent.includes('Sonido de serie')`), true);
+    await waitDom(chrome.cdp, `${selectedTab(L)} === 'Sonido' && location.hash === '#/apariencia/sonido'`, { timeoutMs: 9000 });
+    eq(await dom(chrome, `!!document.querySelector('.ap-color input.mono')`), false);
+    eq(await dom(chrome, `document.querySelector('#ap-sound')?.closest('section')?.querySelector('select')?.closest('label')?.textContent.includes('Sonido de serie')`), true);
     // la vista previa no depende de la pestaña
     eq(await dom(chrome, `!!document.querySelector('.ap-preview .eg-stage iframe') && document.querySelector('.ap-preview').getBoundingClientRect().width > 0`), true);
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
@@ -417,7 +433,7 @@ test('ninguna vista deja tarjetas apiladas sin separación', { timeout: 240000 }
     await waitDom(chrome.cdp, `document.querySelectorAll('#nav a[href^="#/"]').length > 20`, { timeoutMs: 15000 });
     const routes = [...new Set(await dom(chrome, `[...document.querySelectorAll('#nav a[href^="#/"]')].map(a => a.getAttribute('href'))`))];
     const probe = `(() => {
-      const CARD = '.panel, .sec, .eg-stage, .goal-card, .stats, .browser-source';
+      const CARD = '.panel, .sec, .eg-stage, .goal-card, .stats, .browser-source, .lv-panel, .lv-card, .lv-box, .lv-kpis, .lv-group';
       const isCard = el => el.matches(CARD) || !!el.querySelector(CARD);
       const vis = el => { const r = el.getBoundingClientRect(); return r.height > 0 && r.width > 0; };
       const bad = [];
@@ -438,7 +454,7 @@ test('ninguna vista deja tarjetas apiladas sin separación', { timeout: 240000 }
       await sleep(400);
       const tabs = await dom(chrome, `document.querySelectorAll('#main [role=tablist] [role=tab]').length`);
       const found = [...await dom(chrome, probe)];
-      for (let i = 0; i < tabs; i++) { await dom(chrome, `document.querySelectorAll('#main [role=tablist] [role=tab]')[${i}].click()`); await sleep(150); found.push(...await dom(chrome, probe)); }
+      for (let i = 0; i < tabs; i++) { await dom(chrome, `document.querySelectorAll('#main [role=tablist] [role=tab]')[${i}]?.click(); 'ok'`); await sleep(250); found.push(...await dom(chrome, probe)); }
       for (const f of new Set(found)) offenders.push(`${r}: ${f}`);
     }
     eq(offenders.join(' | '), '');

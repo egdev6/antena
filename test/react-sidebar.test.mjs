@@ -71,7 +71,7 @@ test('barra lateral: activo, grupos y scroll exclusivo entre logo y pie', { time
       assert.ok(posicion.antes.grupo.top - posicion.despues.grupo.top > 40, 'los grupos sí se desplazan');
       assert.ok(posicion.despues.brand.top >= 0 && posicion.despues.brand.bottom <= posicion.nav.top, 'logo encima del área desplazable');
       assert.ok(posicion.nav.bottom <= posicion.despues.foot.top && posicion.despues.foot.bottom <= height, 'pie debajo del área desplazable y dentro de la ventana');
-      assert.deepEqual(posicion.botones.map(b => b.texto), ['Prompter', 'Dock', 'Pausar alertas']);
+      assert.deepEqual(posicion.botones.map(b => b.texto), ['Crear', 'Prompter', 'Dock', 'Pausar alertas']);
       assert.ok(posicion.botones.every(b => b.top >= 0 && b.bottom <= height), 'todos los botones del pie visibles');
       // También al desplazar el documento, la barra permanece dentro de la ventana.
       await ev('window.scrollTo(0, 300)');

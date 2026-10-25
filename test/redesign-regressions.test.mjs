@@ -460,9 +460,13 @@ test('panel React: el aviso de configuración/secretos persiste, no finge guarda
     app.store.cfgFile = path.join(blocker, 'config.json');
     const gate = new Promise(resolve => { release = resolve; });
     app.store.chain = app.store.chain.then(() => gate);
-    await cdpEval(c, `location.hash = '#/conexiones'`);
+    // v2: Conexiones es un listado; YouTube se edita en su slide y se guarda con «Guardar»
+    await cdpEval(c, 'window.confirm = () => true');
+    await cdpEval(c, `location.hash = '#/conexiones/youtube'`);
     await waitDom(c, '!!document.querySelector("main input[placeholder=\\"UC…\\"]")', { timeoutMs: 12000 });
     await cdpEval(c, setChannel('UC-odd04'));
+    await waitDom(c, '!document.querySelector(".lv-sfoot .eg-btn--secondary").disabled');
+    await cdpEval(c, 'document.querySelector(".lv-sfoot .eg-btn--secondary").click()');
     await waitDom(c, 'document.querySelector(".persist").dataset.state === "pending"');
     assert.doesNotMatch(await cdpEval(c, 'document.querySelector(".persist").textContent'), /guardado/i);
     release(); release = null;
@@ -485,9 +489,11 @@ test('panel React: el aviso de configuración/secretos persiste, no finge guarda
 
     // config recuperada, secretos sucios: sigue en error y no dice 'guardado'
     app.store.cfgFile = path.join(dataDir, 'config.json');
-    await cdpEval(c, `location.hash = '#/conexiones'`);
+    await cdpEval(c, `location.hash = '#/conexiones/youtube'`);
     await waitDom(c, '!!document.querySelector("main input[placeholder=\\"UC…\\"]")');
     await cdpEval(c, setChannel('UC-odd04-ok'));
+    await waitDom(c, '!document.querySelector(".lv-sfoot .eg-btn--secondary").disabled');
+    await cdpEval(c, 'document.querySelector(".lv-sfoot .eg-btn--secondary").click()');
     await waitDom(c, 'document.querySelector(".persist").dataset.state === "error" && /secretos/i.test(document.querySelector(".persist").textContent) && !/configuraci/i.test(document.querySelector(".persist").textContent)');
     assert.doesNotMatch(await cdpEval(c, 'document.querySelector(".persist").textContent'), /guardado/i);
 
