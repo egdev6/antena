@@ -27,27 +27,27 @@ test('barra lateral: activo, grupos y scroll exclusivo entre logo y pie', { time
     await c.send('Page.navigate', { url: `${base}/#/directo` });
     await waitDom(c, `!!document.querySelector('#nav .eg-menu__item[aria-current] .eg-icon') && document.querySelectorAll('.side-foot .row button').length === 2`);
 
-    const colores = await ev(`(() => {
-      const probe = document.createElement('span');
-      probe.style.color = 'var(--color-fg-brand-default)';
-      document.querySelector('.side').appendChild(probe);
-      const hover = getComputedStyle(probe).color;
-      const activo = getComputedStyle(document.querySelector('#nav [aria-current] .eg-icon')).color;
-      probe.remove();
-      return { activo, hover };
+    await c.send('Emulation.setDeviceMetricsOverride', { width: 1360, height: 860, deviceScaleFactor: 1, mobile: false });
+    // como en el lienzo (v2): el icono sigue el color del texto y la entrada activa se marca con una
+    // barra roja a la izquierda; el rótulo del grupo queda alineado con los iconos
+    const activo = await ev(`(() => {
+      const a = document.querySelector('#nav [aria-current]');
+      return { icono: getComputedStyle(a.querySelector('.eg-icon')).color, texto: getComputedStyle(a).color, sombra: getComputedStyle(a).boxShadow };
     })()`);
-    assert.equal(colores.activo, colores.hover, 'el icono activo usa el color de hover');
+    assert.equal(activo.icono, activo.texto, 'el icono activo usa el color del texto');
+    assert.match(activo.sombra, /2px 0px 0px 0px inset/, 'la entrada activa lleva la barra roja a la izquierda');
     const alineacion = await ev(`(() => {
-      const grp = document.querySelector('#nav .nav-grp:not(.closed) .grp');
-      const item = document.querySelector('#nav .nav-grp:not(.closed) .eg-menu__item');
+      const grp = document.querySelector('#nav .nav-grp .grp');
+      const item = document.querySelector('#nav .nav-grp .eg-menu__item');
       const gs = getComputedStyle(grp);
-      return { texto: gs.textAlign, distribucion: gs.justifyContent, margen: parseFloat(gs.marginLeft),
-        sangria: item.getBoundingClientRect().left - grp.getBoundingClientRect().left };
+      return { texto: gs.textAlign, distribucion: gs.justifyContent, rotulo: grp.querySelector('.grp-l').getBoundingClientRect().left, icono: item.querySelector('.eg-icon').getBoundingClientRect().left };
     })()`);
     assert.equal(alineacion.texto, 'left');
     assert.notEqual(alineacion.distribucion, 'center');
-    assert.equal(alineacion.margen, 0);
-    assert.ok(alineacion.sangria >= 8, `sangría de ${alineacion.sangria}px`);
+    assert.ok(Math.abs(alineacion.rotulo - alineacion.icono) <= 1, `rótulo e iconos alineados (${alineacion.rotulo} / ${alineacion.icono})`);
+    // sin grupos plegables: todas las entradas a la vista, cada una con su icono
+    assert.equal(await ev(`document.querySelectorAll('#nav .eg-menu__item').length === document.querySelectorAll('#nav .eg-menu__item > .eg-icon').length`), true);
+    assert.equal(await ev(`document.querySelectorAll('#nav button').length`), 0);
 
     const orden = await ev(`Array.from(document.querySelectorAll('#nav a'), a => a.hash)`);
     for (const [width, height] of [[1360, 860], [900, 600], [1360, 480], [900, 360]]) {

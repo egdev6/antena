@@ -51,26 +51,27 @@ h2{font:800 15px/1 var(--font-display);letter-spacing:.04em;display:flex;align-i
 .brand-name b{font:800 19px/1 var(--font-display);text-transform:uppercase}
 .brand-name small{font-size:11px;color:var(--muted);white-space:nowrap}
 
-/* navegación = MenuList --nav con grupos plegables (__group--toggle) */
+/* navegación = menú lateral del lienzo (v2 · jerarquía): grupos con rótulo fijo, una entrada
+   compacta con icono por página y, a la derecha, su número o un punto de aviso */
 /* Solo la navegación se desplaza; logo y controles permanecen fuera del scroll. */
 .side>.brand,.side>.side-foot{flex-shrink:0}
 #nav{display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
 #nav .nav-grp{flex-shrink:0}
-#nav .eg-menu{list-style:none;margin:0;padding:0}
-#nav .eg-menu--nav{padding-left:22px}
-#nav .eg-menu__item{min-height:32px;padding:4px 10px;gap:10px;font-size:13.5px}
-#nav .eg-menu__group{margin:12px 0 2px;font-size:11.5px}
-#nav .eg-menu__group--toggle{padding:0 10px;justify-content:flex-start;text-align:left}
-#nav .eg-menu__item[aria-current]>.eg-icon{color:var(--color-fg-brand-default)}
-#nav .eg-menu__group--toggle .grp-l{flex:0 1 auto;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;text-overflow:ellipsis;white-space:normal}
-#nav .eg-menu__group--toggle .eg-menu__count:only-of-type{margin-left:auto}
-#nav .eg-menu__item .eg-status-dot{--dot-ring:var(--s1)}
-/* #5: los items largos («Récord de espectadores», «Membresías regaladas») se cortan en un
-   hueco de palabra (clamp de línea), no a mitad de palabra como con nowrap + ellipsis */
+#nav .grp{margin:12px 0 4px;padding:0 8px;font:700 11px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--color-fg-muted);text-align:left}
+#nav .nav-grp:first-child .grp{margin-top:4px}
+#nav .grp-l{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;white-space:normal}
+#nav .eg-menu--nav{list-style:none;margin:0;padding:0;gap:0}
+#nav .eg-menu__item{min-height:0;padding:7px 8px;gap:10px;border-radius:var(--radius-md);font:400 13.5px/1.2 var(--font-sans);color:var(--color-fg-secondary)}
+#nav .eg-menu__item>.eg-icon{width:16px;height:16px;flex:none;color:currentColor;stroke-width:1.8}
+#nav .eg-menu__item:hover{background:var(--color-surface-2);color:var(--color-fg-default)}
+#nav .eg-menu__item:hover>.eg-icon{color:currentColor}
+#nav .eg-menu__item[aria-current]{background:var(--gradient-sheen),var(--color-surface-2);color:var(--color-fg-default);box-shadow:var(--shadow-edge),inset 2px 0 0 var(--color-bg-flood)}
+#nav .eg-menu__item[aria-current]>.eg-icon{color:currentColor}
+/* #5: los items largos se cortan en un hueco de palabra (clamp de línea), no a mitad de palabra */
 #nav .eg-menu__item .eg-menu__label{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;white-space:normal}
-#nav .eg-menu__item .eg-menu__tag+.eg-menu__tag{margin-left:4px}
-/* plegada, la sección activa sigue a la vista */
-#nav .nav-grp.closed .eg-menu>li:not(:has([aria-current])){display:none}
+#nav .nav-n{margin-left:auto;flex:none;font:600 11.5px/1 var(--font-mono);color:var(--color-fg-muted)}
+#nav .nav-n.is-live{color:var(--color-fg-brand-raised)}
+#nav .nav-w{margin-left:auto;flex:none;width:7px;height:7px;border-radius:50%;background:var(--color-status-warning)}
 .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--line)}
 .side-foot .pill{border:0;padding:0;justify-content:center;font:500 13px var(--font-sans);letter-spacing:0;text-transform:none;color:var(--muted)}
 .side-foot .pill.live{color:var(--grey)}
@@ -91,10 +92,8 @@ main{padding:18px 24px 60px;min-width:0}
   .app{grid-template-columns:1fr}
   .side{position:static;height:auto;padding:16px;border-right:0;border-bottom:1px solid var(--line);box-shadow:none}
   #nav{flex:none;flex-direction:row;overflow-x:auto;gap:4px;padding-bottom:4px}
-  #nav .eg-menu--nav{padding-left:0}
-  #nav .eg-menu__group{display:none}
+  #nav .grp{display:none}
   #nav .nav-grp,#nav .eg-menu,#nav .eg-menu>li{display:contents}
-  #nav .nav-grp.closed .eg-menu>li:not(:has([aria-current])){display:contents}
   #nav .eg-menu__item{white-space:nowrap}
   main{padding:16px 16px 64px}
   .view-head{margin:-16px -16px 16px;padding:16px}
@@ -804,7 +803,6 @@ main>.lv-sfoot{margin:16px -24px -60px}
 @media (max-width:1100px){.lv-cols,.lv-cols.aside{grid-template-columns:1fr}}
 @media (max-width:900px){.lv-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lv-drawer{left:0}.lv-hide{display:none}}
 /* v2 · añadidos de la implementación */
-#nav .eg-menu__tag--warn{background:color-mix(in srgb,var(--color-status-warning) 22%,transparent);color:var(--color-status-warning);border-color:color-mix(in srgb,var(--color-status-warning) 45%,transparent)}
 .lv-page{display:grid;gap:16px}
 .lv-pre{white-space:pre-wrap;font:12.5px/1.55 var(--font-mono,ui-monospace,monospace);color:var(--color-text-secondary);max-height:60vh;overflow:auto;margin:0}
 .lv-preview{display:grid;place-items:center;background:var(--color-surface-0);border-radius:10px;min-height:180px;overflow:hidden}
@@ -842,6 +840,9 @@ main>.lv-sfoot{margin:16px -24px -60px}
 .lv-hit:focus-visible{outline:2px solid var(--color-border-brand-strong);outline-offset:-2px}
 .lv-card .lv-up{position:relative;z-index:2}
 .lv-cthumb{position:relative;aspect-ratio:16/8;overflow:hidden;border-bottom:1px solid var(--color-border-hairline);background:repeating-conic-gradient(var(--color-surface-2) 0 25%,var(--color-surface-1) 0 50%) 0 0/16px 16px}
+.lv-cthumb .lv-still-z{position:absolute;inset:0;transform:scale(1.55);pointer-events:none}
+.lv-cthumb .lv-still{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);overflow:hidden;pointer-events:none}
+.lv-cthumb .lv-still iframe{display:block;border:0;transform-origin:0 0;background:transparent;color-scheme:normal}
 .lv-cthumb>video,.lv-cthumb>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .lv-cthumb .badge{position:absolute;right:8px;bottom:8px;z-index:1;display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border-radius:999px;background:rgba(0,0,0,.6);font:600 10.5px/1 var(--font-mono);color:var(--color-primitive-white)}
 .lv-cthumb .prog{position:absolute;left:0;right:0;bottom:0;z-index:1;height:3px;background:rgba(255,255,255,.15)}

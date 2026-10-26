@@ -2,7 +2,7 @@
 // Todo lo que hace el panel pasa por esta API REST, que también usa el servidor MCP (src/mcp.mjs).
 import http from 'node:http';
 import os from 'node:os';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { readdir, stat, mkdir, unlink, rename, readFile, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
@@ -227,7 +227,29 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }
     return n;
   }
-  store.on('change', patch => { if (patch.theme || patch.all) bus.send('theme', publicTheme(store.config.theme), ['overlay', 'preview', 'widget', 'panel']); if (patch.widgets || patch.all) engine.pushWidgets(); if (patch.prompter || patch.chat || patch.all) bus.send('config', { prompter: store.config.prompter, chat: store.config.chat }, ['panel']); });
+  // Confirmed rendering inputs only: never the panel's optimistic/draft config.
+  // Per-type content hashes avoid reloading all thumbnails for one alert change.
+  const alertPreviews = () => {
+    const common = [store.config.overlay?.css || '', publicTheme(store.config.theme).version];
+    return Object.fromEntries(Object.keys(ALERT_TYPES).map(type => [type, {
+      version: createHash('sha256').update(JSON.stringify([store.config.alerts[type], ...common])).digest('hex').slice(0, 16),
+      media: store.config.alerts[type]?.media || '',
+    }]));
+  };
+  store.on('change', patch => {
+    if (patch.theme || patch.all) bus.send('theme', publicTheme(store.config.theme), ['overlay', 'preview', 'widget']);
+    // The replace-by-type Bus needs a COMPLETE panel rendering snapshot, including
+    // after common CSS changes. Keep the three-section config contract unchanged.
+    if (patch.theme || patch.alerts || patch.all || patch.overlay === true || Object.hasOwn(patch.overlay || {}, 'css')) {
+      bus.send('theme', { ...publicTheme(store.config.theme), alertPreviews: alertPreviews() }, ['panel']);
+    }
+    if (patch.widgets || patch.all) engine.pushWidgets();
+    // El Bus sustituye config por tipo: cada envío debe conservar todas sus secciones.
+    // Incluye alertas editadas fuera de este panel (MCP, otra ventana, el móvil).
+    if (patch.prompter || patch.chat || patch.alerts || patch.all) bus.send('config', {
+      prompter: store.config.prompter, chat: store.config.chat, alerts: store.publicConfig().alerts,
+    }, ['panel']);
+  });
   // la persistencia puede fallar sin emitir 'change' (o estar en vuelo): el panel necesita su propio canal
   store.on('persistence', state => bus.send('persistence', state, ['panel']));
   meld.on('session', s => bus.send('meld', s, ['panel']));
@@ -379,7 +401,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     interactive: interactive.snapshot(),
     viewers: viewers.snapshot(),
     teleprompter: teleprompter.snapshot(),
-    theme: publicTheme(store.config.theme),
+    theme: publicTheme(store.config.theme), alertPreviews: alertPreviews(),
   }));
   route('GET', '/api/status', async () => status());
 
@@ -466,7 +488,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // probar, alertas libres, cola
   // `draft` (guardado manual del panel): la alerta, variación, comando o mensaje SIN guardar, solo para
   // la vista previa. Se construye sobre una copia de la configuración; nada se guarda.
-  route('POST', '/api/test', async ({ type, vars, target = 'live', variationId, commandId, timerId, draft }) => {
+  route('POST', '/api/test', async ({ type, vars, target = 'live', variationId, commandId, timerId, draft, globalCss }) => {
     let a;
     const useDraft = draft && typeof draft === 'object' && !Array.isArray(draft) && target === 'preview';
     const cfg = useDraft ? structuredClone(store.config) : store.config;
@@ -480,8 +502,16 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       const sample = { ...SAMPLES[type], ...(v ? conditionSample(v.conditions) : {}), ...(vars || {}) };
       a = buildAlert(type, sample, cfg, { test: true, variationId: v?.id });
     }
+    // vista previa con el CSS común sin guardar (borrador del panel)
+    if (target === 'preview' && typeof globalCss === 'string' && a) a.globalCss = globalCss;
     engine.deliver(a, { target: target === 'preview' ? 'preview' : 'live' });
     return { ok: true, overlays: bus.overlayCount(), alert: summary(a) };
+  });
+  // miniatura de una alerta en el panel (/overlay?still=<tipo>): la alerta de ejemplo tal y como saldría
+  // con la configuración y el tema guardados, sin entregarla a nadie
+  route('GET', '/api/alerts/:type/sample', async ({ type }) => {
+    if (!ALERT_TYPES[type]) throw httpError(404, 'Tipo desconocido');
+    return { alert: buildAlert(type, { ...SAMPLES[type] }, store.config, { test: true }), theme: publicTheme(store.config.theme) };
   });
   route('POST', '/api/simulate', async ({ type, vars = {} }) => {
     if (!ALERT_TYPES[type]) throw httpError(400, 'Tipo desconocido');

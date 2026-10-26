@@ -1,15 +1,12 @@
 // Alertas (v3): los tipos fijos en tarjetas por plataforma → slide con pestañas (Editor). Las variaciones abren un 2.º nivel.
-import { useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { enc, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { EmptyState, guard, Icon, PfIcon } from '../../lib/ui';
-import { IC, type IconData } from '../../lib/icons';
-import { Card, CardGroup, CardSwitch, Dot, Kpis, MediaPreview, PageHead, Tags, useListFilter } from '../../lib/layout';
+import { EmptyState, guard, Icon, PfIcon, ScaledFrame } from '../../lib/ui';
+import { IC } from '../../lib/icons';
+import { Card, CardGroup, CardSwitch, Dot, Kpis, PageHead, Tags, useListFilter } from '../../lib/layout';
 import type { AppState } from '../../lib/types';
 import { Editor } from './Editor';
-
-// Icono de cada tipo en la miniatura (los de serie de la app; el tema puede cambiarlos en el overlay).
-const ALERT_ICON: Record<string, IconData> = { heart: IC.heart, star: IC.star, gift: IC.gift, spark: IC.sparkle, gem: IC.sparkle, rocket: IC.sparkle, coin: IC.star, badge: IC.star };
 
 /** Avisos de una alerta: archivo que ya no está en media/ (vídeo, imagen o sonido). */
 export function alertIssues(s: AppState, type: string): string[] {
@@ -33,19 +30,48 @@ const GROUPS: [string, string, string][] = [
   ['youtube', 'YouTube', 'Super Chats, stickers, miembros y récord'],
 ];
 
-/** Miniatura del diseño de una alerta: la tarjeta en pequeño, el primer fotograma o el fondo con la tarjeta encima. */
-function AlertThumb({ a, label, issue, accent, playing, icon }: { a: Record<string, any>; label: string; issue?: string; accent: string; playing: boolean; icon?: ReactNode }) {
-  const layout = ['media', 'mixed'].includes(a.layout) && a.media ? a.layout : 'card';
-  const mini = <span className="lv-mini" style={{ ['--mini-accent' as any]: accent }}><span className="ic">{icon}</span><span><span className="k">{a.title || label}</span><span className="nm">{SAMPLE_NAME}</span></span></span>;
+/** Huella corta de lo que cambia la miniatura: si cambia, el marco se recarga con lo guardado. */
+function stamp(v: unknown) {
+  const t = JSON.stringify(v) || '';
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+
+/** Miniatura real de una alerta: el overlay de verdad en pequeño (/overlay?still=<tipo>), con la
+ *  configuración y el tema guardados (Apariencia, CSS, diseño, textos). El vídeo se queda en su primer
+ *  fotograma y, al pasar el ratón, se reproduce en bucle y sin sonido. */
+function AlertThumb({ type, label, issue, version, video, mixed, playing, origin }: { type: string; label: string; issue?: string; version: string; video: boolean; mixed: boolean; playing: boolean; origin: string }) {
+  const frame = useRef<HTMLIFrameElement | null>(null);
+  const [dur, setDur] = useState(0);
+  const [pos, setPos] = useState(0);
+  const setFrame = useCallback((el: HTMLIFrameElement | null) => { frame.current = el; }, []);
+  useEffect(() => {
+    const on = (e: MessageEvent) => {
+      if (e.origin !== location.origin || e.source !== frame.current?.contentWindow || e.data?.still !== type) return;
+      if (typeof e.data.dur === 'number') setDur(e.data.dur);
+      if (typeof e.data.pos === 'number') setPos(e.data.pos);
+    };
+    addEventListener('message', on);
+    return () => removeEventListener('message', on);
+  }, [type]);
+  const syncPlayback = useCallback(() => {
+    if (video) frame.current?.contentWindow?.postMessage({ still: playing ? 'play' : 'pause' }, location.origin);
+  }, [playing, video]);
+  useEffect(syncPlayback, [syncPlayback]);
+  const onLoad = useCallback(() => {
+    setDur(0); setPos(0);
+    syncPlayback(); // navigation loses the previous document's hover/pause intent
+  }, [syncPlayback]);
   if (issue) return <span className="missing"><Icon d={IC.alert} /><span>{issue[0].toUpperCase() + issue.slice(1)}</span></span>;
-  if (layout === 'card') return mini;
-  const src = '/media/' + enc(a.media);
   return <>
-    <MediaPreview src={src} video={isVid(a.media)} playing={playing} label={layout === 'mixed' ? 'fondo + tarjeta' : 'vídeo'} />
-    {layout === 'mixed' ? mini : <span className="lv-mini-txt"><small>{a.title || label}</small>{SAMPLE_NAME}</span>}
+    {/* acercada hacia donde sale la alerta (posición y alineación de Apariencia) para que se lea */}
+    <span className="lv-still-z" style={{ transformOrigin: origin }}><ScaledFrame src={`/overlay?still=${enc(type)}&v=${version}`} className="lv-still" title={`Vista previa de ${label}`} frameRef={setFrame} onLoad={onLoad} lazy /></span>
+    {video ? <span className="badge">{playing ? 'vista previa · sin sonido' : `${mixed ? 'fondo + tarjeta' : 'vídeo'}${dur ? ' · ' + mmss(dur) : ''}`}</span> : null}
+    {video && playing ? <span className="prog"><i style={{ width: pos * 100 + '%' }} /></span> : null}
   </>;
 }
-const SAMPLE_NAME = 'midudev';
 const DESIGN: Record<string, string> = { card: 'tarjeta', media: 'vídeo con texto', mixed: 'vídeo + tarjeta' };
 
 export function Alertas({ parts }: { parts: string[] }) {
@@ -55,7 +81,8 @@ export function Alertas({ parts }: { parts: string[] }) {
   const [, open, sub, vid] = parts;
   const types = Object.entries(s.types || {});
   const cfg = (t: string) => ({ ...(s.lookDefaults || {}), ...(s.config.alerts?.[t] || {}) }) as Record<string, any>;
-  const accent = (s as any).theme?.accent || '#FF0036';
+  const th = (s.theme || {}) as { position?: string; align?: string };
+  const origin = `${th.align === 'left' ? '0%' : th.align === 'right' ? '100%' : '50%'} ${th.position === 'top' ? '0%' : th.position === 'bottom' ? '100%' : '50%'}`;
   const all = types.map(([type, meta]) => {
     const a = cfg(type), issues = alertIssues(s, type), vars = a.variations || [];
     return { type, meta, a, issues, vars };
@@ -83,10 +110,14 @@ export function Alertas({ parts }: { parts: string[] }) {
       ...(x.vars.length ? [{ t: x.vars.length === 1 ? '1 variación' : `${x.vars.length} variaciones`, on: true }] : []),
       ...(x.meta.system ? [{ t: 'Récord' }] : []),
     ];
-    const icoName = (s as any).theme?.icons?.[x.type];
+    // Server-confirmed alert/CSS/theme, never the optimistic editor draft. Track
+    // only this saved media dependency so unrelated uploads do not reload 14 frames.
+    const preview = s.alertPreviews?.[x.type];
+    const mediaVersion = stamp(preview?.media && (s.media || []).find(m => m.name === preview.media));
+    const version = `${preview?.version || 'initial'}-${mediaVersion}`;
     return <Card key={x.type} href={href} label={`Abrir ${x.meta.label}`} open={open === x.type} off={!on} warn={x.issues.length > 0}
       onEnter={() => setHover(x.type)} onLeave={() => setHover(h => (h === x.type ? null : h))}
-      thumb={<AlertThumb a={x.a} label={x.meta.label} issue={x.issues[0]} accent={accent} playing={hover === x.type} icon={icoName === 'logo' || x.meta.system ? <PfIcon platform={x.meta.platform} /> : <Icon d={ALERT_ICON[x.meta.icon] || IC.star} />} />}
+      thumb={<AlertThumb type={x.type} label={x.meta.label} issue={x.issues[0]} version={version} video={layout !== 'card' && isVid(x.a.media)} mixed={layout === 'mixed'} playing={hover === x.type} origin={origin} />}
       title={x.meta.label} aside={<span className="lv-mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><PfIcon platform={x.meta.platform} />{x.meta.platform === 'youtube' ? 'YouTube' : 'Twitch'}</span>}
       foot={<><span className="lv-cmeta">{DESIGN[layout]}</span><span className="sp" /><CardSwitch checked={on} onChange={v => toggle(x.type, v)} label={`Activar ${x.meta.label}`} /></>}>
       {x.issues.length ? <Dot tone="warn">{x.issues.length === 1 ? 'Falta un archivo' : `Faltan ${x.issues.length} archivos`}</Dot> : <Dot tone={on ? 'ok' : 'off'}>{on ? 'Activa' : 'Apagada'}</Dot>}

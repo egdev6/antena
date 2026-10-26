@@ -408,6 +408,9 @@ export interface ThemeInfo {
   fonts: { id: string; label: string; css: string }[]; icons: string[]; sounds: string[]; images: string[];
 }
 
+/** Saved rendering fingerprint and media dependency, independent of UI drafts. */
+export interface AlertPreview { version: string; media: string }
+
 /** Respuesta de GET /api/state (src/server.mjs). */
 export interface AppState {
   config: Config;
@@ -433,6 +436,7 @@ export interface AppState {
   viewers?: ViewersState;
   teleprompter?: TeleprompterState;
   theme?: Theme;
+  alertPreviews?: Record<string, AlertPreview>;
 }
 
 /** Pestañas del prompter y estado del prompter (/api/prompter). */
@@ -459,7 +463,7 @@ export interface LiveEvents {
   config: Partial<Config>;
   viewers: ViewersState;
   teleprompter: TeleprompterState;
-  theme: Theme;
+  theme: Theme & { alertPreviews?: Record<string, AlertPreview> };
   gap: unknown;
   /** Evento solo de cliente: fallos de fetch/config que el propio Live emite. */
   error: Error;

@@ -25,7 +25,7 @@ export function deepMerge<T>(a: T | undefined, b: unknown): T {
 /** Slices that every update replaces whole (no partial patches, unlike status or widgets):
  *  the local copy received during a load is at least as new as that load's snapshot.
  *  meld is not here: its SSE event only brings the session, so only the session is kept. */
-const WHOLE: (keyof AppState)[] = ['teleprompter', 'interactive', 'timers', 'viewers', 'history', 'theme'];
+const WHOLE: (keyof AppState)[] = ['teleprompter', 'interactive', 'timers', 'viewers', 'history', 'theme', 'alertPreviews'];
 
 class Live {
   state: AppState | null = null;
@@ -209,7 +209,11 @@ class Live {
     on('interactive', i => this.update(() => ({ interactive: i })));
     on('viewers', v => this.update(() => ({ viewers: v })));
     on('teleprompter', t => this.update(() => ({ teleprompter: t })));
-    on('theme', t => this.update(() => ({ theme: t })));
+    on('theme', ({ alertPreviews, ...theme }) => this.update(() => ({
+      theme,
+      // Preserve confirmed fingerprints outside protectDrafts' editable theme/config.
+      ...(alertPreviews ? { alertPreviews } : {}),
+    })));
     on('timers', t => this.update(() => ({ timers: t })));
     on('meld', m => this.update(s => ({ meld: { ...s.meld, session: m } })));
     // El evento 'widgets' trae la ventana corta del overlay (50): el panel conserva SU

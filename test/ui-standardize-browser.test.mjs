@@ -93,28 +93,30 @@ test('v2 teleprompter: pestañas para elegir el activo, guiones en lista → sli
     eq(await dom(chrome, `!!document.querySelector('select#tp-guion')`), false);
 
     // elegir otra pestaña cambia el guion activo
-    await dom(chrome, `${tabsOf(L)}[1].click()`);
+    await waitDom(chrome.cdp, `!!${tabsOf(L)}[1]`, { timeoutMs: 9000 });
+    await dom(chrome, `${tabsOf(L)}[1]?.click(); 'ok'`);
     await waitDom(chrome.cdp, `${selectedTab(L)} === 'Guion B'`, { timeoutMs: 12000 });
     eq(app.teleprompter.snapshot().script.title, 'Guion B');
 
     // «+ Nuevo guion» abre el slide de creación en la pestaña Guiones; al crear se abre el nuevo
-    await dom(chrome, `${tabsOf(L)}.at(-1).click()`);
+    await dom(chrome, `${tabsOf(L)}.at(-1)?.click(); 'ok'`);
     await waitDom(chrome.cdp, `location.hash === '#/teleprompter/guiones/nuevo' && ${slideTitle} === 'Nuevo guion'`, { timeoutMs: 12000 });
-    await dom(chrome, `${buttonByText('Crear guion')}.click()`);
+    await waitDom(chrome.cdp, `!!${buttonByText('Crear guion')}`, { timeoutMs: 9000 });
+    await dom(chrome, `${buttonByText('Crear guion')}?.click(); 'ok'`);
     await waitDom(chrome.cdp, `${slideTitle} === 'Nuevo guion' && ${rowNames}.split('|').length === 3 && !!${buttonByText('Borrar guion…')}`, { timeoutMs: 12000 });
 
     // borrar: pregunta y vuelve a la lista
     await dom(chrome, acceptConfirms);
-    await dom(chrome, `${buttonByText('Borrar guion…')}.click()`);
+    await dom(chrome, `${buttonByText('Borrar guion…')}?.click(); 'ok'`);
     await waitDom(chrome.cdp, `location.hash === '#/teleprompter/guiones' && !document.querySelector('.lv-slide') && ${rowNames} === ${JSON.stringify(first.title + '|Guion B')}`, { timeoutMs: 12000 });
     eq(await dom(chrome, `window.__confirms[0]`), '¿Borrar «Nuevo guion»?');
 
     // el último guion no se puede borrar
-    await dom(chrome, `[...document.querySelectorAll('main .lv-list .lv-open')].find(a => a.textContent.trim() === 'Guion B').click()`);
+    await dom(chrome, `[...document.querySelectorAll('main .lv-list .lv-open')].find(a => a.textContent.trim() === 'Guion B')?.click(); 'ok'`);
     await waitDom(chrome.cdp, `${slideTitle} === 'Guion B' && !!${buttonByText('Borrar guion…')}`, { timeoutMs: 12000 });
-    await dom(chrome, `${buttonByText('Borrar guion…')}.click()`);
+    await dom(chrome, `${buttonByText('Borrar guion…')}?.click(); 'ok'`);
     await waitDom(chrome.cdp, `${rowNames} === ${JSON.stringify(first.title)}`, { timeoutMs: 12000 });
-    await dom(chrome, `document.querySelector('main .lv-list .lv-open').click()`);
+    await dom(chrome, `document.querySelector('main .lv-list .lv-open')?.click(); 'ok'`);
     await waitDom(chrome.cdp, `${slideTitle} === ${JSON.stringify(first.title)} && !!${buttonByText('Borrar guion…')}`, { timeoutMs: 12000 });
     eq(await dom(chrome, `${buttonByText('Borrar guion…')}.disabled`), true);
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
