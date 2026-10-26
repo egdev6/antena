@@ -68,11 +68,13 @@ test('slides: the wheel scrolls the slide, never the page behind it', { timeout:
     await wheel(c, pv.x, pv.y);
     assert.equal(await ev('scrollY'), 0, 'wheel over the slide preview does not scroll the page behind');
 
-    // Content taller than the slide (short window): the slide scrolls itself, the page stays.
-    await viewport(640);
+    // Content taller than the slide: a short window guarantees it regardless of platform
+    // fonts (at 640px the CSS tab overflows on Linux but fits on Windows).
+    await viewport(420);
     await ev(`(${tabByName('CSS')}).click(); true`);
     await settle(c);
-    assert.equal(await ev(`(s => s.scrollHeight > s.clientHeight)(document.querySelector('.lv-slide'))`), true, 'precondition: CSS overflows the slide');
+    const tallBox = await ev(`(s => ({ sh: s.scrollHeight, ch: s.clientHeight }))(document.querySelector('.lv-slide'))`);
+    assert.ok(tallBox.sh > tallBox.ch + 100, `precondition: CSS clearly overflows the slide ${JSON.stringify(tallBox)}`);
     const tall = await ev(slidePoint);
     await wheel(c, tall.x, tall.y);
     assert.ok(await ev(`document.querySelector('.lv-slide').scrollTop`) > 0, 'the slide scrolls its own content');
