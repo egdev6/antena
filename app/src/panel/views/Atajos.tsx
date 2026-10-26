@@ -88,8 +88,9 @@ function ShortcutSlide({ sc, info, base, onSaved, onDeleted }: { sc: Shortcut; i
   });
   return <Slide crumb={<><a href="#/atajos">Atajos y Stream Deck</a> › Atajo</>} back="#/atajos" wide
     title={<input className="lv-title-input" aria-label="Nombre del atajo" value={cur.name} onChange={e => set({ name: e.target.value })} />}
-    foot={<SaveBar left={<button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => { if (isSaving() || !confirmDelete(sc.name, 'este atajo')) return; buffer.discard(); go('#/atajos'); await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar atajo…</button>}
-      right={<button type="button" className="eg-btn eg-btn--primary eg-btn--sm" disabled={isSaving()} onClick={run}>Guardar y probar</button>} />}>
+    head={<div className="lv-shead-actions"><button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => { if (isSaving() || !confirmDelete(sc.name, 'este atajo')) return; buffer.discard(); go('#/atajos'); await del('/api/shortcuts/' + enc(sc.id)); onDeleted(); })}>Borrar atajo…</button>
+      <button type="button" className="eg-btn eg-btn--primary eg-btn--sm" disabled={isSaving()} onClick={run}>Guardar y probar</button></div>}
+    foot={<SaveBar />}>
     <div className="lv-cols aside">
       <div className="lv-col"><Box title={<>Pasos · {cur.steps.length}</>} aside={msg ? <span className={cx('hint', msg.err && 'err-inline')} aria-live="polite">{msg.t}</span> : null}>
         <StepsEditor steps={cur.steps} info={info} onChange={l => set({ steps: l })} />

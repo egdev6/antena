@@ -54,10 +54,10 @@ h2{font:800 15px/1 var(--font-display);letter-spacing:.04em;display:flex;align-i
 /* navegación = menú lateral del lienzo (v2 · jerarquía): grupos con rótulo fijo, una entrada
    compacta con icono por página y, a la derecha, su número o un punto de aviso */
 /* Solo la navegación se desplaza; logo y controles permanecen fuera del scroll. */
-.side>.brand,.side>.side-foot{flex-shrink:0}
+.side>.brand{flex-shrink:0}
 #nav{display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--s3) transparent}
 #nav .nav-grp{flex-shrink:0}
-#nav .grp{margin:12px 0 4px;padding:0 8px;font:700 11px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--color-fg-muted);text-align:left}
+#nav .grp{margin:18px 0 6px;padding:0 8px;font:700 14px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--color-fg-muted);text-align:left}
 #nav .nav-grp:first-child .grp{margin-top:4px}
 #nav .grp-l{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;white-space:normal}
 #nav .eg-menu--nav{list-style:none;margin:0;padding:0;gap:0}
@@ -72,9 +72,6 @@ h2{font:800 15px/1 var(--font-display);letter-spacing:.04em;display:flex;align-i
 #nav .nav-n{margin-left:auto;flex:none;font:600 11.5px/1 var(--font-mono);color:var(--color-fg-muted)}
 #nav .nav-n.is-live{color:var(--color-fg-brand-raised)}
 #nav .nav-w{margin-left:auto;flex:none;width:7px;height:7px;border-radius:50%;background:var(--color-status-warning)}
-.side-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--line)}
-.side-foot .pill{border:0;padding:0;justify-content:center;font:500 13px var(--font-sans);letter-spacing:0;text-transform:none;color:var(--muted)}
-.side-foot .pill.live{color:var(--grey)}
 
 main{padding:18px 24px 60px;min-width:0}
 .view{display:none;max-width:1280px;margin:0 auto}
@@ -278,7 +275,6 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .pause-btn.on .ico{background:none;width:0;height:0;border-left:11px solid currentColor;border-top:7px solid transparent;border-bottom:7px solid transparent}
 .pause-btn .held{font:600 12px var(--font-sans);opacity:.85}
 .pause-btn .held:empty{display:none}
-@media (max-width:860px){.side-foot{order:-1;border-top:0;padding-top:0}.side-foot .pill{display:none}}
 
 /* etiquetas pequeñas (MenuList __tag / Tabs __count) */
 .tagm{display:inline-flex;align-items:center;padding:3px 7px;border-radius:999px;background:var(--color-bg-glass);font:600 11px/1 var(--font-sans);letter-spacing:0;text-transform:none;color:var(--grey);border:0}
@@ -565,12 +561,6 @@ textarea.code{min-height:200px;font:500 13px/1.55 var(--font-mono);tab-size:2;wh
 @media (max-width:1100px){.app .cols,.app .cols--q{grid-template-columns:1fr}}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* pie de la barra lateral: pausa + estado del servicio en un pozo (AppSidebar) */
-.side-foot>.eg-btn{width:100%}
-.side-well{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:var(--radius-md);background:var(--color-surface-0);box-shadow:var(--shadow-well);font-size:12.5px;color:var(--grey)}
-.side-well>span{display:flex;align-items:center;gap:8px}
-.side-well .eg-status-dot{--dot-ring:var(--color-surface-0)}
-.side-well small{font-size:11.5px;color:var(--muted)}
-@media (max-width:860px){.side-well{display:none}}
 /* directo */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0 16px}
 /* #5: con la sidebar a la izquierda, por debajo de ~1120 px la fila de 6 KPIs del directo
@@ -761,9 +751,12 @@ svg.pf-ico path{stroke:none}
 .lv-thumb img,.lv-thumb video{width:100%;height:100%;object-fit:cover}
 /* slide */
 .lv-drawer{position:fixed;inset:0 0 0 240px;z-index:40;display:flex}
+/* an open slide owns the wheel: the page behind it stays put */
+html:has(.lv-drawer){overflow:hidden}
 .lv-scrim{position:absolute;inset:0;background:rgba(6,6,8,.55)}
-.lv-slide{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--color-bg-canvas);border-left:1px solid var(--color-border-hairline);box-shadow:-24px 0 60px rgba(0,0,0,.55);overflow:auto;animation:lvIn .22s cubic-bezier(.2,.9,.3,1)}
-@keyframes lvIn{from{transform:translateX(40px);opacity:.4}}
+.lv-slide{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--color-bg-canvas);border-left:1px solid var(--color-border-hairline);box-shadow:-24px 0 60px rgba(0,0,0,.55);overflow:auto;overscroll-behavior:contain;animation:lvIn .22s cubic-bezier(.2,.9,.3,1)}
+/* margin, not transform: a transformed slide would contain the fixed save bar */
+@keyframes lvIn{from{margin-left:40px;opacity:.4}}
 @media (prefers-reduced-motion:reduce){.lv-slide{animation:none}}
 .lv-shead{position:sticky;top:0;z-index:2;padding:14px 22px 0;background:var(--color-surface-0);border-bottom:1px solid var(--color-border-hairline)}
 .lv-sbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
@@ -784,7 +777,14 @@ svg.pf-ico path{stroke:none}
 .lv-sfoot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:11px 22px;background:var(--color-surface-0);border-top:1px solid var(--color-border-hairline)}
 .lv-sfoot.sticky{position:sticky;bottom:0;z-index:2}
 .lv-sfoot .sp{flex:1}
-main>.lv-sfoot{margin:16px -24px -60px}
+main>.lv-sfoot:not(.lv-savebar){margin:16px -24px -60px}
+/* save bar (lib/layout.tsx SaveBar): fixed at the bottom, slides up only with pending changes */
+.lv-savebar{position:fixed;left:240px;right:0;bottom:0;margin:0;z-index:30;box-shadow:0 -12px 32px rgba(0,0,0,.35);transform:translateY(100%);visibility:hidden;
+  transition:transform .22s cubic-bezier(.2,.9,.3,1),visibility 0s linear .22s}
+.lv-savebar.is-open{transform:none;visibility:visible;transition-delay:0s}
+/* the open bar never covers the last content */
+main:has(> .lv-savebar.is-open),.lv-slide:has(> .lv-savebar.is-open) .lv-sbody{padding-bottom:calc(var(--savebar-h,56px) + 24px)}
+.lv-shead-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
 .lv-dirty{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
 .lv-dirty.is-on{color:var(--color-status-warning)}
 .lv-dirty.is-on::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--color-status-warning)}
@@ -795,13 +795,8 @@ main>.lv-sfoot{margin:16px -24px -60px}
 .lv-tile[aria-pressed=true]{border-color:var(--color-border-brand-strong);box-shadow:0 0 0 1px var(--color-border-brand-strong);background:var(--gradient-sheen),var(--color-surface-2)}
 .lv-tile:focus-visible{outline:2px solid var(--color-border-brand-strong);outline-offset:2px}
 /* menú lateral v2: «Crear» */
-.side-create{position:relative}
-.side-create .menu{position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:30;display:flex;flex-direction:column;padding:6px;border-radius:var(--radius-lg);background:var(--color-surface-2);border:1px solid var(--color-border-hairline);box-shadow:var(--shadow-elev-2)}
-.side-create .menu p{margin:4px 8px 6px;font:700 10.5px/1 var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.side-create .menu a{padding:7px 9px;border-radius:var(--radius-md);color:var(--text);text-decoration:none;font-size:13px}
-.side-create .menu a:hover,.side-create .menu a:focus-visible{background:var(--color-surface-3)}
 @media (max-width:1100px){.lv-cols,.lv-cols.aside{grid-template-columns:1fr}}
-@media (max-width:900px){.lv-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lv-drawer{left:0}.lv-hide{display:none}}
+@media (max-width:900px){.lv-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lv-drawer{left:0}.lv-hide{display:none}.lv-savebar{left:0}}
 /* v2 · añadidos de la implementación */
 .lv-page{display:grid;gap:16px}
 .lv-pre{white-space:pre-wrap;font:12.5px/1.55 var(--font-mono,ui-monospace,monospace);color:var(--color-text-secondary);max-height:60vh;overflow:auto;margin:0}

@@ -111,19 +111,19 @@ export function Slide({ crumb, title, back, close, head, tabs, tab, onTab, child
 }
 
 // ---------- guardado manual ----------
-/** Pie con «N cambios sin guardar · Descartar · Guardar». left/right: acciones de la pantalla. */
-export function SaveBar({ left, right, saveLabel = 'Guardar', sticky = true }: { left?: ReactNode; right?: ReactNode; saveLabel?: string; sticky?: boolean }) {
+/** Barra fija abajo con «N cambios sin guardar · Descartar · Guardar». Siempre montada; solo sube
+ *  cuando hay algo que aplicar. Las acciones de la pantalla van en su cabecera. */
+export function SaveBar({ saveLabel = 'Guardar' }: { saveLabel?: string }) {
   useDraftVersion();
   const dirty = isDirty();
   const saving = isSaving();
   const n = dirtyKeys().length;
-  return <footer className={cx('lv-sfoot', sticky && 'sticky')}>
-    {left}
+  const open = dirty || saving;
+  return <footer className={cx('lv-sfoot lv-savebar', open && 'is-open')} inert={!open}>
     <span className="sp" />
     <span className={cx('lv-dirty', dirty && 'is-on')} role="status">{saving ? 'Guardando…' : dirty ? (n > 1 ? `${n} cambios sin guardar` : 'Cambios sin guardar') : 'Todo guardado'}</span>
     <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={saving || !dirty} onClick={() => discardAll()}>Descartar</button>
     <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={saving || !dirty} onClick={guard(saveAll, 'Guardado')}>{saveLabel}</button>
-    {right}
   </footer>;
 }
 /** Sección dentro del cuerpo de un slide o de una pestaña. */
