@@ -83,7 +83,7 @@ export function Widget({ name }: { name: string }) {
     <div className="row"><button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(() => post('/api/credits/play'))}>Lanzar créditos</button><button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/credits/stop'))}>Parar</button></div>
     <p className="hint mt">Parámetros: <code>?transparent</code> (sin fondo) · <code>?autoplay</code> · <code>?loop</code>. Se lanzan desde aquí, desde el MCP, con una acción o con un atajo del Stream Deck.</p></>;
   return <Slide crumb={<><a href="#/widgets">Widgets</a> › {info.title}</>} title={info.title} back="#/widgets" wide
-    foot={<SaveBar right={<span className="hint">La vista previa muestra lo guardado.</span>} />}>
+    foot={<SaveBar />}>
     <p className="hint">{info.desc}</p>
     <WidgetLayout
       source={<BrowserSource url={origin() + info.path} size={info.size} label={name === 'latest' ? 'Últimos' : undefined} also={name === 'latest' ? [{ url: origin() + '/widget/ticker', size: '1920×64', label: 'Ticker' }] : []} />}

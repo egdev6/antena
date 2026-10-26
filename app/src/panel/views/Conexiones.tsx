@@ -80,7 +80,7 @@ function ConexionSlide({ which }: { which: 'twitch' | 'youtube' }) {
   const yset = (k: string) => (v: string) => live.patchConfig({ youtube: { [k]: v.trim() } });
   return <Slide crumb={<><a href="#/conexiones">Conexiones</a> › {which === 'twitch' ? 'Twitch' : 'YouTube'}</>} title={which === 'twitch' ? 'Twitch' : 'YouTube'} back="#/conexiones"
     head={<span className={cx('state', stateClass(which === 'twitch' ? tw.state : yt.state))}>{which === 'twitch' ? tw.state : yt.state}</span>}
-    foot={<SaveBar right={<span className="hint">«Conectar» guarda antes los cambios.</span>} />}>
+    foot={<SaveBar />}>
     <div className="lv-page">
       {which === 'twitch' && <article className="panel" id="twitch">
         <header><h2>Twitch</h2><span className={cx('state', stateClass(tw.state))}>{tw.state}</span></header>

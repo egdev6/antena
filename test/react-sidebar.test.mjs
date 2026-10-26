@@ -8,10 +8,10 @@ import { createApp } from '../src/server.mjs';
 import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
-// Incluye el pie de escritorio sin invocar Tauri, cuentas ni hardware reales.
+// Simula la app de escritorio sin invocar Tauri, cuentas ni hardware reales: ni siquiera ahí hay pie.
 const desktopStub = `window.__TAURI__ = { core: { invoke: async cmd => cmd === 'monitors' ? [] : null } }`;
 
-test('barra lateral: activo, grupos y scroll exclusivo entre logo y pie', { timeout: 90000 }, async t => {
+test('barra lateral: activo, grupos y scroll exclusivo bajo el logo, sin pie', { timeout: 90000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-panel-125-'));
@@ -25,7 +25,10 @@ test('barra lateral: activo, grupos y scroll exclusivo entre logo y pie', { time
     const ev = expr => evaluateChrome(c, expr);
     await c.send('Page.addScriptToEvaluateOnNewDocument', { source: desktopStub });
     await c.send('Page.navigate', { url: `${base}/#/directo` });
-    await waitDom(c, `!!document.querySelector('#nav .eg-menu__item[aria-current] .eg-icon') && document.querySelectorAll('.side-foot .row button').length === 2`);
+    await waitDom(c, `!!document.querySelector('#nav .eg-menu__item[aria-current] .eg-icon')`);
+    // sin pie: ni «Crear», ni Prompter/Dock, ni «Pausar alertas», ni el estado de Meld (ya están en el dock)
+    assert.equal(await ev(`!!document.querySelector('.side-foot')`), false, 'la barra lateral no tiene pie');
+    assert.deepEqual(await ev(`Array.from(document.querySelectorAll('.side button'), b => b.textContent.trim())`), [], 'la barra lateral no tiene botones');
 
     await c.send('Emulation.setDeviceMetricsOverride', { width: 1360, height: 860, deviceScaleFactor: 1, mobile: false });
     // como en el lienzo (v2): el icono sigue el color del texto y la entrada activa se marca con una
@@ -54,30 +57,38 @@ test('barra lateral: activo, grupos y scroll exclusivo entre logo y pie', { time
       await c.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
       const posicion = await ev(`(() => {
         const side = document.querySelector('.side'), nav = document.querySelector('#nav');
-        const brand = document.querySelector('.brand'), foot = document.querySelector('.side-foot');
+        const brand = document.querySelector('.brand');
         nav.scrollTop = 0;
+        const desborda = nav.scrollHeight > nav.clientHeight + 1, maximo = nav.scrollHeight - nav.clientHeight;
         const rect = e => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
-        const antes = { brand: rect(brand), foot: rect(foot), grupo: rect(nav.firstElementChild) };
+        const antes = { brand: rect(brand), grupo: rect(nav.firstElementChild) };
         nav.scrollTop = nav.scrollHeight;
         side.scrollTop = 120;
-        return { antes, despues: { brand: rect(brand), foot: rect(foot), grupo: rect(nav.firstElementChild) },
-          nav: rect(nav), scroll: nav.scrollTop, sideScroll: side.scrollTop, height: innerHeight,
-          botones: Array.from(foot.querySelectorAll('button'), b => ({ texto: b.textContent.trim(), ...rect(b) })) };
+        const ultimo = rect([...nav.querySelectorAll('a')].at(-1));
+        return { antes, desborda, maximo, ultimo, despues: { brand: rect(brand), grupo: rect(nav.firstElementChild) },
+          nav: rect(nav), side: rect(side), sidePad: parseFloat(getComputedStyle(side).paddingBottom),
+          scroll: nav.scrollTop, sideScroll: side.scrollTop, height: innerHeight };
       })()`);
-      assert.ok(posicion.scroll > 40, `${width}×${height}: la navegación hace scroll`);
+      // sin pie el menú gana su espacio: con altura suficiente entra entero; en ventanas bajas hace scroll
+      if (height <= 480) assert.equal(posicion.desborda, true, `${width}×${height}: el menú no entra y se desplaza`);
+      if (posicion.desborda) {
+        assert.ok(posicion.scroll > 0 && Math.abs(posicion.scroll - posicion.maximo) <= 1, `${width}×${height}: la navegación llega al final (${posicion.scroll} / ${posicion.maximo})`);
+        assert.ok(Math.abs(posicion.antes.grupo.top - posicion.despues.grupo.top - posicion.scroll) <= 1, 'los grupos se desplazan con el scroll');
+      } else {
+        assert.equal(posicion.scroll, 0, `${width}×${height}: sin desborde no hay scroll`);
+        assert.ok(posicion.ultimo.bottom <= posicion.nav.bottom, `${width}×${height}: la última entrada se ve entera`);
+      }
       assert.equal(posicion.sideScroll, 0, 'el aside no es el contenedor desplazable');
       assert.deepEqual(posicion.antes.brand, posicion.despues.brand, 'logo inmóvil');
-      assert.deepEqual(posicion.antes.foot, posicion.despues.foot, 'pie inmóvil');
-      assert.ok(posicion.antes.grupo.top - posicion.despues.grupo.top > 40, 'los grupos sí se desplazan');
       assert.ok(posicion.despues.brand.top >= 0 && posicion.despues.brand.bottom <= posicion.nav.top, 'logo encima del área desplazable');
-      assert.ok(posicion.nav.bottom <= posicion.despues.foot.top && posicion.despues.foot.bottom <= height, 'pie debajo del área desplazable y dentro de la ventana');
-      assert.deepEqual(posicion.botones.map(b => b.texto), ['Crear', 'Prompter', 'Dock', 'Pausar alertas']);
-      assert.ok(posicion.botones.every(b => b.top >= 0 && b.bottom <= height), 'todos los botones del pie visibles');
+      assert.ok(Math.abs(posicion.nav.bottom - (posicion.side.bottom - posicion.sidePad)) <= 1 && posicion.nav.bottom <= height,
+        `el menú ocupa hasta abajo, dentro de la ventana (${posicion.nav.bottom} / ${posicion.side.bottom - posicion.sidePad})`);
       // También al desplazar el documento, la barra permanece dentro de la ventana.
       await ev('window.scrollTo(0, 300)');
       const bordes = await ev(`(() => { const r = document.querySelector('.side').getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; })()`);
-      assert.equal(bordes.top, 0);
-      assert.equal(bordes.bottom, height);
+      // tolerancia subpíxel: si la página apenas desborda, el sticky se ajusta a su contenedor
+      assert.ok(Math.abs(bordes.top) <= 1, `barra pegada arriba (${bordes.top})`);
+      assert.ok(Math.abs(bordes.bottom - height) <= 1, `barra hasta abajo (${bordes.bottom} / ${height})`);
       await ev('window.scrollTo(0, 0)');
     }
     // Conserva la navegación horizontal existente por debajo del breakpoint móvil.

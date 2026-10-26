@@ -24,7 +24,6 @@ test('ninguna fuente de app/src usa dangerouslySetInnerHTML', async () => {
 const svg = (cls, body) => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 const BEFORE = {
   directo: svg('eg-icon', '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"></path><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"></path><circle cx="12" cy="12" r="2"></circle><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"></path><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"></path>'),
-  pause: svg('eg-btn__icon', '<rect x="14" y="4" width="4" height="16" rx="1"></rect><rect x="6" y="4" width="4" height="16" rx="1"></rect>'),
   up: svg('eg-icon', '<path d="m18 15-6-6-6 6"></path>'),
   down: svg('eg-icon', '<path d="m6 9 6 6 6-6"></path>'),
   x: svg('eg-icon', '<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>'),
@@ -48,7 +47,6 @@ test('los iconos pintan el mismo SVG que antes (barra lateral e IconBtn)', { tim
     await waitDom(chrome.cdp, `!!document.querySelector('button[aria-label=Subir]:not([disabled])')`, { timeoutMs: 12000 });
     const got = JSON.parse(await evaluateChrome(chrome.cdp, `JSON.stringify({
       directo: document.querySelector('a[href="#/directo"] svg').outerHTML,
-      pause: document.querySelector('#pauseBtn svg').outerHTML,
       up: document.querySelector('button[aria-label=Subir] svg').outerHTML,
       down: document.querySelector('button[aria-label=Bajar] svg').outerHTML,
       x: document.querySelector('button[aria-label=Descartar] svg').outerHTML,

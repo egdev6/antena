@@ -84,7 +84,7 @@ export function Preguntas({ parts }: { parts: string[] }) {
           <p className="css-help">Clases: <code>.q</code> <code>.text</code> <code>.who</code> <code>.count</code></p>
         </Sec>
     </WidgetLayout>}
-    <SaveBar right={<span className="hint">Mover, mostrar y descartar preguntas se aplica al momento.</span>} />
+    <SaveBar />
   </>;
 }
 
@@ -249,6 +249,6 @@ export function Sorteo({ parts }: { parts: string[] }) {
           <p className="css-help">Clases: <code>.g</code> <code>.prize</code> <code>.join</code> <code>.count</code> <code>.reel</code> <code>.name</code></p>
         </Sec>
     </WidgetLayout>}
-    <SaveBar right={<span className="hint">Abrir, sortear y quitar participantes se aplica al momento.</span>} />
+    <SaveBar />
   </>;
 }

@@ -21,9 +21,11 @@ The panel follows one hierarchy, drawn on the canvas «antena — Rediseño» (p
   status, tags and a footer with its main action; the whole card links to its slide, and footer controls sit
   above that link. A new feature = one more card in its group. What the user creates inside a catalog item
   lives inside its card (the «Objetivos» card opens the goals table, like variations inside an alert).
-- **Detail → full-width slide** (`Slide`): back ←, crumb, title, ✕ and Esc; tabs with a dirty dot; a sticky
-  footer (`SaveBar`) with the pending state, «Descartar», «Guardar» and the view's own actions («Probar en
-  el directo»). A second level opens a second slide over the first one (*Alertas › Raid › Variación*,
+- **Detail → full-width slide** (`Slide`): back ←, crumb, title, ✕ and Esc; tabs with a dirty dot; the
+  view's own actions («Probar en el directo», «Restaurar de serie…», «Borrar …») in the header, always
+  visible. The save bar (`SaveBar`) holds only the pending state, «Descartar» and «Guardar»: it is fixed to
+  the bottom of the window and slides up only while there is something to apply (or a save in flight), then
+  slides back down; while hidden it stays mounted and inert. A second level opens a second slide over the first one (*Alertas › Raid › Variación*,
   *Widgets › Objetivos › Objetivo*). Addresses: `#/<page>/<id>[/<tab>]`; the old ones redirect
   (`panel/router.ts`).
 - **Pages without a list → page tabs**, linkable (`#/apariencia/iconos`, `usePageTab`): Apariencia,
@@ -48,7 +50,7 @@ Configuration pages and slides do not save as you type: the change stays as a dr
 the alert editor, the theme, a script, a shortcut). Leaving with a draft asks first (and so does the browser
 when closing). Previews show the draft when they can (alerts, commands and messages through `/api/test` with
 `draft`; the theme through `/api/theme/draft`, read only by `?themeDraft` layers); widget previews show what
-is saved. Live operations stay immediate and say so in the footer: enabling or ordering variations, the
+is saved. Live operations stay immediate (they are not announced in the save bar): enabling or ordering variations, the
 «Activa» switch of an alert card, placing in the tier list, opening or drawing the giveaway, moving questions,
 goal counters and goals themselves, connecting and deleting files. Marks the panel sets on its own (the tour
 seen, `live.saveConfigNow`) are saved at once too, never held in the draft.

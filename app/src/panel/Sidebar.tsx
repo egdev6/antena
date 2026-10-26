@@ -1,9 +1,5 @@
-import { useState } from 'react';
-import { IC } from '../lib/icons';
 import { useLive } from '../lib/live';
-import { post } from '../lib/api';
-import { guard, Icon, cx } from '../lib/ui';
-import { isDesktop, openDock, openPrompter } from '../lib/desktop';
+import { Icon, cx } from '../lib/ui';
 import type { IconData } from '../lib/icons';
 import { alertWarnings } from './views/Alertas';
 
@@ -32,8 +28,6 @@ const ICONS = {
   filtros: [P('M22 3H2l8 9.46V19l4 2v-8.54L22 3z')],
   general: [['circle', { cx: '12', cy: '12', r: '3' }], P('M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z')],
   acerca: [['circle', { cx: '12', cy: '12', r: '10' }], P('M12 16v-4'), P('M12 8h.01')],
-  pause: [['rect', { x: '14', y: '4', width: '4', height: '16', rx: '1' }], ['rect', { x: '6', y: '4', width: '4', height: '16', rx: '1' }]],
-  play: [['polygon', { points: '6 3 20 12 6 21 6 3' }]],
 } satisfies Record<string, IconData>;
 
 type Item = { href: string; label: string; tail?: any };
@@ -82,8 +76,6 @@ export function Sidebar({ current }: { current: string }) {
   ];
   // la entrada activa: la página (primer tramo de la dirección), aunque haya un slide abierto
   const active = (href: string) => href.split('/')[1] === current.split('/')[1];
-  const pause = s.status?.pause || {};
-  const n = s.status?.overlays || 0;
   return <aside className="side">
     <a className="brand" href="#/directo" aria-label="antena, inicio">
       <img className="brand-mark" src="/brand/logo.png" alt="" aria-hidden="true" />
@@ -101,40 +93,5 @@ export function Sidebar({ current }: { current: string }) {
         </ul>
       </div>)}
     </nav>
-    <div className="side-foot">
-      <CreateMenu />
-      {isDesktop() && <div className="row tight">
-        <button className="eg-btn eg-btn--ghost eg-btn--sm" style={{ flex: 1 }} onClick={guard(() => openPrompter(s.config.prompter?.monitor))}>Prompter</button>
-        <button className="eg-btn eg-btn--ghost eg-btn--sm" style={{ flex: 1 }} onClick={guard(() => openDock())}>Dock</button>
-      </div>}
-      <button className={cx('eg-btn eg-btn--sm', pause.paused ? 'eg-btn--primary' : 'eg-btn--secondary')} id="pauseBtn" onClick={guard(async () => {
-        if (pause.paused) {
-          const discard = (pause.held || 0) > 0 && !confirm(`Hay ${pause.held ?? 0} alertas en cola. ¿Sacarlas ahora? (Cancelar = descartarlas)`);
-          await post('/api/resume', { discard });
-        } else await post('/api/pause');
-      })}>
-        <Icon d={pause.paused ? ICONS.play : ICONS.pause} className="eg-btn__icon" />{pause.paused ? 'Reanudar alertas' : 'Pausar alertas'}{pause.paused && pause.held ? <span className="eg-tabs__count">{pause.held}</span> : null}
-      </button>
-      <div className="side-well" role="status">
-        <span><span className={`eg-status-dot eg-status-dot--${meldOn ? 'running' : 'stopped'}`} aria-hidden="true" />{meldOn ? 'Meld conectado' : 'Meld sin conectar'}</span>
-        <small id="ovCount">{n === 1 ? '1 overlay conectado' : `${n} overlays conectados`}</small>
-      </div>
-    </div>
   </aside>;
-}
-
-/** «Crear»: todo lo que se puede crear, desde cualquier página (abre el slide en modo «Nuevo»). */
-const CREATE: [string, string][] = [
-  ['#/comandos/nuevo', 'Comando de chat'], ['#/mensajes/nuevo', 'Mensaje programado'], ['#/alertas', 'Variación de una alerta…'],
-  ['#/widgets/objetivos/nuevo', 'Objetivo'], ['#/atajos/nuevo', 'Atajo de Stream Deck'], ['#/tierlist/nueva', 'Tier list'], ['#/teleprompter/guiones/nuevo', 'Guion del teleprompter'],
-];
-function CreateMenu() {
-  const [open, setOpen] = useState(false);
-  return <div className="side-create" onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}>
-    {open && <div className="menu" role="menu" aria-label="Crear">
-      <p>Crear</p>
-      {CREATE.map(([href, label]) => <a key={href} role="menuitem" href={href} onClick={() => setOpen(false)}>{label}</a>)}
-    </div>}
-    <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" style={{ width: '100%' }} aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(!open)}><Icon d={IC.plus} className="eg-btn__icon" />Crear</button>
-  </div>;
 }

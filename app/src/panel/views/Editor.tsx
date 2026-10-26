@@ -331,7 +331,7 @@ export function Editor({ target }: { target: Target }) {
     : kind === 'timer' ? <input className="title-input" value={item.name} aria-label="Nombre del mensaje" onChange={e => set('name', e.target.value)} />
     : <input className="title-input" value={item.trigger} aria-label="Disparador" onChange={e => set('trigger', e.target.value.trim())} />;
   const headSwitch = <Switch checked={kind === 'alert' ? !!a.enabled : (kind === 'variation' ? v.enabled !== false : item.enabled !== false)} onChange={x => set('enabled', x)}>{kind === 'alert' ? 'Activada' : kind === 'variation' ? 'Activa' : 'Activo'}</Switch>;
-  const footLeft = kind === 'alert' ? <button className="eg-btn eg-btn--ghost eg-btn--sm" disabled={isSaving()} onClick={guard(async () => {
+  const headLeft = kind === 'alert' ? <button className="eg-btn eg-btn--ghost eg-btn--sm" disabled={isSaving()} onClick={guard(async () => {
       if (isSaving() || !confirm('¿Restaurar esta alerta a sus valores de serie? Se borran también sus variaciones.')) return;
       ed.discard(); const d = await post<{ config: Config }>(`/api/alerts/${type}/reset`); live.update(() => ({ config: d.config }));
     }, 'Alerta restaurada')}>Restaurar de serie…</button>
@@ -343,7 +343,7 @@ export function Editor({ target }: { target: Target }) {
     })}>Borrar variación…</button>
     : kind === 'timer' ? <button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => { if (isSaving() || !confirmDelete(item.name, 'este mensaje programado')) return; ed.discard(); const d = await del<{ timers: TimerConfig[] }>(`/api/timers/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, timers: d.timers } })); go('#/mensajes'); })}>Borrar mensaje…</button>
     : <button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => { if (isSaving() || !confirmDelete(item.trigger, 'este comando')) return; ed.discard(); const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar comando…</button>;
-  const footRight = kind === 'timer'
+  const headRight = kind === 'timer'
     ? <button className="eg-btn eg-btn--primary eg-btn--sm" title="Envía lo guardado" onClick={guard(async () => { await fireTimer(item.id, (text, err) => setFireMsg({ text, err: !!err })); })}>Enviar ahora</button>
     : <button className="eg-btn eg-btn--primary eg-btn--sm" title="Prueba lo guardado en Meld" onClick={testLive}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>;
 
@@ -368,9 +368,9 @@ export function Editor({ target }: { target: Target }) {
   // todas las pestañas quedan montadas (solo se ocultan): el formulario no pierde lo escrito al cambiar
   const pane = (k: string, children: ReactNode) => <div role="tabpanel" id={`tp-${k}`} aria-labelledby={`tb-${k}`} hidden={cur !== k} className="tabpane">{children}</div>;
   const box = (title: ReactNode, children: ReactNode, aside?: ReactNode) => <section className="subbox"><div className="subbox-h"><span>{title}</span>{aside}</div>{children}</section>;
-  return <Slide crumb={crumb} title={title} back={back} close={listHref} head={headSwitch}
+  return <Slide crumb={crumb} title={title} back={back} close={listHref} head={<div className="lv-shead-actions">{headSwitch}{headLeft}{headRight}</div>}
     tabs={tabDefs.length > 1 ? tabDefs : undefined} tab={cur} onTab={setTab}
-    foot={<SaveBar left={footLeft} right={footRight} />}>
+    foot={<SaveBar />}>
     <div className={cx('editor', !showAlert && 'solo')}>
       <div className="form-col">
         {kind === 'alert' && VIEWER_TYPES[type] && pane('rec', <RecordPane type={type} />)}

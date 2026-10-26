@@ -226,10 +226,11 @@ function GuionSlide({ id }: { id: string }) {
   const words = cur.blocks.reduce((t, b) => t + (b.text.match(/[^\s[\]]+/g) || []).length, 0);
   return <Slide crumb={<><a href="#/teleprompter/guiones">Guiones</a> › {activeId === id ? 'Activo' : 'Guardado'}</>} wide back="#/teleprompter/guiones"
     title={<input className="lv-title-input" aria-label="Título del guion" value={cur.title} onChange={e => set({ title: e.target.value })} />}
-    foot={<SaveBar left={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving() || n < 2} title={n < 2 ? 'Es el único guion' : undefined} onClick={guard(async () => {
+    head={<div className="lv-shead-actions"><button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving() || n < 2} title={n < 2 ? 'Es el único guion' : undefined} onClick={guard(async () => {
       if (isSaving() || !confirmDelete(saved.title, 'este guion')) return; buffer.discard(); go('#/teleprompter/guiones');
       const r = await del<TeleprompterState>(`/api/teleprompter/scripts/${enc(id)}`); live.update(() => ({ teleprompter: r }));
-    })}>Borrar guion…</button>} right={activeId === id ? null : <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={isSaving()} onClick={guard(async () => { if (isSaving()) return; const r = await post<TeleprompterState>('/api/teleprompter/select', { id }); live.update(() => ({ teleprompter: r })); }, 'Guion activo')}>Usar en el teleprompter</button>} />}>
+    })}>Borrar guion…</button>{activeId === id ? null : <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={isSaving()} onClick={guard(async () => { if (isSaving()) return; const r = await post<TeleprompterState>('/api/teleprompter/select', { id }); live.update(() => ({ teleprompter: r })); }, 'Guion activo')}>Usar en el teleprompter</button>}</div>}
+    foot={<SaveBar />}>
     <div className="lv-cols aside">
       <div className="lv-col">{cur.blocks.map((b, i) => <Box key={b.id} title={<>Bloque {i + 1}</>} aside={<div className="row tight">
         <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={() => move(i, -1)} />
