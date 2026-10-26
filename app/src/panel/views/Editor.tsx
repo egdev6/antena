@@ -170,7 +170,8 @@ function useEditor(t: Target) {
   });
   const preview = async () => {
     if (!active.current || (t.kind === 'timer' && !editorCfg(live.state, t).showAlert)) return;
-    await post('/api/test', { ...testBody(t, 'preview'), draft: buffer.dirty() ? findTarget(live.state, t) : undefined });
+    // el CSS común también va como está en pantalla (se edita en la pestaña CSS con guardado manual)
+    await post('/api/test', { ...testBody(t, 'preview'), draft: buffer.dirty() ? findTarget(live.state, t) : undefined, globalCss: live.state?.config.overlay?.css ?? '' });
   };
   const queuePreview = (ms: number) => { clearTimeout(timer.current); timer.current = setTimeout(guard(preview), ms); };
   const discard = () => {
@@ -507,7 +508,13 @@ export function Editor({ target }: { target: Target }) {
               tools={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm push" disabled={isSaving()} onClick={guard(async () => {
                 if (!confirmLeave()) return;
                 const d = await post<{ variation: AlertVariation }>(`/api/alerts/${type}/variations`, { name: `Variación ${(a.variations?.length || 0) + 1}`, conditions: AMOUNT_TYPES.includes(type) ? { minAmount: 100 } : {} });
-                live.update(st => ({ config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...st.config.alerts[type], variations: [...(st.config.alerts[type].variations || []), d.variation] } } } }));
+                live.update(st => {
+                  const alert = st.config.alerts[type], variations = alert.variations || [];
+                  // SSE may already contain this ID (and edits newer than the held
+                  // POST response). Keep that object; append only when HTTP wins.
+                  if (variations.some(v => v.id === d.variation.id)) return {};
+                  return { config: { ...st.config, alerts: { ...st.config.alerts, [type]: { ...alert, variations: [...variations, d.variation] } } } };
+                });
                 go(`#/alertas/${type}/v/${d.variation.id}`);
               })}><Icon d={IC.plus} className="eg-btn__icon" />Nueva variación</button>}
               cols={[{ key: 'name', label: 'Variación' }, { key: 'changes', label: 'Cambia' }, { key: 'on', label: 'Activa' }, { key: 'order', label: 'Orden', hide: true }, { key: 'test', label: '' }]}

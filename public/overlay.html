@@ -237,7 +237,11 @@ const customCss = document.getElementById('custom-css');
 stage.classList.add(['top','center','bottom'].includes(qs.get('pos')) ? qs.get('pos') : 'center');
 document.documentElement.style.setProperty('--scale', Number(qs.get('scale')) || 1);
 if (qs.has('debug') || PREVIEW) document.body.classList.add('debug');
-const MUTE = qs.has('mute');
+// ?still=<tipo>: miniatura del panel. La alerta de ejemplo con la configuración y el tema guardados,
+// quieta y sin sonido, sin conexión en directo (el panel la recarga cuando cambia algo). El vídeo
+// se queda en su primer fotograma y solo avanza cuando el panel lo pide (al pasar el ratón).
+const STILL = qs.get('still');
+const MUTE = qs.has('mute') || !!STILL;
 const GAP = 700;
 
 const queue = [];
@@ -392,7 +396,7 @@ function show(a) {
   current = { a, ...r };
   playSound(a);
   r.ready.then(ms => {
-    if (current?.a !== a) return;
+    if (current?.a !== a || STILL) return;
     current.timer = setTimeout(hide, ms);
     // avisa al servidor para lanzar las acciones de Meld justo ahora
     if (!PREVIEW && a.actions?.length) fetch('/api/overlay/shown', { method: 'POST', body: JSON.stringify({ id: a.id }) }).catch(() => {});
@@ -460,9 +464,51 @@ function playSound(a) {
   } catch {}
 }
 
+// ---------- miniatura quieta (?still) ----------
+if (STILL) {
+  document.body.classList.add('still');
+  let allow = false;
+  const realPlay = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function () {
+    this.muted = true;
+    if (!allow) { try { this.currentTime = 0.05; } catch { /* aún sin datos */ } return Promise.resolve(); }
+    this.loop = true;
+    return realPlay.call(this);
+  };
+  const video = () => document.querySelector('#bg video, #stage video');
+  const tell = d => { try { parent.postMessage({ still: STILL, ...d }, location.origin); } catch { /* sin panel */ } };
+  addEventListener('message', e => {
+    if (e.source !== parent || e.origin !== location.origin) return;
+    if (e.data?.still !== 'play' && e.data?.still !== 'pause') return;
+    // Retain intent even while /sample is pending: renderMedia/renderMixed will
+    // call the gated play() once their video exists. A later pause cancels it.
+    allow = e.data.still === 'play';
+    if (!allow) tell({ pos: 0 });
+    const v = video(); if (!v) return;
+    if (allow) { v.loop = true; try { v.currentTime = 0; } catch { /* aún sin datos */ } v.play().catch(() => {}); }
+    else { v.pause(); try { v.currentTime = 0.05; } catch { /* nada */ } }
+  });
+  fetch('/api/alerts/' + encodeURIComponent(STILL) + '/sample').then(r => r.json()).then(({ alert, theme }) => {
+    applyTheme(theme);
+    if (alert.look) alert.look.textDelayMs = 0;   // la composición final, sin esperar a la entrada del texto
+    show(alert);
+    // la barra de tiempo de la tarjeta se queda llena
+    const freeze = () => document.getAnimations().forEach(an => { if (an.effect?.target?.closest?.('.timer')) { an.pause(); an.currentTime = 0; } });
+    setTimeout(freeze, 30); setTimeout(freeze, 1200);
+    const wait = setInterval(() => {
+      const v = video(); if (!v) return;
+      clearInterval(wait);
+      v.addEventListener('loadedmetadata', () => tell({ dur: v.duration || 0 }));
+      if (v.readyState >= 1) tell({ dur: v.duration || 0 });
+      v.addEventListener('timeupdate', () => { if (allow && v.duration) tell({ pos: v.currentTime / v.duration }); });
+    }, 100);
+    setTimeout(() => clearInterval(wait), 5000);
+  }).catch(() => {});
+}
+
 // ---------- conexión ----------
 if (PREVIEW) stage.insertAdjacentHTML('beforebegin', '<div class="hint" id="hint">Vista previa</div>');
-const es = new EventSource('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay') + (qs.has('themeDraft') ? '&themeDraft=1' : ''));
+const es = STILL ? new EventTarget() : new EventSource('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay') + (qs.has('themeDraft') ? '&themeDraft=1' : ''));
 es.addEventListener('alert', e => {
   document.getElementById('hint')?.remove();
   const a = JSON.parse(e.data);

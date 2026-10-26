@@ -31,9 +31,15 @@ The panel follows one hierarchy, drawn on the canvas «antena — Rediseño» (p
 - **Creating** is the same everywhere: «+ Nuevo X» opens the slide in «Nuevo» mode with the minimum fields
   and a starting template (`lv-tiles`); the other tabs are locked until «Crear». The sidebar footer has a
   «Crear» menu with every «+ Nuevo».
-- **Thumbnails**: an alert card shows its design (the mini card with the theme accent, the real first frame
-  of its video, or the background with the card on top); hovering or focusing the card plays a looping,
-  silent preview (`MediaPreview`).
+- **Thumbnails**: an alert card shows the real overlay in small (`/overlay?still=<type>`, fed by
+  `GET /api/alerts/:type/sample`): the sample alert with the saved config, global CSS and Appearance theme,
+  still and silent, with no live connection, zoomed towards where the alert lands. The panel reloads the
+  frame when any of those change (also when they change outside the panel: alert saves are pushed as
+  `config` to the panel). A video stays on its first frame; hovering or focusing the card plays it in a
+  silent loop (the frame answers `postMessage` `play`/`pause` and reports duration and progress).
+- **Sidebar** (as drawn in the canvas): fixed group labels (no folding), one compact entry with its icon per
+  page, the active one with the red bar on the left, and on the right a mono number (red when something is
+  live: questions in queue, voting, Meld connected) or a warning dot (alerts with a missing file).
 
 ### Manual save
 

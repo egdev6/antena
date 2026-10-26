@@ -106,7 +106,7 @@ export function ItemTabs({ items, selected, onSelect, onNew, newLabel, label, to
 }
 
 /** iframe escalado: muestra una capa de 1920×1080 (u otro tamaño) dentro del ancho disponible. */
-export function ScaledFrame({ src, w = 1920, h = 1080, className = 'preview wprev', title = 'Vista previa', frameRef }: { src: string; w?: number; h?: number; className?: string; title?: string; frameRef?: (el: HTMLIFrameElement | null) => void }) {
+export function ScaledFrame({ src, w = 1920, h = 1080, className = 'preview wprev', title = 'Vista previa', frameRef, onLoad, lazy }: { src: string; w?: number; h?: number; className?: string; title?: string; frameRef?: (el: HTMLIFrameElement | null) => void; onLoad?: () => void; lazy?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.3);
   useEffect(() => {
@@ -116,7 +116,7 @@ export function ScaledFrame({ src, w = 1920, h = 1080, className = 'preview wpre
     return () => ro.disconnect();
   }, [w]);
   return <div className={className} ref={box} style={{ aspectRatio: `${w}/${h}` }}>
-    <iframe ref={frameRef} src={src} title={title} style={{ width: w, height: h, transform: `scale(${scale})` }} />
+    <iframe ref={frameRef} src={src} title={title} onLoad={onLoad} loading={lazy ? 'lazy' : undefined} style={{ width: w, height: h, transform: `scale(${scale})` }} />
   </div>;
 }
 
