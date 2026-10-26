@@ -92,8 +92,12 @@ try {
     const toast = `document.querySelector('.toast[role="status"]')`;
     // v2: el listado también tiene «Enviar ahora» por fila; el del slide (con el resultado) es el último
     const fire = () => ev(`Array.from(document.querySelectorAll('main button')).filter(b => b.textContent.trim() === 'Enviar ahora').at(-1).click()`);
-    // v2: guardado manual, los cambios se guardan con el botón «Guardar» del pie
-    const save = () => ev(`document.querySelector('.lv-sfoot .eg-btn--secondary').click()`);
+    // v2: guardado manual con el botón «Guardar» del pie; resuelve sólo con la confirmación del navegador
+    const saveButton = `document.querySelector('.lv-sfoot .eg-btn--secondary')`;
+    const save = async () => {
+        await ev(`${saveButton}.click()`);
+        await waitDom(`${saveButton}.disabled && document.querySelector('.lv-sfoot [role="status"]')?.textContent === 'Todo guardado'`);
+    };
     const pick = (seg, text) => ev(`Array.from((${seg}).querySelectorAll('[role=radio]')).find(b => b.textContent.trim() === ${JSON.stringify(text)}).click()`);
     const stored = () => app.store.config.timers.find(x => x.id === timer.id);
 
@@ -126,16 +130,85 @@ try {
     await waitDom(`!!(${actionDestination})`);
     assert.equal(await ev(segValue(actionDestination)), 'Twitch');
     await pick(actionDestination, 'YouTube');
-    await save();
+    // Sólo el fetch del navegador: el PUT llega al servidor, pero su ACK no llega al cliente.
+    let saveInFlight, saveResolved = false;
+    try {
+        await ev(`(() => {
+            const originalFetch = window.fetch;
+            let release;
+            const held = new Promise(resolve => { release = resolve; });
+            const gate = window.__saveAckGate = { originalFetch, release, received: false };
+            window.fetch = async (...args) => {
+                const [input, init] = args;
+                const url = new URL(input instanceof Request ? input.url : input, location.href);
+                const method = init?.method || (input instanceof Request ? input.method : 'GET');
+                const response = await originalFetch.apply(window, args);
+                if (method.toUpperCase() === 'PUT' && url.origin === location.origin && url.pathname === '/api/alerts/follow') {
+                    await response.clone().json();
+                    gate.received = true;
+                    await held;
+                }
+                return response;
+            };
+        })()`);
+        saveInFlight = save().then(() => { saveResolved = true; });
+        await waitDom(`window.__saveAckGate?.received && /Guardando/.test(document.querySelector('.lv-sfoot')?.textContent || '')`);
+        assert.equal(app.store.config.alerts.follow.actions[0]?.destination, 'youtube', 'Store aplicado antes de liberar el ACK');
+        assert.equal(saveResolved, false, 'save() no debe resolver mientras el ACK de Guardar sigue retenido');
+        await ev(`window.__saveAckGate.release()`);
+        await saveInFlight;
+        assert.equal(saveResolved, true, 'save() resuelve tras liberar el ACK');
+    } finally {
+        try {
+            await ev(`window.__saveAckGate?.release()`);
+        } finally {
+            try { await saveInFlight; }
+            finally {
+                await ev(`(() => {
+                    const gate = window.__saveAckGate;
+                    if (gate) { window.fetch = gate.originalFetch; delete window.__saveAckGate; }
+                })()`);
+            }
+        }
+    }
     await until(() => app.store.config.alerts.follow.actions[0]?.destination === 'youtube', 'destination=youtube en la acción');
     assert.equal(app.store.config.alerts.follow.actions[0].text, 'hola {user}');
 
     // fallo parcial de una acción de chat: aviso con el origen y el detalle por plataforma, escapado
     app.youtube.sendChat = async () => { throw new Error('<b>sin directo</b>'); };
     await call('PUT', '/api/alerts/follow', { actions: [{ kind: 'chat', text: 'hola {user}', destination: 'both' }] });
-    await call('POST', '/api/simulate', { type: 'follow', vars: { user: 'ana' } });
-    await waitDom(`(() => { const t = ${toast}; return !!t && /Nuevo seguidor/.test(t.textContent) && /Twitch: enviado/.test(t.textContent) && /YouTube: no enviado \\(<b>sin directo<\\/b>\\)/.test(t.textContent) && !t.querySelector("b"); })()`);
-    assert.deepEqual(sent.slice(-1), ['hola ana'], 'Twitch recibe una sola vez');
+    const sentBeforeSimulation = sent.length;
+    // Observación pasiva: conserva entrega/transiciones sin fabricar el toast ni ocultar su ausencia final.
+    await ev(`(() => {
+        const entries = [];
+        const capture = () => {
+            const t = ${toast};
+            const entry = { text: t?.textContent ?? null, html: t?.innerHTML ?? null, bold: !!t?.querySelector('b') };
+            const previous = entries.at(-1);
+            if (!previous || previous.text !== entry.text || previous.html !== entry.html) {
+                entries.push({ ...entry, at: performance.now() });
+                if (entries.length > 24) entries.shift();
+            }
+        };
+        const observer = new MutationObserver(capture);
+        window.__toastObservation = { entries, observer };
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+        capture();
+    })()`);
+    try {
+        await call('POST', '/api/simulate', { type: 'follow', vars: { user: 'ana' } });
+        await waitDom(`(() => { const t = ${toast}; return !!t && /Nuevo seguidor/.test(t.textContent) && /Twitch: enviado/.test(t.textContent) && /YouTube: no enviado \\(<b>sin directo<\\/b>\\)/.test(t.textContent) && !t.querySelector("b"); })()`);
+        assert.match(await ev(`${toast}.innerHTML`), /&lt;b&gt;sin directo&lt;\/b&gt;/, 'el detalle del fallo está escapado en HTML');
+        assert.deepEqual(sent.slice(sentBeforeSimulation), ['hola ana'], 'Twitch recibe una sola vez');
+    } finally {
+        const observed = await ev(`(() => {
+            const observation = window.__toastObservation;
+            observation.observer.disconnect();
+            delete window.__toastObservation;
+            return observation.entries;
+        })()`);
+        t.diagnostic('Transiciones del toast: ' + JSON.stringify(observed));
+    }
 } finally {
     chrome?.cdp?.close(); chrome?.child?.kill();
     await new Promise(r => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(r); });
