@@ -18,6 +18,7 @@ import { TIMER_DESTINATIONS, ANNOUNCE_COLORS, DEFAULT_TIMER } from './timers.mjs
 import { DEFAULT_ALERTS, DEFAULT_COMMAND } from './alerts.mjs';
 import { PLATFORM_METRICS } from './goals.mjs';
 import { TELEPROMPTER_SCRIPTS_MAX_BYTES } from './teleprompter.mjs';
+import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES } from './custom-overlays.mjs';
 import { THEME_RULES, THEME_RANGES, themeFieldError, themeIconError, keepValidIcons } from './theme.mjs';
 // #130: animaciones de los mensajes del chat en pantalla, las mismas para entrar y para salir;
 // fuente única compartida con el widget y el panel.
@@ -187,6 +188,13 @@ export const CONFIG_SCHEMA = {
     replaceWith: str, blockLinks: bool, maxMessageLength: num({ int: true, min: 0 }),
   },
   shortcuts: list(atajoItem),
+  // Overlays propios (src/custom-overlays.mjs): HTML/CSS/JS libre del usuario o del agente. Los
+  // topes son los de CustomOverlays (CUSTOM_OVERLAYS_MAX_*) para que todo camino de escritura valide igual.
+  customOverlays: list({
+    id: str, name: str, html: str, css: str, js: str,
+    width: num({ int: true, min: 16, max: 7680 }), height: num({ int: true, min: 16, max: 4320 }),
+    transparent: bool, updatedAt: num({ min: 0 }),
+  }, { maxItems: CUSTOM_OVERLAYS_MAX_ITEMS, maxBytes: CUSTOM_OVERLAYS_MAX_BYTES }),
   viewers: {
     enabled: bool, alertFirst: bool,
     pollSec: num({ int: true, min: 20, max: 600 }),

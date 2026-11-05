@@ -38,6 +38,7 @@ export const DEFAULT_CONFIG = {
   shortcuts: [],
   viewers: DEFAULT_VIEWERS,           // récord de espectadores a la vez y su anti-spam (src/viewers.mjs)
   teleprompter: DEFAULT_TELEPROMPTER, // guiones y ajustes de lectura (src/teleprompter.mjs)
+  customOverlays: [],                // overlays propios HTML/CSS/JS (src/custom-overlays.mjs)
   theme: DEFAULT_THEME,               // Apariencia: tema de overlay y widgets (src/theme.mjs)
   prompter: { fontSize: 22, mirror: false, hideCommands: true, autoSwitch: true, chatLines: 60, micTrack: '', css: '' },  // micTrack: pista de Meld del micro (vacío = la primera que se llame «mic…»)
   widgets: {
