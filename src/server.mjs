@@ -162,7 +162,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   interactive.on('change', () => pushInteractive());
   // récord de espectadores por plataforma (alertas viewers/ytviewers con anti-spam, #142)
   const viewers = new ViewerWatch({ store, twitch, youtube, engine, log });
-  viewers.on('change', snap => bus.send('viewers', snap, ['panel']));
+  // Los widgets también reciben el snapshot: es dato público del directo y lo usan sus overlays (S6).
+  viewers.on('change', snap => bus.send('viewers', snap, ['panel', 'widget']));
   // teleprompter: guion y avance compartidos por panel y su ventana dedicada (kind propio SSE)
   const teleprompter = new Teleprompter({ store, log });
   // kind propio de SSE: el guion es contenido privado, nunca va a los widgets genéricos.
@@ -915,6 +916,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         if (kind === 'panel') res.write(`event: status\ndata: ${JSON.stringify(status())}\n\n`);
         if (kind === 'widget') res.write(`event: widgets\ndata: ${JSON.stringify(engine.widgetState())}\n\n`);
         if (kind === 'widget') res.write(`event: interactive\ndata: ${JSON.stringify(interactive.snapshot())}\n\n`);
+        // Espectadores: snapshot para los widgets y para los overlays propios que cargan tarde (S6).
+        if (kind === 'widget') res.write(`event: viewers\ndata: ${JSON.stringify(viewers.snapshot())}\n\n`);
         // Versiones de los overlays propios: la shell recarga su iframe al cambiar la suya.
         if (kind === 'widget') res.write(`event: customOverlayVersions\ndata: ${JSON.stringify(customOverlays.versions())}\n\n`);
         if (kind === 'teleprompter') res.write(`event: teleprompter\ndata: ${JSON.stringify(teleprompter.snapshot())}\n\n`);
@@ -950,6 +953,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       const w = /^\/widget\/(\w+)$/.exec(url.pathname);
       if (w && WIDGETS.includes(w[1])) return serveFile(req, res, PUBLIC, `widgets/${w[1]}.html`);
       // Overlays propios (S5): la shell es nuestra y el marco es del usuario, en origen opaco.
+      // El SDK va antes para que la ruta de overlays no se coma /custom/sdk.js (no es un id válido).
+      if (url.pathname === '/custom/sdk.js') return serveFile(req, res, PUBLIC, 'custom/sdk.js');
       const custom = /^\/custom\/([^/]+)(\/frame)?$/.exec(url.pathname);
       if (custom) return serveCustomOverlay(res, custom[1], !!custom[2]);
       if (useApp && APP_PAGES[url.pathname]) return serveFile(req, res, dist, APP_PAGES[url.pathname]);

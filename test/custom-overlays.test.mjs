@@ -237,3 +237,101 @@ test('editing overlays through the generic config paths bumps their version so o
     assert.equal((await call('GET', '/api/custom-overlays/' + b.id)).overlay.css, 'p{}');
   } finally { s.close(); await close(); }
 });
+
+// ---------- S6: datos en vivo de solo lectura dentro del marco opaco ----------
+
+test('el SDK de los overlays se sirve como JavaScript y no lo captura la ruta de overlays', async () => {
+  const { raw, close } = await start();
+  try {
+    const r = await raw('GET', '/custom/sdk.js');
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^text\/javascript/);
+    const src = await r.text();
+    // Declara la API pública y los seis eventos documentados en la especificación (S6).
+    for (const ev of ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme']) assert.ok(src.includes(`'${ev}'`), `el SDK documenta el evento ${ev}`);
+    // Solo entrada: el SDK nunca envía nada que pudiera convertirse en una acción (S11 llega en T5).
+    assert.doesNotMatch(src, /\.postMessage\(/);
+  } finally { await close(); }
+});
+
+test('el marco carga el SDK antes del css y del js del usuario', async () => {
+  const { raw, call, close } = await start();
+  try {
+    const { overlay } = await call('POST', '/api/custom-overlays', { ...SAMPLE, css: '/*css-del-usuario*/', js: '/*js-del-usuario*/' });
+    const r = await raw('GET', `/custom/${overlay.id}/frame`);
+    const html = await r.text();
+    const sdk = html.indexOf('<script src="/custom/sdk.js"></script>');
+    assert.ok(sdk > 0, 'el marco incluye el script del SDK');
+    assert.ok(sdk < html.indexOf('<body'), 'el SDK va en el head, no al final del body');
+    assert.ok(sdk < html.indexOf('/*css-del-usuario*/'), 'el SDK se carga antes del css del usuario');
+    assert.ok(sdk < html.indexOf('/*js-del-usuario*/'), 'el SDK se carga antes del js del usuario');
+    // Es un script clásico (sin defer/async/module): `antena` existe cuando corre el código del usuario.
+    assert.doesNotMatch(html.slice(sdk, sdk + 80), /defer|async|type=/);
+    // Y sigue sirviéndose con el CSP de sandbox que da el origen opaco.
+    assert.match(r.headers.get('content-security-policy') || '', /sandbox allow-scripts/);
+  } finally { await close(); }
+});
+
+test('los clientes widget reciben la alerta pública saneada y el overlay de alertas la completa', async () => {
+  const { base, call, close } = await start();
+  const widget = await sse(base + '/api/stream?client=widget');
+  const overlayKind = await sse(base + '/api/stream?client=overlay');
+  try {
+    await call('POST', '/api/simulate', { type: 'follow', vars: { user: 'a' } });
+    const pub = await widget.next('publicAlert', d => d.vars?.user === 'a');
+    // Solo lo público: ni acciones, ni aspecto, ni tts, ni css global de la configuración.
+    assert.deepEqual(Object.keys(pub).sort(), ['at', 'durationMs', 'icon', 'platform', 'sub', 'text', 'title', 'type', 'vars']);
+    assert.equal(pub.type, 'follow');
+    assert.equal(pub.title, 'Nuevo seguidor');
+    assert.equal(pub.text, 'a');
+    assert.deepEqual(Object.keys(pub.vars), ['user']);
+    // El overlay de alertas sigue recibiendo la alerta completa; los widgets nunca la reciben.
+    const full = await overlayKind.next('alert', d => d.vars?.user === 'a');
+    assert.ok(Array.isArray(full.actions), 'la alerta completa del overlay conserva sus acciones');
+    await assert.rejects(widget.next('alert', () => true, 300), /no "alert"/, 'un widget no recibe la alerta completa');
+    await assert.rejects(overlayKind.next('publicAlert', () => true, 300), /no "publicAlert"/, 'el overlay de alertas no recibe la pública');
+  } finally { widget.close(); overlayKind.close(); await close(); }
+});
+
+test('los clientes widget reciben el snapshot de espectadores y sus cambios', async () => {
+  const { base, call, close } = await start();
+  const widget = await sse(base + '/api/stream?client=widget');
+  try {
+    const snap = await widget.next('viewers', d => d?.platforms?.twitch);
+    assert.equal(typeof snap.platforms.twitch.record, 'number');
+    // Los otros snapshots iniciales del cliente widget siguen llegando (comportamiento previo).
+    assert.ok(await widget.next('widgets', d => !!d.totals), 'widgets sigue llegando al conectar');
+    assert.ok(await widget.next('interactive', d => !!d.questions), 'interactive sigue llegando al conectar');
+    await call('PUT', '/api/viewers/records/twitch', { value: 42 });
+    const next = await widget.next('viewers', d => d.platforms.twitch.record === 42);
+    assert.equal(next.platforms.twitch.record, 42);
+  } finally { widget.close(); await close(); }
+});
+
+test('los clientes panel siguen recibiendo los cambios de espectadores', async () => {
+  const { base, call, close } = await start();
+  const panel = await sse(base + '/api/stream?client=panel');
+  try {
+    await call('PUT', '/api/viewers/records/twitch', { value: 7 });
+    const snap = await panel.next('viewers', d => d.platforms.twitch.record === 7);
+    assert.equal(snap.platforms.twitch.record, 7);
+  } finally { panel.close(); await close(); }
+});
+
+test('la shell retransmite con postMessage a un origen opaco y no escucha nada del marco', async () => {
+  const { raw, call, close } = await start();
+  try {
+    const { overlay } = await call('POST', '/api/custom-overlays', SAMPLE);
+    const html = await (await raw('GET', '/custom/' + overlay.id)).text();
+    // Destino '*' obligatorio: el marco es de origen opaco.
+    assert.match(html, /contentWindow\.postMessage\(\s*\{\s*antena:\s*1,\s*event/);
+    assert.match(html, /\}, '\*'\)/);
+    // La shell no atiende mensajes del marco ni hace peticiones por su culpa.
+    assert.doesNotMatch(html, /addEventListener\(\s*'message'/);
+    assert.doesNotMatch(html, /\.onmessage\b/);
+    assert.doesNotMatch(html, /\bfetch\(/);
+    // Un overlay propio nunca es cliente «overlay»: no toca la cola de alertas.
+    assert.doesNotMatch(html, /api\/overlay\/shown/);
+    assert.doesNotMatch(html, /client=overlay|'overlay'/);
+  } finally { await close(); }
+});

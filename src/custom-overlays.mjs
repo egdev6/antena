@@ -127,7 +127,9 @@ export class CustomOverlays {
 
 const escAttr = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/** Trusted shell: owns the SSE connection and reloads the sandboxed frame when the overlay changes. */
+/** Trusted shell: owns the SSE connection and reloads the sandboxed frame when the overlay changes.
+ *  It is also the only bridge for data (S6): the frame gets the public events by postMessage, with
+ *  targetOrigin '*' because its origin is opaque. Nothing is ever read back from the frame. */
 export function shellHtml(overlay) {
   const id = escAttr(overlay.id);
   return `<!doctype html>
@@ -136,28 +138,66 @@ export function shellHtml(overlay) {
 <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}iframe{border:0;width:100%;height:100%;display:block;background:transparent}</style>
 </head><body>
 <iframe id="frame" title="${escAttr(overlay.name)}" sandbox="allow-scripts" allowtransparency="true" src="/custom/${id}/frame?v=${Number(overlay.updatedAt) || 0}"></iframe>
-<script type="module">
-import { connect } from '/widgets/widget.js';
-const id = ${JSON.stringify(overlay.id)};
-const frame = document.getElementById('frame');
-let version = ${Number(overlay.updatedAt) || 0};
-connect({
-  customOverlayVersions: v => {
-    if (!(id in v) || v[id] === version) return;
-    version = v[id];
-    frame.src = '/custom/' + id + '/frame?v=' + version;
-  },
-});
+<script>
+// Script clásico (no módulo): se ejecuta durante el parseo, después del iframe, así que el
+// listener de «load» ya está puesto antes de que el marco pueda cargar. Sin él, un marco que
+// cargue rápido se perdería el snapshot inicial.
+(() => {
+  const id = ${JSON.stringify(overlay.id)};
+  const frame = document.getElementById('frame');
+  // Solo lo que el usuario puede ver: nada de secretos ni de la cola de alertas.
+  const SNAPSHOTS = ['widgets', 'viewers', 'interactive', 'theme'];
+  const state = {};
+  let version = ${Number(overlay.updatedAt) || 0};
+  let loaded = false;
+  let ready = false;
+
+  const post = (event, data) => {
+    if (!frame.contentWindow) return;
+    frame.contentWindow.postMessage({ antena: 1, event, data }, '*');
+  };
+  // El SDK resuelve «ready» cuando ya tiene el estado de los widgets y el marco ha cargado.
+  const sendReady = () => {
+    if (ready || !loaded || !('widgets' in state) || !frame.contentWindow) return;
+    ready = true;
+    frame.contentWindow.postMessage({ antena: 1, ready: true }, '*');
+  };
+  const relay = event => data => { state[event] = data; post(event, data); sendReady(); };
+
+  // Marco nuevo (primer carga o recarga tras guardar): le llega el snapshot vigente de cada evento.
+  frame.addEventListener('load', () => {
+    loaded = true;
+    for (const event of SNAPSHOTS) if (event in state) post(event, state[event]);
+    sendReady();
+  });
+
+  // La conexión (cliente «widget», nunca «overlay») la pone la utilidad común de los widgets.
+  import('/widgets/widget.js').then(({ connect }) => connect({
+    widgets: relay('widgets'),
+    viewers: relay('viewers'),
+    interactive: relay('interactive'),
+    theme: relay('theme'),
+    chat: relay('chat'),
+    publicAlert: data => relay('alert')(data),
+    customOverlayVersions: v => {
+      if (!(id in v) || v[id] === version) return;
+      version = v[id];
+      frame.src = '/custom/' + id + '/frame?v=' + version;
+    },
+  }, 'widget'));
+})();
 </script></body></html>`;
 }
 
-/** The user's page. Served with FRAME_CSP, so it is an opaque origin even when opened directly. */
+/** The user's page. Served with FRAME_CSP, so it is an opaque origin even when opened directly.
+ *  The SDK goes first in the head (classic script, no defer) so `antena` exists when user code runs. */
 export function frameHtml(overlay) {
   const bg = overlay.transparent === false ? '' : 'html,body{background:transparent}';
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>${escAttr(overlay.name)}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link href="/theme.css" rel="stylesheet">
+<script src="/custom/sdk.js"></script>
 <style>html,body{margin:0}${bg}</style>
 <style>${String(overlay.css || '').replace(/<\/style/gi, '<\\/style')}</style>
 </head><body>
