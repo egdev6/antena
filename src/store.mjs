@@ -45,6 +45,7 @@ export const DEFAULT_CONFIG = {
     goals: [{ id: 'principal', title: 'Objetivo de seguidores', visible: true, showMetric: true, css: '', bars: [{ id: 'principal-1', platform: 'twitch', metric: 'follows', target: 20, visible: true }] }],
     latest: { items: ['follow', 'sub', 'cheer', 'superchat'], css: '' },
     ticker: { label: 'Gracias a', count: 15, speed: 70, css: '' },
+    viewers: { platforms: ['twitch', 'youtube'], showTotal: true, showPeak: false, css: '' },  // espectadores a la vez por plataforma
     credits: { title: 'Gracias por estar', subtitle: 'egdev.es · directos los miércoles a las 19:00', speed: 60, css: '' },
   },
 };

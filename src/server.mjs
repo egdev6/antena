@@ -57,7 +57,14 @@ const MIME = {
   '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
   '.webm': 'video/webm', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
 };
-export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter'];
+export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter', 'viewers'];
+
+/** Viewer counts for on-screen widgets: only what the widget shows, never settings or errors. */
+export function publicViewers(snap) {
+  const out = {};
+  for (const [p, s] of Object.entries(snap?.platforms || {})) out[p] = { live: !!s.live, current: s.current ?? 0, peak: s.peak ?? 0, record: s.record ?? 0 };
+  return out;
+}
 
 // Hosts locales de confianza: el panel se sirve por loopback y un navegador ajeno que apunte
 // a 127.0.0.1 (DNS rebinding) no debe poder leer ni cambiar nada.
@@ -160,7 +167,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   interactive.on('change', () => pushInteractive());
   // récord de espectadores por plataforma (alertas viewers/ytviewers con anti-spam, #142)
   const viewers = new ViewerWatch({ store, twitch, youtube, engine, log });
-  viewers.on('change', snap => bus.send('viewers', snap, ['panel']));
+  viewers.on('change', snap => {
+    bus.send('viewers', snap, ['panel']);
+    bus.send('viewers', publicViewers(snap), ['widget']);
+  });
   // teleprompter: guion y avance compartidos por panel y su ventana dedicada (kind propio SSE)
   const teleprompter = new Teleprompter({ store, log });
   // kind propio de SSE: el guion es contenido privado, nunca va a los widgets genéricos.
@@ -865,6 +875,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         if (kind === 'panel') res.write(`event: status\ndata: ${JSON.stringify(status())}\n\n`);
         if (kind === 'widget') res.write(`event: widgets\ndata: ${JSON.stringify(engine.widgetState())}\n\n`);
         if (kind === 'widget') res.write(`event: interactive\ndata: ${JSON.stringify(interactive.snapshot())}\n\n`);
+        if (kind === 'widget') res.write(`event: viewers\ndata: ${JSON.stringify(publicViewers(viewers.snapshot()))}\n\n`);
         if (kind === 'teleprompter') res.write(`event: teleprompter\ndata: ${JSON.stringify(teleprompter.snapshot())}\n\n`);
         if (kind === 'overlay') res.write(`event: pause\ndata: ${JSON.stringify(engine.pauseState())}\n\n`);
         if (kind !== 'panel') {

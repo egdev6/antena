@@ -140,8 +140,9 @@ En el panel, **Meld y Stream Deck › Fuentes para Meld** lista todas con su tam
 | Pregunta | `http://127.0.0.1:4500/widget/question` | 1920×1080 |
 | Tier list | `http://127.0.0.1:4500/widget/tierlist` | 1920×1080 |
 | Sorteo | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
+| Espectadores | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
 
-Parámetros del overlay: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Créditos: `?transparent`, `?autoplay`, `?loop`. Últimos: `?layout=column`, `?items=follow,sub`.
+Parámetros del overlay: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Créditos: `?transparent`, `?autoplay`, `?loop`. Últimos: `?layout=column`, `?items=follow,sub`. Espectadores: `?platforms=twitch`, `?layout=column`, `?total=0`, `?peak=1`.
 
 ### Meld Studio
 
