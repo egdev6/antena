@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +53,35 @@ test('sin el artefacto de tokens compilado falla, lo explica y no toca las copia
     assert.equal(r.stderr, `No existe ${path.join(dir, 'packages/tokens/dist/tokens.css')}: compílalo con «pnpm tokens» en egdev-design-system o usa --build.\n`);
     assert.equal(await readFile(path.join(out, 'tokens.css'), 'utf8'), 'previo');
     assert.equal(await readFile(path.join(out, 'bundle.css'), 'utf8'), 'previo');
+  } finally { await rm(dir, { recursive: true, force: true }); await rm(out, { recursive: true, force: true }); }
+});
+
+// Windows entrega rutas cortas 8.3 (RUNNER~1) que git devuelve largas: la misma carpeta escrita de
+// otra forma. Un enlace (junction en Windows) reproduce ese caso en cualquier plataforma.
+test('acepta el repositorio aunque --from lo nombre con una ruta no canónica', async () => {
+  const { dir, sha } = await fakeDs();
+  const out = await mkdtemp(path.join(tmpdir(), 'ds-out-'));
+  const alias = path.join(out, 'alias-ds');
+  try {
+    await symlink(dir, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const r = run('--from', alias, '--to', out);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stderr, '');
+    assert.equal(r.stdout, `public/ds sincronizado con egdev-design-system ${sha}: tokens.css, bundle.css\n`);
+    assert.ok((await readFile(path.join(out, 'tokens.css'), 'utf8')).endsWith(TOKENS));
+  } finally { await rm(dir, { recursive: true, force: true }); await rm(out, { recursive: true, force: true }); }
+});
+
+test('una subcarpeta de otro repositorio no cuenta como el sistema de diseño', async () => {
+  const { dir } = await fakeDs();
+  const out = await mkdtemp(path.join(tmpdir(), 'ds-out-'));
+  const sub = path.join(dir, 'packages');
+  try {
+    const r = run('--from', sub, '--to', out);
+    assert.equal(r.status, 1);
+    assert.equal(r.stdout, '');
+    assert.equal(r.stderr, `${sub} no es un repositorio git de egdev-design-system (usa --from o EGDEV_DS).\n`);
+    assert.deepEqual(await readdir(out), []);
   } finally { await rm(dir, { recursive: true, force: true }); await rm(out, { recursive: true, force: true }); }
 });
 

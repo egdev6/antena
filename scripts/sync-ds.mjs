@@ -17,9 +17,11 @@ const files = [
 ];
 
 const git = (...args) => spawnSync('git', ['-C', from, ...args], { encoding: 'utf8' });
-const top = git('rev-parse', '--show-toplevel');
+// --show-cdup vacío = from es la raíz del repositorio. No se comparan rutas: git las devuelve
+// canónicas (enlaces resueltos, nombres largos en vez de 8.3 en Windows) y no coincidirían.
+const cdup = git('rev-parse', '--show-cdup');
 const commit = git('rev-parse', '--short', 'HEAD');
-if (top.status !== 0 || commit.status !== 0 || path.resolve(top.stdout.trim()) !== from) {
+if (cdup.status !== 0 || commit.status !== 0 || cdup.stdout.trim() !== '') {
   console.error(`${from} no es un repositorio git de egdev-design-system (usa --from o EGDEV_DS).`);
   process.exit(1);
 }
