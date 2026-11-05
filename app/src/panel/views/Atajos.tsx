@@ -18,7 +18,7 @@ export const SD_HELP: Record<string, string> = {
 };
 const TAB_NAMES: Record<string, string> = { preguntas: 'Preguntas', tierlist: 'Tier list', sorteo: 'Sorteo', cronologia: 'Cronología' };
 export const sdLabel = (a: string) => SD_HELP[a] || (a.startsWith('prompter/') ? `Prompter: pestaña ${TAB_NAMES[a.split('/')[1]] || a.split('/')[1]}` : a);
-const COLORS = ['', '#FF3B5C', '#FF8FA6', '#00E0FF', '#7CFF6B', '#FFC94D', '#B58CFF'];
+const COLORS = ['', '#FF335E', '#FF8FA6', '#00E0FF', '#7CFF6B', '#FFC94D', '#B58CFF'];
 
 type Step = { kind: string; action?: string; arg?: string; [k: string]: any };
 type Shortcut = { id: string; name: string; color?: string; steps: Step[]; path?: string };
@@ -147,7 +147,7 @@ export function Atajos({ parts }: { parts: string[] }) {
     {tab === 'mios' && <ListPanel tour="atajos-list" title="Mis atajos" note="Ideas: «Empezar», «Pausa café», «Sorteo». Hay plantillas al crear."
       cols={[{ key: 'name', label: 'Atajo' }, { key: 'steps', label: 'Pasos' }, { key: 'url', label: 'Dirección', hide: true }, { key: 'run', label: '' }]}
       rows={info.custom.map(x => { const href = `#/atajos/${enc(x.id)}`; return { id: x.id, href, open: open === x.id, cells: {
-        name: <NameCell href={href} name={x.name} lead={<span className="lv-swatch" style={{ background: x.color || 'var(--eg-accent, #FF3B5C)' }} />} />,
+        name: <NameCell href={href} name={x.name} lead={<span className="lv-swatch" style={{ background: x.color || 'var(--eg-accent, var(--color-primitive-red-light))' }} />} />,
         steps: <Tags items={x.steps.slice(0, 3).map(st => ({ t: stepText(st) })).concat(x.steps.length > 3 ? [{ t: `+${x.steps.length - 3}` }] : [])} />,
         url: <span className="lv-mono">/sd/custom/{x.id}</span>,
         run: <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post(`/api/shortcuts/${enc(x.id)}/run`), 'Hecho')}>Probar</button>,

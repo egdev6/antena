@@ -799,7 +799,7 @@ main:has(> .lv-savebar.is-open),.lv-slide:has(> .lv-savebar.is-open) .lv-sbody{p
 @media (max-width:900px){.lv-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lv-drawer{left:0}.lv-hide{display:none}.lv-savebar{left:0}}
 /* v2 · añadidos de la implementación */
 .lv-page{display:grid;gap:16px}
-.lv-pre{white-space:pre-wrap;font:12.5px/1.55 var(--font-mono,ui-monospace,monospace);color:var(--color-text-secondary);max-height:60vh;overflow:auto;margin:0}
+.lv-pre{white-space:pre-wrap;font:12.5px/1.55 var(--font-mono,ui-monospace,monospace);color:var(--color-fg-secondary);max-height:60vh;overflow:auto;margin:0}
 .lv-preview{display:grid;place-items:center;background:var(--color-surface-0);border-radius:10px;min-height:180px;overflow:hidden}
 .lv-preview img,.lv-preview video{max-width:100%;max-height:60vh;display:block}
 .lv-preview audio{width:90%}
