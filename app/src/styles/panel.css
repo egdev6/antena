@@ -894,6 +894,10 @@ main:has(> .lv-savebar.is-open),.lv-slide:has(> .lv-savebar.is-open) .lv-sbody{p
 .lv-wgoal i b{display:block;height:100%;background:var(--color-primitive-red-light)}
 .lv-wq{position:absolute;left:8%;right:8%;bottom:30%;text-align:center;font:800 14px/1.1 var(--font-display);text-transform:uppercase;color:var(--color-primitive-white)}
 .lv-wq small{display:block;font:700 7px/1 var(--font-display);letter-spacing:.2em;margin-bottom:4px;opacity:.8}
+/* overlay propio: marco de cámara con su etiqueta de capa */
+.lv-coverlay{position:absolute;inset:16% 12%}
+.lv-coverlay i{display:block;height:100%;border:2px dashed color-mix(in srgb,var(--color-primitive-white) 35%,transparent);border-radius:10px}
+.lv-coverlay b{position:absolute;left:1px;top:-2px;padding:2px 0;font:700 8px/1 var(--font-display);letter-spacing:.18em;color:var(--muted)}
 @media (max-width:900px){.lv-group-h p{display:none}}
 .lv-tools--bare{padding:0 0 14px;border:0}
 .lv-conn .lv-cname{white-space:normal;overflow:visible}

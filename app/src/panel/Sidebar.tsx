@@ -16,6 +16,7 @@ const ICONS = {
   comandos: [P('m4 17 6-6-6-6'), P('M12 19h8')],
   mensajes: [['circle', { cx: '12', cy: '12', r: '9' }], P('M12 7v5l3 2')],
   widgets: [['rect', { x: '3', y: '3', width: '7', height: '7', rx: '1' }], ['rect', { x: '14', y: '3', width: '7', height: '7', rx: '1' }], ['rect', { x: '3', y: '14', width: '7', height: '7', rx: '1' }], ['rect', { x: '14', y: '14', width: '7', height: '7', rx: '1' }]],
+  overlays: [['path', { d: 'M4 4h16v12H4z' }], P('M8 20h8M12 16v4'), P('M8 8h8')],
   atajos: [['rect', { x: '2', y: '6', width: '20', height: '12', rx: '2' }], P('M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10')],
   fuentes: [['rect', { x: '2', y: '3', width: '20', height: '14', rx: '2' }], P('M8 21h8M12 17v4')],
   meld: [P('m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z'), P('m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65')],
@@ -54,6 +55,7 @@ export function Sidebar({ current }: { current: string }) {
       { href: '#/comandos', label: 'Comandos de chat', tail: num(s.config.commands?.length) },
       { href: '#/mensajes', label: 'Mensajes programados', tail: num(s.config.timers?.length) },
       { href: '#/widgets', label: 'Widgets', tail: num(9) },
+      { href: '#/overlays', label: 'Overlays', tail: num((s.customOverlays || []).length) },
       { href: '#/atajos', label: 'Atajos y Stream Deck', tail: num(s.config.shortcuts?.length) },
     ]],
     ['produccion', 'Producción', [

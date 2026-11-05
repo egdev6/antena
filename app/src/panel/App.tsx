@@ -23,6 +23,7 @@ function View({ parts }: { parts: string[] }) {
     case 'comandos': return <V.Comandos parts={parts} />;
     case 'mensajes': return <V.Mensajes parts={parts} />;
     case 'widgets': return <V.Widgets parts={parts} />;
+    case 'overlays': return <V.Overlays parts={parts} />;
     case 'atajos': return <V.Atajos parts={parts} />;
     case 'fuentes': return <V.Fuentes parts={parts} />;
     case 'meld': return <V.Meld parts={parts} />;
