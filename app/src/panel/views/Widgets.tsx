@@ -15,6 +15,7 @@ export const origin = () => location.origin;
 const INFO: Record<string, { title: string; path: string; size: string; w: number; h: number; desc: string }> = {
   chat: { title: 'Chat en pantalla', path: '/widget/chat', size: '600×900', w: 600, h: 900, desc: 'El chat de Twitch y YouTube juntos, con tu estilo. Ideal para la escena de solo cámara.' },
   latest: { title: 'Últimos y ticker', path: '/widget/latest', size: '1400×200', w: 1400, h: 260, desc: 'Último seguidor, sub, bits… y una banda que recorre los últimos apoyos.' },
+  viewers: { title: 'Espectadores', path: '/widget/viewers', size: '900×160', w: 900, h: 160, desc: 'Espectadores a la vez en Twitch y YouTube, por separado y en total. Se actualiza solo mientras emites.' },
   credits: { title: 'Créditos', path: '/widget/credits', size: '1920×1080', w: 1920, h: 1080, desc: 'Créditos finales con todos los que han apoyado en el directo.' },
 };
 const q = (p: string, mode: string) => `${p}${p.includes('?') ? '&' : '?'}${mode}`;
@@ -75,6 +76,13 @@ export function Widget({ name }: { name: string }) {
     </div>
     <WField w="ticker" f="css" label="CSS del ticker" type="css" placeholder=".band { border-top-color: #fff; }" />
     <p className="css-help">Clases: <code>.root</code> <code>.band</code> <code>.label</code> <code>.track</code> <code>.run</code> <code>.it</code> <code>.it b</code> <code>.k</code></p></>;
+  if (name === 'viewers') form = <>
+    <div className="lbl">Plataformas<div className="row field-ctl"><ListChecks w="viewers" f="platforms" items={[['twitch', 'Twitch'], ['youtube', 'YouTube']]} /></div></div>
+    <WField w="viewers" f="showTotal" label="Mostrar el total (con dos plataformas)" type="switch" />
+    <WField w="viewers" f="showPeak" label="Mostrar el pico del directo" type="switch" />
+    <WField w="viewers" f="css" label="CSS personalizado" type="css" placeholder=".item .big { font-size: 64px; }" />
+    <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.item</code> <code>.item-twitch</code> <code>.item-youtube</code> <code>.item-total</code> <code>.item.off</code> <code>.item.up</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p>
+    <p className="hint mt">Parámetros: <code>?platforms=twitch</code> · <code>?layout=column</code> · <code>?total=0</code> · <code>?peak=1</code>. La cifra se refresca cada «pollSec» de la alerta de récord.</p></>;
   if (name === 'credits') form = <>
     <div className="row2"><WField w="credits" f="title" label="Título" /><WField w="credits" f="speed" label="Velocidad (px/s)" type="number" min={10} max={300} /></div>
     <WField w="credits" f="subtitle" label="Línea final" />
@@ -118,7 +126,7 @@ export function Widgets({ parts }: { parts: string[] }) {
     <PageHead crumb={`Configurar · ${Object.keys(INFO).length + 5} widgets`} title="Widgets"
       desc="Cada uno es una fuente de navegador para Meld (sus URL también están en Fuentes para Meld). Cuando la app trae un widget nuevo, aparece aquí como una tarjeta más." />
     <div className="lv-groups">
-      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={4} note="Se ajustan aquí y se dejan puestas en Meld" wide>
+      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={5} note="Se ajustan aquí y se dejan puestas en Meld" wide>
         {fixed('chat', <div className="lv-wchat"><i style={{ width: '62%' }} /><i style={{ width: '80%' }} /><i style={{ width: '48%' }} /><i style={{ width: '72%' }} /><i style={{ width: '56%' }} /></div>,
           [...((w.chat?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.chat?.css)])}
         <Card href="#/widgets/objetivos" label="Abrir Objetivos" open={open === 'objetivos'} title="Objetivos" aside={<span className="lv-cmeta">1 capa por objetivo</span>}
@@ -128,6 +136,8 @@ export function Widgets({ parts }: { parts: string[] }) {
         </Card>
         {fixed('latest', <><div className="lv-wbar"><i /><i /><i /></div><div className="lv-wtick" /></>,
           [{ t: (w.latest?.items || []).length ? `${(w.latest.items as string[]).length} tipos de apoyo` : 'Últimos apoyos' }, { t: 'con ticker' }, ...css(w.latest?.css || w.ticker?.css)])}
+        {fixed('viewers', <div className="lv-wbar"><i /><i /></div>,
+          [...((w.viewers?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...(w.viewers?.showTotal === false ? [] : [{ t: 'con total' }]), ...css(w.viewers?.css)])}
         {fixed('credits', <div className="lv-wcred"><b>GRACIAS</b><i /><i /><i /><i /></div>, [{ t: w.credits?.title || 'Créditos del directo' }, ...css(w.credits?.css)],
           <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>)}
       </CardGroup>

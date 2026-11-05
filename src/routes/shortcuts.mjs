@@ -26,6 +26,7 @@ const BROWSER_SOURCES = [
   { id: 'question', name: 'Pregunta', path: '/widget/question', width: 1920, height: 1080 },
   { id: 'tierlist', name: 'Tier list', path: '/widget/tierlist', width: 1920, height: 1080 },
   { id: 'giveaway', name: 'Sorteo', path: '/widget/giveaway', width: 1920, height: 1080 },
+  { id: 'viewers', name: 'Espectadores', path: '/widget/viewers', width: 900, height: 160 },
 ];
 const SHORTCUT_ENGINE_KINDS = ['scene', 'layer', 'hideLayer', 'toggleLayer', 'effect', 'command', 'streamEvent', 'chat', 'say'];
 

@@ -53,7 +53,7 @@ export function Sidebar({ current }: { current: string }) {
       { href: '#/alertas', label: 'Alertas', tail: warns ? <span className="nav-w" role="img" aria-label={warns === 1 ? '1 aviso' : `${warns} avisos`} title="Alertas con avisos" /> : null },
       { href: '#/comandos', label: 'Comandos de chat', tail: num(s.config.commands?.length) },
       { href: '#/mensajes', label: 'Mensajes programados', tail: num(s.config.timers?.length) },
-      { href: '#/widgets', label: 'Widgets', tail: num(8) },
+      { href: '#/widgets', label: 'Widgets', tail: num(9) },
       { href: '#/atajos', label: 'Atajos y Stream Deck', tail: num(s.config.shortcuts?.length) },
     ]],
     ['produccion', 'Producción', [

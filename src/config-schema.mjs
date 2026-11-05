@@ -234,6 +234,7 @@ export const CONFIG_SCHEMA = {
     latest: { items: arrStr(['follow', 'sub', 'cheer', 'superchat']), css: str },
     ticker: { label: str, count: num({ int: true, min: 1, max: 100 }), speed: num({ int: true, min: 10, max: 500 }), css: str },
     credits: { title: str, subtitle: str, speed: num({ int: true, min: 10, max: 500 }), css: str },
+    viewers: { platforms: arrStr(['twitch', 'youtube']), showTotal: bool, showPeak: bool, css: str },
   },
 };
 

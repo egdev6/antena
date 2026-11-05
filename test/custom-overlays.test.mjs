@@ -297,14 +297,15 @@ test('los clientes widget reciben el snapshot de espectadores y sus cambios', as
   const { base, call, close } = await start();
   const widget = await sse(base + '/api/stream?client=widget');
   try {
-    const snap = await widget.next('viewers', d => d?.platforms?.twitch);
-    assert.equal(typeof snap.platforms.twitch.record, 'number');
+    const snap = await widget.next('viewers', d => d?.twitch);
+    assert.deepEqual(Object.keys(snap.twitch).sort(), ['current', 'live', 'peak', 'record']);
+    assert.equal('settings' in snap, false, 'widgets only get public counts');
     // Los otros snapshots iniciales del cliente widget siguen llegando (comportamiento previo).
     assert.ok(await widget.next('widgets', d => !!d.totals), 'widgets sigue llegando al conectar');
     assert.ok(await widget.next('interactive', d => !!d.questions), 'interactive sigue llegando al conectar');
     await call('PUT', '/api/viewers/records/twitch', { value: 42 });
-    const next = await widget.next('viewers', d => d.platforms.twitch.record === 42);
-    assert.equal(next.platforms.twitch.record, 42);
+    const next = await widget.next('viewers', d => d.twitch?.record === 42);
+    assert.equal(next.twitch.record, 42);
   } finally { widget.close(); await close(); }
 });
 
