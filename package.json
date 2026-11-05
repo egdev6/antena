@@ -11,6 +11,7 @@
   "scripts": {
     "start": "node src/server.mjs",
     "fonts": "node scripts/fonts.mjs",
+    "ds:sync": "node scripts/sync-ds.mjs",
     "test": "node --test test/*.test.mjs",
     "baseline": "node scripts/baseline.mjs",
     "mcp": "node src/mcp.mjs",

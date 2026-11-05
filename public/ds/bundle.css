@@ -1,8 +1,10 @@
+/* Copia de egdev-design-system 32fe9d7 (packages/ui/src/styles/legacy/bundle.css). No editar: se regenera con pnpm ds:sync. */
 /* EGDEV Foundation · bundle.css — componentes atomic design (átomos → moléculas → organismos → plantillas). Requiere tokens.css.
    Material v2 (oct 2026): superficies tonales (surface-0…3, overlay), borde de luz (shadow-edge), sombras de dos capas (shadow-elev-1…3),
    pozos (shadow-well), botones con bisel y estado pulsado, overlays translúcidos con alternativa sólida.
    Grafito (9 oct 2026): la escalera de superficies pasa del negro a grises (#141518 → #2D2E33); cada nivel sube un tono.
-   El negro queda para el velo de los modales (color-bg-scrim) y las piezas Show. Nuevo: ModuleCard --banded. */
+   El negro queda para el velo de los modales (color-bg-scrim) y las piezas Show. Nuevo: ModuleCard --banded.
+   Pulso en Grafito (10 oct 2026): SectionShell --grafito (+ --fade-top/--fade-bottom), tarjetas web sólidas en gris y con bandas. */
 /* ==========================================================================
    EGDEV Foundation · Átomos (agente A)
    Origen visual: web/p4-pulso.html. Todo color/espacio/radio/sombra/duración
@@ -1513,7 +1515,7 @@ select.eg-field__control{appearance:none;padding-right:40px;background-image:url
 .eg-menu__item--danger:hover>.eg-icon,.eg-menu__item--danger:focus-visible>.eg-icon{color:var(--color-status-danger)}
 
 /* ==========================================================================
-   Producto: añadidos del rediseño de antena (7 de octubre de 2026)
+   Producto: añadidos del rediseño de egdev-live (7 de octubre de 2026)
    Variantes: MenuList __group--toggle, Field --code / --range, .eg-check--switch,
    ProgressBar --lg. Nuevos: Stat, Timeline, SelectTile, StageFrame.
    ========================================================================== */
@@ -1725,6 +1727,37 @@ button.eg-gauge:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
 
 /* --- ModuleCard · --glass (panel flotante sobre el escritorio) --- */
 .eg-module-card--glass{background:var(--color-surface-overlay);border-color:var(--color-border-hairline-strong);-webkit-backdrop-filter:blur(var(--blur-glass));backdrop-filter:blur(var(--blur-glass));box-shadow:var(--shadow-edge-strong),var(--shadow-elev-3);border-radius:20px}
+
+/* --- SectionShell · --grafito (Pulso, 10 oct 2026): secciones de lectura sobre gris ---
+   Lavado surface-0 al 50 % sobre el fondo ambiental (las partículas se ven detrás, en perfil read),
+   con fundido en los bordes del grupo (--fade-top / --fade-bottom). Las piezas Show siguen en negro. */
+.eg-section--grafito{position:relative;isolation:isolate}
+.eg-section--grafito::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:color-mix(in srgb,var(--color-surface-0) 50%,transparent)}
+.eg-section--fade-top::before{-webkit-mask:linear-gradient(180deg,transparent,#000 clamp(96px,14vh,180px));mask:linear-gradient(180deg,transparent,#000 clamp(96px,14vh,180px))}
+.eg-section--fade-bottom::before{-webkit-mask:linear-gradient(0deg,transparent,#000 clamp(96px,14vh,180px));mask:linear-gradient(0deg,transparent,#000 clamp(96px,14vh,180px))}
+.eg-section--fade-top.eg-section--fade-bottom::before{-webkit-mask:linear-gradient(180deg,transparent,#000 clamp(96px,14vh,180px),#000 calc(100% - clamp(96px,14vh,180px)),transparent);mask:linear-gradient(180deg,transparent,#000 clamp(96px,14vh,180px),#000 calc(100% - clamp(96px,14vh,180px)),transparent)}
+/* Sobre gris el cristal se pierde: las tarjetas de la web pasan a materia sólida (surface-1, hover surface-2). */
+.eg-section--grafito :is(.eg-now-card,.eg-project-card:not(.eg-project-card--feat),.eg-article-feature,.eg-community-card,.eg-terminal){background:var(--gradient-glass-card),var(--color-surface-1);-webkit-backdrop-filter:none;backdrop-filter:none}
+.eg-section--grafito :is(.eg-now-card,.eg-project-card:not(.eg-project-card--feat),.eg-article-feature,.eg-community-card):hover{background:var(--gradient-glass-card),var(--color-surface-2)}
+.eg-section--grafito :is(.eg-note,.eg-article){background:var(--gradient-sheen),var(--color-surface-1);-webkit-backdrop-filter:none;backdrop-filter:none}
+.eg-section--grafito :is(.eg-note,.eg-article):hover{background:var(--gradient-sheen),var(--color-surface-2)}
+@media (prefers-reduced-transparency:reduce){.eg-section--grafito::before{background:var(--color-surface-0)}}
+
+/* --- Bandas en las tarjetas de la web (Grafito): cabecera un tono por encima, pie un tono por debajo --- */
+.eg-terminal__bar{background:var(--gradient-sheen),var(--color-surface-2);border-bottom-color:var(--color-border-hairline);box-shadow:var(--shadow-edge)}
+.eg-terminal__bar>.eg-icon{color:var(--color-fg-brand-raised)}
+.eg-now-card__foot{margin:auto calc(-1 * var(--space-6)) calc(-1 * var(--space-7));padding:var(--space-3) var(--space-6) var(--space-4);border-top-color:var(--color-border-hairline);background:var(--color-surface-0);border-radius:0 0 calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px)}
+.eg-now-card--compact .eg-now-card__foot{margin:auto calc(-1 * var(--space-5)) calc(-1 * var(--space-4));padding:var(--space-3) var(--space-5)}
+.eg-community-card__top{align-self:stretch;width:auto;min-height:0;align-items:center;margin:calc(-1 * var(--space-8)) calc(-1 * var(--space-8)) var(--space-2);padding:var(--space-5) var(--space-8);background:var(--gradient-sheen),var(--color-surface-2);border-bottom:1px solid var(--color-border-hairline);box-shadow:var(--shadow-edge)}
+.eg-community-card__logo{height:56px}
+.eg-community-card__top{border-radius:calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px) 0 0}
+.eg-community-card__wordmark{width:56px;height:56px;border-radius:12px;font-size:13px}
+.eg-community-card__wordmark i{font-size:12px;color:var(--color-fg-brand-raised)}
+@media (max-width:760px){.eg-community-card__top{margin:calc(-1 * var(--space-6)) calc(-1 * var(--space-6)) var(--space-2);padding:var(--space-4) var(--space-6)}}
+
+/* --- Neón como texto solo sobre surface-0: en overlays, fg-brand-raised --- */
+.eg-section-nav__num{color:var(--color-fg-brand-raised)}
+.eg-mobile-menu__link.is-active,.eg-mobile-menu__link[aria-current]{color:var(--color-fg-brand-raised)}
 
 /* --- ModuleCard · --banded (Grafito): cabecera un tono por encima, pie un tono por debajo --- */
 .eg-module-card--banded{padding:0;gap:0;overflow:hidden}

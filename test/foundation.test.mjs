@@ -27,8 +27,8 @@ test('sirve los tokens y el bundle de EGDEV Foundation como CSS', async () => {
     assert.equal(tokens.status, 200);
     assert.match(tokens.headers.get('content-type'), /^text\/css\b/);
     const tokensBody = await tokens.text();
-    assert.match(tokensBody, /EGDEV Foundation/);
-    assert.match(tokensBody, /--color-primitive-red-neon:#FF0036/);
+    assert.match(tokensBody, /^\/\* Copia de egdev-design-system [0-9a-f]{7,} \(packages\/tokens\/dist\/tokens\.css\)/);
+    assert.match(tokensBody, /--color-primitive-red-neon:\s*#FF0036/);
 
     const bundle = await fetch(base + '/ds/bundle.css');
     assert.equal(bundle.status, 200);
