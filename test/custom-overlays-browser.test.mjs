@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { findChrome, openChromePage } from './helpers/react-browser.mjs';
+import { fakeMeld } from './helpers/fake-meld.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -46,7 +47,7 @@ test('un overlay propio recibe la alerta por el SDK dentro del marco opaco', { t
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
-  const api = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => {
+  const api = (method, url, body, headers) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => {
     const d = await r.json(); if (!r.ok) throw new Error(d.error); return d;
   });
   let chrome;
@@ -95,7 +96,7 @@ test('probar_overlay: la prueba llega al marco de su capa y a ninguna otra', { t
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
-  const api = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => {
+  const api = (method, url, body, headers) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => {
     const d = await r.json(); if (!r.ok) throw new Error(d.error); return d;
   });
   let chrome;
@@ -134,6 +135,92 @@ test('probar_overlay: la prueba llega al marco de su capa y a ninguna otra', { t
   } finally {
     if (chrome) { chrome.child.kill(); try { await chrome.cdp.close(); } catch { /* socket ya cerrado */ } }
     await back.close();
+    app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
+  }
+});
+
+// T5/S11b: antena.run de una acción APROBADA en Chrome. La petición sale del SDK, la shell la
+// reenvía a la ruta de acciones de SU overlay y el motor mueve Meld. El marco sigue opaco: su
+// código no llama a la API, solo a antena.run.
+test('S11b: antena.run aprobado ejecuta la acción y Meld cambia de escena', { timeout: 120000 }, async t => {
+  const bin = await findChrome();
+  if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la prueba de navegador');
+  const back = await recorder();
+  const meldSrv = fakeMeld();
+  await new Promise(r => meldSrv.server.listen(0, '127.0.0.1', r));
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-action-'));
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const api = (method, url, body, headers) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => {
+    const d = await r.json(); if (!r.ok) throw new Error(d.error); return d;
+  });
+  let chrome;
+  try {
+    await api('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${meldSrv.server.address().port}` });
+    for (let i = 0; i < 40 && app.meld.status.state !== 'conectado'; i++) await sleep(25);
+    assert.equal(app.meld.status.state, 'conectado', 'el Meld simulado no conectó');
+    const overlay = (await api('POST', '/api/custom-overlays', {
+      name: 'Acción aprobada',
+      requestedPermissions: ['scene'],
+      js: "antena.run('scene', { scene: 'Pantalla' })"
+        + ".then(() => fetch('" + back.base + "/run-ok', { mode: 'no-cors' }))"
+        + ".catch(e => fetch('" + back.base + "/run-fail?e=' + encodeURIComponent(e.message), { mode: 'no-cors' }));",
+    })).overlay;
+    // La aprobación es del usuario en el panel: cabeceras de navegador del mismo origen.
+    await api('PUT', `/api/custom-overlays/${overlay.id}/permissions`, { permissions: ['scene'] }, { Origin: base, 'Sec-Fetch-Site': 'same-origin' });
+
+    chrome = await openChromePage(bin, `${base}/custom/${overlay.id}`);
+    await back.waitFor(h => h === '/run-ok', 30000);
+    assert.equal(back.hits.some(h => h.startsWith('/run-fail')), false, 'la promesa resolvió, no rechazó');
+    assert.deepEqual(meldSrv.state.calls, [[10, 's2']], 'el motor cambió de escena en Meld');
+    assert.equal(app.meld.session().scenes.find(s => s.current).name, 'Pantalla');
+  } finally {
+    if (chrome) { chrome.child.kill(); try { await chrome.cdp.close(); } catch { /* socket ya cerrado */ } }
+    await back.close();
+    meldSrv.server.close();
+    app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
+  }
+});
+
+// T5/S11b: sin aprobación la promesa se rechaza con el error del servidor y NADA se ejecuta.
+test('S11b: antena.run sin aprobación rechaza la promesa y no toca Meld', { timeout: 120000 }, async t => {
+  const bin = await findChrome();
+  if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la prueba de navegador');
+  const back = await recorder();
+  const meldSrv = fakeMeld();
+  await new Promise(r => meldSrv.server.listen(0, '127.0.0.1', r));
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-action-denied-'));
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const api = (method, url, body, headers) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => {
+    const d = await r.json(); if (!r.ok) throw new Error(d.error); return d;
+  });
+  let chrome;
+  try {
+    await api('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${meldSrv.server.address().port}` });
+    for (let i = 0; i < 40 && app.meld.status.state !== 'conectado'; i++) await sleep(25);
+    assert.equal(app.meld.status.state, 'conectado', 'el Meld simulado no conectó');
+    // Pide el permiso pero nadie lo ha aprobado.
+    const overlay = (await api('POST', '/api/custom-overlays', {
+      name: 'Acción sin aprobar',
+      requestedPermissions: ['scene'],
+      js: "antena.run('scene', { scene: 'Pantalla' })"
+        + ".then(() => fetch('" + back.base + "/run-ok', { mode: 'no-cors' }))"
+        + ".catch(e => fetch('" + back.base + "/run-rejected?e=' + encodeURIComponent(e.message), { mode: 'no-cors' }));",
+    })).overlay;
+
+    chrome = await openChromePage(bin, `${base}/custom/${overlay.id}`);
+    const hit = new URL(await back.waitFor(h => h.startsWith('/run-rejected'), 30000), back.base);
+    assert.match(hit.searchParams.get('e') || '', /permiso/i, 'la promesa se rechazó con el error del servidor');
+    assert.equal(back.hits.some(h => h === '/run-ok'), false, 'nunca resolvió');
+    assert.deepEqual(meldSrv.state.calls, [], 'no se ejecutó ninguna acción');
+    assert.equal(app.meld.session().scenes.find(s => s.current).name, 'Cámara');
+  } finally {
+    if (chrome) { chrome.child.kill(); try { await chrome.cdp.close(); } catch { /* socket ya cerrado */ } }
+    await back.close();
+    meldSrv.server.close();
     app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
   }
 });

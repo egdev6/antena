@@ -23,6 +23,18 @@ const CODE_TIP: Record<string, string> = {
 const PROBAR: [string, string][] = [['alert', 'Probar alerta'], ['chat', 'Probar chat'], ['viewers', 'Probar espectadores']];
 const size = (o: { width: number; height: number }) => `${o.width}×${o.height}`;
 
+/** Tipos de acción de S11 con su nombre en el panel: lo mismo que CUSTOM_OVERLAY_ACTION_KINDS
+ *  (src/custom-overlays.mjs). Un tipo pedido que no esté aquí se enseña tal cual. */
+const PERMISOS: Record<string, string> = {
+  scene: 'Cambiar de escena', layer: 'Mostrar una capa', hideLayer: 'Ocultar una capa', toggleLayer: 'Alternar una capa',
+  effect: 'Activar un efecto', command: 'Lanzar un comando de Meld', streamEvent: 'Disparar un evento de Meld',
+  chat: 'Escribir en el chat', say: 'Leer en voz alta',
+};
+/** Firma de las aprobaciones: aprobar no cambia updatedAt, así que el editor compara esta firma. */
+const approvalsOf = (o: CustomOverlay | null | undefined) => o
+  ? `${o.approvedAt ?? 0}|${(o.requestedPermissions ?? []).join(',')}|${(o.permissions ?? []).join(',')}`
+  : '';
+
 /** Catálogo de overlays propios. Lo que crea el agente por MCP aparece aquí sin recargar. */
 export function Overlays({ parts }: { parts: string[] }) {
   const list: CustomOverlay[] = useLive(s => s.customOverlays || []);
@@ -85,20 +97,46 @@ function OverlaySlide({ id }: { id: string }) {
     const unregister = registerDraft('overlay:' + id, buffer);
     return () => { unregister(); buffer.dispose(); };
   }, [buffer, id]);
+  // Aprobar o revocar un permiso de acción (S11a): la petición sale de ESTE navegador, que es lo
+  // único que el servidor acepta con Sec-Fetch-Site: same-origin. Devuelve el overlay guardado.
+  const approve = guard(async (kind: string, on: boolean, base: CustomOverlay) => {
+    const requested = base.requestedPermissions ?? [];
+    const next = requested.filter(k => (k === kind ? on : (base.permissions ?? []).includes(k)));
+    const { overlay } = await put<{ overlay: CustomOverlay }>(`/api/custom-overlays/${enc(id)}/permissions`, { permissions: next });
+    applyApprovals(overlay);
+  });
+  /** Aprobar no versiona el código: se fusionan solo los campos de permisos, sin tocar el borrador. */
+  function applyApprovals(overlay: CustomOverlay) {
+    const cur = savedRef.current as CustomOverlay;
+    const next: CustomOverlay = {
+      ...cur,
+      requestedPermissions: overlay.requestedPermissions ?? [], permissions: overlay.permissions ?? [],
+      approvedAt: overlay.approvedAt ?? 0, approvedUpdatedAt: overlay.approvedUpdatedAt ?? 0,
+    };
+    savedRef.current = next;
+    setSaved(next);
+    live.update(s => ({ customOverlays: (s.customOverlays || []).map(o => (o.id === next.id ? next : o)) }));
+  }
   // Un cambio que llega por SSE (agente, MCP u otra ventana): sin cambios locales entra solo;
   // con cambios locales solo se anuncia, para no perder lo que el usuario estaba escribiendo.
   const remoteAt = remote?.updatedAt;
+  const remoteApprovals = approvalsOf(remote);
   useEffect(() => {
     if (!remote) return;
     const cur = savedRef.current;
     if (!cur) { savedRef.current = remote; setSaved(remote); return; }
-    if (Number(remote.updatedAt || 0) === Number(cur.updatedAt || 0)) return;
+    if (Number(remote.updatedAt || 0) === Number(cur.updatedAt || 0)) {
+      // Misma versión de código: si cambió la aprobación (otra ventana, el propio PUT), se
+      // fusiona sin anunciar cambios ni pisar el borrador.
+      if (approvalsOf(remote) !== approvalsOf(cur)) applyApprovals(remote);
+      return;
+    }
     if (buffer.dirty()) { setPending(remote); return; }
     savedRef.current = remote;
     setSaved(remote);
     setDraft(null);
     setPending(null);
-  }, [remote, remoteAt, buffer]);
+  }, [remote, remoteAt, remoteApprovals, buffer]);
   if (!saved) return <Slide crumb={<a href="#/overlays">Overlays</a>} title="Overlay" back="#/overlays">
     <p className="hint">No existe ese overlay: puede que se haya borrado.</p>
   </Slide>;
@@ -121,6 +159,10 @@ function OverlaySlide({ id }: { id: string }) {
     go('#/overlays');
   });
   const field = (['html', 'css', 'js'].includes(tab) ? tab : 'html') as 'html' | 'css' | 'js';
+  const requested = saved.requestedPermissions ?? [];
+  const approved = saved.permissions ?? [];
+  // S11d: el usuario aprobó una versión del código; si el código cambió después, se avisa.
+  const codeChanged = approved.length > 0 && Number(saved.updatedAt || 0) > Number(saved.approvedUpdatedAt || 0);
   return <Slide crumb={<><a href="#/overlays">Overlays</a> › {saved.name}</>} back="#/overlays" wide
     title={<input className="lv-title-input" aria-label="Nombre del overlay" value={cur.name} onChange={e => set({ name: e.target.value })} />}
     head={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={remove}>Borrar overlay…</button>}
@@ -150,6 +192,23 @@ function OverlaySlide({ id }: { id: string }) {
         <textarea className="code" data-code={field} aria-label={`${CODE_TABS.find(t => t.id === tab)?.label} del overlay`}
           spellCheck={false} placeholder={CODE_TIP[field]} value={String(cur[field])} onKeyDown={codeTab}
           onChange={e => set(field === 'html' ? { html: e.target.value } : field === 'css' ? { css: e.target.value } : { js: e.target.value })} />
+      </Panel>
+      <Panel title="Permisos" aside={<span className="hint">{requested.length ? `${approved.length} de ${requested.length} aprobados` : 'sin permisos'}</span>}>
+        <div data-permisos>
+          {requested.length
+            ? <div className="lv-permisos">
+              {requested.map(kind => <div key={kind} data-perm={kind}>
+                <Switch checked={approved.includes(kind)} onChange={v => approve(kind, v, saved)}>{PERMISOS[kind] ?? kind}</Switch>
+                {PERMISOS[kind] ? null : <span className="hint"> Tipo de acción desconocido para el panel: {kind}.</span>}
+              </div>)}
+            </div>
+            : <p className="hint">Este overlay no pide ningún permiso. Si necesita cambiar de escena, escribir en el chat o hablar, pídeselo al agente (por MCP) y apruébalo aquí.</p>}
+          {codeChanged ? <div className="eg-notice eg-notice--warning eg-notice--sm" role="alert" data-approval-stale>
+            <Icon d={IC.bell} />
+            <span className="eg-notice__text">El código ha cambiado desde que aprobaste los permisos. Revísalo y vuelve a aprobarlo si sigue haciendo lo que esperas.</span>
+          </div> : null}
+          <p className="hint">Las acciones (<code>antena.run(…)</code>) solo se ejecutan con lo que apruebas aquí; el agente las pide, no las aprueba. Un bucle que pida demasiadas se frena a las 10 acciones cada 10 segundos.</p>
+        </div>
       </Panel>
     </WidgetLayout>
   </Slide>;

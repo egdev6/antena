@@ -55,7 +55,11 @@ test('custom overlays: create with defaults, read, list, edit and delete through
     assert.deepEqual((await call('GET', '/api/custom-overlays')).overlays, []);
     const { overlay } = await call('POST', '/api/custom-overlays', { name: 'Vacío' });
     assert.match(overlay.id, /^[a-z0-9-]+$/);
-    assert.deepEqual({ ...overlay, id: undefined, updatedAt: undefined }, { id: undefined, updatedAt: undefined, name: 'Vacío', html: '', css: '', js: '', width: 1920, height: 1080, transparent: true });
+    assert.deepEqual({ ...overlay, id: undefined, updatedAt: undefined }, {
+      id: undefined, updatedAt: undefined, name: 'Vacío', html: '', css: '', js: '', width: 1920, height: 1080, transparent: true,
+      // S11: un overlay nuevo no pide ni tiene nada aprobado.
+      requestedPermissions: [], permissions: [], approvedAt: 0, approvedUpdatedAt: 0,
+    });
     assert.equal(typeof overlay.updatedAt, 'number');
     const full = (await call('POST', '/api/custom-overlays', SAMPLE)).overlay;
     assert.equal(full.js, SAMPLE.js);
@@ -249,8 +253,11 @@ test('el SDK de los overlays se sirve como JavaScript y no lo captura la ruta de
     const src = await r.text();
     // Declara la API pública y los seis eventos documentados en la especificación (S6).
     for (const ev of ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme']) assert.ok(src.includes(`'${ev}'`), `el SDK documenta el evento ${ev}`);
-    // Solo entrada: el SDK nunca envía nada que pudiera convertirse en una acción (S11 llega en T5).
-    assert.doesNotMatch(src, /\.postMessage\(/);
+    // Solo habla con su shell: la petición de acción va por postMessage al padre (S11b) y el SDK
+    // nunca llama a la API de antena (el marco es opaco y no tiene acceso a ella).
+    assert.match(src, /win\.parent\.postMessage\(/);
+    assert.match(src, /antena: 1, run: \{ reqId/);
+    assert.doesNotMatch(src, /\bfetch\(|XMLHttpRequest|EventSource/);
   } finally { await close(); }
 });
 
@@ -319,7 +326,7 @@ test('los clientes panel siguen recibiendo los cambios de espectadores', async (
   } finally { panel.close(); await close(); }
 });
 
-test('la shell retransmite con postMessage a un origen opaco y no escucha nada del marco', async () => {
+test('la shell retransmite con postMessage a un origen opaco y solo atiende a su propio marco', async () => {
   const { raw, call, close } = await start();
   try {
     const { overlay } = await call('POST', '/api/custom-overlays', SAMPLE);
@@ -327,10 +334,13 @@ test('la shell retransmite con postMessage a un origen opaco y no escucha nada d
     // Destino '*' obligatorio: el marco es de origen opaco.
     assert.match(html, /contentWindow\.postMessage\(\s*\{\s*antena:\s*1,\s*event/);
     assert.match(html, /\}, '\*'\)/);
-    // La shell no atiende mensajes del marco ni hace peticiones por su culpa.
-    assert.doesNotMatch(html, /addEventListener\(\s*'message'/);
-    assert.doesNotMatch(html, /\.onmessage\b/);
-    assert.doesNotMatch(html, /\bfetch\(/);
+    // S11b: sí atiende mensajes, pero solo de su propio marco (el iframe que embebe) y solo
+    // peticiones de acción; la petición sale a la ruta fija de ESTE overlay, nunca a una URL
+    // que elija el mensaje. La shell no hace ninguna otra petición por culpa del marco.
+    assert.match(html, /addEventListener\('message'/);
+    assert.match(html, /event\.source !== frame\.contentWindow/);
+    assert.ok(html.includes("'/api/custom-overlays/' + encodeURIComponent(id) + '/action'"), 'la ruta es fija y de este overlay');
+    assert.doesNotMatch(html, /\bfetch\([^)]*run\.|\bfetch\([^)]*data\./);
     // Un overlay propio nunca es cliente «overlay»: no toca la cola de alertas.
     assert.doesNotMatch(html, /api\/overlay\/shown/);
     assert.doesNotMatch(html, /client=overlay|'overlay'/);

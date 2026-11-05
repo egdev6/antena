@@ -31,7 +31,7 @@ import { ViewerWatch } from './viewers.mjs';
 import { registerTeleprompterRoutes } from './routes/teleprompter.mjs';
 import { registerCustomOverlayRoutes } from './routes/custom-overlays.mjs';
 import { Teleprompter } from './teleprompter.mjs';
-import { CustomOverlays, CUSTOM_OVERLAY_ID, FRAME_CSP, shellHtml, frameHtml } from './custom-overlays.mjs';
+import { CustomOverlays, CUSTOM_OVERLAY_ID, FRAME_CSP, shellHtml, frameHtml, publicOverlay } from './custom-overlays.mjs';
 import { httpError, id8, safePath, cleanName, freeName } from './http-util.mjs';
 import { Interactive } from './interactive.mjs';
 import { Timers, newTimer, alertFields, limitWarnings, TIMER_KEYS, TIMER_DESTINATIONS, DEFAULT_TIMER, ANNOUNCE_COLORS } from './timers.mjs';
@@ -183,7 +183,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const customOverlays = new CustomOverlays({
     store,
     onChange: list => {
-      bus.send('customOverlays', list, ['panel']);
+      // El panel recibe la lista con las aprobaciones normalizadas; los widgets solo el mapa de
+      // versiones para recargar su capa sin tocar Meld.
+      bus.send('customOverlays', list.map(publicOverlay), ['panel']);
       bus.send('customOverlayVersions', customOverlays.versions(), ['widget']);
     },
   });
@@ -429,7 +431,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     interactive: interactive.snapshot(),
     viewers: viewers.snapshot(),
     teleprompter: teleprompter.snapshot(),
-    customOverlays: customOverlays.list(),
+    customOverlays: customOverlays.list().map(publicOverlay),
     theme: publicTheme(store.config.theme), alertPreviews: alertPreviews(),
   }));
   route('GET', '/api/status', async () => status());
@@ -649,7 +651,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   registerInteractiveRoutes({ route, store, interactive });
   registerViewersRoutes({ route, store, viewers });
   registerTeleprompterRoutes({ route, teleprompter });
-  registerCustomOverlayRoutes({ route, customOverlays, bus });
+  registerCustomOverlayRoutes({ route, customOverlays, bus, engine, checkActions, log });
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
   const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
     onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });

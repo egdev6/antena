@@ -375,7 +375,13 @@ export interface SessionList { past?: { id: string; startedAt?: string | number;
 
 // ---------- overlays propios (src/custom-overlays.mjs) ----------
 /** Capa creada por el usuario o el agente (MCP): HTML, CSS y JS propios en /custom/<id>. */
-export interface CustomOverlay { id: string; name: string; html: string; css: string; js: string; width: number; height: number; transparent: boolean; updatedAt: number }
+export interface CustomOverlay {
+  id: string; name: string; html: string; css: string; js: string; width: number; height: number; transparent: boolean; updatedAt: number;
+  // S11: tipos de acción que el overlay PIDE y los que el usuario APROBÓ en el panel. Opcionales
+  // porque un overlay guardado antes de S11 no los trae (el servidor los normaliza al leerlo).
+  requestedPermissions?: string[]; permissions?: string[];
+  approvedAt?: number; approvedUpdatedAt?: number;
+}
 
 // ---------- récord de espectadores (src/viewers.mjs) ----------
 export interface ViewerSettings { enabled: boolean; pollSec: number; minViewers: number; confirmPolls: number; minStep: number; minStepPct: number; cooldownMin: number; warmupMin: number; alertFirst: boolean }

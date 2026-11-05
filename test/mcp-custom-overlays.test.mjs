@@ -13,6 +13,7 @@ import { createApp } from '../src/server.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MCP = path.join(ROOT, 'src', 'mcp.mjs');
 const NAMES = ['listar_overlays', 'ver_overlay', 'crear_overlay', 'editar_overlay', 'borrar_overlay', 'probar_overlay'];
+const KINDS = ['scene', 'layer', 'hideLayer', 'toggleLayer', 'effect', 'command', 'streamEvent', 'chat', 'say'];
 
 /** Cliente JSON-RPC por stdio del MCP real (como lo usaría Claude). */
 function mcp(url) {
@@ -96,7 +97,15 @@ test('MCP: las seis herramientas de overlays propios están y enseñan a escribi
       assert.match(d, /antena\.on\('alert'/, name);
       assert.match(d, /\/custom\/<id>/, name);
       assert.match(d, /recarg/i, name);
+      // S11: el agente PIDE permisos de acción; aprobarlos es cosa del usuario en el panel.
+      assert.match(d, /antena\.run\(/, name);
+      assert.match(d, /permiso/i, name);
+      assert.match(d, /panel/i, name);
+      assert.match(d, /10 acciones/, name);
+      assert.deepEqual(byName[name].inputSchema.properties.permisos.items.enum, KINDS, `${name} ofrece los tipos de acción del motor`);
     }
+    // Ninguna herramienta del MCP aprueba permisos: la aprobación vive solo en el panel.
+    assert.equal(tools.filter(t => /aprobar|approve|permisos/i.test(t.name)).length, 0);
     // Todo lo que hace el panel se puede hacer por MCP: el listado sigue siendo válido.
     assert.ok(tools.length >= 100);
     for (const t of tools) assert.match(t.name, /^[a-zA-Z0-9_-]{1,64}$/);
@@ -137,10 +146,13 @@ test('MCP: crear, ver, editar, listar, probar y borrar un overlay propio', { tim
     assert.equal(edited.html, '<div id="a">hola</div>');
     assert.ok(edited.updatedAt > created.updatedAt);
 
-    // El listado es ligero: id, nombre, tamaño y URL; nunca el código.
+    // El listado es ligero: id, nombre, tamaño, URL y los permisos (pedidos vs aprobados);
+    // nunca el código.
     const list = await c.call('listar_overlays');
     assert.equal(list.length, 1);
-    assert.deepEqual(Object.keys(list[0]).sort(), ['alto', 'ancho', 'id', 'nombre', 'url']);
+    assert.deepEqual(Object.keys(list[0]).sort(), ['alto', 'ancho', 'id', 'nombre', 'permisosAprobados', 'permisosSolicitados', 'url']);
+    assert.deepEqual(list[0].permisosSolicitados, []);
+    assert.deepEqual(list[0].permisosAprobados, []);
     assert.equal(list[0].url, `http://127.0.0.1:4611/custom/${created.id}`);
     assert.equal(list[0].ancho, 1280);
     assert.equal(list[0].alto, 720);
@@ -168,4 +180,45 @@ test('MCP: crear, ver, editar, listar, probar y borrar un overlay propio', { tim
     assert.deepEqual(await c.call('listar_overlays'), []);
     assert.deepEqual((await call('GET', '/api/custom-overlays')).overlays, []);
   } finally { c.close(); widget.close(); await close(); }
+});
+
+// T5/S11a: el agente PIDE permisos (crear/editar/config genérica) pero nunca los aprueba.
+test('MCP: pide permisos de acción pero no puede aprobarlos ni ampliarlos', { timeout: 30000 }, async () => {
+  const { base, call, close } = await start();
+  const c = mcp(base);
+  const panel = { 'Content-Type': 'application/json', Origin: base, 'Sec-Fetch-Site': 'same-origin' };
+  const raw = (method, p, body, headers = panel) => fetch(base + p, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+    .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign(new Error(d.error), { status: r.status }); return d; });
+  try {
+    await c.init();
+    const created = await c.call('crear_overlay', { nombre: 'Cuadro', permisos: ['scene', 'chat'] });
+    assert.deepEqual(created.requestedPermissions, ['scene', 'chat']);
+    assert.deepEqual(created.permissions, [], 'crear solo pide: no aprueba nada');
+    // La aprobación es del usuario, desde el panel (aquí, el navegador simulado con su cabecera).
+    await raw('PUT', `/api/custom-overlays/${created.id}/permissions`, { permissions: ['scene'] });
+
+    // Editar cambia lo PEDIDO y conserva lo aprobado que siga pedido.
+    const edited = await c.call('editar_overlay', { id: created.id, permisos: ['scene', 'say'] });
+    assert.deepEqual(edited.requestedPermissions, ['scene', 'say']);
+    assert.deepEqual(edited.permissions, ['scene'], 'editar nunca aprueba ni retira aprobaciones');
+
+    // La escritura genérica del MCP (cambiar_config) tampoco aprueba ni amplía.
+    await c.call('cambiar_config', { cambios: { customOverlays: [{ ...edited, permissions: ['chat', 'say'], approvedAt: 1 }] } });
+    const stored = (await raw('GET', `/api/custom-overlays/${created.id}`)).overlay;
+    assert.deepEqual(stored.permissions, ['scene'], 'config genérica conserva lo aprobado');
+    assert.equal(stored.approvedAt, edited.approvedAt);
+
+    // ver_overlay y listar_overlays enseñan pedidos y aprobados.
+    const seen = await c.call('ver_overlay', { id: created.id });
+    assert.deepEqual(seen.permisosSolicitados, ['scene', 'say']);
+    assert.deepEqual(seen.permisosAprobados, ['scene']);
+    const list = await c.call('listar_overlays');
+    assert.deepEqual(list[0].permisosSolicitados, ['scene', 'say']);
+    assert.deepEqual(list[0].permisosAprobados, ['scene']);
+    // Un permiso que el overlay no pide no se aprueba ni desde el panel.
+    await assert.rejects(raw('PUT', `/api/custom-overlays/${created.id}/permissions`, { permissions: ['chat'] }), /no ha pedido/);
+    assert.deepEqual((await raw('GET', `/api/custom-overlays/${created.id}`)).overlay.permissions, ['scene']);
+    await c.call('borrar_overlay', { id: created.id });
+    void call;
+  } finally { c.close(); await close(); }
 });

@@ -252,3 +252,55 @@ test('panel: un cambio del agente llega al editor abierto y nunca pisa el borrad
     await close();
   }
 });
+
+// T5/S11d: la sección «Permisos» del editor. El usuario aprueba y revoca desde el panel (la
+// petición sale del navegador, con Sec-Fetch-Site: same-origin), ve los pedidos y los aprobados,
+// y el editor avisa cuando el código ha cambiado desde la última aprobación.
+test('panel: aprueba y revoca permisos, y avisa si el código cambió desde la aprobación', { timeout: 150000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, api, close } = ctx;
+  let chrome;
+  const warning = 'El código ha cambiado desde que aprobaste los permisos';
+  try {
+    const { overlay } = await api('POST', '/api/custom-overlays', { name: 'Con permisos', requestedPermissions: ['scene', 'say'], js: 'antena.on("alert", () => {});' });
+    chrome = await openChromePage(bin, `${ctx.base}/#/overlays/${overlay.id}`);
+    const c = chrome.cdp;
+    await waitDom(c, `!!document.querySelector('[data-permisos]')`, { timeoutMs: 15000 });
+    const block = await dom(c, `document.querySelector('main .lv-slide').textContent`);
+    assert.match(block, /Permisos/);
+    assert.match(block, /Cambiar de escena/i);
+    assert.match(block, /Leer en voz alta/i);
+    // Empieza sin nada aprobado.
+    assert.equal(await dom(c, `document.querySelectorAll('[data-perm] input:checked').length`), 0);
+
+    // Aprobar «Cambiar de escena» desde el panel: la aprobación queda guardada.
+    await dom(c, `document.querySelector('[data-perm="scene"] input').click(), 'ok'`);
+    await waitDom(c, `document.querySelector('[data-perm="scene"] input').checked`, { timeoutMs: 12000 });
+    await eventually(async () => JSON.stringify((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay.permissions), '["scene"]');
+    const approved = (await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay;
+    assert.ok(approved.approvedAt > 0);
+    assert.equal(approved.approvedUpdatedAt, approved.updatedAt, 'aprobar no versiona el código');
+    assert.equal(await dom(c, `document.body.textContent.includes(${JSON.stringify(warning)}) ? 1 : 0`), 0, 'sin cambios de código no hay aviso');
+
+    // El agente cambia el JavaScript: el editor avisa y la aprobación se conserva.
+    await api('PUT', `/api/custom-overlays/${overlay.id}`, { js: 'antena.on("chat", () => {});' });
+    await waitDom(c, `document.body.textContent.includes(${JSON.stringify(warning)})`, { timeoutMs: 12000 });
+    assert.deepEqual((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay.permissions, ['scene']);
+
+    // Revocar desde el panel: el aviso desaparece (no queda nada aprobado).
+    await dom(c, `document.querySelector('[data-perm="scene"] input').click(), 'ok'`);
+    await waitDom(c, `document.querySelector('[data-perm="scene"] input').checked === false`, { timeoutMs: 12000 });
+    await eventually(async () => JSON.stringify((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay.permissions), '[]');
+    await waitDom(c, `document.body.textContent.includes(${JSON.stringify(warning)}) ? 0 : 1`, { timeoutMs: 12000 });
+
+    // Volver a aprobar el código nuevo deja la aprobación al día: el aviso no vuelve.
+    await dom(c, `document.querySelector('[data-perm="scene"] input').click(), 'ok'`);
+    await waitDom(c, `document.querySelector('[data-perm="scene"] input').checked`, { timeoutMs: 12000 });
+    await eventually(async () => JSON.stringify((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay.permissions), '["scene"]');
+    assert.equal(await dom(c, `document.body.textContent.includes(${JSON.stringify(warning)}) ? 1 : 0`), 0);
+  } finally {
+    await closeChrome(chrome);
+    await close();
+  }
+});

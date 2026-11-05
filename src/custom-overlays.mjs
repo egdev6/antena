@@ -3,8 +3,11 @@
 // shell that embeds /custom/<id>/frame in <iframe sandbox="allow-scripts">, and the frame
 // response carries `Content-Security-Policy: sandbox allow-scripts`, so the code lives in an
 // opaque origin. The server rejects its mutating requests (Origin: null) and, without CORS,
-// it cannot read the API or open the SSE stream. Data reaches it only via postMessage.
+// it cannot read the API or open the SSE stream. Data reaches it only via postMessage, and the
+// only way back out is the action bridge (S11): the SDK posts a run request to this shell, which
+// forwards it to the overlay's own action route and answers with ok/error only.
 import { httpError, id8 } from './http-util.mjs';
+import { MELD_STREAM_EVENTS } from './meld.mjs';
 
 export const CUSTOM_OVERLAY_MAX_BYTES = 512_000;        // one overlay, as JSON
 export const CUSTOM_OVERLAYS_MAX_BYTES = 2_500_000;     // the whole list, as JSON
@@ -12,8 +15,110 @@ export const CUSTOM_OVERLAYS_MAX_ITEMS = 50;
 export const CUSTOM_OVERLAY_ID = /^[a-z0-9-]{1,40}$/;
 export const FRAME_CSP = 'sandbox allow-scripts';
 
+/** Action kinds an overlay may request (S11): exactly the ones Engine.#execAction dispatches
+ *  (src/engine.mjs) — the same list alerts, timers and shortcuts run. Single source for the
+ *  schema (src/config-schema.mjs), the MCP enum and the route validation. */
+export const CUSTOM_OVERLAY_ACTION_KINDS = ['scene', 'layer', 'hideLayer', 'toggleLayer', 'effect', 'command', 'streamEvent', 'chat', 'say'];
+
+/** Per-overlay rate limit of the action bridge (S11c): 10 actions in a sliding window of 10 s. */
+export const CUSTOM_OVERLAY_RATE = { max: 10, windowMs: 10_000 };
+
 const SIZE = { width: ['ancho', 7680], height: ['alto', 4320] };
+const MAX_KIND_LABEL = 60;
 export const DEFAULT_CUSTOM_OVERLAY = { name: '', html: '', css: '', js: '', width: 1920, height: 1080, transparent: true };
+
+/** Approved kinds limited to the requested ones, in canonical order (dedupes too). Approvals can
+ *  never exceed what the overlay asked for, so every write path runs new approvals through here. */
+export function approvalsWithinRequest(approved, requested) {
+  const req = Array.isArray(requested) ? requested : [];
+  const ok = Array.isArray(approved) ? approved : [];
+  return CUSTOM_OVERLAY_ACTION_KINDS.filter(k => req.includes(k) && ok.includes(k));
+}
+
+/** Lista de tipos de acción: array de textos conocidos → orden canónico. 400 en castellano. */
+function cleanKinds(value) {
+  if (!Array.isArray(value)) throw httpError(400, 'Los permisos del overlay tienen que ser una lista de tipos de acción');
+  for (const k of value) {
+    if (typeof k !== 'string' || !CUSTOM_OVERLAY_ACTION_KINDS.includes(k)) {
+      throw httpError(400, `Permiso de overlay no válido: ${JSON.stringify(k ?? null).slice(0, MAX_KIND_LABEL)}. Usa ${CUSTOM_OVERLAY_ACTION_KINDS.join(', ')}.`);
+    }
+  }
+  return CUSTOM_OVERLAY_ACTION_KINDS.filter(k => value.includes(k));
+}
+
+/** An overlay as the API/panel/MCP see it: the approval fields always present and consistent,
+ *  even for an overlay stored before S11 existed. Never mutates the stored object. */
+export function publicOverlay(o) {
+  const requestedPermissions = Array.isArray(o.requestedPermissions) ? o.requestedPermissions : [];
+  return {
+    ...o,
+    requestedPermissions,
+    permissions: approvalsWithinRequest(o.permissions, requestedPermissions),
+    approvedAt: Number(o.approvedAt) || 0,
+    approvedUpdatedAt: Number(o.approvedUpdatedAt) || 0,
+  };
+}
+
+/** ¿Tiene el overlay aprobado este tipo de acción? Única comprobación que autoriza ejecutar. */
+export const isApprovedAction = (overlay, kind) => Array.isArray(overlay?.permissions) && overlay.permissions.includes(kind);
+
+/** Texto obligatorio y con contenido, para los campos de la acción. */
+function needText(kind, params, field) {
+  const v = params[field];
+  if (typeof v !== 'string' || !v.trim()) throw httpError(400, `La acción «${kind}» necesita «${field}» (texto no vacío)`);
+  return v;
+}
+
+/** Número opcional ≥ 0. Los strings no valen: el mensaje llega del SDK en JSON. */
+function optionalNumber(kind, params, field) {
+  const v = params[field];
+  if (v === undefined) return undefined;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw httpError(400, `«${field}» de la acción «${kind}» tiene que ser un número mayor o igual que 0`);
+  return v;
+}
+
+/** Valida los parámetros de una acción de overlay y devuelve la acción del motor, solo con los
+ *  campos de su tipo (nunca `delaySec`: una acción aplazada podría correr después de que el
+ *  usuario retire el permiso). El destino de chat lo valida checkActions en la ruta. */
+export function cleanActionParams(kind, params) {
+  if (typeof kind !== 'string' || !CUSTOM_OVERLAY_ACTION_KINDS.includes(kind)) {
+    throw httpError(400, `Tipo de acción no válido: ${JSON.stringify(kind ?? null).slice(0, MAX_KIND_LABEL)}. Tipos: ${CUSTOM_OVERLAY_ACTION_KINDS.join(', ')}`);
+  }
+  if (params !== undefined && (params === null || typeof params !== 'object' || Array.isArray(params))) {
+    throw httpError(400, 'Los parámetros de la acción tienen que ser un objeto');
+  }
+  const p = params || {};
+  const scene = p.scene === undefined ? undefined : needText(kind, p, 'scene');
+  switch (kind) {
+    case 'scene': {
+      const returnAfterSec = optionalNumber(kind, p, 'returnAfterSec');
+      return { kind, scene: needText(kind, p, 'scene'), ...(returnAfterSec !== undefined && { returnAfterSec }) };
+    }
+    case 'layer': {
+      const seconds = optionalNumber(kind, p, 'seconds');
+      return { kind, ...(scene !== undefined && { scene }), layer: needText(kind, p, 'layer'), ...(seconds !== undefined && { seconds }) };
+    }
+    case 'hideLayer':
+    case 'toggleLayer':
+      return { kind, ...(scene !== undefined && { scene }), layer: needText(kind, p, 'layer') };
+    case 'effect':
+      return { kind, ...(scene !== undefined && { scene }), layer: needText(kind, p, 'layer'), effect: needText(kind, p, 'effect') };
+    case 'command':
+      return { kind, command: needText(kind, p, 'command') };
+    case 'streamEvent': {
+      const event = needText(kind, p, 'event');
+      if (!MELD_STREAM_EVENTS.includes(event)) throw httpError(400, `Evento de Meld no válido: ${event.slice(0, MAX_KIND_LABEL)}. Usa ${MELD_STREAM_EVENTS.join(', ')}.`);
+      const amount = optionalNumber(kind, p, 'amount');
+      return { kind, event, ...(amount !== undefined && { amount }) };
+    }
+    case 'chat':
+      return { kind, text: needText(kind, p, 'text'), ...(p.destination !== undefined && { destination: p.destination }) };
+    case 'say':
+      return { kind, text: needText(kind, p, 'text') };
+    default:
+      throw httpError(400, `Tipo de acción no válido: ${kind}`);
+  }
+}
 
 /** Validates a full or partial overlay and returns only the known fields. Throws 400 in Spanish (UI language). */
 function clean(input, { partial }) {
@@ -39,6 +144,11 @@ function clean(input, { partial }) {
     if (typeof input.transparent !== 'boolean') throw httpError(400, 'El campo transparent tiene que ser verdadero o falso');
     out.transparent = input.transparent;
   }
+  // S11a: el agente (y cualquier escritura de código) solo PIDE permisos de acción. Las
+  // aprobaciones (`permissions`, `approvedAt`, `approvedUpdatedAt`) no se aceptan aquí: son
+  // campos desconocidos para clean y solo las cambia el endpoint de aprobación del panel.
+  if (!partial && !('requestedPermissions' in input)) out.requestedPermissions = [];
+  else if ('requestedPermissions' in input && input.requestedPermissions !== undefined) out.requestedPermissions = cleanKinds(input.requestedPermissions);
   return out;
 }
 
@@ -102,7 +212,11 @@ export class CustomOverlays {
   }
   #stamp(prev) { return Math.max(Date.now(), (prev || 0) + 1); }
   async create(input) {
-    const overlay = { id: '', ...DEFAULT_CUSTOM_OVERLAY, ...clean(input, { partial: false }) };
+    const overlay = {
+      id: '', ...DEFAULT_CUSTOM_OVERLAY, requestedPermissions: [], ...clean(input, { partial: false }),
+      // Un overlay nuevo no trae aprobaciones: el usuario las da después, en el panel.
+      permissions: [], approvedAt: 0, approvedUpdatedAt: 0,
+    };
     const taken = new Set(this.list().map(o => o.id));
     do overlay.id = id8(); while (taken.has(overlay.id));
     overlay.updatedAt = this.#stamp();
@@ -113,7 +227,20 @@ export class CustomOverlays {
   }
   async update(id, input) {
     const prev = this.get(id);
-    const overlay = { ...prev, ...clean(input, { partial: true }), id, updatedAt: this.#stamp(prev.updatedAt) };
+    const patch = clean(input, { partial: true });
+    const requestedPermissions = patch.requestedPermissions ?? prev.requestedPermissions ?? [];
+    const overlay = {
+      ...prev, ...patch,
+      id,
+      updatedAt: this.#stamp(prev.updatedAt),
+      requestedPermissions,
+      // Se conservan las aprobaciones que el overlay sigue pidiendo. Aprobar es cosa del usuario:
+      // ni editar ni la config genérica aprueban ni amplían nada.
+      permissions: approvalsWithinRequest(prev.permissions, requestedPermissions),
+      approvedAt: prev.approvedAt ?? 0,
+      // Versión aprobada por el usuario: si el código cambió después, el panel lo avisa (S11d).
+      approvedUpdatedAt: prev.approvedUpdatedAt ?? 0,
+    };
     const next = this.list().map(o => (o.id === id ? overlay : o));
     checkSize(overlay, next);
     await this.#commit(next);
@@ -130,8 +257,14 @@ export class CustomOverlays {
       if (typeof id !== 'string' || !CUSTOM_OVERLAY_ID.test(id)) throw httpError(400, `Id de overlay no válido: ${JSON.stringify(id ?? null).slice(0, 60)} (solo minúsculas, números y guiones)`);
       if (seen.has(id)) throw httpError(400, `Id de overlay repetido: ${id}`);
       seen.add(id);
-      const overlay = { id, ...DEFAULT_CUSTOM_OVERLAY, ...clean(item, { partial: false }) };
+      const overlay = { id, ...DEFAULT_CUSTOM_OVERLAY, requestedPermissions: [], ...clean(item, { partial: false }) };
       const old = prev.get(id);
+      // La config genérica (PUT /api/config, POST /api/config/set, cambiar_config del MCP) jamás
+      // aprueba: mantiene las aprobaciones guardadas de ese id (o ninguna si el id es nuevo).
+      overlay.permissions = approvalsWithinRequest(old?.permissions, overlay.requestedPermissions);
+      overlay.approvedAt = old?.approvedAt ?? 0;
+      overlay.approvedUpdatedAt = old?.approvedUpdatedAt ?? 0;
+      // Cambiar solo lo PEDIDO (no el código) no versiona el overlay: las capas abiertas no recargan.
       const same = old && Object.keys(DEFAULT_CUSTOM_OVERLAY).every(k => old[k] === overlay[k]);
       overlay.updatedAt = same ? old.updatedAt : this.#stamp(old?.updatedAt);
       return overlay;
@@ -160,13 +293,38 @@ export class CustomOverlays {
     await this.#commit(this.list().filter(o => o.id !== id));
     return { ok: true };
   }
+  /** Aprobación/revoca (S11a): las aprobaciones se quedan dentro de lo que el overlay pide. No
+   *  toca `updatedAt` (no cambia el código) y guarda la versión aprobada para el aviso del panel. */
+  async approve(id, permissions) {
+    const overlay = this.get(id);
+    const requestedPermissions = Array.isArray(overlay.requestedPermissions) ? overlay.requestedPermissions : [];
+    const wanted = cleanKinds(permissions);
+    for (const kind of wanted) {
+      if (!requestedPermissions.includes(kind)) {
+        throw httpError(400, `El overlay no ha pedido el permiso «${kind}»: solo se pueden aprobar los que pide (${requestedPermissions.join(', ') || 'ninguno'}).`);
+      }
+    }
+    const approved = {
+      ...overlay,
+      requestedPermissions,
+      permissions: approvalsWithinRequest(wanted, requestedPermissions),
+      approvedAt: Date.now(),
+      approvedUpdatedAt: Number(overlay.updatedAt) || 0,
+    };
+    const next = this.list().map(o => (o.id === id ? approved : o));
+    await this.#commit(next);
+    return approved;
+  }
 }
 
 const escAttr = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /** Trusted shell: owns the SSE connection and reloads the sandboxed frame when the overlay changes.
- *  It is also the only bridge for data (S6): the frame gets the public events by postMessage, with
- *  targetOrigin '*' because its origin is opaque. Nothing is ever read back from the frame. */
+ *  It is also the only bridge for data (S6) and for actions (S11b): the frame gets the public
+ *  events by postMessage, with targetOrigin '*' because its origin is opaque, and it can only ask
+ *  this shell to run an approved action. Only messages from the shell's own frame window are
+ *  accepted, the action request always goes to the fixed route of this overlay, and the reply
+ *  carries nothing but `ok` or the server's error text. */
 export function shellHtml(overlay) {
   const id = escAttr(overlay.id);
   return `<!doctype html>
@@ -200,6 +358,44 @@ export function shellHtml(overlay) {
     frame.contentWindow.postMessage({ antena: 1, ready: true }, '*');
   };
   const relay = event => data => { state[event] = data; post(event, data); sendReady(); };
+
+  // Puente de acciones (S11b): el SDK del marco pide una acción y esta shell —que sí está en el
+  // origen del panel— la manda a la ruta de acciones de SU overlay. Se atiende SOLO al marco
+  // propio (su ventana actual), que vive en un origen opaco («null»): si el código del usuario
+  // navega el marco a otra web, la ventana sigue siendo frame.contentWindow pero su origen ya no
+  // es opaco y sus mensajes se ignoran. La ruta y el método son fijos y el mensaje nunca los
+  // elige, y de vuelta solo viaja { ok } o el texto del error: al código del usuario no le llega
+  // ningún dato del servidor. Sin aprobación o pasado el límite, el servidor responde 403/429.
+  const RUN_MAX_BODY = 65536;   // el cuerpo de una acción es pequeño: nada de mandar megas
+  window.addEventListener('message', event => {
+    if (!frame.contentWindow || event.source !== frame.contentWindow) return;
+    if (event.origin !== 'null') return;   // solo el sandbox opaco, no una web en la que navegó
+    const data = event.data;
+    if (!data || typeof data !== 'object' || data.antena !== 1 || !data.run || typeof data.run !== 'object') return;
+    const run = data.run;
+    const reqId = run.reqId;
+    if (typeof reqId !== 'string' || !reqId || reqId.length > 80) return;   // sin id no hay respuesta que dar
+    const answer = (ok, error) => {
+      if (!frame.contentWindow) return;
+      frame.contentWindow.postMessage({ antena: 1, runResult: { reqId, ok, ...(ok ? {} : { error }) } }, '*');
+    };
+    const fail = text => answer(false, text);
+    if (typeof run.kind !== 'string' || !run.kind) return fail('Tipo de acción no válido');
+    if (run.params !== undefined && (run.params === null || typeof run.params !== 'object' || Array.isArray(run.params))) {
+      return fail('Los parámetros de la acción tienen que ser un objeto');
+    }
+    const body = JSON.stringify({ kind: run.kind, params: run.params || {} });
+    if (body.length > RUN_MAX_BODY) return fail('La acción es demasiado grande');
+    fetch('/api/custom-overlays/' + encodeURIComponent(id) + '/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }).then(async response => {
+      const out = await response.json().catch(() => ({}));
+      if (!response.ok) return fail(typeof out.error === 'string' && out.error ? out.error : 'No se pudo ejecutar la acción (' + response.status + ')');
+      answer(true);
+    }).catch(() => fail('No se pudo ejecutar la acción: no hay conexión con antena'));
+  });
 
   // Marco nuevo (primer carga o recarga tras guardar): le llega el snapshot vigente de cada evento.
   frame.addEventListener('load', () => {

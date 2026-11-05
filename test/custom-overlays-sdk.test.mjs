@@ -22,7 +22,7 @@ function loadSdk() {
     removeEventListener(type, fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); },
   };
   win.window = win;
-  const context = vm.createContext({ window: win, console, setTimeout, Promise });
+  const context = vm.createContext({ window: win, console, setTimeout, clearTimeout, Promise });
   vm.runInContext(SDK_SOURCE, context, { filename: 'public/custom/sdk.js' });
   /** Entrega un mensaje como lo haría el navegador: del padre (por defecto) al marco. */
   const deliver = (data, source = parent) => { for (const fn of [...listeners]) fn({ source, data }); };
@@ -51,7 +51,7 @@ test('el SDK expone on, off, state y ready, y solo acepta mensajes del padre con
   assert.deepEqual(seen, [{ type: 'follow', user: 'a' }]);
   assert.deepEqual(antena.state.alert, { type: 'follow', user: 'a' });
   assert.equal('exec' in antena.state, false, 'un evento desconocido no entra en el estado');
-  // Solo entrada: el SDK nunca publica nada (las acciones son de T5).
+  // Sin llamar a run, el SDK no publica nada: los eventos son solo de entrada.
   assert.deepEqual(delivered, []);
 });
 
@@ -125,4 +125,45 @@ test('los seis eventos de la especificación llegan al manejador con sus datos',
   deliver({ antena: 1, event: 'interactive', data: { questions: {} } });
   deliver({ antena: 1, event: 'theme', data: { accent: '#00D1FF' } });
   assert.deepEqual(got.map(([ev]) => ev), ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme']);
+});
+
+// T5/S11b: la única salida del SDK es la petición de acción hacia la shell (nunca a la API).
+test('run: pide la acción a la shell por el padre y resuelve o rechaza con su runResult', async () => {
+  const { antena, deliver, delivered } = loadSdk();
+  assert.equal(typeof antena.run, 'function');
+
+  const ran = antena.run('scene', { scene: 'Pantalla' });
+  await Promise.resolve();
+  assert.equal(delivered.length, 1, 'una petición de acción llega al padre');
+  const { msg, origin } = delivered[0];
+  assert.equal(origin, '*', 'el marco es de origen opaco: destino *');
+  assert.deepEqual(Object.keys(msg).sort(), ['antena', 'run']);
+  assert.equal(msg.antena, 1);
+  assert.equal(msg.run.kind, 'scene');
+  assert.deepEqual(msg.run.params, { scene: 'Pantalla' });
+  assert.equal(typeof msg.run.reqId, 'string');
+  // Solo la shell (el padre) puede responder, y solo con el reqId de esa petición.
+  deliver({ antena: 1, runResult: { reqId: msg.run.reqId, ok: true, result: 'extra' } });
+  assert.equal(await ran, 'extra');
+  deliver({ antena: 1, runResult: { reqId: 'otro', ok: false, error: 'no' } });
+  deliver({ antena: 1, runResult: { reqId: msg.run.reqId, ok: false, error: 'tarde' } }, { noSoyElPadre: true });
+
+  const denied = antena.run('chat', { text: 'hola' });
+  await Promise.resolve();
+  const deniedMsg = delivered[1].msg;
+  assert.equal(deniedMsg.run.kind, 'chat');
+  deliver({ antena: 1, runResult: { reqId: deniedMsg.run.reqId, ok: false, error: 'El overlay no tiene permiso para «chat»' } });
+  await assert.rejects(denied, /permiso/i);
+  // Un ok sin resultado resuelve igual (el servidor no reenvía datos).
+  const plain = antena.run('say', { text: 'hola' });
+  await Promise.resolve();
+  deliver({ antena: 1, runResult: { reqId: delivered[2].msg.run.reqId, ok: true } });
+  assert.equal(await plain, undefined);
+
+  // Llamadas mal formadas: rechazan sin llegar a la shell.
+  await assert.rejects(antena.run('', {}), { name: 'TypeError' });
+  await assert.rejects(antena.run(5, {}), { name: 'TypeError' });
+  await assert.rejects(antena.run('scene', 'Pantalla'), { name: 'TypeError' });
+  await assert.rejects(antena.run('scene', null), { name: 'TypeError' });
+  assert.equal(delivered.length, 3, 'nada mal formado cruza a la shell');
 });

@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CUSTOM_OVERLAY_ACTION_KINDS } from './custom-overlays.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // La versión anunciada sale de package.json (única fuente de verdad, sin duplicar el número).
@@ -256,29 +257,38 @@ const OVERLAY_HELP = `Cómo se escribe un overlay (con unas líneas basta):
 - /theme.css ya está enlazado: usa sus variables CSS (var(--accent), var(--text)…) para que combine con el tema.
 - Datos en vivo por el SDK (window.antena): antena.on('alert'|'chat'|'viewers'|'widgets'|'interactive'|'theme', fn), antena.state y antena.ready (espera a tener datos).
   Ej.: antena.on('alert', a => { nombre.textContent = a.text; nombre.animate([{opacity:0},{opacity:1}], 300); });
+- Acciones (S11): antena.run(kind, params) devuelve una promesa: resuelve si la acción se ejecutó y se rechaza con el error del servidor si no.
+  Tipos y params: scene {scene, returnAfterSec} · layer {scene?, layer, seconds?} · hideLayer/toggleLayer {scene?, layer} · effect {scene?, layer, effect} · command {command} · streamEvent {event, amount?} · chat {text, destination? twitch|youtube|both} · say {text}.
+  En el código: antena.run('scene', { scene: 'Cámara' }).catch(e => console.warn(e.message));
+- El agente SOLO PIDE permisos con «permisos» (al crear o editar): el usuario los aprueba (o revoca) en el panel, en la sección Overlays. Aquí no hay forma de aprobarlos y editar el código nunca cambia lo aprobado. Sin aprobación, antena.run se rechaza y no pasa nada.
+- Límite por overlay: 10 acciones cada 10 s (por encima, 429 y no se ejecuta). Aprovecha una acción por evento, no bucles.
 - En Meld se añade como capa de navegador con la URL /custom/<id> (la devuelven crear_overlay y ver_overlay). Al guardar, las capas abiertas se recargan solas.`;
 const localBase = async () => `http://127.0.0.1:${(await get('/api/config?path=port')).value || 4500}`;
 const overlayUrl = async overlay => (await localBase()) + '/custom/' + overlay.id;
 
-tool('listar_overlays', 'Lista los overlays propios (páginas HTML/CSS/JS que se añaden como capa en Meld) con su id, nombre, tamaño y URL. No incluye el código: para eso, ver_overlay.', {}, async () => {
+tool('listar_overlays', 'Lista los overlays propios (páginas HTML/CSS/JS que se añaden como capa en Meld) con su id, nombre, tamaño, URL y permisos de acción: los que PIDE el overlay y los que el usuario ha APROBADO en el panel. No incluye el código: para eso, ver_overlay.', {}, async () => {
   const [{ overlays }, b] = await Promise.all([get('/api/custom-overlays'), localBase()]);
-  return overlays.map(o => ({ id: o.id, nombre: o.name, ancho: o.width, alto: o.height, url: b + '/custom/' + o.id }));
+  return overlays.map(o => ({
+    id: o.id, nombre: o.name, ancho: o.width, alto: o.height, url: b + '/custom/' + o.id,
+    permisosSolicitados: o.requestedPermissions || [], permisosAprobados: o.permissions || [],
+  }));
 });
-tool('ver_overlay', 'Un overlay propio completo: nombre, html, css, js, ancho, alto, fondo transparente y su URL para Meld (/custom/<id>).', { id: S.str('Id del overlay') }, async ({ id }) => {
+tool('ver_overlay', 'Un overlay propio completo: nombre, html, css, js, ancho, alto, fondo transparente, su URL para Meld (/custom/<id>) y los permisos de acción pedidos (permisosSolicitados) y aprobados por el usuario (permisosAprobados).', { id: S.str('Id del overlay') }, async ({ id }) => {
   const { overlay } = await get('/api/custom-overlays/' + enc(id));
-  return { ...overlay, url: await overlayUrl(overlay) };
+  return { ...overlay, url: await overlayUrl(overlay), permisosSolicitados: overlay.requestedPermissions || [], permisosAprobados: overlay.permissions || [] };
 }, ['id']);
+const OVERLAY_PERMISOS = S.arr('Tipos de acción que el overlay PIDE (no aprueba: el usuario los aprueba en el panel y sin aprobación antena.run se rechaza): scene, layer, hideLayer, toggleLayer, effect, command, streamEvent, chat, say.', { type: 'string', enum: CUSTOM_OVERLAY_ACTION_KINDS });
 tool('crear_overlay', 'Crea un overlay propio: una página HTML/CSS/JS que se añade en Meld como capa nueva. Solo hace falta el nombre; el resto tiene valores por defecto. Devuelve el id y la URL /custom/<id>. ' + OVERLAY_HELP,
-  { nombre: S.str('Nombre, p. ej. «Marco de cámara»'), html: S.str('HTML del cuerpo'), css: S.str('CSS propio (se aplica después de /theme.css)'), js: S.str('JavaScript del overlay'), ancho: S.num('Ancho del lienzo en px (16–7680, por defecto 1920)'), alto: S.num('Alto del lienzo en px (16–4320, por defecto 1080)'), transparente: S.bool('Fondo transparente (por defecto sí)') },
-  async ({ nombre, html, css, js, ancho, alto, transparente }) => {
-    const { overlay } = await post('/api/custom-overlays', { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente });
-    return { ...overlay, url: await overlayUrl(overlay) };
+  { nombre: S.str('Nombre, p. ej. «Marco de cámara»'), html: S.str('HTML del cuerpo'), css: S.str('CSS propio (se aplica después de /theme.css)'), js: S.str('JavaScript del overlay'), ancho: S.num('Ancho del lienzo en px (16–7680, por defecto 1920)'), alto: S.num('Alto del lienzo en px (16–4320, por defecto 1080)'), transparente: S.bool('Fondo transparente (por defecto sí)'), permisos: OVERLAY_PERMISOS },
+  async ({ nombre, html, css, js, ancho, alto, transparente, permisos }) => {
+    const { overlay } = await post('/api/custom-overlays', { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente, requestedPermissions: permisos });
+    return { ...overlay, url: await overlayUrl(overlay), permisosSolicitados: overlay.requestedPermissions || [], permisosAprobados: overlay.permissions || [] };
   }, ['nombre']);
-tool('editar_overlay', 'Cambia lo que pases de un overlay (actualización parcial: lo que no mandes se queda como está). Al guardar, todas las capas abiertas se recargan solas. ' + OVERLAY_HELP,
-  { id: S.str('Id del overlay'), nombre: S.str('Nombre nuevo'), html: S.str('HTML nuevo (sustituye al actual)'), css: S.str('CSS nuevo (sustituye al actual)'), js: S.str('JavaScript nuevo (sustituye al actual)'), ancho: S.num('Ancho del lienzo en px (16–7680)'), alto: S.num('Alto del lienzo en px (16–4320)'), transparente: S.bool('Fondo transparente') },
-  async ({ id, nombre, html, css, js, ancho, alto, transparente }) => {
-    const { overlay } = await put('/api/custom-overlays/' + enc(id), { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente });
-    return { ...overlay, url: await overlayUrl(overlay) };
+tool('editar_overlay', 'Cambia lo que pases de un overlay (actualización parcial: lo que no mandes se queda como está). Al guardar, todas las capas abiertas se recargan solas. Pedir permisos nuevos no los aprueba: eso es del panel, y las aprobaciones que el overlay deje de pedir se retiran. ' + OVERLAY_HELP,
+  { id: S.str('Id del overlay'), nombre: S.str('Nombre nuevo'), html: S.str('HTML nuevo (sustituye al actual)'), css: S.str('CSS nuevo (sustituye al actual)'), js: S.str('JavaScript nuevo (sustituye al actual)'), ancho: S.num('Ancho del lienzo en px (16–7680)'), alto: S.num('Alto del lienzo en px (16–4320)'), transparente: S.bool('Fondo transparente'), permisos: OVERLAY_PERMISOS },
+  async ({ id, nombre, html, css, js, ancho, alto, transparente, permisos }) => {
+    const { overlay } = await put('/api/custom-overlays/' + enc(id), { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente, requestedPermissions: permisos });
+    return { ...overlay, url: await overlayUrl(overlay), permisosSolicitados: overlay.requestedPermissions || [], permisosAprobados: overlay.permissions || [] };
   }, ['id']);
 tool('borrar_overlay', 'Borra un overlay propio: desaparece de «Fuentes para Meld» y las capas abiertas dejan de cargar.', { id: S.str('Id del overlay') }, ({ id }) => del('/api/custom-overlays/' + enc(id)), ['id']);
 tool('probar_overlay', 'Manda un evento de ejemplo AHORA a UNA capa abierta (la de Meld o la vista previa del panel), como si acabara de pasar: alert (una alerta), chat (un mensaje), viewers (espectadores) o widgets (totales, objetivos, últimos…). Sin datos usa un ejemplo realista. No toca el directo: ni alertas en cola, ni totales, ni historial.',

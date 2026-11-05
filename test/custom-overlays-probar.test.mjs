@@ -201,8 +201,7 @@ test('probar: la shell reenvía la prueba al marco solo si va dirigida a su capa
     assert.match(html, /customOverlayTest:\s*test\s*=>\s*\{/);
     assert.match(html, /if\s*\(!test\s*\|\|\s*test\.id\s*!==\s*id\)\s*return;/);
     assert.match(html, /post\(test\.event, test\.data\)/);
-    // Sigue sin escuchar nada del marco ni usar canales de vuelta (S5/S11).
-    assert.doesNotMatch(html, /addEventListener\(\s*'message'/);
+    // La prueba sigue siendo solo de entrada: un mensaje de prueba de otra capa no llega.
     assert.doesNotMatch(html, /client=overlay|'overlay'/);
   } finally { await close(); }
 });

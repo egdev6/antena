@@ -777,6 +777,8 @@ html:has(.lv-drawer){overflow:hidden}
 .lv-sfoot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:11px 22px;background:var(--color-surface-0);border-top:1px solid var(--color-border-hairline)}
 .lv-sfoot.sticky{position:sticky;bottom:0;z-index:2}
 .lv-sfoot .sp{flex:1}
+/* Permisos de acción de un overlay (S11): una casilla por tipo pedido. */
+.lv-permisos{display:grid;gap:10px}
 main>.lv-sfoot:not(.lv-savebar){margin:16px -24px -60px}
 /* save bar (lib/layout.tsx SaveBar): fixed at the bottom, slides up only with pending changes */
 .lv-savebar{position:fixed;left:240px;right:0;bottom:0;margin:0;z-index:30;box-shadow:0 -12px 32px rgba(0,0,0,.35);transform:translateY(100%);visibility:hidden;
