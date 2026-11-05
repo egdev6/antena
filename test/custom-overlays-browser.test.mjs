@@ -84,3 +84,56 @@ test('un overlay propio recibe la alerta por el SDK dentro del marco opaco', { t
     app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
   }
 });
+
+// T3: probar_overlay en Chrome. La prueba sale del servidor, la shell la filtra por id y el SDK la
+// entrega tal cual al código del usuario, sin cambios en el SDK.
+test('probar_overlay: la prueba llega al marco de su capa y a ninguna otra', { timeout: 120000 }, async t => {
+  const bin = await findChrome();
+  if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la prueba de navegador');
+  const back = await recorder();
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-probar-browser-'));
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const api = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => {
+    const d = await r.json(); if (!r.ok) throw new Error(d.error); return d;
+  });
+  let chrome;
+  try {
+    // El código del usuario apunta cada dato recibido al servidor de la prueba.
+    const overlay = (await api('POST', '/api/custom-overlays', {
+      name: 'Prueba de capa',
+      js: [
+        "antena.on('alert', a => fetch('" + back.base + "/a-alert?user=' + encodeURIComponent(a.vars.user) + '&title=' + encodeURIComponent(a.title), { mode: 'no-cors' }));",
+        "antena.on('viewers', v => fetch('" + back.base + "/a-viewers?current=' + v.twitch.current, { mode: 'no-cors' }));",
+      ].join('\n'),
+    })).overlay;
+    const other = (await api('POST', '/api/custom-overlays', { name: 'Otra capa' })).overlay;
+
+    chrome = await openChromePage(bin, `${base}/custom/${overlay.id}`);
+    // Snapshot inicial: la shell conectó y el SDK ya reparte datos a esta capa.
+    await back.waitFor(h => h.startsWith('/a-viewers?current='));
+
+    // Una prueba para OTRA capa no se reenvía a este marco (la shell filtra por id).
+    await api('POST', `/api/custom-overlays/${other.id}/test`, { event: 'alert', data: { type: 'follow', title: 'NO-DEBE-LLEGAR', vars: { user: 'fantasma' } } });
+    await sleep(1500);
+    assert.equal(back.hits.some(h => h.includes('fantasma') || h.includes('NO-DEBE-LLEGAR')), false, 'la prueba de otra capa no llega a este marco');
+
+    // La prueba para esta capa sí: llega como el mensaje { antena: 1, event, data } de siempre.
+    await api('POST', `/api/custom-overlays/${overlay.id}/test`, { event: 'alert', data: { type: 'follow', title: 'Solo para A', vars: { user: 'ana' } } });
+    const hit = new URL(await back.waitFor(h => h.startsWith('/a-alert')), back.base);
+    assert.equal(hit.searchParams.get('user'), 'ana');
+    assert.equal(hit.searchParams.get('title'), 'Solo para A');
+
+    // Sin datos, el ejemplo realista del servidor es lo que acaba en el código del usuario.
+    const probed = await api('POST', `/api/custom-overlays/${overlay.id}/test`, { event: 'viewers' });
+    const current = probed.test.data.twitch.current;
+    assert.ok(current > 0, 'el ejemplo de espectadores no es un snapshot vacío');
+    const seen = new URL(await back.waitFor(h => h === '/a-viewers?current=' + current), back.base);
+    assert.equal(seen.searchParams.get('current'), String(current));
+  } finally {
+    if (chrome) { chrome.child.kill(); try { await chrome.cdp.close(); } catch { /* socket ya cerrado */ } }
+    await back.close();
+    app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
+  }
+});

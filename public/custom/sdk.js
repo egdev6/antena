@@ -21,7 +21,7 @@
  *                  queue, the look/media configuration or the alert actions. Live only: a frame
  *                  that loads later is not sent the previous alert again.
  *   'chat'         Every new chat message, exactly as the chat widgets get it. Live only.
-  *   'viewers'      Public viewer counts: { twitch: { live, current, peak, record }, youtube: { ... } }.
+ *   'viewers'      Public viewer counts: { twitch: { live, current, peak, record }, youtube: { ... } }.
  *   'widgets'      Widget state: totals, latest, goals, recent, credits, session…
  *   'interactive'  Live questions, tier list, vote and giveaway state.
  *   'theme'        Public theme (the accents and the other variables of /theme.css).

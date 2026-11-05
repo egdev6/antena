@@ -42,6 +42,43 @@ function clean(input, { partial }) {
   return out;
 }
 
+/** Eventos que acepta la prueba de una capa (`probar_overlay`). Son los que el SDK ya entiende:
+ *  alert, chat, viewers y widgets. Nunca tocan la cola de alertas, el directo ni los totales. */
+export const CUSTOM_OVERLAY_TEST_EVENTS = ['alert', 'chat', 'viewers', 'widgets'];
+
+/** Ejemplo realista por evento, para probar una capa sin inventar datos (misma forma que el SDK). */
+export function overlayTestSample(event) {
+  const at = new Date().toISOString();
+  if (event === 'alert') return { type: 'follow', title: 'Nuevo seguidor', text: 'devconcafe', sub: '¡gracias por seguir!', platform: 'twitch', icon: 'follow', durationMs: 6000, at, vars: { user: 'devconcafe' } };
+  if (event === 'chat') return { id: 'prueba-1', platform: 'twitch', user: 'ana_frontend', color: '#00E0FF', text: '¡buenas! ¿qué tal el overlay?', parts: [{ t: '¡buenas! ¿qué tal el overlay?' }], mod: false, member: true, at };
+  if (event === 'viewers') return { twitch: { live: true, current: 1423, peak: 1512, record: 2048 }, youtube: { live: true, current: 318, peak: 402, record: 561 } };
+  return {
+    totals: { follows: 128, subs: 34, bits: 5200, raids: 4, superchats: 12, members: 9, events: 187 },
+    latest: { follow: { user: 'ana_frontend' }, raid: { user: 'midudev', vars: { amount: 120 } } },
+    goals: [{ id: 'principal', title: 'Objetivo de seguidores', metric: 'follows', target: 200, value: 128 }],
+    recent: [
+      { type: 'follow', label: 'Nuevo seguidor', user: 'ana_frontend', sub: '', at },
+      { type: 'cheer', label: 'Bits', user: 'reactivo', sub: '500 bits', at },
+    ],
+    credits: [{ title: 'Raids', names: ['midudev'] }],
+    session: { title: 'Directo de prueba' },
+    chat: [],
+  };
+}
+
+/** Valida el cuerpo de la prueba { event, data } y rellena el ejemplo realista si no hay datos.
+ *  Un evento desconocido o unos datos que no son un objeto se rechazan con 400 sin emitir nada. */
+export function overlayTestPayload(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw httpError(400, 'La prueba tiene que ser un objeto');
+  const event = body.event;
+  if (typeof event !== 'string' || !CUSTOM_OVERLAY_TEST_EVENTS.includes(event)) {
+    throw httpError(400, `Evento de prueba no válido: ${JSON.stringify(event ?? null).slice(0, 60)}. Usa ${CUSTOM_OVERLAY_TEST_EVENTS.join(', ')}.`);
+  }
+  const data = body.data === undefined ? overlayTestSample(event) : body.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw httpError(400, 'Los datos de la prueba tienen que ser un objeto');
+  return { event, data };
+}
+
 function checkSize(overlay, list) {
   if (JSON.stringify(overlay).length > CUSTOM_OVERLAY_MAX_BYTES) throw httpError(400, `El overlay es demasiado grande (máx. ${Math.round(CUSTOM_OVERLAY_MAX_BYTES / 1000)} KB)`);
   if (list.length > CUSTOM_OVERLAYS_MAX_ITEMS) throw httpError(400, `Ya hay ${CUSTOM_OVERLAYS_MAX_ITEMS} overlays: borra alguno antes de crear otro`);
@@ -183,6 +220,13 @@ export function shellHtml(overlay) {
       if (!(id in v) || v[id] === version) return;
       version = v[id];
       frame.src = '/custom/' + id + '/frame?v=' + version;
+    },
+    // Prueba lanzada desde el panel o el MCP: efímera y dirigida a UNA capa (el id tiene que ser
+    // el suyo; las demás la ignoran). Llega al marco como el mensaje { antena: 1, event, data }
+    // de siempre, así que el SDK no necesita nada nuevo.
+    customOverlayTest: test => {
+      if (!test || test.id !== id) return;
+      post(test.event, test.data);
     },
   }, 'widget'));
 })();

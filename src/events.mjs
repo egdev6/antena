@@ -22,7 +22,7 @@ export const REPLACEABLE_EVENTS = new Set([
 // Eventos efímeros: sin persistencia y sin replay prometido.
 export const EPHEMERAL_EVENTS = new Set([
   'alert', 'publicAlert', 'chat', 'chatDelete', 'chatClear', 'chatResult',
-  'control', 'credits', 'say', 'gap',
+  'control', 'credits', 'say', 'gap', 'customOverlayTest',
 ]);
 
 // Todos los eventos declarados: unión de ambos sets, en orden estable.

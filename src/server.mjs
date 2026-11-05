@@ -649,7 +649,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   registerInteractiveRoutes({ route, store, interactive });
   registerViewersRoutes({ route, store, viewers });
   registerTeleprompterRoutes({ route, teleprompter });
-  registerCustomOverlayRoutes({ route, customOverlays });
+  registerCustomOverlayRoutes({ route, customOverlays, bus });
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
   const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
     onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });

@@ -354,7 +354,7 @@ The sidebar lists collapse with a click on their title and the panel remembers w
 
 ### MCP server
 
-Everything the panel does can be done via MCP (136 tools). If the app is not running, the MCP starts it itself.
+Everything the panel does can be done via MCP (142 tools). If the app is not running, the MCP starts it itself.
 
 Claude Desktop (`claude_desktop_config.json`):
 
@@ -377,6 +377,7 @@ Claude Desktop (`claude_desktop_config.json`):
 | Files | `listar_archivos`, `importar_archivo` (from a path on your PC), `borrar_archivo` |
 | Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube or both), `simular_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
 | Widgets | `ver_widgets`, `editar_widget`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `sumar_objetivo`, `fijar_objetivo`, `lanzar_creditos`, `parar_creditos` |
+| Custom overlays | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay` (fires a sample event at one open layer) |
 | Stream | `resumen_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
 | Appearance | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema` |
 | Viewers record | `estado_espectadores`, `configurar_espectadores`, `fijar_record_espectadores` |
@@ -398,6 +399,7 @@ Examples of what you can ask Claude to do:
 - «Name today's short bookmarks after what happened in chat that minute».
 - «Block the word spoiler and the user troll123».
 - «Give me today's stream recap for LinkedIn».
+- «Make me a custom overlay with the latest follower as an animated HTML/CSS card and add it to Meld».
 
 ### REST API
 

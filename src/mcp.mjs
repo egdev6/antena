@@ -249,6 +249,42 @@ tool('fijar_barra', 'Fija el valor actual de una barra concreta de un objetivo.'
 tool('lanzar_creditos', 'Lanza los créditos finales en su widget.', {}, () => post('/api/credits/play'));
 tool('parar_creditos', 'Para los créditos.', {}, () => post('/api/credits/stop'));
 
+// overlays propios: páginas HTML/CSS/JS del usuario (o del agente) como capa nueva en Meld
+const OVERLAY_HELP = `Cómo se escribe un overlay (con unas líneas basta):
+- Corre en un iframe con sandbox (origen opaco): NO tiene la API de antena ni puede leer la del panel; los recursos externos por https sí cargan (fuentes, imágenes, animaciones).
+- Fondo transparente por defecto (transparente: true): queda bien encima de la cámara o en una escena de Meld. ancho y alto son el lienzo de la capa.
+- /theme.css ya está enlazado: usa sus variables CSS (var(--accent), var(--text)…) para que combine con el tema.
+- Datos en vivo por el SDK (window.antena): antena.on('alert'|'chat'|'viewers'|'widgets'|'interactive'|'theme', fn), antena.state y antena.ready (espera a tener datos).
+  Ej.: antena.on('alert', a => { nombre.textContent = a.text; nombre.animate([{opacity:0},{opacity:1}], 300); });
+- En Meld se añade como capa de navegador con la URL /custom/<id> (la devuelven crear_overlay y ver_overlay). Al guardar, las capas abiertas se recargan solas.`;
+const localBase = async () => `http://127.0.0.1:${(await get('/api/config?path=port')).value || 4500}`;
+const overlayUrl = async overlay => (await localBase()) + '/custom/' + overlay.id;
+
+tool('listar_overlays', 'Lista los overlays propios (páginas HTML/CSS/JS que se añaden como capa en Meld) con su id, nombre, tamaño y URL. No incluye el código: para eso, ver_overlay.', {}, async () => {
+  const [{ overlays }, b] = await Promise.all([get('/api/custom-overlays'), localBase()]);
+  return overlays.map(o => ({ id: o.id, nombre: o.name, ancho: o.width, alto: o.height, url: b + '/custom/' + o.id }));
+});
+tool('ver_overlay', 'Un overlay propio completo: nombre, html, css, js, ancho, alto, fondo transparente y su URL para Meld (/custom/<id>).', { id: S.str('Id del overlay') }, async ({ id }) => {
+  const { overlay } = await get('/api/custom-overlays/' + enc(id));
+  return { ...overlay, url: await overlayUrl(overlay) };
+}, ['id']);
+tool('crear_overlay', 'Crea un overlay propio: una página HTML/CSS/JS que se añade en Meld como capa nueva. Solo hace falta el nombre; el resto tiene valores por defecto. Devuelve el id y la URL /custom/<id>. ' + OVERLAY_HELP,
+  { nombre: S.str('Nombre, p. ej. «Marco de cámara»'), html: S.str('HTML del cuerpo'), css: S.str('CSS propio (se aplica después de /theme.css)'), js: S.str('JavaScript del overlay'), ancho: S.num('Ancho del lienzo en px (16–7680, por defecto 1920)'), alto: S.num('Alto del lienzo en px (16–4320, por defecto 1080)'), transparente: S.bool('Fondo transparente (por defecto sí)') },
+  async ({ nombre, html, css, js, ancho, alto, transparente }) => {
+    const { overlay } = await post('/api/custom-overlays', { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente });
+    return { ...overlay, url: await overlayUrl(overlay) };
+  }, ['nombre']);
+tool('editar_overlay', 'Cambia lo que pases de un overlay (actualización parcial: lo que no mandes se queda como está). Al guardar, todas las capas abiertas se recargan solas. ' + OVERLAY_HELP,
+  { id: S.str('Id del overlay'), nombre: S.str('Nombre nuevo'), html: S.str('HTML nuevo (sustituye al actual)'), css: S.str('CSS nuevo (sustituye al actual)'), js: S.str('JavaScript nuevo (sustituye al actual)'), ancho: S.num('Ancho del lienzo en px (16–7680)'), alto: S.num('Alto del lienzo en px (16–4320)'), transparente: S.bool('Fondo transparente') },
+  async ({ id, nombre, html, css, js, ancho, alto, transparente }) => {
+    const { overlay } = await put('/api/custom-overlays/' + enc(id), { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente });
+    return { ...overlay, url: await overlayUrl(overlay) };
+  }, ['id']);
+tool('borrar_overlay', 'Borra un overlay propio: desaparece de «Fuentes para Meld» y las capas abiertas dejan de cargar.', { id: S.str('Id del overlay') }, ({ id }) => del('/api/custom-overlays/' + enc(id)), ['id']);
+tool('probar_overlay', 'Manda un evento de ejemplo AHORA a UNA capa abierta (la de Meld o la vista previa del panel), como si acabara de pasar: alert (una alerta), chat (un mensaje), viewers (espectadores) o widgets (totales, objetivos, últimos…). Sin datos usa un ejemplo realista. No toca el directo: ni alertas en cola, ni totales, ni historial.',
+  { id: S.str('Id del overlay'), evento: S.enum('Qué evento de ejemplo', ['alert', 'chat', 'viewers', 'widgets']), datos: S.obj('Datos del evento (opcional: sin ellos se usa un ejemplo realista)') },
+  ({ id, evento, datos }) => post(`/api/custom-overlays/${enc(id)}/test`, { event: evento, data: datos }), ['id', 'evento']);
+
 // directo
 tool('resumen_directo', 'Resumen de un directo: totales, a quién dar las gracias y cronología con el minuto de cada evento.', { id: S.str('Id del directo (vacío = el actual)'), formato: S.enum('Formato', ['markdown', 'json']) },
   async ({ id, formato }) => { const r = await get(`/api/session/summary?format=${formato === 'json' ? 'json' : 'md'}${id ? '&id=' + enc(id) : ''}`); return r.markdown ?? r; });
