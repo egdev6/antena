@@ -436,16 +436,25 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // Igual con la clave LAN enmascarada: la máscara nunca pisa la clave real (issue #59).
     if (patch.access && String(patch.access.key ?? '').startsWith('••••')) delete patch.access.key;
     if (patch.alerts) for (const k of Object.keys(patch.alerts)) if (!ALERT_TYPES[k]) delete patch.alerts[k];
+    // Custom overlays always go through their own rules (ids, sizes, versions for live reload).
+    const hasOverlays = Object.hasOwn(patch, 'customOverlays');
+    const overlaysInput = patch.customOverlays;
+    delete patch.customOverlays;
     // #106: validación por esquema antes de guardar nada; las claves desconocidas se aceptan y se avisan.
     const errors = validatePatch(patch);
     if (errors.length) throw httpError(400, errors.map(e => e.message).join('; '));
     warnUnknownKeys(patch);
+    if (hasOverlays) await customOverlays.replaceAll(overlaysInput);
     await store.patchConfig(patch);
     afterConfig(patch);
     return { config: store.publicConfig() };
   });
   route('POST', '/api/config/set', async ({ path: p, value }) => {
     if (!p) throw httpError(400, 'Falta «path»');
+    if (String(p).split('.')[0] === 'customOverlays') {
+      await customOverlays.setPath(p, value);
+      return { path: p, value: store.getPath(p) };
+    }
     // #106: el valor se valida contra el esquema en su ruta; las rutas nuevas se aceptan.
     const [error] = validatePath(p, value);
     if (error) throw httpError(400, error.message);

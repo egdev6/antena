@@ -193,3 +193,47 @@ test('custom overlays appear in /api/sources and /api/state', async () => {
     assert.deepEqual(state.customOverlays.map(o => o.id), [overlay.id]);
   } finally { await close(); }
 });
+
+test('the generic config write paths enforce the same overlay rules as /api/custom-overlays', async () => {
+  const { raw, call, close } = await start();
+  try {
+    const { overlay } = await call('POST', '/api/custom-overlays', SAMPLE);
+    const before = await call('GET', '/api/custom-overlays');
+    const item = { ...overlay };
+    const bad = [
+      ['PUT', '/api/config', { customOverlays: [{ ...item, js: 'x'.repeat(600_000) }] }, /grande/i],
+      ['PUT', '/api/config', { customOverlays: [{ ...item, id: 'A/b<c' }] }, /id/i],
+      ['PUT', '/api/config', { customOverlays: [item, { ...item, name: 'otro' }] }, /repetido/i],
+      ['PUT', '/api/config', { customOverlays: [{ ...item, name: '' }] }, /nombre/i],
+      ['PUT', '/api/config', { customOverlays: 'nada' }, /lista/i],
+      ['POST', '/api/config/set', { path: 'customOverlays', value: [{ ...item, width: 5 }] }, /ancho|16/i],
+      ['POST', '/api/config/set', { path: 'customOverlays.0.width', value: 5 }, /ancho|16/i],
+      ['POST', '/api/config/set', { path: 'customOverlays.0.js', value: 'x'.repeat(600_000) }, /grande/i],
+    ];
+    for (const [m, p, body, msg] of bad) {
+      const r = await raw(m, p, body);
+      const d = await r.json();
+      assert.equal(r.status, 400, `${m} ${p} ${JSON.stringify(body).slice(0, 80)}`);
+      assert.match(d.error, msg);
+    }
+    assert.deepEqual(await call('GET', '/api/custom-overlays'), before);
+  } finally { await close(); }
+});
+
+test('editing overlays through the generic config paths bumps their version so open shells reload', async () => {
+  const { base, call, close } = await start();
+  const s = await sse(base + '/api/stream?client=widget');
+  try {
+    const a = (await call('POST', '/api/custom-overlays', { name: 'A', js: 'a' })).overlay;
+    const b = (await call('POST', '/api/custom-overlays', { name: 'B', js: 'b' })).overlay;
+    await s.next('customOverlayVersions', d => b.id in d);
+    await call('PUT', '/api/config', { customOverlays: [{ ...a, js: 'a2' }, b] });
+    const v1 = await s.next('customOverlayVersions', d => d[a.id] > a.updatedAt);
+    assert.equal(v1[b.id], b.updatedAt, 'an unchanged overlay keeps its version');
+    assert.equal((await call('GET', '/api/custom-overlays/' + a.id)).overlay.js, 'a2');
+    await call('POST', '/api/config/set', { path: 'customOverlays.1.css', value: 'p{}' });
+    const v2 = await s.next('customOverlayVersions', d => d[b.id] > b.updatedAt);
+    assert.equal(v2[a.id], v1[a.id]);
+    assert.equal((await call('GET', '/api/custom-overlays/' + b.id)).overlay.css, 'p{}');
+  } finally { s.close(); await close(); }
+});

@@ -82,6 +82,42 @@ export class CustomOverlays {
     await this.#commit(next);
     return overlay;
   }
+  /** Replaces the whole list (generic config write paths: PUT /api/config, POST /api/config/set, MCP
+   *  config tools). Applies the same rules as create/update; unchanged overlays keep their version. */
+  async replaceAll(input) {
+    if (!Array.isArray(input)) throw httpError(400, 'customOverlays tiene que ser una lista de overlays');
+    const prev = new Map(this.list().map(o => [o.id, o]));
+    const seen = new Set();
+    const next = input.map(item => {
+      const id = item && typeof item === 'object' ? item.id : undefined;
+      if (typeof id !== 'string' || !CUSTOM_OVERLAY_ID.test(id)) throw httpError(400, `Id de overlay no válido: ${JSON.stringify(id ?? null).slice(0, 60)} (solo minúsculas, números y guiones)`);
+      if (seen.has(id)) throw httpError(400, `Id de overlay repetido: ${id}`);
+      seen.add(id);
+      const overlay = { id, ...DEFAULT_CUSTOM_OVERLAY, ...clean(item, { partial: false }) };
+      const old = prev.get(id);
+      const same = old && Object.keys(DEFAULT_CUSTOM_OVERLAY).every(k => old[k] === overlay[k]);
+      overlay.updatedAt = same ? old.updatedAt : this.#stamp(old?.updatedAt);
+      return overlay;
+    });
+    for (const o of next) checkSize(o, next);
+    if (!next.length) checkSize({}, next);
+    await this.#commit(next);
+    return next;
+  }
+  /** Applies a dotted config path under customOverlays (e.g. "customOverlays.0.css") and validates the result. */
+  async setPath(dotted, value) {
+    const keys = String(dotted).split('.').slice(1);
+    if (!keys.length) return this.replaceAll(value);
+    if (keys.some(k => ['__proto__', 'prototype', 'constructor'].includes(k))) throw httpError(400, 'Ruta no válida');
+    const list = structuredClone(this.list());
+    let obj = list;
+    for (const k of keys.slice(0, -1)) {
+      if (obj[k] === null || typeof obj[k] !== 'object') throw httpError(400, `No existe ${dotted}`);
+      obj = obj[k];
+    }
+    obj[keys.at(-1)] = value;
+    return this.replaceAll(list);
+  }
   async remove(id) {
     this.get(id);
     await this.#commit(this.list().filter(o => o.id !== id));
