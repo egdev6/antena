@@ -8,7 +8,7 @@
 // headless Chrome over the DevTools protocol, and freezes each rendered DOM with its CSS inlined.
 // Scripts, fonts and remote URLs are stripped so every artboard stays self-contained.
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile, readdir, unlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile, readdir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,10 @@ const CDP_PORT = 9333;
 const BASE = `http://127.0.0.1:${PORT}`;
 const CHROME = process.env.CHROME || 'google-chrome';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Every captured artboard carries this marker; artboards without it (and without the app's #root)
+// are hand-made design directions and survive a recapture, renumbered after the captures.
+const GENERATOR = 'antena-ui capture';
+const isCaptured = html => html.includes(`content="${GENERATOR}"`) || html.includes('id="root"');
 
 const PANEL = { w: 1440, h: 900 };
 const PROMPTER = { w: 1024, h: 600 };
@@ -30,10 +34,10 @@ const DOCK = { w: 380, h: 720 };
 const SECTIONS = [
   ['En directo', 'directo', 'Directo'], ['En directo', 'chat', 'Chat'], ['En directo', 'preguntas', 'Preguntas'],
   ['En directo', 'tierlist', 'Tier list'], ['En directo', 'sorteo', 'Sorteo'], ['En directo', 'teleprompter', 'Teleprompter'],
-  ['Automatización', 'alertas', 'Alertas'], ['Automatización', 'comandos', 'Comandos de chat'],
-  ['Automatización', 'mensajes', 'Mensajes programados'], ['Automatización', 'widgets', 'Widgets'],
-  ['Automatización', 'atajos', 'Atajos y Stream Deck'],
-  ['Integración', 'fuentes', 'Fuentes para Meld'], ['Integración', 'meld', 'Meld Studio'], ['Integración', 'prompter', 'Prompter y dock'],
+  ['Configurar', 'alertas', 'Alertas'], ['Configurar', 'comandos', 'Comandos de chat'],
+  ['Configurar', 'mensajes', 'Mensajes programados'], ['Configurar', 'widgets', 'Widgets'],
+  ['Configurar', 'overlays', 'Overlays'], ['Configurar', 'atajos', 'Atajos y Stream Deck'],
+  ['Producción', 'fuentes', 'Fuentes para Meld'], ['Producción', 'meld', 'Meld Studio'], ['Producción', 'prompter', 'Prompter y dock'],
   ['Registro', 'historial', 'Historial de alertas'], ['Registro', 'directos', 'Directos anteriores'], ['Registro', 'archivos', 'Archivos'],
   ['Ajustes', 'apariencia', 'Apariencia'], ['Ajustes', 'conexiones', 'Conexiones'], ['Ajustes', 'filtros', 'Filtros y voz'],
   ['Ajustes', 'general', 'General'], ['Ajustes', 'acerca', 'Acerca de'],
@@ -174,6 +178,7 @@ async function main() {
       let { html, height } = await cdp.eval(`(${SNAPSHOT})(${size.h})`);
       const t1 = Date.now(); 
       html = await inline(html);
+      html = html.replace(/<head([^>]*)>/i, `<head$1><meta name="generator" content="${GENERATOR}">`);
       const file = `${String(++n).padStart(2, '0')}-${slug(surface)}-${slug(route || title)}.html`;
       await writeFile(path.join(OUT, file), html);
       const shot = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 55, clip: { x: 0, y: 0, width: size.w, height: size.h, scale: 360 / size.w } });
@@ -202,7 +207,7 @@ async function main() {
     }
 
     // 2. Prompter: one artboard per tool tab (tab state lives on the server)
-    for (const [tab, title] of [['cronologia', 'Cronología'], ['preguntas', 'Preguntas'], ['tierlist', 'Tier list'], ['sorteo', 'Sorteo']]) {
+    for (const [tab, title] of [['cronologia', 'Eventos'], ['preguntas', 'Preguntas']]) {
       await fetch(BASE + '/api/prompter', { method: 'POST', headers: { 'content-type': 'application/json', origin: BASE }, body: JSON.stringify({ tab }) });
       await load(`${BASE}/prompter`, PROMPTER);
       await capture({ surface: 'Prompter', group: 'Prompter', title, route: `/prompter (${tab})`, size: PROMPTER });
@@ -218,12 +223,26 @@ async function main() {
   } finally { await cleanup([data, media, profile]); }
 
   await writeFile(path.join(OUT, '00-flow.html'), kanban(artboards));
+  // keep hand-made design directions from the previous manifest, renumbered after the captures
+  const produced = new Set(artboards.map(a => a.file));
+  const previous = await readFile(path.join(OUT, 'design.json'), 'utf8').then(JSON.parse, () => ({ artboards: [] }));
+  const custom = [];
+  for (const a of previous.artboards || []) {
+    if (a.file === '00-flow.html' || produced.has(a.file) || !/^\d\d-.*\.html$/.test(a.file)) continue;
+    const html = await readFile(path.join(OUT, a.file), 'utf8').catch(() => null);
+    if (html === null || isCaptured(html)) continue;
+    const file = `${String(++n).padStart(2, '0')}-${a.file.replace(/^\d\d-/, '')}`;
+    if (file !== a.file) { await writeFile(path.join(OUT, file), html); await unlink(path.join(OUT, a.file)); }
+    custom.push({ ...a, file });
+    process.stderr.write(`kept design ${a.file} as ${file}\n`);
+  }
   const manifest = {
     title: 'antena · current UI',
     brief: 'Kanban of every current antena UI view (panel, prompter, dock) captured from the running app, as the baseline for visual changes. Regenerate with: pnpm app:build && node design/antena-ui/tools/capture.mjs',
     artboards: [
       { file: '00-flow.html', title: 'Flow · Kanban (Panel → Prompter → Dock)', tradeoff: 'Overview of the whole flow; thumbnails are static, open each artboard to edit', width: 1440, height: 1200 },
       ...artboards.map(({ file, title, tradeoff, width, height }) => ({ file, title, tradeoff, width, height })),
+      ...custom,
     ],
   };
   await writeFile(path.join(OUT, 'design.json'), JSON.stringify(manifest, null, 2) + '\n');
