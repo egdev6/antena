@@ -373,6 +373,16 @@ export interface UploadResult { name: string; media: MediaItem[]; [k: string]: u
 export interface SessionSummary { startedAt?: string | number; title?: string; totals?: Record<string, number>; eventCount?: number; [k: string]: unknown }
 export interface SessionList { past?: { id: string; startedAt?: string | number; title?: string; events?: number }[]; [k: string]: unknown }
 
+// ---------- overlays propios (src/custom-overlays.mjs) ----------
+/** Capa creada por el usuario o el agente (MCP): HTML, CSS y JS propios en /custom/<id>. */
+export interface CustomOverlay {
+  id: string; name: string; html: string; css: string; js: string; width: number; height: number; transparent: boolean; updatedAt: number;
+  // S11: tipos de acción que el overlay PIDE y los que el usuario APROBÓ en el panel. Opcionales
+  // porque un overlay guardado antes de S11 no los trae (el servidor los normaliza al leerlo).
+  requestedPermissions?: string[]; permissions?: string[];
+  approvedAt?: number; approvedUpdatedAt?: number;
+}
+
 // ---------- récord de espectadores (src/viewers.mjs) ----------
 export interface ViewerSettings { enabled: boolean; pollSec: number; minViewers: number; confirmPolls: number; minStep: number; minStepPct: number; cooldownMin: number; warmupMin: number; alertFirst: boolean }
 export interface ViewerPlatform { live: boolean; off: boolean; current: number | null; peak: number; record: number; liveSince: string | null; pending: boolean; alerts: number; lastAlertAt: string | null; lastAlertValue: number | null; nextAt: number; updatedAt: string | null; error: string | null }
@@ -437,6 +447,7 @@ export interface AppState {
   teleprompter?: TeleprompterState;
   theme?: Theme;
   alertPreviews?: Record<string, AlertPreview>;
+  customOverlays?: CustomOverlay[];
 }
 
 /** Pestañas del prompter y estado del prompter (/api/prompter). */
@@ -464,6 +475,8 @@ export interface LiveEvents {
   viewers: ViewersState;
   teleprompter: TeleprompterState;
   theme: Theme & { alertPreviews?: Record<string, AlertPreview> };
+  /** Lista completa de overlays propios: sustituye la anterior en cada cambio (panel). */
+  customOverlays: CustomOverlay[];
   gap: unknown;
   /** Evento solo de cliente: fallos de fetch/config que el propio Live emite. */
   error: Error;

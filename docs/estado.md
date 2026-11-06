@@ -14,7 +14,12 @@ sigue sin dependencias (Node ≥ 22); React, esbuild y Tauri son solo de compila
 ## Qué hace hoy
 
 - **Capas de navegador:** overlay de alertas, y capas de chat, objetivo, últimos apoyos,
-  ticker, créditos, pregunta, tier list y sorteo, servidas por URL local.
+  ticker, créditos, pregunta, tier list, sorteo y espectadores, servidas por URL local.
+- **Espectadores en directo:** `public/widgets/viewers.html` (`/widget/viewers`, 900×160) pinta una
+  tarjeta por plataforma con los espectadores de ahora y, si se piden, el pico y el total;
+  parámetros `?platforms=twitch,youtube`, `?layout=column`, `?total=0`, `?peak=1`. Recibe solo
+  `publicViewers` (live, current, peak y record por plataforma) por SSE `viewers`, el mismo evento
+  que el SDK de los overlays propios expone como `viewers`.
 - **Alertas de Twitch y YouTube:** doce tipos normalizados (follow, sub, resub, giftsub,
   cheer, raid, redemption; superchat, supersticker, member, milestone, giftmember) con
   tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en Meld.
@@ -23,7 +28,7 @@ sigue sin dependencias (Node ≥ 22); React, esbuild y Tauri son solo de compila
 - **Comandos y timers multicanal:** comandos con permisos y esperas, y mensajes programados
   con destino Twitch, YouTube o ambos y pausa global.
 - **Meld remoto:** escenas, capas, efectos, mute y ganancia, media, comandos y eventos.
-- **Panel, MCP y Stream Deck:** panel por API REST, MCP con 136 herramientas y atajos `/sd/…`.
+- **Panel, MCP y Stream Deck:** panel por API REST, MCP con 142 herramientas y atajos `/sd/…`.
 - **Teleprompter:** guiones por bloques que avanzan solos a X palabras/min, con notas entre
   [corchetes] y línea de lectura. Solo lo ves tú (`/widget/teleprompter`, con su propio kind
   de cliente SSE: el texto del guion nunca llega a otros widgets). El servidor es la fuente
@@ -42,7 +47,21 @@ sigue sin dependencias (Node ≥ 22); React, esbuild y Tauri son solo de compila
   creación unificada con plantillas y guardado manual (Guardar/Descartar) con aviso al salir.
   El catálogo fijo (alertas, conexiones, widgets) se ve en tarjetas; los objetivos, dentro de la suya.
 - **Fuentes para Meld:** `GET /api/sources` y la vista «Fuentes para Meld» listan cada capa
-  con su URL y tamaño (un objetivo por cada uno configurado), más el dock y el prompter.
+  con su URL y tamaño (un objetivo por cada uno configurado y un overlay por cada overlay propio),
+  más el dock y el prompter.
+- **Overlays propios:** `src/custom-overlays.mjs`, `src/routes/custom-overlays.mjs` y la vista React
+  `app/src/panel/views/Overlays.tsx`. Cada overlay (id, nombre, html, css, js, ancho, alto, fondo
+  transparente y permisos) vive en `config.customOverlays` y se valida igual en todas las vías de
+  escritura (HTTP y MCP): 50 como mucho, 512 KB de JSON cada uno. El código corre en
+  `/custom/<id>/frame` (`Content-Security-Policy: sandbox allow-scripts`), es decir, en un origen
+  opaco sin API ni SSE; la shell de confianza `/custom/<id>` le pasa los datos públicos por
+  `postMessage` y escucha `customOverlayVersions` para recargar la capa al guardar. El SDK
+  (`public/custom/sdk.js`) expone `antena.on`, `antena.state`, `antena.ready` y
+  `antena.run(kind, params)`: las acciones solo se ejecutan si el usuario aprobó ese tipo en el
+  panel (`PUT …/permissions`, que exige `Sec-Fetch-Site: same-origin`; el MCP solo las pide), con
+  un tope de 10 cada 10 s por overlay (429) y aviso en el editor si el código cambió desde la
+  aprobación. Seis herramientas MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`,
+  `editar_overlay`, `borrar_overlay` y `probar_overlay`.
 - **Atajos personalizados:** pasos encadenados (acciones `/sd/…`, pestaña del prompter y
   acciones de Meld/chat/voz) con dirección `/sd/custom/<id>`, editables en el panel y por MCP.
 - **Dock:** `/dock`, vista estrecha para el panel de chat de Meld o ventana flotante.
@@ -190,6 +209,9 @@ persistencia tienen regresiones de navegador React, exigidas por la línea base 
 - El tema de Apariencia en el navegador de Meld (usa `color-mix`, capas CSS y `translate`; Chromium ≥ 111).
 - Lectura real de espectadores en Twitch (`streams`) y YouTube (`concurrentViewers`): la lógica
   anti-spam está probada con lecturas simuladas.
+- Un overlay propio en el navegador de Meld: la recarga al guardar se prueba por el contrato SSE
+  (`customOverlayVersions`) y el SDK con las acciones aprobadas en un Chrome real, pero nunca
+  dentro de Meld.
 
 ## Límites y deudas conocidas
 

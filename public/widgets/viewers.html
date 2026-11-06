@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>antena · espectadores</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@500;600&display=swap" rel="stylesheet">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+.root{display:flex;flex-wrap:wrap;align-content:flex-start;gap:14px;padding:18px}
+.root.col{flex-direction:column}
+.item{min-width:200px;padding:16px 20px 18px;border-radius:18px}
+.item .big{font-size:48px;margin-top:6px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.item .extra{font:600 18px var(--f-body);color:var(--grey);margin-top:6px}
+.item.off{opacity:.45}
+.item.up .big{animation:up 1s ease-out}
+@keyframes up{0%{transform:scale(1.12)}100%{transform:none}}
+}
+</style></head>
+<body><div class="root" id="root"></div>
+<script type="module">
+// Concurrent viewers per platform. Query: ?platforms=twitch,youtube · ?layout=column · ?total=0|1 · ?peak=0|1
+import { connect, DEMO, qs, esc, setCss } from '/widgets/widget.js';
+const root = document.getElementById('root');
+if (qs.get('layout') === 'column') root.classList.add('col');
+const LABELS = { twitch: 'Twitch', youtube: 'YouTube' };
+const fmt = n => Number(n || 0).toLocaleString('es-ES');
+const flag = (k, def) => qs.has(k) ? qs.get(k) !== '0' : def;
+let cfg = {}, data = {}, prev = {};
+function render() {
+  setCss(cfg.css);
+  const platforms = (qs.get('platforms')?.split(',') || cfg.platforms || ['twitch', 'youtube']).filter(p => LABELS[p]);
+  const showTotal = flag('total', cfg.showTotal ?? true) && platforms.length > 1;
+  const showPeak = flag('peak', cfg.showPeak ?? false);
+  const card = (id, label, d) => {
+    const up = prev[id] != null && d.current > prev[id];
+    prev[id] = d.current;
+    return `<div class="item eg-card soft item-${id} ${d.live ? '' : 'off'} ${up ? 'up' : ''}"><p class="kick">${esc(label)}</p><p class="big">${d.live ? fmt(d.current) : '—'}</p>${showPeak && d.live ? `<p class="extra">Pico ${fmt(d.peak)}</p>` : ''}</div>`;
+  };
+  const items = platforms.map(p => card(p, LABELS[p], data[p] || {}));
+  if (showTotal) {
+    const live = platforms.filter(p => data[p]?.live);
+    items.push(card('total', 'Total', { live: live.length > 0, current: live.reduce((a, p) => a + (data[p].current || 0), 0), peak: live.reduce((a, p) => a + (data[p].peak || 0), 0) }));
+  }
+  root.innerHTML = items.join('');
+}
+const demo = { twitch: { live: true, current: 132, peak: 158, record: 240 }, youtube: { live: true, current: 47, peak: 61, record: 90 } };
+connect({
+  widgets: s => { cfg = s.widgets?.viewers || {}; render(); },
+  viewers: v => { if (!DEMO) { data = v; render(); } },
+});
+if (DEMO) { data = demo; render(); }
+</script></body></html>

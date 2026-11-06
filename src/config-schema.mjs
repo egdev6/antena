@@ -18,6 +18,7 @@ import { TIMER_DESTINATIONS, ANNOUNCE_COLORS, DEFAULT_TIMER } from './timers.mjs
 import { DEFAULT_ALERTS, DEFAULT_COMMAND } from './alerts.mjs';
 import { PLATFORM_METRICS } from './goals.mjs';
 import { TELEPROMPTER_SCRIPTS_MAX_BYTES } from './teleprompter.mjs';
+import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES, CUSTOM_OVERLAY_ACTION_KINDS } from './custom-overlays.mjs';
 import { THEME_RULES, THEME_RANGES, themeFieldError, themeIconError, keepValidIcons } from './theme.mjs';
 // #130: animaciones de los mensajes del chat en pantalla, las mismas para entrar y para salir;
 // fuente única compartida con el widget y el panel.
@@ -58,7 +59,9 @@ const GOAL_BOX = {
 
 // ---------- enums compartidos (fuentes citadas arriba) ----------
 const PERMISOS = ['everyone', 'members', 'vips', 'mods', 'broadcaster'];   // canUse (src/commands.mjs:16)
-const ACCION_KINDS = ['scene', 'layer', 'hideLayer', 'toggleLayer', 'effect', 'command', 'streamEvent', 'chat', 'say'];   // Engine.#execAction (src/engine.mjs:499)
+// Kind de acción del motor: la lista vive en src/custom-overlays.mjs (CUSTOM_OVERLAY_ACTION_KINDS),
+// compartida con los permisos de los overlays (S11) y el enum del MCP; es la de Engine.#execAction.
+const ACCION_KINDS = CUSTOM_OVERLAY_ACTION_KINDS;
 const PASO_KINDS = ['builtin', ...ACCION_KINDS];   // cleanSteps de src/routes/shortcuts.mjs (builtin + SHORTCUT_ENGINE_KINDS, línea 30)
 
 // ---------- hojas de alerta (ALERT_FIELDS, src/alerts.mjs) ----------
@@ -187,6 +190,18 @@ export const CONFIG_SCHEMA = {
     replaceWith: str, blockLinks: bool, maxMessageLength: num({ int: true, min: 0 }),
   },
   shortcuts: list(atajoItem),
+  // Overlays propios (src/custom-overlays.mjs): HTML/CSS/JS libre del usuario o del agente. Los
+  // topes son los de CustomOverlays (CUSTOM_OVERLAYS_MAX_*) para que todo camino de escritura valide igual.
+  customOverlays: list({
+    id: str, name: str, html: str, css: str, js: str,
+    width: num({ int: true, min: 16, max: 7680 }), height: num({ int: true, min: 16, max: 4320 }),
+    transparent: bool, updatedAt: num({ min: 0 }),
+    // S11: lo pedido por el agente y lo aprobado por el usuario. Las escrituras genéricas
+    // (PUT /api/config, /api/config/set, cambiar_config) validan los tipos pero NUNCA cambian
+    // `permissions`: CustomOverlays.replaceAll conserva las aprobaciones guardadas de ese id.
+    requestedPermissions: arrStr(CUSTOM_OVERLAY_ACTION_KINDS), permissions: arrStr(CUSTOM_OVERLAY_ACTION_KINDS),
+    approvedAt: num({ min: 0 }), approvedUpdatedAt: num({ min: 0 }),
+  }, { maxItems: CUSTOM_OVERLAYS_MAX_ITEMS, maxBytes: CUSTOM_OVERLAYS_MAX_BYTES }),
   viewers: {
     enabled: bool, alertFirst: bool,
     pollSec: num({ int: true, min: 20, max: 600 }),
@@ -226,6 +241,7 @@ export const CONFIG_SCHEMA = {
     latest: { items: arrStr(['follow', 'sub', 'cheer', 'superchat']), css: str },
     ticker: { label: str, count: num({ int: true, min: 1, max: 100 }), speed: num({ int: true, min: 10, max: 500 }), css: str },
     credits: { title: str, subtitle: str, speed: num({ int: true, min: 10, max: 500 }), css: str },
+    viewers: { platforms: arrStr(['twitch', 'youtube']), showTotal: bool, showPeak: bool, css: str },
   },
 };
 

@@ -12,6 +12,19 @@ export const SNAPSHOT_COALESCE_MS = 120;
 /** Techo de espera de una ráfaga sostenida: evita que un flujo sin pausa inanice el envío. */
 export const SNAPSHOT_MAX_WAIT_MS = 500;
 
+/** Campos de una alerta que pueden ver los clientes «widget» y los overlays propios (S6).
+ *  Fuera quedan las acciones de Meld, el aspecto (media, sonido, css) y el tts: son
+ *  decisiones del overlay de alertas y no datos públicos del directo. */
+const PUBLIC_ALERT_FIELDS = ['type', 'title', 'text', 'sub', 'platform', 'icon', 'durationMs', 'at'];
+
+/** Alerta reducida a sus datos públicos: la que reciben los widgets y el SDK de los overlays. */
+export function publicAlert(a) {
+  const out = {};
+  for (const f of PUBLIC_ALERT_FIELDS) out[f] = a?.[f];
+  out.vars = { ...(a?.vars || {}) };
+  return out;
+}
+
 /** #94: tipos que nunca se descartan ni se fusionan en la cola del overlay (decisión del mantenedor). */
 export const PROTECTED_QUEUE_TYPES = new Set(['raid', 'superchat', 'supersticker']);
 
@@ -210,6 +223,7 @@ export class Engine extends EventEmitter {
       }
       // El overlay actualiza la alerta ya en cola en vez de encolar otra.
       this.bus.send('alert', { ...q, merged: true }, ['overlay']);
+      // La alerta pública no se reemite al agrupar: el widget ya recibió este lote al encolarse.
       this.#notePolicy({ merged: 1, types: [a.type] });
       return true;
     }
@@ -324,6 +338,9 @@ export class Engine extends EventEmitter {
       }
     }
     this.bus.send('alert', a, ['overlay']);
+    // La misma alerta, ya saneada, para los widgets y los overlays propios (S6). El overlay de
+    // alertas sigue siendo el único que ve el payload completo y el único que mueve su cola.
+    this.bus.send('publicAlert', publicAlert(a), ['widget']);
   }
 
   /** El overlay avisa de que la alerta ha empezado a verse. */

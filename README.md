@@ -35,10 +35,11 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Chat commands** (`!engram`, `!web`…) that trigger their own alerts, with permissions and cooldowns.
 - **Scheduled messages:** texts that post themselves to chat every X minutes (also as a highlighted announcement) and, if you want, also appear on screen as an alert.
 - **Interactives:** chat question queue, a tier list the chat votes on, and giveaways with an on-screen roulette.
-- **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker and end credits.
+- **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker, live concurrent viewers for Twitch and YouTube, and end credits.
+- **Custom overlays:** HTML, CSS and JavaScript layers for a scene or to frame the camera, written by you or by Claude via MCP, with live data and actions you approve.
 - **Stream recap:** totals, who to thank and a timeline with the minute of each event, in Markdown.
 - **Mobile panel** on your local network, protected with a key.
-- **Browser sources for Meld:** every alert, widget and panel is a browser source with its size, ready to copy.
+- **Browser sources for Meld:** every alert, widget, panel and custom overlay is a browser source with its size, ready to copy.
 - **Prompter for the Elgato Prompter** (1024×600): the app opens it full screen on that display.
 - **Viewers record alert** per platform (Twitch and YouTube), with anti-spam brakes.
 - **Appearance:** one theme for everything that goes on screen (alerts, widgets and credits): colors, fonts (including yours), icons per alert, shape, position, animation and sound. The default one is the EGDEV theme.
@@ -140,8 +141,11 @@ In the panel, **Meld and Stream Deck › Sources for Meld** lists all of them wi
 | Question | `http://127.0.0.1:4500/widget/question` | 1920×1080 |
 | Tier list | `http://127.0.0.1:4500/widget/tierlist` | 1920×1080 |
 | Giveaway | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
+| Viewers | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
 
-Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Credits: `?transparent`, `?autoplay`, `?loop`. Latest: `?layout=column`, `?items=follow,sub`.
+Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Credits: `?transparent`, `?autoplay`, `?loop`. Latest: `?layout=column`, `?items=follow,sub`. Viewers: `?platforms=twitch`, `?layout=column`, `?total=0`, `?peak=1`.
+
+**Custom overlays** show up in that same list as «Overlay · name», with their `/custom/<id>` URL and their size.
 
 ### Meld Studio
 
@@ -201,6 +205,55 @@ The easiest way is the variables:
 Classes: `.alert`, `.card`, `.alert-title`, `.alert-name`, `.alert-sub`, `.alert-icon`, `.alert-platform`, `.alert-glow`, `.alert-dots`, `.alert-cube`, `.alert-timer`, `.alert-media` and `.type-follow`, `.type-raid`… to fine-tune per type from the common CSS.
 
 The **snippets** buttons insert ready-made recipes: another color, no tilt, smaller, no decoration, no reflection, no platform, no icon, glass background, outlined text and heartbeat on entry. Widgets also have their own CSS field and work the same way.
+
+### Custom overlays
+
+A new Meld layer made of HTML, CSS and JavaScript: a frame for the camera, an animated title, a card for a scene. You write them in **Overlays**, or ask Claude via MCP (`crear_overlay`); whatever the agent does shows up in the panel without reloading.
+
+| Where | What you get |
+|---|---|
+| Panel › **Overlays** | Card list, editor with HTML, CSS and JavaScript tabs, live preview, width and height, transparent background, permissions, copy URL and delete |
+| Meld | **+ › Browser** layer with `http://127.0.0.1:4500/custom/<id>` and the overlay size (it is also in **Sources for Meld**, as «Overlay · name») |
+| On save | Every open layer (Meld and the preview) reloads by itself: you never touch the source in Meld |
+
+`/theme.css` is already linked: use its variables (`var(--accent)`, `var(--text)`…) to match the rest. The background is transparent by default, so it sits well over the camera, and external https resources (fonts, images) do load. Width 16–7680, height 16–4320, up to 50 overlays and 512 KB of JSON per overlay.
+
+#### The SDK: live data and actions
+
+`window.antena` is all there is in the page:
+
+| API | What it does |
+|---|---|
+| `antena.on(event, fn)` | Listens to an event and returns the function that unsubscribes. If a value already exists, `fn` is called with it right away |
+| `antena.state` | Latest value per event (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`); they start as `null` |
+| `antena.ready` | Promise that resolves once there is data: await it before reading `antena.state` |
+| `antena.run(kind, params)` | Requests an approved action: resolves when it ran, rejects with the server error otherwise |
+
+```js
+const who = document.querySelector('.who');
+antena.on('alert', a => {
+  who.textContent = a.vars.user;
+  who.animate([{ opacity: 0 }, { opacity: 1 }], 300);
+});
+antena.ready.then(() => {
+  who.textContent = antena.state.widgets?.latest?.follow?.user || 'EGDEV';
+});
+document.querySelector('.frame').onclick = () => antena.run('scene', { scene: 'Camera' }).catch(e => console.warn(e.message));
+```
+
+#### Permissions
+
+The agent **asks** for permissions when it creates or edits; only you **approve** them in the panel (switches in the Permissions tab), and only the ones the overlay asks for can be approved. Kinds: `scene`, `layer`, `hideLayer`, `toggleLayer`, `effect`, `command`, `streamEvent`, `chat` and `say`.
+
+- Without approval, `antena.run` is rejected (403) and nothing happens.
+- Cap of **10 actions every 10 seconds** per overlay: above it, 429 and nothing runs.
+- Editing the code does not revoke approvals, but the panel warns when the code has changed since you approved.
+
+**Security.** User code runs in a sandboxed `<iframe>` with an opaque origin, on a separate page: it has no antena API, cannot read the panel and cannot open the event stream. Data only reaches it through messages from the page hosting it, and the only thing it can ask back are the actions you approve.
+
+Over MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay` and `probar_overlay` (fires a sample event at one open layer).
+
+> «Make me a custom overlay with the latest follower as an animated HTML/CSS card and add it to Meld».
 
 ### Chat commands
 
@@ -353,7 +406,7 @@ The sidebar lists collapse with a click on their title and the panel remembers w
 
 ### MCP server
 
-Everything the panel does can be done via MCP (136 tools). If the app is not running, the MCP starts it itself.
+Everything the panel does can be done via MCP (142 tools). If the app is not running, the MCP starts it itself.
 
 Claude Desktop (`claude_desktop_config.json`):
 
@@ -376,6 +429,7 @@ Claude Desktop (`claude_desktop_config.json`):
 | Files | `listar_archivos`, `importar_archivo` (from a path on your PC), `borrar_archivo` |
 | Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube or both), `simular_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
 | Widgets | `ver_widgets`, `editar_widget`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `sumar_objetivo`, `fijar_objetivo`, `lanzar_creditos`, `parar_creditos` |
+| Custom overlays | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay` (fires a sample event at one open layer) |
 | Stream | `resumen_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
 | Appearance | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema` |
 | Viewers record | `estado_espectadores`, `configurar_espectadores`, `fijar_record_espectadores` |
@@ -397,6 +451,7 @@ Examples of what you can ask Claude to do:
 - «Name today's short bookmarks after what happened in chat that minute».
 - «Block the word spoiler and the user troll123».
 - «Give me today's stream recap for LinkedIn».
+- «Make me a custom overlay with the latest follower as an animated HTML/CSS card and add it to Meld».
 
 ### REST API
 

@@ -26,6 +26,7 @@ const BROWSER_SOURCES = [
   { id: 'question', name: 'Pregunta', path: '/widget/question', width: 1920, height: 1080 },
   { id: 'tierlist', name: 'Tier list', path: '/widget/tierlist', width: 1920, height: 1080 },
   { id: 'giveaway', name: 'Sorteo', path: '/widget/giveaway', width: 1920, height: 1080 },
+  { id: 'viewers', name: 'Espectadores', path: '/widget/viewers', width: 900, height: 160 },
 ];
 const SHORTCUT_ENGINE_KINDS = ['scene', 'layer', 'hideLayer', 'toggleLayer', 'effect', 'command', 'streamEvent', 'chat', 'say'];
 
@@ -41,7 +42,12 @@ export function registerShortcutRoutes({ route, store, engine, session, interact
       const n = g.visible === false ? 0 : (g.bars || []).filter(b => b.visible !== false).length;
       return { id: 'goal-' + g.id, name: `Objetivo · ${g.title || g.id}`, path: `/widget/goal?id=${encodeURIComponent(g.id)}`, width: 1000, height: 210 + 60 * n };
     });
-    const sources = [...BROWSER_SOURCES.slice(0, 2), ...goals, ...BROWSER_SOURCES.slice(2)].map(x => ({ ...x, url: base + x.path }));
+    // Overlays propios (src/custom-overlays.mjs): una capa de navegador por overlay, con su URL y
+    // su tamaño. Van al final, después de las fuentes fijas, para no mover las de siempre (S8).
+    const custom = (store.config.customOverlays || []).map(o => ({
+      id: 'custom-' + o.id, name: `Overlay · ${o.name}`, path: `/custom/${o.id}`, width: o.width, height: o.height,
+    }));
+    const sources = [...BROWSER_SOURCES.slice(0, 2), ...goals, ...BROWSER_SOURCES.slice(2), ...custom].map(x => ({ ...x, url: base + x.path }));
     return {
       base, sources,
       panels: [

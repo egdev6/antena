@@ -777,6 +777,8 @@ html:has(.lv-drawer){overflow:hidden}
 .lv-sfoot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:11px 22px;background:var(--color-surface-0);border-top:1px solid var(--color-border-hairline)}
 .lv-sfoot.sticky{position:sticky;bottom:0;z-index:2}
 .lv-sfoot .sp{flex:1}
+/* Permisos de acción de un overlay (S11): una casilla por tipo pedido. */
+.lv-permisos{display:grid;gap:10px}
 main>.lv-sfoot:not(.lv-savebar){margin:16px -24px -60px}
 /* save bar (lib/layout.tsx SaveBar): fixed at the bottom, slides up only with pending changes */
 .lv-savebar{position:fixed;left:240px;right:0;bottom:0;margin:0;z-index:30;box-shadow:0 -12px 32px rgba(0,0,0,.35);transform:translateY(100%);visibility:hidden;
@@ -894,6 +896,10 @@ main:has(> .lv-savebar.is-open),.lv-slide:has(> .lv-savebar.is-open) .lv-sbody{p
 .lv-wgoal i b{display:block;height:100%;background:var(--color-primitive-red-light)}
 .lv-wq{position:absolute;left:8%;right:8%;bottom:30%;text-align:center;font:800 14px/1.1 var(--font-display);text-transform:uppercase;color:var(--color-primitive-white)}
 .lv-wq small{display:block;font:700 7px/1 var(--font-display);letter-spacing:.2em;margin-bottom:4px;opacity:.8}
+/* overlay propio: marco de cámara con su etiqueta de capa */
+.lv-coverlay{position:absolute;inset:16% 12%}
+.lv-coverlay i{display:block;height:100%;border:2px dashed color-mix(in srgb,var(--color-primitive-white) 35%,transparent);border-radius:10px}
+.lv-coverlay b{position:absolute;left:1px;top:-2px;padding:2px 0;font:700 8px/1 var(--font-display);letter-spacing:.18em;color:var(--muted)}
 @media (max-width:900px){.lv-group-h p{display:none}}
 .lv-tools--bare{padding:0 0 14px;border:0}
 .lv-conn .lv-cname{white-space:normal;overflow:visible}

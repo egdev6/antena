@@ -29,7 +29,9 @@ import { registerThemeRoutes } from './routes/theme.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
 import { ViewerWatch } from './viewers.mjs';
 import { registerTeleprompterRoutes } from './routes/teleprompter.mjs';
+import { registerCustomOverlayRoutes } from './routes/custom-overlays.mjs';
 import { Teleprompter } from './teleprompter.mjs';
+import { CustomOverlays, CUSTOM_OVERLAY_ID, FRAME_CSP, shellHtml, frameHtml, publicOverlay } from './custom-overlays.mjs';
 import { httpError, id8, safePath, cleanName, freeName } from './http-util.mjs';
 import { Interactive } from './interactive.mjs';
 import { Timers, newTimer, alertFields, limitWarnings, TIMER_KEYS, TIMER_DESTINATIONS, DEFAULT_TIMER, ANNOUNCE_COLORS } from './timers.mjs';
@@ -57,7 +59,14 @@ const MIME = {
   '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
   '.webm': 'video/webm', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
 };
-export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter'];
+export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter', 'viewers'];
+
+/** Viewer counts for on-screen widgets: only what the widget shows, never settings or errors. */
+export function publicViewers(snap) {
+  const out = {};
+  for (const [p, s] of Object.entries(snap?.platforms || {})) out[p] = { live: !!s.live, current: s.current ?? 0, peak: s.peak ?? 0, record: s.record ?? 0 };
+  return out;
+}
 
 // Hosts locales de confianza: el panel se sirve por loopback y un navegador ajeno que apunte
 // a 127.0.0.1 (DNS rebinding) no debe poder leer ni cambiar nada.
@@ -160,11 +169,26 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   interactive.on('change', () => pushInteractive());
   // récord de espectadores por plataforma (alertas viewers/ytviewers con anti-spam, #142)
   const viewers = new ViewerWatch({ store, twitch, youtube, engine, log });
-  viewers.on('change', snap => bus.send('viewers', snap, ['panel']));
+  // Widgets and custom overlays (S6) get only the public counts, never settings or errors.
+  viewers.on('change', snap => {
+    bus.send('viewers', snap, ['panel']);
+    bus.send('viewers', publicViewers(snap), ['widget']);
+  });
   // teleprompter: guion y avance compartidos por panel y su ventana dedicada (kind propio SSE)
   const teleprompter = new Teleprompter({ store, log });
   // kind propio de SSE: el guion es contenido privado, nunca va a los widgets genéricos.
   teleprompter.on('change', snap => bus.send('teleprompter', snap, ['teleprompter', 'panel']));
+  // Overlays propios (src/custom-overlays.mjs): el panel recibe la lista completa (editor y
+  // vista previa) y los widgets solo el mapa de versiones, para recargar su capa sin tocar Meld.
+  const customOverlays = new CustomOverlays({
+    store,
+    onChange: list => {
+      // El panel recibe la lista con las aprobaciones normalizadas; los widgets solo el mapa de
+      // versiones para recargar su capa sin tocar Meld.
+      bus.send('customOverlays', list.map(publicOverlay), ['panel']);
+      bus.send('customOverlayVersions', customOverlays.versions(), ['widget']);
+    },
+  });
   await mkdir(mediaDir, { recursive: true });
   if (!store.config.access.key) await store.patchConfig({ access: { key: randomBytes(9).toString('base64url') } });
 
@@ -244,6 +268,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       bus.send('theme', { ...publicTheme(store.config.theme), alertPreviews: alertPreviews() }, ['panel']);
     }
     if (patch.widgets || patch.all) engine.pushWidgets();
+    // Overlays editados fuera de sus rutas (PUT /api/config, config/set o el MCP genérico):
+    // mismo par de eventos que onChange, para que la vista previa y las capas se recarguen.
+    if (patch.customOverlays || patch.all) {
+      bus.send('customOverlays', customOverlays.list(), ['panel']);
+      bus.send('customOverlayVersions', customOverlays.versions(), ['widget']);
+    }
     // El Bus sustituye config por tipo: cada envío debe conservar todas sus secciones.
     // Incluye alertas editadas fuera de este panel (MCP, otra ventana, el móvil).
     if (patch.prompter || patch.chat || patch.alerts || patch.all) bus.send('config', {
@@ -401,6 +431,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     interactive: interactive.snapshot(),
     viewers: viewers.snapshot(),
     teleprompter: teleprompter.snapshot(),
+    customOverlays: customOverlays.list().map(publicOverlay),
     theme: publicTheme(store.config.theme), alertPreviews: alertPreviews(),
   }));
   route('GET', '/api/status', async () => status());
@@ -418,16 +449,25 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // Igual con la clave LAN enmascarada: la máscara nunca pisa la clave real (issue #59).
     if (patch.access && String(patch.access.key ?? '').startsWith('••••')) delete patch.access.key;
     if (patch.alerts) for (const k of Object.keys(patch.alerts)) if (!ALERT_TYPES[k]) delete patch.alerts[k];
+    // Custom overlays always go through their own rules (ids, sizes, versions for live reload).
+    const hasOverlays = Object.hasOwn(patch, 'customOverlays');
+    const overlaysInput = patch.customOverlays;
+    delete patch.customOverlays;
     // #106: validación por esquema antes de guardar nada; las claves desconocidas se aceptan y se avisan.
     const errors = validatePatch(patch);
     if (errors.length) throw httpError(400, errors.map(e => e.message).join('; '));
     warnUnknownKeys(patch);
+    if (hasOverlays) await customOverlays.replaceAll(overlaysInput);
     await store.patchConfig(patch);
     afterConfig(patch);
     return { config: store.publicConfig() };
   });
   route('POST', '/api/config/set', async ({ path: p, value }) => {
     if (!p) throw httpError(400, 'Falta «path»');
+    if (String(p).split('.')[0] === 'customOverlays') {
+      await customOverlays.setPath(p, value);
+      return { path: p, value: store.getPath(p) };
+    }
     // #106: el valor se valida contra el esquema en su ruta; las rutas nuevas se aceptan.
     const [error] = validatePath(p, value);
     if (error) throw httpError(400, error.message);
@@ -611,6 +651,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   registerInteractiveRoutes({ route, store, interactive });
   registerViewersRoutes({ route, store, viewers });
   registerTeleprompterRoutes({ route, teleprompter });
+  registerCustomOverlayRoutes({ route, customOverlays, bus, engine, checkActions, log });
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
   const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
     onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });
@@ -742,6 +783,28 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return { name: path.basename(final), media: await listMedia() };
   }
 
+  // ---------- overlays propios: shell de confianza y marco en origen opaco (S5) ----------
+  // /custom/<id> sirve la shell (mismo origen: mantiene el SSE) y /custom/<id>/frame el HTML/CSS/JS
+  // del usuario con `Content-Security-Policy: sandbox allow-scripts`: aunque se abra directamente,
+  // no tiene nuestro origen, así que no puede leer ni cambiar la API. Un id raro o desconocido
+  // responde el mismo 404 JSON que el resto de páginas.
+  const serveCustomOverlay = (res, rawId, frame) => {
+    let id;
+    try {
+      id = decodeURIComponent(rawId);
+      if (!CUSTOM_OVERLAY_ID.test(id)) throw httpError(404, 'No encontrado');
+    } catch { return json(res, 404, { error: 'No encontrado' }); }
+    const overlay = customOverlays.list().find(o => o.id === id);
+    if (!overlay) return json(res, 404, { error: 'No encontrado' });
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      ...(frame ? { 'Content-Security-Policy': FRAME_CSP } : {}),
+    });
+    res.end(frame ? frameHtml(overlay) : shellHtml(overlay));
+  };
+
   // ---------- acceso: en local todo; desde la red, con la clave ----------
   // Comparación en tiempo constante (issue #59): no filtra la longitud por el
   // camino corto de ===; distinta longitud falla sin revelar cuánto coincidió.
@@ -865,6 +928,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         if (kind === 'panel') res.write(`event: status\ndata: ${JSON.stringify(status())}\n\n`);
         if (kind === 'widget') res.write(`event: widgets\ndata: ${JSON.stringify(engine.widgetState())}\n\n`);
         if (kind === 'widget') res.write(`event: interactive\ndata: ${JSON.stringify(interactive.snapshot())}\n\n`);
+        // Espectadores: solo las cifras públicas, para los widgets y los overlays propios que cargan tarde (S6).
+        if (kind === 'widget') res.write(`event: viewers\ndata: ${JSON.stringify(publicViewers(viewers.snapshot()))}\n\n`);
+        // Versiones de los overlays propios: la shell recarga su iframe al cambiar la suya.
+        if (kind === 'widget') res.write(`event: customOverlayVersions\ndata: ${JSON.stringify(customOverlays.versions())}\n\n`);
         if (kind === 'teleprompter') res.write(`event: teleprompter\ndata: ${JSON.stringify(teleprompter.snapshot())}\n\n`);
         if (kind === 'overlay') res.write(`event: pause\ndata: ${JSON.stringify(engine.pauseState())}\n\n`);
         if (kind !== 'panel') {
@@ -897,6 +964,11 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (url.pathname.startsWith('/media/')) return serveFile(req, res, mediaDir, url.pathname.slice('/media/'.length));
       const w = /^\/widget\/(\w+)$/.exec(url.pathname);
       if (w && WIDGETS.includes(w[1])) return serveFile(req, res, PUBLIC, `widgets/${w[1]}.html`);
+      // Overlays propios (S5): la shell es nuestra y el marco es del usuario, en origen opaco.
+      // El SDK va antes para que la ruta de overlays no se coma /custom/sdk.js (no es un id válido).
+      if (url.pathname === '/custom/sdk.js') return serveFile(req, res, PUBLIC, 'custom/sdk.js');
+      const custom = /^\/custom\/([^/]+)(\/frame)?$/.exec(url.pathname);
+      if (custom) return serveCustomOverlay(res, custom[1], !!custom[2]);
       if (useApp && APP_PAGES[url.pathname]) return serveFile(req, res, dist, APP_PAGES[url.pathname]);
       if (useApp && url.pathname.startsWith('/assets/')) return serveFile(req, res, dist, url.pathname.slice(1));
       if (url.pathname === '/' || url.pathname === '/prompter' || url.pathname === '/dock') return serveFile(req, res, PUBLIC, 'index.html');
@@ -956,7 +1028,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, teleprompter, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession };
+  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession };
   return app;
 }
 

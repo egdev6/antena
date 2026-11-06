@@ -25,7 +25,7 @@ export function deepMerge<T>(a: T | undefined, b: unknown): T {
 /** Slices that every update replaces whole (no partial patches, unlike status or widgets):
  *  the local copy received during a load is at least as new as that load's snapshot.
  *  meld is not here: its SSE event only brings the session, so only the session is kept. */
-const WHOLE: (keyof AppState)[] = ['teleprompter', 'interactive', 'timers', 'viewers', 'history', 'theme', 'alertPreviews'];
+const WHOLE: (keyof AppState)[] = ['teleprompter', 'interactive', 'timers', 'viewers', 'history', 'theme', 'alertPreviews', 'customOverlays'];
 
 class Live {
   state: AppState | null = null;
@@ -215,6 +215,8 @@ class Live {
       ...(alertPreviews ? { alertPreviews } : {}),
     })));
     on('timers', t => this.update(() => ({ timers: t })));
+    // Overlays propios: la lista completa en cada cambio (panel, MCP o API).
+    on('customOverlays', list => this.update(() => ({ customOverlays: list })));
     on('meld', m => this.update(s => ({ meld: { ...s.meld, session: m } })));
     // El evento 'widgets' trae la ventana corta del overlay (50): el panel conserva SU
     // lista de chat (tope 200, #48) y del evento solo toma lo demás. Los borrados y las

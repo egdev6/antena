@@ -35,10 +35,11 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Comandos de chat** (`!engram`, `!web`…) que lanzan sus propias alertas, con permisos y esperas.
 - **Mensajes programados:** textos que se publican solos en el chat cada X minutos (también como anuncio destacado) y, si quieres, salen además como alerta en pantalla.
 - **Interactivos:** cola de preguntas del chat, tier list que vota el chat y sorteos con ruleta en pantalla.
-- **Widgets:** chat en pantalla (Twitch + YouTube), objetivos, últimos apoyos, ticker y créditos finales.
+- **Widgets:** chat en pantalla (Twitch + YouTube), objetivos, últimos apoyos, ticker, espectadores en directo de Twitch y YouTube y créditos finales.
+- **Overlays propios:** capas de HTML, CSS y JavaScript para una escena o para enmarcar la cámara, escritas por ti o por Claude por MCP, con datos en vivo y acciones que apruebas tú.
 - **Resumen del directo:** totales, a quién dar las gracias y la cronología con el minuto de cada evento, en Markdown.
 - **Panel desde el móvil** en la red local, protegido con clave.
-- **Fuentes para Meld:** cada alerta, widget y panel es una fuente de navegador con su tamaño, listas para copiar.
+- **Fuentes para Meld:** cada alerta, widget, panel y overlay propio es una fuente de navegador con su tamaño, listas para copiar.
 - **Prompter para el Elgato Prompter** (1024×600): la app lo abre a pantalla completa en esa pantalla.
 - **Alerta de récord de espectadores** por plataforma (Twitch y YouTube), con freno anti-spam.
 - **Apariencia:** un solo tema para todo lo que sale en pantalla (alertas, widgets y créditos): colores, fuentes (también las tuyas), iconos por alerta, forma, posición, animación y sonido. El de serie es el de EGDEV.
@@ -140,8 +141,11 @@ En el panel, **Meld y Stream Deck › Fuentes para Meld** lista todas con su tam
 | Pregunta | `http://127.0.0.1:4500/widget/question` | 1920×1080 |
 | Tier list | `http://127.0.0.1:4500/widget/tierlist` | 1920×1080 |
 | Sorteo | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
+| Espectadores | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
 
-Parámetros del overlay: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Créditos: `?transparent`, `?autoplay`, `?loop`. Últimos: `?layout=column`, `?items=follow,sub`.
+Parámetros del overlay: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Créditos: `?transparent`, `?autoplay`, `?loop`. Últimos: `?layout=column`, `?items=follow,sub`. Espectadores: `?platforms=twitch`, `?layout=column`, `?total=0`, `?peak=1`.
+
+Los **overlays propios** salen en esa misma lista como «Overlay · nombre», con su URL `/custom/<id>` y su tamaño.
 
 ### Meld Studio
 
@@ -201,6 +205,55 @@ La forma más fácil son las variables:
 Clases: `.alert`, `.card`, `.alert-title`, `.alert-name`, `.alert-sub`, `.alert-icon`, `.alert-platform`, `.alert-glow`, `.alert-dots`, `.alert-cube`, `.alert-timer`, `.alert-media` y `.type-follow`, `.type-raid`… para afinar por tipo desde el CSS común.
 
 Los botones de **fragmentos** insertan recetas listas: otro color, sin inclinación, más pequeña, sin decoración, sin reflejo, sin plataforma, sin icono, fondo de cristal, texto con contorno y latido al entrar. Los widgets también tienen su campo CSS y funcionan igual.
+
+### Overlays propios
+
+Una capa nueva para Meld hecha con HTML, CSS y JavaScript: un marco para la cámara, un título animado, un cartel para una escena. Los escribes tú en **Overlays** o se los pides a Claude por MCP (`crear_overlay`); lo que hace el agente aparece en el panel sin recargar.
+
+| Dónde | Qué hay |
+|---|---|
+| Panel › **Overlays** | Lista en tarjetas, editor con pestañas HTML, CSS y JavaScript, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
+| Meld | Capa **+ › Browser** con `http://127.0.0.1:4500/custom/<id>` y el tamaño del overlay (también está en **Fuentes para Meld**, como «Overlay · nombre») |
+| Al guardar | Todas las capas abiertas (Meld y la vista previa) se recargan solas: no hay que tocar la fuente en Meld |
+
+`/theme.css` ya viene enlazado: usa sus variables (`var(--accent)`, `var(--text)`…) para que combine. El fondo es transparente por defecto, así que queda bien encima de la cámara, y los recursos externos por https (fuentes, imágenes) sí cargan. Ancho 16–7680, alto 16–4320, hasta 50 overlays y 512 KB de JSON por overlay.
+
+#### El SDK: datos en vivo y acciones
+
+`window.antena` es lo único que hay en la página:
+
+| API | Qué hace |
+|---|---|
+| `antena.on(evento, fn)` | Escucha un evento y devuelve la función para dejar de escuchar. Si ya hay un valor, `fn` se llama al momento con él |
+| `antena.state` | Último valor de cada evento (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`); empiezan en `null` |
+| `antena.ready` | Promesa que se resuelve cuando ya hay datos: espera antes de leer `antena.state` |
+| `antena.run(tipo, params)` | Pide una acción aprobada: resuelve si se ejecutó y se rechaza con el error del servidor si no |
+
+```js
+const quien = document.querySelector('.quien');
+antena.on('alert', a => {
+  quien.textContent = a.vars.user;
+  quien.animate([{ opacity: 0 }, { opacity: 1 }], 300);
+});
+antena.ready.then(() => {
+  quien.textContent = antena.state.widgets?.latest?.follow?.user || 'EGDEV';
+});
+document.querySelector('.marco').onclick = () => antena.run('scene', { scene: 'Cámara' }).catch(e => console.warn(e.message));
+```
+
+#### Permisos
+
+El agente **pide** permisos al crear o editar; solo tú los **apruebas** en el panel (interruptores de la pestaña Permisos), y solo se pueden aprobar los que el overlay pide. Tipos: `scene`, `layer`, `hideLayer`, `toggleLayer`, `effect`, `command`, `streamEvent`, `chat` y `say`.
+
+- Sin aprobación, `antena.run` se rechaza (403) y no pasa nada.
+- Tope de **10 acciones cada 10 segundos** por overlay: por encima, 429 y no se ejecuta.
+- Editar el código no retira lo aprobado, pero el panel avisa cuando el código ha cambiado desde que aprobaste.
+
+**Seguridad.** El código corre en un `<iframe sandbox>` con origen opaco, en una página aparte: no tiene la API de antena, no puede leer el panel ni abrir el flujo de eventos. Los datos le llegan solo por mensajes de la página que lo aloja, y lo único que puede pedir de vuelta son las acciones que apruebas.
+
+Por MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay` y `probar_overlay` (manda un evento de ejemplo a una capa abierta).
+
+> «Hazme un overlay propio con el último seguidor en una tarjeta HTML/CSS animada y añádelo a Meld».
 
 ### Comandos de chat
 
@@ -353,7 +406,7 @@ Las listas del menú lateral se pliegan con un clic en su título y el panel rec
 
 ### Servidor MCP
 
-Todo lo que hace el panel se puede hacer por MCP (136 herramientas). Si la app no está arrancada, el MCP la arranca él mismo.
+Todo lo que hace el panel se puede hacer por MCP (142 herramientas). Si la app no está arrancada, el MCP la arranca él mismo.
 
 Claude Desktop (`claude_desktop_config.json`):
 
@@ -376,6 +429,7 @@ Claude Desktop (`claude_desktop_config.json`):
 | Archivos | `listar_archivos`, `importar_archivo` (desde una ruta de tu PC), `borrar_archivo` |
 | Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube o los dos), `simular_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
 | Widgets | `ver_widgets`, `editar_widget`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `sumar_objetivo`, `fijar_objetivo`, `lanzar_creditos`, `parar_creditos` |
+| Overlays propios | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay` (lanza un evento de ejemplo a una capa abierta) |
 | Directo | `resumen_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
 | Apariencia | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema` |
 | Récord de espectadores | `estado_espectadores`, `configurar_espectadores`, `fijar_record_espectadores` |
@@ -397,6 +451,7 @@ Ejemplos de lo que se le puede pedir a Claude:
 - «Ponle nombre a las marcas de short de hoy según lo que pasó en el chat en ese minuto».
 - «Bloquea la palabra spoiler y al usuario troll123».
 - «Hazme el resumen del directo de hoy para LinkedIn».
+- «Hazme un overlay propio con el último seguidor en una tarjeta HTML/CSS animada y añádelo a Meld».
 
 ### API REST
 
