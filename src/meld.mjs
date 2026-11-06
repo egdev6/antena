@@ -4,6 +4,13 @@ import { EventEmitter } from 'node:events';
 
 const T = { signal: 1, propertyUpdate: 2, init: 3, idle: 4, debug: 5, invokeMethod: 6, connectToSignal: 7, disconnectFromSignal: 8, setProperty: 9, response: 10 };
 
+// Observadores de pista (S10): Meld avisa del volumen real con gainUpdated(trackId, gain, muted),
+// solo de las pistas registradas con registerTrackObserver(contexto, trackId). Mientras se
+// arrastra un fader la señal llega en ráfaga, así que la sesión se emite como mucho cada
+// GAIN_EMIT_MS para no inundar el panel.
+const GAIN_CONTEXT = 'antena';
+const GAIN_EMIT_MS = 50;
+
 export const MELD_COMMANDS = [
   'meld.screenshot', 'meld.screenshot.vertical', 'meld.startStreamingAction', 'meld.stopStreamingAction', 'meld.toggleStreamingAction',
   'meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction', 'meld.toggleVirtualCameraAction',
@@ -32,6 +39,11 @@ export class Meld extends EventEmitter {
     this.stopped = true;
     this.url = 'ws://127.0.0.1:13376';
     this.status = { state: 'desconectado', streaming: false, recording: false, version: null, error: null };
+    this.gains = new Map();        // idPista → { gain, muted } según gainUpdated
+    this.observedTracks = new Set(); // pistas con observador registrado en Meld
+    this.observersUnavailable = false; // ya se avisó de que este Meld no da el volumen
+    this.gainTimer = null;
+    this.gainEmittedAt = 0;
   }
   setStatus(p) { this.status = { ...this.status, ...p }; this.emit('status', this.status); }
   get connected() { return this.status.state === 'conectado'; }
@@ -46,6 +58,7 @@ export class Meld extends EventEmitter {
     if (this.closePromise) return this.closePromise;
     this.stopped = true;
     this.clearRetry();
+    this.clearGainTimer();
     this.ws = null;
     for (const ws of this.sockets) {
       try { ws.close(); } catch {}
@@ -58,6 +71,7 @@ export class Meld extends EventEmitter {
     if (this.closePromise) return this.closePromise;
     this.stopped = true;
     this.clearRetry();
+    this.clearGainTimer();
     const pending = [...this.pending.values()].map(p => p.done);
     this.closePromise = Promise.resolve().then(async () => {
       const results = await Promise.all(pending);
@@ -160,13 +174,18 @@ export class Meld extends EventEmitter {
     }
     for (const [name, idx] of o.signals || []) this.signals[idx] = name.replace(/\(.*$/, '');
     for (const [idx, name, , value] of o.properties || []) { this.props[idx] = name; this.values[name] = value; }
-    // escuchar las señales que interesan
+    // escuchar las señales que interesan (gainUpdated solo existe en Meld con observadores)
     for (const [idx, name] of Object.entries(this.signals)) {
-      if (['sessionChanged', 'isStreamingChanged', 'isRecordingChanged'].includes(name)) this.send({ type: T.connectToSignal, object: 'meld', signal: Number(idx) });
+      if (['sessionChanged', 'isStreamingChanged', 'isRecordingChanged', 'gainUpdated'].includes(name)) this.send({ type: T.connectToSignal, object: 'meld', signal: Number(idx) });
     }
     this.send({ type: T.idle });
+    // Conexión nueva: el volumen conocido y los observadores de la anterior ya no valen.
+    this.clearGainTimer();
+    this.gains.clear();
+    this.observedTracks.clear();
     this.setStatus({ state: 'conectado', error: null, version: this.values.version ?? 1, streaming: !!this.values.isStreaming, recording: !!this.values.isRecording });
-    this.emit('session', this.session());
+    this.emitSession();
+    this.syncTrackObservers();
   }
 
   onMessage(m, ws = this.ws) {
@@ -185,14 +204,89 @@ export class Meld extends EventEmitter {
       this.afterChange();
       return;
     }
-    if (m.type === T.signal && m.object === 'meld') this.afterChange(this.signals[m.signal]);
+    if (m.type === T.signal && m.object === 'meld') {
+      const name = this.signals[m.signal];
+      if (name === 'gainUpdated') { this.onGainUpdated(m.args); return; }
+      this.afterChange(name);
+    }
   }
 
   afterChange() {
     const streaming = !!this.values.isStreaming, recording = !!this.values.isRecording;
     if (streaming !== this.status.streaming) this.emit('streaming', streaming);
     this.setStatus({ streaming, recording });
+    this.emitSession();
+    this.syncTrackObservers();
+  }
+
+  // ---- volumen de las pistas (S10) ----
+  clearGainTimer() {
+    if (!this.gainTimer) return;
+    clearTimeout(this.gainTimer);
+    this.gainTimer = null;
+  }
+
+  /** Emite la sesión ya, agrupando los avisos de volumen que estuvieran esperando. */
+  emitSession() {
+    this.clearGainTimer();
+    this.gainEmittedAt = Date.now();
     this.emit('session', this.session());
+  }
+
+  /** Emite como mucho una sesión cada GAIN_EMIT_MS: la primera va al momento y el resto se agrupan. */
+  scheduleGainEmit() {
+    const waitMs = GAIN_EMIT_MS - (Date.now() - this.gainEmittedAt);
+    if (waitMs <= 0) { this.emitSession(); return; }
+    if (this.gainTimer) return;
+    const timer = setTimeout(() => {
+      if (this.gainTimer !== timer) return;
+      this.gainTimer = null;
+      this.emitSession();
+    }, waitMs);
+    timer.unref?.();
+    this.gainTimer = timer;
+  }
+
+  /** gainUpdated(trackId, gain, muted): el volumen real que informa Meld al mover el fader. */
+  onGainUpdated(args = []) {
+    const [trackId, gain, muted] = Array.isArray(args) ? args : [];
+    if (typeof trackId !== 'string' || !trackId) return;
+    const value = Number(gain);
+    if (!Number.isFinite(value)) return;
+    const prev = this.gains.get(trackId);
+    this.gains.set(trackId, {
+      gain: Math.max(0, Math.min(1, value)),
+      muted: muted === undefined ? prev?.muted ?? null : !!muted,
+    });
+    this.scheduleGainEmit();
+  }
+
+  /** Un observador por pista; se dan de baja las pistas que ya no están en la sesión. */
+  syncTrackObservers() {
+    if (!this.connected) return;
+    if (this.methods.registerTrackObserver === undefined) {
+      // Meld antiguo sin observadores: se avisa una vez y el volumen se queda en null.
+      if (!this.observersUnavailable) {
+        this.observersUnavailable = true;
+        try { this.log('[meld] Esta versión de Meld no informa del volumen de las pistas.'); } catch { /* el log no puede romper la conexión */ }
+      }
+      return;
+    }
+    const ids = new Set(this.session().tracks.map(t => t.id));
+    const attempt = (method, id) => {
+      try { Promise.resolve(this.call(method, GAIN_CONTEXT, id)).catch(() => {}); } catch { /* sin conexión: se reintenta al reconectar */ }
+    };
+    for (const id of ids) {
+      if (this.observedTracks.has(id)) continue;
+      this.observedTracks.add(id);
+      attempt('registerTrackObserver', id);
+    }
+    for (const id of [...this.observedTracks]) {
+      if (ids.has(id)) continue;
+      this.observedTracks.delete(id);
+      this.gains.delete(id);
+      if (this.methods.unregisterTrackObserver !== undefined) attempt('unregisterTrackObserver', id);
+    }
   }
 
   async call(method, ...args) {
@@ -210,7 +304,13 @@ export class Meld extends EventEmitter {
         layers: all.filter(l => l.type === 'layer' && l.parent === s.id).sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
           .map(l => ({ id: l.id, name: l.name, visible: !!l.visible, url: l.url || '',
             effects: all.filter(e => e.type === 'effect' && e.parent === l.id).map(e => ({ id: e.id, name: e.name, enabled: !!e.enabled })) })) }));
-    const tracks = all.filter(i => i.type === 'track').map(t => ({ id: t.id, name: t.name, muted: !!t.muted, monitoring: !!t.monitoring, parent: t.parent || null }));
+    // gain: volumen real que informa gainUpdated (null hasta saberlo). El mute manda en la
+    // sesión —Meld avisa al cambiarlo— y el que trae la señal solo cubre una pista sin él.
+    const tracks = all.filter(i => i.type === 'track').map(t => {
+      const seen = this.gains.get(t.id);
+      return { id: t.id, name: t.name, muted: t.muted === undefined ? !!seen?.muted : !!t.muted,
+        monitoring: !!t.monitoring, parent: t.parent || null, gain: seen ? seen.gain : null };
+    });
     return { scenes, tracks, streaming: !!this.values.isStreaming, recording: !!this.values.isRecording };
   }
 
@@ -253,7 +353,16 @@ export class Meld extends EventEmitter {
   command(cmd) { return this.call('sendCommand', cmd); }
   streamEvent(type, data) { return data === undefined ? this.call('sendStreamEvent', type) : this.call('sendStreamEvent', type, data); }
   async toggleMute(ref) { const t = this.findTrack(ref); if (!t) throw new Error(`No encuentro la pista «${ref}»`); await this.call('toggleMute', t.id); }
-  async setGain(ref, gain) { const t = this.findTrack(ref); if (!t) throw new Error(`No encuentro la pista «${ref}»`); await this.call('setGain', t.id, Math.max(0, Math.min(1, Number(gain)))); }
+  async setGain(ref, gain) {
+    const t = this.findTrack(ref); if (!t) throw new Error(`No encuentro la pista «${ref}»`);
+    const value = Math.max(0, Math.min(1, Number(gain)));
+    await this.call('setGain', t.id, value);
+    // Meld no tiene por qué reenviar el volumen que le acabamos de pedir: se anota al aceptarlo.
+    const prev = this.gains.get(t.id);
+    this.gains.set(t.id, { gain: value, muted: prev?.muted ?? null });
+    this.scheduleGainEmit();
+    return value;
+  }
   async media(layerRef, cmd, seconds) {
     const f = this.findLayer(null, layerRef); if (!f) throw new Error(`No encuentro la capa «${layerRef}»`);
     if (cmd === 'seekTo') return this.call('callFunctionWithArgs', f.layer.id, 'seekTo', [Number(seconds) || 0]);

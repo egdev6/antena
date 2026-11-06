@@ -152,7 +152,7 @@ Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. C
 1. In Meld: **Settings › Advanced › Allow remote connections**.
 2. In the panel: **Meld Studio › Connect** (by default `ws://127.0.0.1:13376`).
 
-From there you can see scenes, layers and tracks, change scene with a click, show or hide layers and trigger shortcuts (clip, screenshot, confetti, roulette, record). When you go live, the panel starts a new stream by itself (this can be disabled).
+From there you can see scenes, layers and tracks, change scene with a click, show or hide layers and trigger shortcuts (clip, screenshot, confetti, roulette, record). Each track also shows its **current volume**, kept in sync with Meld while you move the fader. When you go live, the panel starts a new stream by itself (this can be disabled).
 
 In every alert, variation or command, **Actions on fire** runs right when the alert appears on screen:
 

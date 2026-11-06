@@ -152,7 +152,7 @@ Los **overlays propios** salen en esa misma lista como «Overlay · nombre», co
 1. En Meld: **Ajustes › Avanzado › Allow remote connections**.
 2. En el panel: **Meld Studio › Conectar** (por defecto `ws://127.0.0.1:13376`).
 
-Desde ahí ves las escenas, capas y pistas, cambias de escena con un clic, muestras u ocultas capas y lanzas atajos (clip, captura, confeti, ruleta, grabar). Al empezar a emitir, el panel empieza un directo nuevo él solo (se puede desactivar).
+Desde ahí ves las escenas, capas y pistas, cambias de escena con un clic, muestras u ocultas capas y lanzas atajos (clip, captura, confeti, ruleta, grabar). Cada pista muestra además su **volumen actual**, en directo con lo que muevas en Meld. Al empezar a emitir, el panel empieza un directo nuevo él solo (se puede desactivar).
 
 En cada alerta, variación o comando, **Acciones al salir** se ejecuta justo cuando la alerta aparece en pantalla:
 

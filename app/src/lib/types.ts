@@ -273,7 +273,7 @@ export interface Status {
 // ---------- Meld ----------
 export interface MeldScene { id: string; name: string; current?: boolean; layers: MeldLayer[]; [k: string]: unknown }
 export interface MeldLayer { id: string; name: string; visible?: boolean; url?: string; [k: string]: unknown }
-export interface MeldTrack { id: string; name: string; muted?: boolean; [k: string]: unknown }
+export interface MeldTrack { id: string; name: string; muted?: boolean; gain?: number | null; [k: string]: unknown }
 export interface MeldSession {
   scenes: MeldScene[];
   tracks: MeldTrack[];
