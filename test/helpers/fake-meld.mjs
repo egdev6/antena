@@ -93,6 +93,11 @@ export function fakeMeld(items, options = {}) {
   return {
     server, state,
     goLive: () => {},
+    /** Simula las escenas horizontales y verticales que Meld informa al aire. */
+    setCurrentScenes(ids) {
+      for (const [id, item] of Object.entries(state.session.items)) if (item.type === 'scene') item.current = ids.includes(id);
+      pushSession();
+    },
     /** Añade una pista a la sesión y avisa del cambio, como al crearla en Meld. */
     addTrack(id, item = {}) { state.session.items[id] = { type: 'track', name: id, muted: false, ...item }; pushSession(); },
     /** Quita la pista de la sesión: Meld deja de conocerla (el observador lo da de baja antena). */

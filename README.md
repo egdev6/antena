@@ -44,7 +44,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Viewers record alert** per platform (Twitch and YouTube), with anti-spam brakes.
 - **Appearance:** one theme for everything that goes on screen (alerts, widgets and credits): colors, fonts (including yours), icons per alert, shape, position, animation and sound. The default one is the EGDEV theme.
 - **Customizable Stream Deck shortcuts:** each one chains steps (bookmark, pause, scene, layer, chat, prompter tab…) and has its own `/sd/custom/<id>` endpoint.
-- **Dock for Meld:** the whole live show minus the preview — scenes, Meld's audio tracks, alerts, questions, vote, giveaway, teleprompter, credits and your shortcuts — adaptable: three columns in landscape, one tab per section otherwise.
+- **Dock for Meld:** the whole live show minus the preview — scenes, Meld's audio tracks, alerts, questions, vote, giveaway, teleprompter, and credits — adaptable: three columns in landscape, one tab per section otherwise.
 
 The server has no dependencies (Node ≥ 22). The interface is React compiled with esbuild and the desktop app is Tauri 2, which starts that server as a *sidecar*. Everything stays on your PC.
 
@@ -380,17 +380,17 @@ Scenes, mic and loose effects go directly with the Meld plugin for Stream Deck.
 
 **Shortcut security.** The `/sd/*` endpoints have effects, so on top of the usual CSRF blocking (Origin and `Sec-Fetch-Site`), a GET with a `Referer` from another origin, or with browser headers but no `Sec-Fetch-Site` (e.g. an `<img>` on a third-party site from an old browser), is rejected with 403 and nothing runs. The Stream Deck plugin, which sends none of those headers, and a same-origin browser keep working without configuring anything.
 
-**Custom shortcuts.** In **Meld and Stream Deck › Shortcuts and Stream Deck** you create buttons that chain several steps, in order: any of the ones above, switching the prompter tab, and the Meld and chat actions (scene, show/hide layer, effect, command, widget event, write in chat, say out loud), each with its own delay. Every shortcut has its endpoint, `/sd/custom/<id>` (the name also works: `/sd/custom/Start%20stream`), a test button and a color for the dock. If a step fails, the rest still run and the response says which one failed. They can also be created and triggered from the MCP (`crear_atajo`, `lanzar_atajo`…).
+**Custom shortcuts.** In **Meld and Stream Deck › Shortcuts and Stream Deck** you create buttons that chain several steps, in order: any of the ones above, switching the prompter tab, and the Meld and chat actions (scene, show/hide layer, effect, command, widget event, write in chat, say out loud), each with its own delay. Every shortcut has its endpoint, `/sd/custom/<id>` (the name also works: `/sd/custom/Start%20stream`), a test button and a color. If a step fails, the rest still run and the response says which one failed. They can also be created and triggered from the MCP (`crear_atajo`, `lanzar_atajo`…).
 
 ### Dock in Meld
 
 Meld does not support custom panels, but its **chat panel** loads a URL. Put `http://127.0.0.1:4500/dock` there (**File › Preferences › User Interface**), or open it from **Prompter y dock › Abrir el dock**; in the app it also opens as an always-on-top floating window from the tray. Without leaving Meld it has the whole live show minus the preview, with the stream state and the warnings (mic, pause, Meld, overlay) on the header:
 
-- **Scenes:** the same scenes Meld has, split into **Horizontal** and **Vertical** (a scene whose name ends in `[Vertical]` goes to the second group; with none, a single list). One click shows it in Meld; the scene on air is marked «AL AIRE» with border and background, not colour only. Long names are cut to two lines with ellipsis and keep the whole name in the accessory name.
-- **Audio:** the tracks exactly as Meld has them — **Globales** (no parent) and the tracks of the scene on air — each with an on/off switch (Meld's mute) and a volume fader with the **real gain** in %: moving it in Meld updates the dock live, and the header counts «N tracks · M off». If Meld does not report a track's volume, the fader is disabled and says so.
-- **Control:** pause/resume alerts (with the queue), skip the current alert, short bookmark, thanked (with how many are pending), questions (on/off switch for the chat command, current question, next, hide and queue), tier list vote (close and place, cancel), giveaway (open/close, draw, participants), teleprompter (previous, play/pause, next, start), credits (launch, stop) and **your shortcuts as buttons**. The buttons that cannot do anything right now are disabled and say why.
+- **Control:** pause/resume alerts (with the queue), skip, short bookmark, thanked (with pending count), scenes, teleprompter (previous, play/pause, next, start) and credits (launch, stop). Each horizontal scene appears once; a matching ` [Vertical]` scene is also shown in Meld when clicked. Unpaired vertical scenes remain available. On-air labels distinguish H, V and H + V; long names retain their full accessible name.
+- **Audio:** global tracks and those of the on-air scenes, each with a mute switch and a fader for the **real gain**. If Meld does not report a track's volume, its fader is disabled. The narrow Audio tab signals muted listed tracks.
+- **Interactivos:** tabs for questions (switch, current, next, hide and queue), tier list vote (close and place, cancel) and giveaway (open/close, draw, participants), with status badges.
 
-The window adapts by size: in **landscape and at least 1000 px wide** it shows the three columns **Scenes | Audio | Control**; in anything else (narrow, portrait, tablet in portrait) it shows one tab per section — **Control, Scenes and Audio** — with arrow-key navigation and remembers the last one. No chat and no preview in the dock.
+In **landscape and at least 1000 px wide** the columns are **Control | Audio | Interactivos**; otherwise they become tabs. Both tab levels support arrow keys and remember the last selection. There is no chat, preview or shortcuts module in the dock; shortcuts remain in the panel and Stream Deck.
 
 ### Panel
 
