@@ -44,7 +44,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Viewers record alert** per platform (Twitch and YouTube), with anti-spam brakes.
 - **Appearance:** one theme for everything that goes on screen (alerts, widgets and credits): colors, fonts (including yours), icons per alert, shape, position, animation and sound. The default one is the EGDEV theme.
 - **Customizable Stream Deck shortcuts:** each one chains steps (bookmark, pause, scene, layer, chat, prompter tab…) and has its own `/sd/custom/<id>` endpoint.
-- **Dock for Meld:** a narrow view with status, pause, bookmarks, questions, your shortcuts and a small chat, for the Meld chat panel.
+- **Dock for Meld:** the whole live show minus the preview — scenes, Meld's audio tracks, alerts, questions, vote, giveaway, teleprompter, credits and your shortcuts — adaptable: three columns in landscape, one tab per section otherwise.
 
 The server has no dependencies (Node ≥ 22). The interface is React compiled with esbuild and the desktop app is Tauri 2, which starts that server as a *sidecar*. Everything stays on your PC.
 
@@ -152,7 +152,7 @@ Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. C
 1. In Meld: **Settings › Advanced › Allow remote connections**.
 2. In the panel: **Meld Studio › Connect** (by default `ws://127.0.0.1:13376`).
 
-From there you can see scenes, layers and tracks, change scene with a click, show or hide layers and trigger shortcuts (clip, screenshot, confetti, roulette, record). When you go live, the panel starts a new stream by itself (this can be disabled).
+From there you can see scenes, layers and tracks, change scene with a click, show or hide layers and trigger shortcuts (clip, screenshot, confetti, roulette, record). Each track also shows its **current volume**, kept in sync with Meld while you move the fader. When you go live, the panel starts a new stream by itself (this can be disabled).
 
 In every alert, variation or command, **Actions on fire** runs right when the alert appears on screen:
 
@@ -386,7 +386,13 @@ Scenes, mic and loose effects go directly with the Meld plugin for Stream Deck.
 
 ### Dock in Meld
 
-Meld does not support custom panels, but its **chat panel** loads a URL. Put `http://127.0.0.1:4500/dock` there (**File › Preferences › User Interface**) and you will have, without leaving Meld: stream status and warnings (mic, pause, Meld, overlay), pause and skip alerts, short bookmark, thanked, next question, vote and giveaway when they are running, **your shortcuts as buttons** and a chat tab to read and write on Twitch, YouTube or both. In the app it also opens as an always-on-top floating window («Dock» button).
+Meld does not support custom panels, but its **chat panel** loads a URL. Put `http://127.0.0.1:4500/dock` there (**File › Preferences › User Interface**), or open it from **Prompter y dock › Abrir el dock**; in the app it also opens as an always-on-top floating window from the tray. Without leaving Meld it has the whole live show minus the preview, with the stream state and the warnings (mic, pause, Meld, overlay) on the header:
+
+- **Scenes:** the same scenes Meld has, split into **Horizontal** and **Vertical** (a scene whose name ends in `[Vertical]` goes to the second group; with none, a single list). One click shows it in Meld; the scene on air is marked «AL AIRE» with border and background, not colour only. Long names are cut to two lines with ellipsis and keep the whole name in the accessory name.
+- **Audio:** the tracks exactly as Meld has them — **Globales** (no parent) and the tracks of the scene on air — each with an on/off switch (Meld's mute) and a volume fader with the **real gain** in %: moving it in Meld updates the dock live, and the header counts «N tracks · M off». If Meld does not report a track's volume, the fader is disabled and says so.
+- **Control:** pause/resume alerts (with the queue), skip the current alert, short bookmark, thanked (with how many are pending), questions (on/off switch for the chat command, current question, next, hide and queue), tier list vote (close and place, cancel), giveaway (open/close, draw, participants), teleprompter (previous, play/pause, next, start), credits (launch, stop) and **your shortcuts as buttons**. The buttons that cannot do anything right now are disabled and say why.
+
+The window adapts by size: in **landscape and at least 1000 px wide** it shows the three columns **Scenes | Audio | Control**; in anything else (narrow, portrait, tablet in portrait) it shows one tab per section — **Control, Scenes and Audio** — with arrow-key navigation and remembers the last one. No chat and no preview in the dock.
 
 ### Panel
 

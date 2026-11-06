@@ -44,7 +44,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Alerta de récord de espectadores** por plataforma (Twitch y YouTube), con freno anti-spam.
 - **Apariencia:** un solo tema para todo lo que sale en pantalla (alertas, widgets y créditos): colores, fuentes (también las tuyas), iconos por alerta, forma, posición, animación y sonido. El de serie es el de EGDEV.
 - **Atajos para Stream Deck** personalizables: cada uno encadena pasos (marca, pausa, escena, capa, chat, pestaña del prompter…) y tiene su dirección `/sd/custom/<id>`.
-- **Dock para Meld:** una vista estrecha con estado, pausa, marcas, preguntas, tus atajos y un chat pequeño, para el panel de chat de Meld.
+- **Dock para Meld:** todo el manejo del directo menos la vista previa —escenas, pistas de audio de Meld, alertas, preguntas, votación, sorteo, teleprompter, créditos y tus atajos— y adaptable: tres columnas en apaisado, una pestaña por sección en el resto.
 
 El servidor no tiene dependencias (Node ≥ 22). La interfaz es React compilada con esbuild y la app de escritorio es Tauri 2, que arranca ese servidor como *sidecar*. Todo se queda en tu PC.
 
@@ -152,7 +152,7 @@ Los **overlays propios** salen en esa misma lista como «Overlay · nombre», co
 1. En Meld: **Ajustes › Avanzado › Allow remote connections**.
 2. En el panel: **Meld Studio › Conectar** (por defecto `ws://127.0.0.1:13376`).
 
-Desde ahí ves las escenas, capas y pistas, cambias de escena con un clic, muestras u ocultas capas y lanzas atajos (clip, captura, confeti, ruleta, grabar). Al empezar a emitir, el panel empieza un directo nuevo él solo (se puede desactivar).
+Desde ahí ves las escenas, capas y pistas, cambias de escena con un clic, muestras u ocultas capas y lanzas atajos (clip, captura, confeti, ruleta, grabar). Cada pista muestra además su **volumen actual**, en directo con lo que muevas en Meld. Al empezar a emitir, el panel empieza un directo nuevo él solo (se puede desactivar).
 
 En cada alerta, variación o comando, **Acciones al salir** se ejecuta justo cuando la alerta aparece en pantalla:
 
@@ -386,7 +386,13 @@ Escenas, micro y efectos sueltos van directos con el plugin de Meld para Stream 
 
 ### Dock en Meld
 
-Meld no admite paneles propios, pero su **panel de chat** carga una dirección. Pon ahí `http://127.0.0.1:4500/dock` (**File › Preferences › User Interface**) y tendrás, sin salir de Meld: estado del directo y avisos (micro, pausa, Meld, overlay), pausar y saltar alertas, marca de short, agradecido, siguiente pregunta, votación y sorteo cuando están en marcha, **tus atajos como botones** y una pestaña de chat para leer y escribir en Twitch, YouTube o los dos. En la app también se abre como ventana flotante siempre encima (botón «Dock»).
+Meld no admite paneles propios, pero su **panel de chat** carga una dirección. Pon ahí `http://127.0.0.1:4500/dock` (**File › Preferences › User Interface**), o ábrelo desde **Prompter y dock › Abrir el dock**; en la app también se abre como ventana flotante siempre encima desde la bandeja. Sin salir de Meld tiene todo el manejo del directo menos la vista previa, con el estado del directo y los avisos (micro, pausa, Meld, overlay) en la cabecera:
+
+- **Escenas:** las mismas que tiene Meld, en dos grupos, **Horizontal** y **Vertical** (la escena cuyo nombre acaba en `[Vertical]` va al segundo; si no hay ninguna, una sola lista). Un clic la muestra en Meld; la que está al aire se marca «AL AIRE» con borde y fondo, no solo con color. Los nombres largos se cortan a dos líneas con puntos suspensivos y guardan el nombre entero en el nombre accesible.
+- **Audio:** las pistas tal y como las tiene Meld —**Globales** (sin padre) y las de la escena que está al aire—, cada una con un interruptor de encendido (el mute de Meld) y un fader con el **volumen real** en %: al moverlo en Meld el dock se actualiza en vivo, y la cabecera cuenta «N pistas · M desactivadas». Si Meld no informa del volumen de una pista, el fader queda desactivado y lo explica.
+- **Control:** pausar y reanudar alertas (con la cola), saltar la alerta actual, marca de short, agradecido (con cuántos quedan), preguntas (interruptor del comando del chat, pregunta en pantalla, siguiente, ocultar y cola), votación de tier list (cerrar y colocar, cancelar), sorteo (abrir/cerrar, sortear, participantes), teleprompter (anterior, play/pausa, siguiente, inicio), créditos (lanzar, parar) y **tus atajos como botones**. Los botones que ahora mismo no pueden hacer nada quedan desactivados y dicen por qué.
+
+La ventana se adapta al tamaño: en **apaisado y con al menos 1000 px de ancho** se ven las tres columnas **Escenas | Audio | Control**; en cualquier otro caso (estrecha, retrato, tablet en retrato) se ve una pestaña por sección —**Control, Escenas y Audio**—, con navegación por flechas y memoria de la última. Sin chat y sin vista previa en el dock.
 
 ### Panel
 

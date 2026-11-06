@@ -1,7 +1,7 @@
 // Ajustes: Meld Studio, filtros y voz, y la vista del prompter.
 import { useEffect, useState } from 'react';
 import { post } from '../../lib/api';
-import { isDesktop, listMonitors, openPrompter, type Monitor } from '../../lib/desktop';
+import { isDesktop, listMonitors, openDock, openPrompter, type Monitor } from '../../lib/desktop';
 import { live, useLive } from '../../lib/live';
 import { codeTab, cx, EmptyState, guard, Icon, IconBtn, LazyInput, Panel, Range, Sec, Status, Switch, toast } from '../../lib/ui';
 import { IC } from '../../lib/icons';
@@ -138,9 +138,13 @@ export function PrompterAjustes({ parts }: { parts: string[] }) {
     if (desk) { await saveAll(); await openPrompter(pr.monitor || elgato?.name || '', true); }
     else window.open('/prompter', 'egdev-prompter', 'popup,width=1024,height=600');
   });
+  const openDockWindow = guard(async () => {
+    if (desk) await openDock(true);
+    else window.open('/dock', 'egdev-dock', 'popup,width=380,height=720');
+  });
   return <>
     <PageHead crumb="Producción" title="Prompter y dock" desc="Vista de 1024×600 para el Elgato Prompter: lees el chat y manejas los widgets mirando a cámara. Lo de un solo botón va al Stream Deck."
-      actions={<button className="eg-btn eg-btn--primary eg-btn--sm" onClick={open}>{desk ? 'Abrir en el Prompter' : 'Abrir la vista'}</button>}
+      actions={<><button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={openDockWindow}>Abrir el dock</button><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={open}>{desk ? 'Abrir en el Prompter' : 'Abrir la vista'}</button></>}
       tabs={[{ id: 'pantalla', label: 'Pantalla' }, { id: 'vista', label: 'Vista' }]} tab={tab} onTab={setTab} />
     <div className="lv-page">
       {tab === 'pantalla' && <Panel title="Pantalla">

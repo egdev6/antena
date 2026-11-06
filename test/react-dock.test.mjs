@@ -1,5 +1,5 @@
-// #105 en la interfaz React: vista Dock (/dock). Carga, estado, pausar y saltar,
-// botones de atajos propios que lanzan su atajo y pestaña de chat.
+// #105 en la interfaz React: vista Dock (/dock). Carga, estado, pausar y saltar, botones de
+// atajos propios que lanzan su atajo y pestañas Control/Escenas/Audio (el chat salió del dock).
 // Efecto observable: estado del motor en el servidor (pausa) y notas de la sesión (marca).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +11,7 @@ import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText, clickWhen }
 
 const call = (base, method, p, body) => fetch(base + p, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) }).then(r => r.json());
 
-test('dock React: estado, pausa, atajo propio desde el dock y chat', { timeout: 120000 }, async t => {
+test('dock React: estado, pausa, atajo propio desde el dock y pestañas sin chat', { timeout: 120000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return; // sin app/dist o sin Chrome: omitido con motivo (t.skip)
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-dk-'));
@@ -27,9 +27,11 @@ test('dock React: estado, pausa, atajo propio desde el dock y chat', { timeout: 
     const ev = expr => import('./helpers/chrome-dom.mjs').then(m => m.evaluateChrome(c, expr));
     await waitDom(c, `!!(document.querySelector('.d-top') && document.querySelector('.d-grid'))`, { timeoutMs: 12000 });
 
-    // estado visible: cabecera de sesión y pestañas Control/Chat
+    // estado visible: cabecera de sesión y pestañas Control/Escenas/Audio; sin chat
     assert.ok(await ev(`document.querySelector('.d-live').textContent.includes('Sesión') || document.querySelector('.d-live').textContent.includes('Sin emitir')`));
-    assert.ok(await ev(`document.querySelector('[role="tablist"]')?.textContent.includes('Control') && document.querySelector('[role="tablist"]').textContent.includes('Chat')`));
+    const tabs = await ev(`Array.from(document.querySelectorAll('[role="tablist"] [role="tab"]')).map(b => b.textContent.trim())`);
+    assert.deepEqual(tabs, ['Control', 'Escenas', 'Audio'], 'el dock ya no tiene pestaña de chat (S12)');
+    assert.equal(await ev(`!!document.querySelector('.d-chat, .d-msgs, .d-send')`), false, 'sin mini-chat en el dock');
 
     // botones de atajos propios: el creado antes aparece y al pulsarlo ejecuta su marca en el servidor
     const scBtn = `Array.from(document.querySelectorAll('.d-grid .sc')).find(b => b.textContent.includes('Empezar el directo'))`;
@@ -50,24 +52,6 @@ test('dock React: estado, pausa, atajo propio desde el dock y chat', { timeout: 
     // saltar: el botón lanza la acción de serie /sd/saltar
     await clickWhen(c, buttonByText('⏭ Saltar'));
     await waitDom(c, `document.querySelector('.toast[role="status"]')?.textContent.includes('Saltada')`, { timeoutMs: 9000 });
-
-    // pestaña de chat: formulario visible y un envío propio sale al chat y se pinta
-    await clickWhen(c, `Array.from(document.querySelectorAll('[role="tab"]')).find(b => b.textContent.trim() === 'Chat')`);
-    await waitDom(c, `!!document.querySelector('.d-chat form input')`, { timeoutMs: 9000 });
-    const sent = [];
-    app.twitch.sendChat = async text => { sent.push(text); return { id: 'tw-1' }; };
-    await ev(`(() => {
-      const inp = document.querySelector('.d-chat form input');
-      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      set.call(inp, 'hola desde el dock');
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
-      inp.closest('form').querySelector('button[type="submit"]').click();
-    })()`);
-    await new Promise(r => setTimeout(r, 500));
-    assert.deepEqual(sent, ['hola desde el dock'], 'el envío del dock llegó a la API del chat');
-    // un mensaje entrante (simulado) llega por SSE y se pinta en el mini-chat
-    await call(base, 'POST', '/api/chat/simulate', { user: 'EspectadorBot', text: 'hola entrante' });
-    await waitDom(c, `Array.from(document.querySelectorAll('.d-msg')).some(m => m.textContent.includes('hola entrante'))`, { timeoutMs: 9000 });
   } finally {
     chrome?.cdp.close(); chrome?.child.kill();
     await new Promise(r => app.server.close(r));

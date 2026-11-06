@@ -273,7 +273,9 @@ export interface Status {
 // ---------- Meld ----------
 export interface MeldScene { id: string; name: string; current?: boolean; layers: MeldLayer[]; [k: string]: unknown }
 export interface MeldLayer { id: string; name: string; visible?: boolean; url?: string; [k: string]: unknown }
-export interface MeldTrack { id: string; name: string; muted?: boolean; [k: string]: unknown }
+/** Pista de audio de Meld: `gain` es el volumen real (0–1) que informa gainUpdated, o null
+ *  mientras Meld no lo diga; `parent` es la capa/escena a la que pertenece (null = global). */
+export interface MeldTrack { id: string; name: string; muted?: boolean; gain?: number | null; parent?: string | null; [k: string]: unknown }
 export interface MeldSession {
   scenes: MeldScene[];
   tracks: MeldTrack[];
