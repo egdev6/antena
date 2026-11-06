@@ -80,3 +80,10 @@ test('open_teleprompter: sin pantalla elegida se va a la principal (no a la últ
   const perms = readFileSync(new URL('../src-tauri/permissions/commands.toml', import.meta.url), 'utf8');
   assert.match(perms, /allow-open-teleprompter/, 'permiso allow-open-teleprompter declarado');
 });
+
+test('every capability allows exactly the local server origin', () => {
+  for (const file of ['default.json', 'panel.json', 'updater.json']) {
+    const cap = JSON.parse(readFileSync(path.join(root, 'src-tauri/capabilities', file), 'utf8'));
+    assert.deepEqual(cap.remote.urls, ['http://127.0.0.1:*'], file);
+  }
+});
