@@ -1,7 +1,7 @@
 // Ajustes: Meld Studio, filtros y voz, y la vista del prompter.
 import { useEffect, useState } from 'react';
 import { post } from '../../lib/api';
-import { isDesktop, listMonitors, openDock, openPrompter, type Monitor } from '../../lib/desktop';
+import { closePanelWindow, isDesktop, listMonitors, onPanelWindowsChange, openDock, openPrompter, openTeleprompter, panelWindows, type Monitor, type PanelWindows } from '../../lib/desktop';
 import { live, useLive } from '../../lib/live';
 import { codeTab, cx, EmptyState, guard, Icon, IconBtn, LazyInput, Panel, Range, Sec, Status, Switch, toast } from '../../lib/ui';
 import { IC } from '../../lib/icons';
@@ -130,38 +130,84 @@ export function PrompterAjustes({ parts }: { parts: string[] }) {
   const pr = useLive(s => s.config.prompter || {});
   const tracks = useLive(s => s.meld?.session?.tracks || []);
   const [monitors, setMonitors] = useState<Monitor[]>([]);
+  const [windows, setWindows] = useState<PanelWindows | null>(null);
+  const script = useLive(s => s.teleprompter?.script?.title);
   const desk = isDesktop();
   useEffect(() => { if (desk) listMonitors().then(items => setMonitors(items ?? [])).catch(e => toast(e.message, true)); }, [desk]);
+  useEffect(() => {
+    if (!desk) return;
+    let active = true, sequence = 0;
+    const refresh = () => {
+      const n = ++sequence;
+      panelWindows().then(value => { if (active && n === sequence) setWindows(value); })
+        .catch(() => { if (active && n === sequence) setWindows(null); });
+    };
+    const visible = () => { if (!document.hidden) refresh(); };
+    let off = () => {};
+    onPanelWindowsChange(refresh).then(unlisten => { if (active) off = unlisten; else unlisten(); }).catch(() => {});
+    window.addEventListener('focus', visible);
+    document.addEventListener('visibilitychange', visible);
+    const timer = window.setInterval(visible, 2000);
+    refresh();
+    return () => { active = false; off(); window.clearInterval(timer); window.removeEventListener('focus', visible); document.removeEventListener('visibilitychange', visible); };
+  }, [desk]);
+  const refreshWindows = async () => { setWindows(await panelWindows()); };
   const P = (patch: Partial<PrompterConfig>) => live.patchConfig({ prompter: patch });
   const elgato = monitors.find(m => m.prompterLike);
+  const monitor = pr.monitor || elgato?.name || monitors.find(m => m.primary)?.name || '';
   const open = guard(async () => {
-    if (desk) { await saveAll(); await openPrompter(pr.monitor || elgato?.name || '', true); }
+    if (desk) { await saveAll(); await openPrompter(monitor, true); await refreshWindows(); }
     else window.open('/prompter', 'egdev-prompter', 'popup,width=1024,height=600');
   });
+  const openTele = (fullscreen: boolean) => guard(async () => {
+    if (desk) { if (fullscreen) await saveAll(); await openTeleprompter(fullscreen ? monitor : null, fullscreen); await refreshWindows(); }
+    else window.open('/widget/teleprompter', 'egdev-teleprompter', 'popup,width=1280,height=720');
+  });
+  const close = (label: 'prompter' | 'teleprompter') => guard(async () => { await closePanelWindow(label); await refreshWindows(); });
   const openDockWindow = guard(async () => {
-    if (desk) await openDock(true);
+    if (desk) { await openDock(true); await refreshWindows(); }
     else window.open('/dock', 'egdev-dock', 'popup,width=380,height=720');
   });
+  const unknown = 'Estado no disponible';
   return <>
-    <PageHead crumb="Producción" title="Prompter y dock" desc="Vista de 1024×600 para el Elgato Prompter: lees el chat y manejas los widgets mirando a cámara. Lo de un solo botón va al Stream Deck."
-      actions={<><button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={openDockWindow}>Abrir el dock</button><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={open}>{desk ? 'Abrir en el Prompter' : 'Abrir la vista'}</button></>}
+    <PageHead crumb="Producción" title="Paneles" desc="Abre el prompter, el teleprompter y el dock donde los necesites."
       tabs={[{ id: 'pantalla', label: 'Pantalla' }, { id: 'vista', label: 'Vista' }]} tab={tab} onTab={setTab} />
     <div className="lv-page">
-      {tab === 'pantalla' && <Panel title="Pantalla">
-        {desk ? <>
-          <label>Monitor del Prompter
+      {tab === 'pantalla' && <>
+        <section aria-labelledby="panel-screen">
+          <h2 id="panel-screen">En el Elgato</h2>
+          <p className="hint">Solo se ve uno en la pantalla: al mostrar el prompter se cierra el teleprompter, y al revés.</p>
+          {desk ? <label>Pantalla
             <select value={pr.monitor || ''} onChange={e => P({ monitor: e.target.value })}>
               <option value="">{elgato ? `Automático: ${elgato.name} (${elgato.width}×${elgato.height})` : 'Automático (el de 1024×600)'}</option>
               {monitors.map(m => <option key={m.name} value={m.name}>{m.name} · {m.width}×{m.height}{m.primary ? ' · principal' : ''}{m.prompterLike ? ' · Elgato' : ''}</option>)}
-            </select></label>
-          <p className="hint">La app abre el prompter a pantalla completa en ese monitor. {elgato ? 'Se ha detectado una pantalla de 1024×600.' : 'No se ve ninguna pantalla de 1024×600: conecta el Prompter por USB-C.'}</p>
-        </> : <ol className="steps">
-          <li>Conecta el Prompter por USB-C: Windows lo ve como otra pantalla.</li>
-          <li>Con la app de escritorio, «Abrir en el Prompter» la coloca sola. Desde el navegador: abre <code>{location.origin}/prompter</code> como ventana de app y arrástrala a esa pantalla.</li>
-          <li>Pulsa <b>F11</b> para pantalla completa.</li>
-        </ol>}
-        <p className="hint">El Prompter da la vuelta a la imagen solo; si la ves al revés, activa «Espejo».</p>
-      </Panel>}
+            </select></label> : <p className="hint">En el navegador, arrastra la ventana a la pantalla elegida y pulsa F11.</p>}
+          <div className="grid2">
+            <article className="panel"><header><h3>Prompter</h3><span>{windows ? (windows.prompter ? 'En pantalla' : 'Cerrado') : unknown}</span></header>
+              <p className="hint">Chat, eventos y preguntas para leer mirando a cámara. Ajusta la lectura en Vista.</p>
+              <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={windows?.prompter ? close('prompter') : open}>{windows?.prompter ? 'Quitar de la pantalla' : 'Mostrar en la pantalla'}</button>
+            </article>
+            <article className="panel"><header><h3>Teleprompter</h3><span>{windows ? (windows.teleprompter === 'screen' ? 'En pantalla' : 'Cerrado') : unknown}{script ? ` · Guion «${script}»` : ''}</span></header>
+              <p className="hint">Tu guion a pantalla completa, controlado desde el panel, el dock o el Stream Deck.</p>
+              <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={windows?.teleprompter === 'screen' ? close('teleprompter') : openTele(true)}>{windows?.teleprompter === 'screen' ? 'Quitar de la pantalla' : 'Mostrar en la pantalla'}</button>
+            </article>
+          </div>
+        </section>
+        <section aria-labelledby="panel-floating">
+          <h2 id="panel-floating">Ventanas flotantes</h2>
+          <p className="hint">Ventanas independientes que puedes mover y redimensionar.</p>
+          <div className="grid2">
+            <article className="panel"><header><h3>Dock</h3><span>{windows ? (windows.dock ? 'Abierto' : 'Cerrado') : unknown}</span></header>
+              <p className="hint">Control del directo, escenas, audio e interactivos en una ventana siempre encima.</p>
+              <button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={openDockWindow}>Abrir el dock</button>
+            </article>
+            <article className="panel"><header><h3>Teleprompter en ventana</h3><span>{windows ? (windows.teleprompter === 'floating' ? 'En ventana' : 'Cerrado') : unknown}</span></header>
+              <p className="hint">El mismo guion en una ventana normal, sin ocupar el Elgato.</p>
+              <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={openTele(false)}>Abrir en ventana</button>
+            </article>
+          </div>
+        </section>
+      </>}
       {tab === 'vista' && <Panel title="Vista">
         <div className="row2">
           <Range label="Tamaño de letra" value={pr.fontSize ?? 22} min={16} max={32} unit="px" onChange={x => P({ fontSize: x })} />

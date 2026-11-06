@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "panel-windows",
+  "description": "Solo el panel principal consulta y cierra las ventanas de producción.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
+  "permissions": ["allow-panel-windows", "allow-close-panel-window"]
+}

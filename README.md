@@ -384,7 +384,9 @@ Scenes, mic and loose effects go directly with the Meld plugin for Stream Deck.
 
 ### Dock in Meld
 
-Meld does not support custom panels, but its **chat panel** loads a URL. Put `http://127.0.0.1:4500/dock` there (**File › Preferences › User Interface**), or open it from **Prompter y dock › Abrir el dock**; in the app it also opens as an always-on-top floating window from the tray. Without leaving Meld it has the whole live show minus the preview, with the stream state and the warnings (mic, pause, Meld, overlay) on the header:
+The **Paneles** page also puts either the prompter or the teleprompter on the selected screen (only one at a time), and offers floating dock and teleprompter windows. In a browser they open as popups and their window state is unavailable.
+
+Meld does not support custom panels, but its **chat panel** loads a URL. Put `http://127.0.0.1:4500/dock` there (**File › Preferences › User Interface**), or open it from **Paneles › Ventanas flotantes › Abrir el dock**; in the app it also opens as an always-on-top floating window from the tray. Without leaving Meld it has the whole live show minus the preview, with the stream state and the warnings (mic, pause, Meld, overlay) on the header:
 
 - **Control:** pause/resume alerts (with the queue), skip, short bookmark, thanked (with pending count), scenes, teleprompter (previous, play/pause, next, start) and credits (launch, stop). Each horizontal scene appears once; a matching ` [Vertical]` scene is also shown in Meld when clicked. Unpaired vertical scenes remain available. On-air labels distinguish H, V and H + V; long names retain their full accessible name.
 - **Audio:** global tracks and those of the on-air scenes, each with a mute switch and a fader for the **real gain**. If Meld does not report a track's volume, its fader is disabled. The narrow Audio tab signals muted listed tracks.

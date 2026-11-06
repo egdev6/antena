@@ -23,6 +23,16 @@ description = "Permite a la interfaz abrir el dock flotante."
 commands.allow = ["open_dock"]
 
 [[permission]]
+identifier = "allow-panel-windows"
+description = "Permite al panel principal consultar el estado de sus ventanas."
+commands.allow = ["panel_windows"]
+
+[[permission]]
+identifier = "allow-close-panel-window"
+description = "Permite al panel principal cerrar el prompter o el teleprompter."
+commands.allow = ["close_panel_window"]
+
+[[permission]]
 identifier = "allow-desktop-info"
 description = "Permite a la interfaz leer el puerto, la carpeta de datos y la versión de la app."
 commands.allow = ["desktop_info"]

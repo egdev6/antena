@@ -326,7 +326,7 @@ tool('editar_atajo', 'Cambia el nombre, el color o los pasos de un atajo.', { id
   ({ id, nombre, pasos, color }) => put('/api/shortcuts/' + enc(id), { name: nombre, steps: pasos, color }), ['id']);
 tool('borrar_atajo', 'Borra un atajo personalizado.', { id: S.str('Id o nombre') }, ({ id }) => del('/api/shortcuts/' + enc(id)), ['id']);
 tool('lanzar_atajo', 'Ejecuta un atajo personalizado ahora.', { id: S.str('Id o nombre') }, ({ id }) => post('/api/shortcuts/' + enc(id) + '/run'), ['id']);
-tool('fuentes_meld', 'URL y tamaño de cada capa de navegador para añadir en Meld (alertas, chat, objetivos, preguntas…), y las vistas de dock y prompter.', {}, () => get('/api/sources'));
+tool('fuentes_meld', 'URL y tamaño de cada capa de navegador para añadir en Meld (alertas, chat, objetivos, preguntas…), y las vistas de dock, prompter y teleprompter.', {}, () => get('/api/sources'));
 
 // Meld
 tool('meld_estado', 'Estado de Meld y sus escenas, capas (con efectos) y pistas de audio.', {}, () => get('/api/meld'));

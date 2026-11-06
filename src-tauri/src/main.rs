@@ -326,6 +326,61 @@ fn focus(w: &WebviewWindow) {
     let _ = w.set_focus();
 }
 
+const PANEL_WINDOWS_EVENT: &str = "antena://panel-windows";
+
+fn notify_panel_windows(app: &AppHandle) {
+    let _ = app.emit_to("main", PANEL_WINDOWS_EVENT, ());
+}
+
+fn valid_panel_close_label(label: &str) -> bool {
+    matches!(label, "prompter" | "teleprompter")
+}
+
+fn teleprompter_mode(fullscreen: Option<bool>) -> &'static str {
+    match fullscreen { None => "closed", Some(false) => "floating", Some(true) => "screen" }
+}
+
+fn should_replace_screen(opening_fullscreen: bool, other_fullscreen: bool) -> bool {
+    opening_fullscreen && other_fullscreen
+}
+
+fn close_other_screen(app: &AppHandle, label: &str, opening_fullscreen: bool) -> Result<(), String> {
+    if let Some(other) = app.get_webview_window(label) {
+        if should_replace_screen(opening_fullscreen, other.is_fullscreen().map_err(|e| e.to_string())?) {
+            other.close().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct PanelWindows {
+    dock: bool,
+    prompter: bool,
+    teleprompter: &'static str,
+}
+
+#[tauri::command]
+fn panel_windows(app: AppHandle) -> Result<PanelWindows, String> {
+    let teleprompter = app.get_webview_window("teleprompter")
+        .map(|w| w.is_fullscreen().map_err(|e| e.to_string())).transpose()?;
+    Ok(PanelWindows {
+        dock: app.get_webview_window("dock").is_some(),
+        prompter: app.get_webview_window("prompter").is_some(),
+        teleprompter: teleprompter_mode(teleprompter),
+    })
+}
+
+#[tauri::command]
+fn close_panel_window(app: AppHandle, label: String) -> Result<(), String> {
+    if !valid_panel_close_label(&label) { return Err("Ventana no permitida".into()); }
+    if let Some(window) = app.get_webview_window(&label) {
+        window.close().map_err(|e| e.to_string())?;
+    }
+    notify_panel_windows(&app);
+    Ok(())
+}
+
 /// Abre el prompter. Si hay una pantalla de 1024×600 (el Elgato) o se elige una, va a pantalla completa en ella.
 #[tauri::command]
 async fn open_prompter(app: AppHandle, monitor: Option<String>, fullscreen: Option<bool>) -> Result<(), String> {
@@ -334,6 +389,7 @@ async fn open_prompter(app: AppHandle, monitor: Option<String>, fullscreen: Opti
         Some(name) => list.iter().find(|(i, _)| i.name == name),
         None => list.iter().find(|(i, _)| i.prompter_like),
     };
+    close_other_screen(&app, "teleprompter", fullscreen.unwrap_or(true) && target.is_some())?;
     let w = match app.get_webview_window("prompter") {
         Some(w) => w,
         None => window_builder(&app, "prompter", WebviewUrl::External(page_url(&app, "/prompter")?))
@@ -343,14 +399,17 @@ async fn open_prompter(app: AppHandle, monitor: Option<String>, fullscreen: Opti
             .build()
             .map_err(|e| e.to_string())?,
     };
+    if !fullscreen.unwrap_or(true) || target.is_some() {
+        w.set_fullscreen(false).map_err(|e| e.to_string())?;
+    }
     if let Some((_, m)) = target {
-        let _ = w.set_fullscreen(false);
         let _ = w.set_position(Position::Physical(PhysicalPosition { x: m.position().x + 20, y: m.position().y + 20 }));
         if fullscreen.unwrap_or(true) {
-            let _ = w.set_fullscreen(true);
+            w.set_fullscreen(true).map_err(|e| e.to_string())?;
         }
     }
     focus(&w);
+    notify_panel_windows(&app);
     Ok(())
 }
 
@@ -364,6 +423,7 @@ async fn open_teleprompter(app: AppHandle, monitor: Option<String>, fullscreen: 
         Some(name) => list.iter().find(|(i, _)| i.name == name),
         None => list.iter().find(|(i, _)| i.primary),   // «La principal» = monitor primario
     };
+    close_other_screen(&app, "prompter", fullscreen.unwrap_or(true))?;
     let w = match app.get_webview_window("teleprompter") {
         Some(w) => w,
         None => window_builder(&app, "teleprompter", WebviewUrl::External(page_url(&app, "/widget/teleprompter")?))
@@ -373,16 +433,17 @@ async fn open_teleprompter(app: AppHandle, monitor: Option<String>, fullscreen: 
             .build()
             .map_err(|e| e.to_string())?,
     };
+    if !fullscreen.unwrap_or(true) || target.is_some() {
+        w.set_fullscreen(false).map_err(|e| e.to_string())?;
+    }
     if let Some((_, m)) = target {
-        let _ = w.set_fullscreen(false);
         let _ = w.set_position(Position::Physical(PhysicalPosition { x: m.position().x + 20, y: m.position().y + 20 }));
-        if fullscreen.unwrap_or(true) {
-            let _ = w.set_fullscreen(true);
-        }
-    } else if fullscreen.unwrap_or(true) {
-        let _ = w.set_fullscreen(true);
+    }
+    if fullscreen.unwrap_or(true) {
+        w.set_fullscreen(true).map_err(|e| e.to_string())?;
     }
     focus(&w);
+    notify_panel_windows(&app);
     Ok(())
 }
 
@@ -400,6 +461,7 @@ async fn open_dock(app: AppHandle, always_on_top: Option<bool>) -> Result<(), St
     };
     let _ = w.set_always_on_top(always_on_top.unwrap_or(true));
     focus(&w);
+    notify_panel_windows(&app);
     Ok(())
 }
 
@@ -575,6 +637,9 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, ev| {
+            if matches!(ev, WindowEvent::Destroyed) && matches!(window.label(), "dock" | "prompter" | "teleprompter") {
+                notify_panel_windows(window.app_handle());
+            }
             // cerrar el panel lo deja en la bandeja: las fuentes de Meld y el Stream Deck siguen funcionando
             if let WindowEvent::CloseRequested { api, .. } = ev {
                 if window.label() == "main" {
@@ -583,7 +648,7 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![monitors, open_prompter, open_teleprompter, open_dock, desktop_info, update_check, update_install])
+        .invoke_handler(tauri::generate_handler![monitors, open_prompter, open_teleprompter, open_dock, panel_windows, close_panel_window, desktop_info, update_check, update_install])
         .build(tauri::generate_context!())
         .expect("no se pudo iniciar antena");
 
@@ -600,6 +665,26 @@ mod tests {
 
     fn p(s: &str) -> PathBuf {
         PathBuf::from(s)
+    }
+
+    #[test]
+    fn panel_close_label_is_strictly_allowlisted() {
+        assert!(valid_panel_close_label("prompter"));
+        assert!(valid_panel_close_label("teleprompter"));
+        for label in ["main", "dock", "", "Prompter", "prompter "] {
+            assert!(!valid_panel_close_label(label), "{label}");
+        }
+    }
+
+    #[test]
+    fn teleprompter_window_state_and_screen_replacement() {
+        assert_eq!(teleprompter_mode(None), "closed");
+        assert_eq!(teleprompter_mode(Some(false)), "floating");
+        assert_eq!(teleprompter_mode(Some(true)), "screen");
+        assert!(should_replace_screen(true, true));
+        for (opening, other) in [(false, false), (false, true), (true, false)] {
+            assert!(!should_replace_screen(opening, other));
+        }
     }
 
     #[test]
