@@ -164,12 +164,11 @@ export function PrompterAjustes({ parts }: { parts: string[] }) {
           <label>Mensajes de chat en la vista <input type="number" min={20} max={200} value={pr.chatLines ?? 60} onChange={e => P({ chatLines: Number(e.target.value) })} /></label>
         </div>
         <Switch checked={pr.hideCommands !== false} onChange={x => P({ hideCommands: x })}>Ocultar comandos y votos del chat (<code>!sorteo</code>, «S»…)</Switch>
-        <Switch checked={pr.autoSwitch !== false} onChange={x => P({ autoSwitch: x })}>Saltar solo al widget que se pone en marcha (votación, sorteo)</Switch>
         <Switch checked={!!pr.mirror} onChange={x => P({ mirror: x })}>Espejo (solo si la imagen sale al revés)</Switch>
         <label>Pista del micro en Meld (avisa en grande si está silenciado)
           <select value={pr.micTrack || ''} onChange={e => P({ micTrack: e.target.value })}><option value="">Automática (la que se llame «mic…»)</option>{tracks.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></label>
         <label>CSS propio de la vista <textarea className="code" spellCheck={false} value={pr.css || ''} onKeyDown={codeTab} onChange={e => P({ css: e.target.value })} placeholder=":root { --fs: 24px; --red: #00E0FF; }" /></label>
-        <p className="css-help">Clases: <code>.pr</code> <code>.pr-top</code> <code>.pr-main</code> <code>.pr-chat</code> <code>.eg-timeline__item</code> <code>.pr-send</code> <code>.pr-side</code> <code>.pr-pane</code> <code>.pr-row</code> <code>.pr-tierbtn</code></p>
+        <p className="css-help">Clases: <code>.pr</code> <code>.pr-top</code> <code>.pr-main</code> <code>.pr-chat</code> <code>.eg-timeline__item</code> <code>.pr-send</code> <code>.pr-side</code> <code>.pr-pane</code> <code>.ev-pane</code> <code>.ev-block</code> <code>.ev-item</code></p>
         <p className="hint">Los botones del Stream Deck para el prompter (cambiar de pestaña, marcar…) están en <a href="#/atajos">Atajos y Stream Deck</a>.</p>
       </Panel>}
     </div>

@@ -13,8 +13,6 @@
 :root{
   --fs:22px;
   --text:var(--color-fg-default); --grey:var(--color-fg-secondary); --muted:var(--color-fg-muted); --red:var(--color-primitive-red-neon); --pink:var(--color-fg-brand-raised);
-  /* misma receta que panel.css (#12); local hasta que suba a la capa ds */
-  --shadow-inset-highlight:inset 0 1px 0 rgba(255,255,255,.35);
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -27,18 +25,17 @@ button{font:inherit;color:inherit}
 .pr{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}
 
 /* ---------- barra superior ---------- */
-.pr-top{display:flex;align-items:center;gap:10px;min-height:56px;padding:0 14px;background:var(--gradient-sheen),var(--color-surface-1);border-bottom:1px solid var(--color-border-hairline);box-shadow:var(--shadow-edge),0 10px 24px -14px rgba(0,0,0,.9);position:relative;z-index:1}
-.eg-live-label{display:inline-flex;align-items:center;gap:8px;font:700 calc(var(--fs)*.82)/1 var(--font-display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+/* S2/S9: media altura (~28 px) — fuentes y paddings a la mitad; el «por agradecer» vive en la pestaña Eventos */
+.pr-top{display:flex;align-items:center;gap:8px;min-height:28px;padding:0 10px;background:var(--gradient-sheen),var(--color-surface-1);border-bottom:1px solid var(--color-border-hairline);box-shadow:var(--shadow-edge),0 10px 24px -14px var(--color-bg-scrim);position:relative;z-index:1}
+.eg-live-label{display:inline-flex;align-items:center;gap:6px;font:700 calc(var(--fs)*.55)/1 var(--font-display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
 .eg-live-label.on{color:var(--pink)}
-.eg-live-label b{font:600 calc(var(--fs)*.82)/1 var(--font-mono);letter-spacing:0;color:var(--text);font-variant-numeric:tabular-nums}
-.pr-dot{width:10px;height:10px;border-radius:50%;background:var(--color-primitive-neutral-600)}
+.eg-live-label b{font:600 calc(var(--fs)*.55)/1 var(--font-mono);letter-spacing:0;color:var(--text);font-variant-numeric:tabular-nums}
+.pr-dot{width:7px;height:7px;border-radius:50%;background:var(--color-primitive-neutral-600)}
 .pr-warns{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
-.pr-top .eg-status{font-size:calc(var(--fs)*.64)}
-.pr-mic{font:800 calc(var(--fs)*.82)/1 var(--font-display)!important;text-transform:uppercase;letter-spacing:.04em;padding:7px 12px;animation:blink 1.2s infinite}
+.pr-mic{font:800 calc(var(--fs)*.55)/1 var(--font-display)!important;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px!important;animation:blink 1.2s infinite}
 @keyframes blink{50%{opacity:.4}}
 .pr-sp{flex:1}
-.pr-clock{font:600 calc(var(--fs)*.73)/1 var(--font-mono);color:var(--muted);font-variant-numeric:tabular-nums}
-.thanks{white-space:nowrap}
+.pr-clock{font:600 calc(var(--fs)*.55)/1 var(--font-mono);color:var(--muted);font-variant-numeric:tabular-nums}
 
 /* ---------- cuerpo ---------- */
 .pr-main{display:grid;grid-template-columns:57fr 43fr;min-height:0}
@@ -68,9 +65,10 @@ button{font:inherit;color:inherit}
 .pr-you{margin-right:6px;vertical-align:2px}
 .pr-badge .eg-icon{width:14px;height:14px;color:var(--color-status-warning);margin:0 6px 0 -2px;vertical-align:-1px}
 .pr-badge--mod{display:inline-block;padding:2px 6px;margin-left:5px;border-radius:999px;background:var(--color-alpha-green-12,var(--color-bg-glass));color:var(--color-status-success);font:700 calc(var(--fs)*.58)/1.4 var(--font-display);letter-spacing:.06em;text-transform:uppercase;vertical-align:2px}
-.pr-prize{margin:2px 0 0;font:500 calc(var(--fs)*.72)/1.5 var(--font-sans);color:var(--muted)}
-.pr-prize b{color:var(--text);font-weight:700}
 .eg-timeline__more{position:absolute;left:50%;bottom:76px;transform:translateX(-50%);padding:8px 16px;border-radius:999px;border:1px solid var(--color-border-hairline-strong);background:var(--color-surface-overlay);-webkit-backdrop-filter:blur(20px) saturate(150%);backdrop-filter:blur(20px) saturate(150%);box-shadow:var(--shadow-edge-strong),var(--shadow-elev-3);font:600 calc(var(--fs)*.68)/1 var(--font-sans);color:var(--text);cursor:pointer;z-index:2}
+/* S5: el estado vacío del chat lleva padding a los lados */
+.pr-chat .pr-empty{margin:8px 0;padding-inline:16px}
+.pr-chat .pr-empty .empty-state{padding-inline:18px}
 .pr-send{display:flex;align-items:center;gap:8px;padding:8px;border-top:1px solid var(--color-border-hairline);background:var(--gradient-sheen),var(--color-surface-1)}
 .pr-send .eg-tabs{flex:none;border:0}
 .pr-send .eg-tabs__item .eg-icon{width:18px;height:18px}
@@ -78,13 +76,11 @@ button{font:inherit;color:inherit}
 .pr-send .eg-tabs__item:not([aria-selected="true"]) svg{opacity:.45}
 .pr-send .eg-tabs__item.warn-yt{color:var(--color-status-warning)}
 .pr-send .eg-field{flex:1;min-width:0}
-.pr-send .eg-field__control{min-height:44px;font-size:calc(var(--fs)*.77)}
-.pr-send .eg-btn--icon{min-height:44px;width:44px}
+.pr-send .eg-field__control{font-size:calc(var(--fs)*.77)}
 
 /* herramientas */
 .pr-side{display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0;background:var(--color-surface-1)}
 .pr-side>.eg-tabs{padding:0 6px;background:var(--gradient-sheen),var(--color-surface-1)}
-.eg-tabs--lg .eg-tabs__item{min-height:52px;font-size:calc(var(--fs)*.77);padding:0 10px;flex:1 1 auto;justify-content:center}
 .pr-pane{display:flex;flex-direction:column;gap:10px;padding:12px;overflow-y:auto;min-height:0;scrollbar-width:thin;scrollbar-color:var(--color-surface-3) transparent}
 .pr-eyebrow{margin:2px 0 0;font-size:calc(var(--fs)*.6)}
 .pr-btns{display:flex;gap:8px}
@@ -96,42 +92,32 @@ button{font:inherit;color:inherit}
 .pr-tap{padding:0;gap:0}
 .pr-row-main{all:unset;cursor:pointer;flex:1;min-width:0;display:flex;padding:12px 14px;border-radius:var(--radius-md)}
 .pr-row-main:focus-visible{box-shadow:var(--shadow-focus)}
-.pr-tap>.eg-icon-btn{margin-right:8px;width:44px;height:44px}
-.pr-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.pr-h{margin:0;font:800 calc(var(--fs)*1)/1 var(--font-display);text-transform:uppercase;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pr-big{font:800 calc(var(--fs)*1.27)/1 var(--font-display)!important;text-transform:uppercase}
-.pr-bars{display:grid;gap:8px}
-.pr-bar{display:grid;grid-template-columns:28px 1fr 32px;align-items:center;gap:10px;font:800 calc(var(--fs)*1)/1 var(--font-display)}
-.pr-bar__n{text-align:right;color:var(--grey);font-variant-numeric:tabular-nums}
-.eg-progress--tier .eg-progress__bar{background:var(--bar);box-shadow:var(--shadow-inset-highlight)}
-.pr-chips{display:flex;flex-wrap:wrap;gap:6px}
-.pr-chips .eg-chip{min-height:44px;font-size:calc(var(--fs)*.73);cursor:pointer}
-.pr-chips .eg-chip[aria-pressed="true"]{border-color:var(--color-border-brand-strong);background:var(--gradient-post-new),var(--color-surface-3);color:var(--text)}
-.pr-tiers{display:flex;flex-wrap:wrap;gap:8px}
-.pr-tierbtn{min-width:56px;min-height:48px;padding:0 10px;border-radius:var(--radius-md);border:0;font:800 calc(var(--fs)*1)/1 var(--font-display);color:var(--color-fg-on-status);cursor:pointer;box-shadow:var(--shadow-inset-highlight),var(--shadow-elev-1)}
-.pr-tierbtn:focus-visible{box-shadow:var(--shadow-focus)}
-.pr-head .eg-stat{padding:10px 14px}
-.pr-head .eg-stat__value{font-size:calc(var(--fs)*1.45)}
-.eg-post--hot{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border-radius:var(--radius-lg);border:1px solid var(--color-border-brand-strong);background:var(--gradient-hot);box-shadow:var(--shadow-hot)}
-.pr-winner span{font:800 calc(var(--fs)*1.8)/1 var(--font-display);text-transform:uppercase}
-.pr-winner small{display:flex;align-items:center;gap:6px;font-size:calc(var(--fs)*.68);color:var(--grey)}
-.pr-winner small .eg-icon{width:14px;height:14px}
-.pr-names{margin:0;font-size:calc(var(--fs)*.73);line-height:1.5;color:var(--grey)}
-.pr-filters{align-self:stretch;display:flex}
-.pr-filters .eg-tabs__item{flex:1 1 auto;justify-content:center;font-size:calc(var(--fs)*.6)}
-/* #5: los filtros que no caben se desplazan sin scrollbar; el fundido del borde avisa de que
-   hay más contenido (el fondo funde con la superficie de la columna de herramientas) */
-.pr-filters-cue{position:relative;display:flex;align-self:stretch;min-width:0}
-.pr-filters-cue::before,.pr-filters-cue::after{content:"";position:absolute;top:0;bottom:0;width:24px;pointer-events:none;opacity:0;transition:opacity var(--duration-base) var(--ease-out);z-index:1}
-.pr-filters-cue::before{left:0;background:linear-gradient(to right,var(--color-surface-1),transparent)}
-.pr-filters-cue::after{right:0;background:linear-gradient(to left,var(--color-surface-1),transparent)}
-.pr-filters-cue.cue-left::before,.pr-filters-cue.cue-right::after,.pr-filters-cue.cue-both::before,.pr-filters-cue.cue-both::after{opacity:1}
-.eg-timeline--lg:not(.eg-timeline--chat) .eg-timeline__item{grid-template-columns:48px minmax(0,auto) minmax(0,1fr) auto;align-items:center;gap:10px;font-size:calc(var(--fs)*.77)}
-.pr-tl .eg-timeline__item.is-done{opacity:.55}
-.pr-tl .eg-timeline__item.k-marker{cursor:pointer}
-.eg-timeline__acts .eg-icon-btn{width:44px;height:44px}
-.eg-timeline__acts .eg-icon-btn.is-on{color:var(--color-status-success);background:color-mix(in srgb,var(--color-status-success) 12%,transparent)}
-.pr-edit{width:100%;min-height:40px;font-size:calc(var(--fs)*.77)}
+
+/* ---------- Eventos: Cronología + Destacados (S8) ---------- */
+/* dos bloques apilados que llenan el alto; cada uno con su título, su cuenta y su scroll */
+.ev-pane{display:grid;grid-template-rows:minmax(0,1.3fr) minmax(0,1fr);min-height:0;padding:0}
+.ev-block{display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0;border-bottom:1px solid var(--color-border-hairline)}
+.ev-block:last-child{border-bottom:0}
+.ev-h{display:flex;align-items:baseline;gap:8px;margin:0;padding:8px 12px 6px;font:800 calc(var(--fs)*.64)/1 var(--font-display);text-transform:uppercase;letter-spacing:.08em;color:var(--color-fg-secondary)}
+.ev-h span{margin-left:auto;font:500 calc(var(--fs)*.55)/1 var(--font-sans);text-transform:none;letter-spacing:0;color:var(--color-fg-muted)}
+.ev-list{list-style:none;margin:0;padding:0 8px 8px;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:3px;scrollbar-width:thin;scrollbar-color:var(--color-surface-3) transparent}
+.ev-item{display:flex;align-items:center;gap:8px;padding:3px 8px;border-radius:var(--radius-md);background:var(--color-surface-2);font:500 calc(var(--fs)*.68)/1.3 var(--font-sans);color:var(--color-fg-default)}
+.ev-item.is-pending{box-shadow:inset 3px 0 0 var(--color-status-warning)}
+.ev-item.is-new{background:var(--gradient-post-new),var(--color-surface-2)}
+.ev-item.is-done{opacity:.55}
+.ev-item.k-marker{cursor:pointer}
+.ev-min{flex:none;font:600 calc(var(--fs)*.55)/1 var(--font-mono);color:var(--color-fg-muted);font-variant-numeric:tabular-nums}
+.ev-pf{flex:none;width:16px;height:16px;display:inline-grid;place-items:center;color:var(--color-fg-muted)}
+.ev-pf .eg-icon{width:14px;height:14px}
+.ev-txt{min-width:0;overflow-wrap:anywhere}
+.ev-txt small{color:var(--color-fg-muted);font-size:.9em}
+.ev-tag{flex:none;margin-left:auto;padding:2px 7px;border-radius:999px;font:600 calc(var(--fs)*.45)/1.2 var(--font-sans);color:var(--color-status-warning);border:1px solid color-mix(in srgb,var(--color-status-warning) 40%,transparent);background:color-mix(in srgb,var(--color-status-warning) 14%,transparent)}
+.ev-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto}
+.ev-tag+.ev-acts{margin-left:0}
+.ev-acts .eg-icon-btn.is-on{color:var(--color-status-success);background:color-mix(in srgb,var(--color-status-success) 12%,transparent)}
+.ev-empty{padding:8px 16px}
+.ev-empty .eg-post--empty{font-size:calc(var(--fs)*.6)}
+.pr-edit{width:100%;min-height:34px;font-size:calc(var(--fs)*.68)}
 .pr-muted{color:var(--muted)}
 .pr-empty{margin:8px 0;color:var(--muted);font-size:calc(var(--fs)*.73);list-style:none;text-align:center}
 
@@ -153,3 +139,18 @@ svg.pf-ico{width:1em;height:1em;vertical-align:-.12em}
 .eg-timeline__pf svg.pf-ico{width:16px;height:16px}
 .eg-status svg.pf-ico{width:14px;height:14px}
 .eg-timeline__type svg.pf-ico{width:18px;height:18px}
+.ev-pf svg.pf-ico{width:16px;height:16px}
+
+/* El bundle del sistema entra aquí con @import layer(ds) dentro de un <style>, y en este motor
+   sus reglas ganan a la capa egdev. Lo que tiene que imponerse a un componente eg-* va sin capa,
+   igual que el CSS del usuario (que, al ir después, sigue ganando a todo esto). */
+.pr-top .eg-status{font-size:calc(var(--fs)*.48);padding:2px 7px}
+.pr-top .eg-status .eg-icon{width:11px;height:11px}
+/* el botón Enviar mide lo mismo que el input (S3): 44 px */
+.pr-send .eg-field__control{height:44px;min-height:44px}
+.pr-send .eg-btn--icon{height:44px;min-height:44px;width:44px;padding:0}
+/* pestañas del panel: el alto de siempre (52 px) y el reparto a lo ancho */
+.eg-tabs--lg .eg-tabs__item{min-height:52px;font-size:calc(var(--fs)*.77);padding:0 10px;flex:1 1 auto;justify-content:center;gap:6px}
+.pr-tap>.eg-icon-btn{margin-right:8px;width:44px;height:44px}
+.ev-acts .eg-icon-btn{width:26px;height:26px}
+.ev-acts .eg-icon-btn .eg-icon{width:14px;height:14px}

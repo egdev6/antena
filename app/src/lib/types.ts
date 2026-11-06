@@ -451,7 +451,7 @@ export interface AppState {
 }
 
 /** Pestañas del prompter y estado del prompter (/api/prompter). */
-export interface PrompterState { tab?: string; at?: number; auto?: boolean; [k: string]: unknown }
+export interface PrompterState { tab?: string; at?: number; [k: string]: unknown }
 
 // ---------- eventos SSE (contrato único, src/events.mjs) ----------
 export interface ChatResult { origin?: { kind?: string; type?: string; trigger?: string } | null; platforms?: Record<string, SendResult>; [k: string]: unknown }

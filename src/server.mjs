@@ -17,7 +17,7 @@ import { Meld, MELD_COMMANDS, MELD_STREAM_EVENTS } from './meld.mjs';
 import { Session, METRICS } from './session.mjs';
 import { Engine, burstCoalesce, SNAPSHOT_COALESCE_MS, SNAPSHOT_MAX_WAIT_MS } from './engine.mjs';
 import { createHeldRecovery } from './held-recovery.mjs';
-import { registerShortcutRoutes } from './routes/shortcuts.mjs';
+import { registerShortcutRoutes, PROMPTER_LEGACY_TABS } from './routes/shortcuts.mjs';
 import { registerSessionRoutes, TIMELINE_MAX } from './routes/sessions.mjs';
 import { registerMediaRoutes } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
@@ -217,24 +217,23 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   interactive.on('draw', r => session.addNote({ kind: 'winner', user: r.winner, label: store.config.interactive?.giveaway?.prize || '' }));
 
   // ---------- prompter ----------
-  const PROMPTER_TABS = ['preguntas', 'tierlist', 'sorteo', 'cronologia'];
+  // S10: dos pestañas («Eventos» = cronologia y «Preguntas»). Las retiradas (tierlist, sorteo)
+  // se aceptan como no-op registrado para que los atajos guardados y /sd/prompter/<tab> sigan
+  // funcionando; lo desconocido sigue siendo 400. Ya no hay salto automático al abrir votación
+  // o sorteo (viven en el dock y en su vista del panel).
+  const PROMPTER_TABS = ['cronologia', 'preguntas'];
   const prompter = { tab: 'cronologia', at: Date.now() };
-  const setPrompterTab = (tab, auto = false) => {
+  const setPrompterTab = tab => {
     const t = String(tab || '').toLowerCase().replace('cronología', 'cronologia').replace('tier list', 'tierlist').replace('preguntas', 'preguntas');
+    if (PROMPTER_LEGACY_TABS.includes(t)) {
+      try { log(`[prompter] Pestaña retirada «${t}»: se queda en ${prompter.tab}`); } catch { /* el aviso nunca debe tumbar la petición */ }
+      return prompter;
+    }
     if (!PROMPTER_TABS.includes(t)) throw httpError(400, `Pestaña desconocida: ${tab}. Pestañas: ${PROMPTER_TABS.join(', ')}`);
-    if (auto && !store.config.prompter?.autoSwitch) return prompter;
-    Object.assign(prompter, { tab: t, at: Date.now(), auto });
+    Object.assign(prompter, { tab: t, at: Date.now() });
     bus.send('prompter', prompter, ['panel']);
     return prompter;
   };
-  // salta solo al widget que se pone en marcha
-  let lastVote = null, lastGiveawayOpen = false;
-  interactive.on('change', part => {
-    const snap = interactive.snapshot();
-    if (part === 'vote' || part === 'tierlist' || part === 'tierlists') { const v = snap.vote?.item?.id || null; if (v && v !== lastVote) setPrompterTab('tierlist', true); lastVote = v; }
-    if (part === 'giveaway') { const open = !!snap.giveaway.open; if (open && !lastGiveawayOpen) setPrompterTab('sorteo', true); lastGiveawayOpen = open; }
-  });
-  interactive.on('draw', () => setPrompterTab('sorteo', true));
   // #68: tope común de cronología (TIMELINE_MAX, importado de routes/sessions.mjs), también al filtrar por kinds.
   const timelinePayload = () => ({ items: session.timeline().slice(-TIMELINE_MAX), pending: session.pendingThanks(), startedAt: session.data.startedAt, title: session.data.title });
   // #65: mismo patrón que history/widgets/interactive (debounce 120 ms + techo de 500 ms).

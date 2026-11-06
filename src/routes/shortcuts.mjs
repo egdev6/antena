@@ -29,6 +29,10 @@ const BROWSER_SOURCES = [
   { id: 'viewers', name: 'Espectadores', path: '/widget/viewers', width: 900, height: 160 },
 ];
 const SHORTCUT_ENGINE_KINDS = ['scene', 'layer', 'hideLayer', 'toggleLayer', 'effect', 'command', 'streamEvent', 'chat', 'say'];
+// S10: pestañas del prompter retiradas. La API ya no las ofrece (prompterTabs y la lista de
+// acciones solo tienen las vigentes), pero un atajo guardado con ellas sigue siendo válido y se
+// ejecuta como no-op (setPrompterTab las registra y devuelve el estado actual).
+export const PROMPTER_LEGACY_TABS = ['tierlist', 'sorteo'];
 
 import { httpError as httpErrorBase, id8 as id8Base } from '../http-util.mjs';
 
@@ -70,7 +74,7 @@ export function registerShortcutRoutes({ route, store, engine, session, interact
     return steps.map(st => {
       if (!st || typeof st !== 'object') throw httpError(400, 'Paso no válido');
       if (st.kind === 'builtin') {
-        if (st.action === 'prompter') { if (!PROMPTER_TABS.includes(String(st.arg))) throw httpError(400, `Pestaña del prompter no válida. Pestañas: ${PROMPTER_TABS.join(', ')}`); }
+        if (st.action === 'prompter') { if (![...PROMPTER_TABS, ...PROMPTER_LEGACY_TABS].includes(String(st.arg))) throw httpError(400, `Pestaña del prompter no válida. Pestañas: ${PROMPTER_TABS.join(', ')}`); }
         else if (!SD[st.action]) throw httpError(400, `Acción desconocida: ${st.action}. Acciones: ${Object.keys(SD).join(', ')}, prompter`);
         return { kind: 'builtin', action: st.action, ...(st.arg !== undefined && { arg: String(st.arg) }) };
       }

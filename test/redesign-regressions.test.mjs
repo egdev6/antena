@@ -406,9 +406,9 @@ test('prompter React: guardar una marca libera la cronología (Enter/blur, SSE y
       await waitDom(c, `document.body.innerText.includes(${JSON.stringify(next.label)})`);   // la cronología ya no está congelada
     }
     // Pestañas sin estado obsoleto: cambiar y volver deja la cronología intacta.
-    await cdpEval(c, `Array.from(document.querySelectorAll('.tabs .tab')).find(b => b.textContent.includes('Preguntas')).click()`);
-    await waitDom(c, '!document.querySelector(".ev.k-marker") && document.querySelector(".tabs .tab[aria-selected=\\"true\\"]").textContent.includes("Preguntas")');
-    await cdpEval(c, `Array.from(document.querySelectorAll('.tabs .tab')).find(b => b.textContent.includes('Cronología')).click()`);
+    await cdpEval(c, `Array.from(document.querySelectorAll('.pr-side .tabs .tab')).find(b => b.textContent.includes('Preguntas')).click()`);
+    await waitDom(c, '!document.querySelector(".ev.k-marker") && document.querySelector(".pr-side .tabs .tab[aria-selected=\\"true\\"]").textContent.includes("Preguntas")');
+    await cdpEval(c, `Array.from(document.querySelectorAll('.pr-side .tabs .tab')).find(b => b.textContent.includes('Eventos')).click()`);
     await waitDom(c, `document.querySelectorAll('.ev.k-marker').length >= 4`);
 
     // Escape cancela sin guardar y sin dejar el editor montado.

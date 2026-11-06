@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 
-async function start() {
+async function start(logs = []) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-pr-'));
-  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: (...args) => logs.push(args.join(' ')) });
   app.twitch.sendChat = async () => ({ is_sent: true });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -58,19 +58,51 @@ test('cronología: mensajes destacados, marcas, guardados y agradecidos', async 
   } finally { await close(); }
 });
 
-test('prompter: pestañas por API y Stream Deck, y salta solo al abrir una votación', async () => {
-  const { call, close } = await start();
+test('prompter: dos pestañas, las retiradas son un no-op registrado y votación/sorteo no cambian de pestaña', async () => {
+  const logs = [];
+  const { call, close } = await start(logs);
   try {
+    const inicial = await call('GET', '/api/prompter');
+    assert.deepEqual(inicial.tabs, ['cronologia', 'preguntas']);
+    assert.equal(inicial.tab, 'cronologia');
+
+    // S10: las pestañas retiradas (tierlist, sorteo) se aceptan por API sin cambiar de pestaña
+    assert.equal((await call('POST', '/api/prompter', { tab: 'tierlist' })).tab, 'cronologia');
+    assert.equal((await call('POST', '/api/prompter', { tab: 'sorteo' })).tab, 'cronologia');
     assert.equal((await call('GET', '/api/prompter')).tab, 'cronologia');
+    assert.equal(logs.filter(l => /Pestaña retirada/.test(l)).length, 2, 'cada no-op queda en el registro');
+
+    // S10: /sd/prompter/<retirada> también es un no-op (200) y devuelve el estado actual
+    assert.equal((await call('GET', '/sd/prompter/sorteo')).tab, 'cronologia');
+    assert.equal((await call('GET', '/api/prompter')).tab, 'cronologia');
+
+    // S10: un atajo guardado con una pestaña retirada se guarda y se ejecuta igual
+    const { shortcut } = await call('POST', '/api/shortcuts', { name: 'legado', steps: [{ kind: 'builtin', action: 'prompter', arg: 'sorteo' }] });
+    const run = await call('POST', `/api/shortcuts/${shortcut.id}/run`);
+    assert.equal(run.shortcut, shortcut.id);
+    assert.equal(run.results[0].tab, 'cronologia');
+    assert.equal((await call('GET', '/api/prompter')).tab, 'cronologia');
+
+    // las dos pestañas nuevas sí cambian
     await call('GET', '/sd/prompter/preguntas');
     assert.equal((await call('GET', '/api/prompter')).tab, 'preguntas');
+
+    // valores desconocidos siguen siendo 400 y no tocan el estado
     await assert.rejects(call('POST', '/api/prompter', { tab: 'nada' }), /Pestaña desconocida/);
+    await assert.rejects(call('GET', '/sd/prompter/nada'), /Pestaña desconocida/);
+    assert.equal((await call('GET', '/api/prompter')).tab, 'preguntas');
+
+    // S10: abrir una votación o un sorteo ya no salta de pestaña
     const { tierlist } = await call('POST', '/api/tierlists', { title: 'Frameworks', items: ['React', 'Vue'] });
     await call('POST', `/api/tierlists/${tierlist.id}/vote`, { item: 'React' });
-    assert.equal((await call('GET', '/api/prompter')).tab, 'tierlist');
-    await call('PUT', '/api/config', { prompter: { autoSwitch: false } });
+    assert.equal((await call('GET', '/api/prompter')).tab, 'preguntas');
     await call('POST', '/api/giveaway/open', {});
-    assert.equal((await call('GET', '/api/prompter')).tab, 'tierlist', 'sin cambio automático si está desactivado');
+    assert.equal((await call('GET', '/api/prompter')).tab, 'preguntas');
+
+    // S10: prompter.autoSwitch se sigue aceptando para que los config.json existentes carguen
+    await call('PUT', '/api/config', { prompter: { autoSwitch: false } });
+    assert.equal((await call('GET', '/api/state')).config.prompter.autoSwitch, false);
+
     // atajos de Stream Deck
     assert.ok((await call('GET', '/api/shortcuts')).actions.includes('marca'));
     const p1 = await call('GET', '/sd/pausa'); assert.equal(p1.paused, true);
