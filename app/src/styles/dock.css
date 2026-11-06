@@ -1,4 +1,5 @@
-/* Dock para el panel de chat de Meld: estrecho (≈300–420 px), alto variable, todo a un toque. EGDEV Foundation. */
+/* Dock del directo: tres columnas (Escenas | Audio | Control) en apaisado y ≥1000 px de ancho;
+   en el resto, una pestaña por sección con Control primero. Sin chat ni vista previa. EGDEV Foundation. */
 :root{
   --font-display:'EG Barlow Condensed','Barlow Condensed','Arial Narrow',sans-serif;
   --font-sans:'EG Barlow','Barlow',system-ui,sans-serif;
@@ -13,16 +14,20 @@
 html,body,#root{height:100%;margin:0}
 body{background:var(--color-bg-canvas);color:var(--text);font:500 14px/1.35 var(--font-sans);-webkit-font-smoothing:antialiased;overflow:hidden}
 button,input{font:inherit;color:inherit}
-button:focus-visible,input:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
 .dock{height:100%;display:grid;grid-template-rows:auto auto 1fr;min-height:0}
+.dock-wide{grid-template-rows:auto 1fr}
 .d-boot{height:100%;display:grid;place-items:center;color:var(--muted)}
 .d-top{padding:8px 10px;background:var(--gradient-sheen),var(--s1);border-bottom:1px solid var(--line);box-shadow:var(--shadow-edge)}
+.dock-wide .d-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .d-live{display:flex;align-items:center;gap:7px;font:700 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .d-live i{width:9px;height:9px;border-radius:50%;background:var(--color-primitive-neutral-600)}
 .d-live.on{color:var(--pink)}.d-live.on i{background:var(--red);box-shadow:var(--shadow-glow-hot)}
 .d-live b{margin-left:auto;font:600 13px/1 var(--font-mono);letter-spacing:0;color:var(--text);font-variant-numeric:tabular-nums}
+.dock-wide .d-live b{margin-left:8px}
 .d-warns{display:flex;flex-wrap:wrap;gap:4px}
 .d-warns:not(:empty){margin-top:6px}
+.dock-wide .d-warns:not(:empty){margin-top:0}
 /* La píldora de conexión (ConnPill, eg-status) comparte fila con los d-warn: misma métrica que .d-warn; los colores son los tokens eg-status de ds/bundle.css. */
 .d-warns .eg-status{padding:3px 8px;font-size:11px;gap:4px}
 .d-warns .eg-status .pf-ico{width:12px;height:12px}
@@ -30,13 +35,25 @@ button:focus-visible,input:focus-visible{outline:none;box-shadow:var(--shadow-fo
 .d-warn.soft{--st:var(--warn)}
 .d-warn.big{font:800 13px/1 var(--font-display);text-transform:uppercase;padding:6px 10px;border-radius:var(--radius-md);background:var(--gradient-btn-primary);color:var(--color-action-primary-solid-fg);border-color:transparent;animation:blink 1.2s infinite}
 @keyframes blink{50%{opacity:.4}}
-.d-tabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:var(--s0)}
-.d-tabs button{background:none;border:0;padding:7px 12px;border-radius:var(--radius-md) var(--radius-md) 0 0;font:700 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
-.d-tabs button.on{color:var(--text);border-bottom-color:var(--red)}
 .d-open{margin-left:auto;align-self:center;font-size:12px;color:var(--grey);text-decoration:none;padding:4px 6px}
 .d-open:hover{color:var(--pink)}
+/* ---------- pestañas (ventana no apaisada o < 1000 px) ---------- */
+.d-tabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:var(--s0)}
+.d-tabs button{background:none;border:0;padding:8px 12px;min-height:40px;border-radius:var(--radius-md) var(--radius-md) 0 0;font:700 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+.d-tabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--red)}
+.d-panels{display:grid;min-height:0}
+[role="tabpanel"][hidden]{display:none!important}
+/* ---------- tres columnas (apaisado y ≥1000 px) ---------- */
+.d-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1.2fr);min-height:0}
+.d-col{display:grid;grid-template-rows:auto 1fr;min-height:0;border-right:1px solid var(--line)}
+.d-col:last-child{border-right:0}
+.d-col-h{display:flex;align-items:baseline;gap:8px;margin:0;padding:10px 12px 8px;border-bottom:1px solid var(--line);background:var(--s0);font:800 14px/1 var(--font-display);text-transform:uppercase;letter-spacing:.08em}
+.d-col-h span{margin-left:auto;font:500 12px/1 var(--font-sans);text-transform:none;letter-spacing:0;color:var(--muted);text-align:right}
+/* ---------- cuerpo común ---------- */
 .d-body{overflow-y:auto;min-height:0;padding:8px;display:grid;gap:10px;align-content:start;scrollbar-width:thin}
+.dock-wide .d-body{padding:10px 12px}
 .d-sec{display:grid;gap:8px}
+.d-empty{padding:10px 2px}
 .d-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px}
 .d-btn{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-height:48px;padding:7px 10px;border-radius:var(--radius-md);cursor:pointer;text-align:left;
   background:var(--gradient-sheen),var(--s2);border:1px solid var(--line2);box-shadow:var(--shadow-edge),var(--shadow-elev-1);font:700 14px/1.1 var(--font-display);text-transform:uppercase;letter-spacing:.03em}
@@ -47,36 +64,48 @@ button:focus-visible,input:focus-visible{outline:none;box-shadow:var(--shadow-fo
 .d-btn.pri{background:var(--gradient-btn-primary);border-color:transparent;color:var(--color-action-primary-solid-fg);box-shadow:var(--shadow-btn-primary)}
 .d-btn.pri small{color:color-mix(in srgb,var(--color-action-primary-solid-fg) 75%,transparent)}
 .d-btn.on{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn) inset}
-.d-btn.sm{min-height:34px;padding:6px 10px;align-items:center}
+.d-btn.sm{min-height:36px;padding:6px 10px;align-items:center}
+.dock-wide .d-btn.sm{min-height:38px}
 .d-btn.grow{flex:1}
 .d-btn.sc{border-left:4px solid var(--sc)}
 .d-btn.busy{opacity:.6}
 .d-row{display:flex;gap:6px}
 .d-card{padding:8px 10px;border-radius:var(--radius-md);background:var(--gradient-sheen),var(--s1);border:1px solid var(--line);display:grid;gap:6px}
-.d-card-h{display:flex;align-items:baseline;gap:8px;font:800 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.06em;color:var(--grey)}
-.d-card-h span{font:500 12px/1 var(--font-sans);text-transform:none;letter-spacing:0;color:var(--muted);margin-left:auto}
-.d-q{margin:0;font-size:14px}.d-q b{color:var(--pink)}
+.d-card-h{display:flex;align-items:center;gap:8px;font:800 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.06em;color:var(--grey)}
+.d-card-h .d-meta{font:500 12px/1 var(--font-sans);text-transform:none;letter-spacing:0;color:var(--muted);margin-left:auto;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.d-card-h .d-sw{flex:none}
+.d-q{margin:0;font-size:14px;overflow-wrap:anywhere}.d-q b{color:var(--pink)}
 .d-muted{margin:0;color:var(--muted);font-size:12px}
-.d-chat{display:grid;grid-template-rows:1fr auto;min-height:0}
-.d-msgs{overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:3px;scrollbar-width:thin}
-.d-msg{margin:0;padding:3px 26px 3px 6px;border-radius:6px;position:relative;font-size:13px;overflow-wrap:anywhere}
-.d-msg .pf-ico{width:11px;height:11px;margin-right:5px;color:var(--muted);vertical-align:-1px}
-.d-msg b{color:var(--grey)}
-.d-msg.own b{color:var(--pink)}
-.d-msg.hl{background:color-mix(in srgb,var(--red) 14%,transparent)}
-.d-mini{position:absolute;right:2px;top:2px;background:none;border:0;cursor:pointer;opacity:0;font-size:12px}
-.d-msg:hover .d-mini,.d-mini:focus-visible{opacity:1}
-.d-send{display:flex;gap:4px;padding:6px;border-top:1px solid var(--line);background:var(--s0)}
-.d-send input{flex:1;min-width:0;padding:7px 9px;border-radius:var(--radius-md);border:1px solid var(--line2);background:var(--s1)}
-.d-to{display:flex;border:1px solid var(--line2);border-radius:var(--radius-md);overflow:hidden}
-.d-to button{background:none;border:0;padding:0 7px;cursor:pointer;color:var(--muted);font:700 12px var(--font-mono)}
-.d-to button[aria-checked="true"]{background:var(--s3);color:var(--text)}
-.d-to .pf-ico{width:13px;height:13px;vertical-align:-2px}
+/* ---------- escenas ---------- */
+.d-groups{display:grid;gap:10px}
+.d-group{display:grid;gap:6px}
+.d-sub{display:flex;align-items:baseline;gap:8px;margin:0 2px;font:700 11px/1.2 var(--font-display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.d-sub span{margin-left:auto;font:500 11px/1.2 var(--font-sans);text-transform:none;letter-spacing:0;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.d-scenes{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:5px}
+.d-scene{min-height:44px;padding:6px 8px;font-size:13px;gap:3px}
+.d-scene-n{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;max-width:100%}
+.d-scene.on{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset,var(--shadow-glow-base);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--red) 18%,transparent),color-mix(in srgb,var(--red) 7%,transparent)),var(--s2)}
+.d-air{display:inline-flex;align-items:center;gap:4px;font:800 10px/1 var(--font-display);letter-spacing:.08em;color:var(--color-primitive-red-light)}
+.d-air::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--red)}
+/* ---------- audio ---------- */
+.d-mixer{display:grid;gap:4px}
+.d-trk{display:grid;grid-template-columns:auto minmax(0,1fr) 40px;grid-template-areas:"s n v" "s f f";align-items:center;gap:2px 8px;padding:6px 8px;border-radius:var(--radius-md);background:var(--s1);border:1px solid var(--line)}
+.d-trk-n{grid-area:n;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.d-trk-v{grid-area:v;text-align:right;font:600 12px/1 var(--font-mono);color:var(--grey);font-variant-numeric:tabular-nums}
+.d-trk-f{grid-area:f;width:100%;height:18px;margin:0;accent-color:var(--red);cursor:pointer}
+.d-trk-f:disabled{cursor:default;opacity:.4}
+.d-trk.off .d-trk-n,.d-trk.off .d-trk-v{color:var(--muted)}
+.d-sw{grid-area:s;position:relative;flex:none;width:38px;height:24px;border-radius:999px;border:1px solid var(--line2);background:var(--s3);cursor:pointer;padding:0}
+.d-sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--muted);transition:transform .15s}
+.d-sw[aria-checked="true"]{background:color-mix(in srgb,var(--red) 22%,transparent);border-color:var(--red)}
+.d-sw[aria-checked="true"]::after{transform:translateX(14px);background:var(--red)}
+/* ---------- avisos y avisos flotantes ---------- */
 .d-off{position:fixed;inset:auto 8px 8px;padding:8px 10px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--red) 22%,var(--s1));border:1px solid var(--red);font-size:12px;text-align:center}
 .toast{position:fixed;left:8px;right:8px;top:8px;padding:8px 10px;border-radius:var(--radius-md);background:var(--color-surface-overlay);backdrop-filter:blur(var(--blur-overlay));border:1px solid var(--line2);font-size:12px;text-align:center;opacity:0;transform:translateY(-10px);transition:opacity .2s,transform .2s;pointer-events:none;z-index:9}
 .toast.on{opacity:1;transform:none}
 .toast.err{color:var(--color-status-danger)}
-@media (prefers-reduced-motion:reduce){.d-warn.big{animation:none}.toast{transition:none}}
+@media (prefers-reduced-motion:reduce){.d-warn.big{animation:none}.toast{transition:none}.d-btn:active:not(:disabled){transform:none}.d-sw::after{transition:none}}
 /* logos de plataforma a color (public/platform-icons.js): sin trazo ni relleno heredado */
 svg.pf-ico{stroke:none!important;flex:none}
 svg.pf-ico path{stroke:none}
