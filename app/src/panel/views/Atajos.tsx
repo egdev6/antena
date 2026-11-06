@@ -16,7 +16,8 @@ export const SD_HELP: Record<string, string> = {
   'siguiente-pregunta': 'Sacar la siguiente pregunta', 'ocultar-pregunta': 'Quitar la pregunta de pantalla', 'cerrar-votacion': 'Cerrar la votación de la tier list',
   'abrir-sorteo': 'Abrir el sorteo', 'cerrar-sorteo': 'Cerrar la inscripción', sortear: 'Sortear', agradecido: 'Marcar como agradecido el más antiguo pendiente',
 };
-const TAB_NAMES: Record<string, string> = { preguntas: 'Preguntas', tierlist: 'Tier list', sorteo: 'Sorteo', cronologia: 'Cronología' };
+// S10: el prompter ofrece dos pestañas; las retiradas se muestran si un atajo guardado aún las usa.
+const TAB_NAMES: Record<string, string> = { cronologia: 'Eventos', preguntas: 'Preguntas', tierlist: 'Tier list', sorteo: 'Sorteo' };
 export const sdLabel = (a: string) => SD_HELP[a] || (a.startsWith('prompter/') ? `Prompter: pestaña ${TAB_NAMES[a.split('/')[1]] || a.split('/')[1]}` : a);
 const COLORS = ['', '#FF335E', '#FF8FA6', '#00E0FF', '#7CFF6B', '#FFC94D', '#B58CFF'];
 
@@ -110,7 +111,7 @@ const TEMPLATES: [string, string, string, Step[]][] = [
   ['vacio', 'Desde cero', 'Un paso: marcar un short', [{ kind: 'builtin', action: 'marca' }]],
   ['empezar', 'Empezar el directo', 'Escena de inicio + mensaje en el chat', [{ kind: 'scene', scene: '', delaySec: 0 }, { kind: 'chat', text: '¡Empezamos! Os esperamos en el chat', destination: 'both', delaySec: 0 }]],
   ['pausa', 'Pausa café', 'Pausar alertas + escena de pausa', [{ kind: 'builtin', action: 'pausa' }, { kind: 'scene', scene: '', delaySec: 0 }]],
-  ['sorteo', 'Sorteo', 'Abrir sorteo + prompter en Sorteo', [{ kind: 'builtin', action: 'abrir-sorteo' }, { kind: 'builtin', action: 'prompter', arg: 'sorteo' }]],
+  ['sorteo', 'Sorteo', 'Abrir sorteo', [{ kind: 'builtin', action: 'abrir-sorteo' }]],
 ];
 function NuevoAtajo({ count, onCreated }: { count: number; onCreated: (s: Shortcut) => void }) {
   const [name, setName] = useState('');

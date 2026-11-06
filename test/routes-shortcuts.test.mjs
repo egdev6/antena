@@ -6,7 +6,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerShortcutRoutes } from '../src/routes/shortcuts.mjs';
 
-const PROMPTER_TABS = ['preguntas', 'tierlist', 'sorteo', 'cronologia'];
+// S10: el prompter ofrece dos pestañas; las retiradas (tierlist, sorteo) se siguen aceptando
+// en los atajos guardados y se ejecutan como no-op.
+const PROMPTER_TABS = ['cronologia', 'preguntas'];
+const PROMPTER_LEGACY_TABS = ['tierlist', 'sorteo'];
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 
 // ctx falso con las mismas piezas que createApp pasa por ctx.
@@ -32,13 +35,17 @@ function fakeCtx() {
       openGiveaway: o => ({ g: 'open', o }), closeGiveaway: () => ({ g: 'closed' }), draw: () => ({ g: 'winner' }),
     },
     bus: { send: (ch, m, to) => sent.push([ch, m, to]) },
-    setPrompterTab: t => { if (!PROMPTER_TABS.includes(t)) throw httpError(400, `Pestaña desconocida: ${t}. Pestañas: ${PROMPTER_TABS.join(', ')}`); prompts.push(t); return { tab: t }; },
+    setPrompterTab: t => {
+      if (PROMPTER_LEGACY_TABS.includes(t)) { prompts.push(t); return ctx._spies.prompter; }
+      if (!PROMPTER_TABS.includes(t)) throw httpError(400, `Pestaña desconocida: ${t}. Pestañas: ${PROMPTER_TABS.join(', ')}`);
+      ctx._spies.prompter = { tab: t }; prompts.push(t); return ctx._spies.prompter;
+    },
     addMarker: async label => { markers.push(label); return { marker: label }; },
     id8: (() => { let n = 0; return () => 'id' + (++n); })(),
     checkActions: actions => { for (const a of actions) if (!(a.kind === 'say' && a.text) && !(a.kind === 'chat' && a.text)) throw httpError(400, 'Acción no válida'); },
     httpError,
     PROMPTER_TABS,
-    _spies: { said, prompts, markers, sent, engineActions },
+    _spies: { said, prompts, markers, sent, engineActions, prompter: { tab: 'cronologia' } },
   };
   registerShortcutRoutes(ctx);
   const find = (method, path) => {
@@ -102,6 +109,9 @@ test('POST /api/shortcuts: crea atajo, valida steps y genera id', async () => {
   await assert.rejects(find('POST', '/api/shortcuts').fn({ name: 'x', steps: Array.from({ length: 21 }, () => ({ kind: 'chat', text: 'a' })) }), /20 pasos/);
   await assert.rejects(find('POST', '/api/shortcuts').fn({ name: 'x', steps: [{ kind: 'builtin', action: 'no-existe' }] }), /Acción desconocida/);
   await assert.rejects(find('POST', '/api/shortcuts').fn({ name: 'x', steps: [{ kind: 'builtin', action: 'prompter', arg: 'no' }] }), /Pestaña del prompter no válida/);
+  // S10: una pestaña retirada en un atajo guardado sigue siendo válida al guardar
+  const legado = await find('POST', '/api/shortcuts').fn({ name: 'legado', steps: [{ kind: 'builtin', action: 'prompter', arg: 'sorteo' }] });
+  assert.deepEqual(legado.shortcut.steps, [{ kind: 'builtin', action: 'prompter', arg: 'sorteo' }]);
   await assert.rejects(find('POST', '/api/shortcuts').fn({ name: 'x', steps: [{ kind: 'otro' }] }), /Tipo de paso desconocido/);
   await assert.rejects(find('POST', '/api/shortcuts').fn({ name: 'x', steps: [{ kind: 'scene', scene: 'x' }] }), /Acción no válida/); // checkActions del ctx
 });
@@ -162,7 +172,8 @@ test('/sd/:action: atajos de Stream Deck, prompter, custom y 404', async () => {
   assert.deepEqual(await find('GET', '/sd/abrir-sorteo').fn({ action: 'abrir-sorteo' }), { g: 'open', o: { reset: true } });
   assert.deepEqual(await find('GET', '/sd/cerrar-sorteo').fn({ action: 'cerrar-sorteo' }), { g: 'closed' });
   assert.deepEqual(await find('GET', '/sd/agradecido').fn({ action: 'agradecido' }), { id: 'e1', user: 'ana', pending: 0 });
-  assert.deepEqual(await find('GET', '/sd/prompter/tierlist').fn({ action: 'prompter', arg: 'tierlist' }), { tab: 'tierlist' });
+  assert.deepEqual(await find('GET', '/sd/prompter/tierlist').fn({ action: 'prompter', arg: 'tierlist' }), { tab: 'cronologia' });
+  assert.deepEqual(await find('GET', '/sd/prompter/cronologia').fn({ action: 'prompter', arg: 'cronologia' }), { tab: 'cronologia' });
   assert.deepEqual(await find('GET', '/sd/custom/c1').fn({ action: 'custom', arg: 'c1' }), { ok: true, shortcut: 'c1', results: [], errors: [] });
   await assert.rejects(find('GET', '/sd/nada').fn({ action: 'nada' }), e => {
     assert.match(e.message, /Atajo desconocido: nada\. Atajos: marca, pausa, saltar, siguiente-pregunta, ocultar-pregunta, cerrar-votacion, abrir-sorteo, cerrar-sorteo, sortear, agradecido, prompter\/<pestaña>, custom\/<id>/);

@@ -323,16 +323,14 @@ Vista de 1024×600 pensada para el **Elgato Prompter**: lees el chat y manejas l
 
 Qué lleva:
 
-- **Arriba:** tiempo de directo, avisos solo cuando algo va mal (micro silenciado en Meld, alertas en pausa, Twitch o YouTube caídos, sin overlay) y cuántos quedan **por agradecer**.
+- **Arriba:** tiempo de directo y avisos solo cuando algo va mal (micro silenciado en Meld, alertas en pausa, Twitch o YouTube caídos, sin overlay), con la mitad de alto que antes.
 - **Izquierda, el chat de Twitch y YouTube en una columna.** Los comandos y los votos no salen. Los mensajes que el espectador manda con «Destacar mi mensaje» salen resaltados. Con el ratón encima, el chat se para y cada mensaje tiene ❓ (a la cola de preguntas) y 📌 (guardar en la cronología). Abajo se puede escribir en el chat de Twitch.
-- **Derecha, en pestañas:**
-  - **Preguntas:** sacar cualquiera de la cola con un clic, siguiente, ocultar y descartar.
-  - **Tier list:** elegir un elemento y abrir su votación o colocarlo directamente; barras en directo, cerrar o cancelar.
-  - **Sorteo:** abrir, cerrar, sortear, el ganador en grande y quién va entrando.
-  - **Cronología:** alertas con ✔ (agradecido) y ↺ (repetir), marcas de short con nombre, mensajes destacados, guardados, preguntas mostradas y ganadores, cada uno con su minuto. Filtros: por agradecer, marcas, destacados, guardados.
-- Salta sola a la pestaña de la votación o del sorteo cuando se ponen en marcha.
+- **Derecha, dos pestañas:**
+  - **Eventos,** dos bloques apilados que ocupan todo el alto. **Cronología:** alertas con ✔ (agradecido) y ↺ (repetir), marcas de short (se renombran con un clic), preguntas mostradas y ganadores, cada uno con su minuto y el logo de su plataforma, y una marca «por agradecer» en las alertas que aún no has agradecido. **Destacados:** los mensajes que un espectador destaca en Twitch y los que guardas con «Guardar», con logo de plataforma, usuario y minuto. La pestaña cuenta lo que queda por agradecer.
+  - **Preguntas:** sacar cualquiera de la cola con un clic, siguiente, ocultar y descartar; la pestaña cuenta las que esperan.
+- La tier list y el sorteo se manejan desde el dock y sus páginas del panel; el prompter ya no cambia de pestaña solo.
 
-Las **marcas de short** quedan en la cronología con su minuto y, si estás emitiendo, también como marcador de Twitch (permiso `channel:manage:broadcast`: vuelve a conectar Twitch una vez). Salen en el resumen del directo, en «Marcas para shorts».
+Las **marcas de short** quedan en la pestaña Eventos con su minuto y, si estás emitiendo, también como marcador de Twitch (permiso `channel:manage:broadcast`: vuelve a conectar Twitch una vez). Salen en el resumen del directo, en «Marcas para shorts».
 
 ### Apariencia
 
@@ -376,7 +374,7 @@ Lo que es de un botón va al Stream Deck. Con un plugin de peticiones web (por e
 | `/sd/cerrar-votacion` | Cerrar la votación de la tier list |
 | `/sd/abrir-sorteo`, `/sd/cerrar-sorteo`, `/sd/sortear` | Sorteo |
 | `/sd/agradecido` | Marcar como agradecido el más antiguo pendiente |
-| `/sd/prompter/preguntas` · `tierlist` · `sorteo` · `cronologia` | Cambiar la pestaña del prompter |
+| `/sd/prompter/cronologia` · `/sd/prompter/preguntas` | Cambiar la pestaña del prompter (Eventos · Preguntas). Las retiradas `tierlist` y `sorteo` responden sin cambiar, para que los atajos guardados sigan funcionando |
 
 Escenas, micro y efectos sueltos van directos con el plugin de Meld para Stream Deck.
 

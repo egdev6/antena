@@ -1,14 +1,17 @@
-// Vista del Elgato Prompter (1024×600): chat a la izquierda, widgets y cronología a la derecha.
-// Se lee a ~60 cm mirando a cámara y se maneja con el ratón; lo de un solo botón va al Stream Deck.
+// Vista del Elgato Prompter (1024×600): chat a la izquierda y, a la derecha, el panel de
+// Eventos (cronología y destacados) y Preguntas. Se lee a ~60 cm mirando a cámara y se maneja
+// con el ratón; lo de un solo botón va al Stream Deck.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, enc, get, post, put } from '../lib/api';
 import { live, makeChatLoader, useLive } from '../lib/live';
 import { mergeChat } from '../lib/chat-merge.mjs';
 import { ConnPill, cx, EmptyState, fmtTime, guard, Icon, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
 import { IC, type IconData } from '../lib/icons';
-import type { ChatMessage, ChatSendResult, Question, TimelineItem, TierListItem, TierListTier } from '../lib/types';
+import type { ChatMessage, ChatSendResult, Question, TimelineItem } from '../lib/types';
 
-const TABS: [string, string][] = [['preguntas', 'Preguntas'], ['tierlist', 'Tier list'], ['sorteo', 'Sorteo'], ['cronologia', 'Cronología']];
+// S7: dos pestañas. Eventos (cronología y destacados) es el id 'cronologia' por compatibilidad
+// con el contrato del servidor; las pestañas retiradas (tierlist, sorteo) caen en Eventos.
+const TABS: [string, string][] = [['cronologia', 'Eventos'], ['preguntas', 'Preguntas']];
 const P = () => live.state?.config?.prompter || {};
 
 // ---------- barra superior ----------
@@ -17,7 +20,7 @@ function useNow(ms = 1000) {
   useEffect(() => { const h = setInterval(() => setNow(Date.now()), ms); return () => clearInterval(h); }, [ms]);
   return now;
 }
-function Top({ onThanks }: { onThanks: () => void }) {
+function Top() {
   const s = useLive(x => x);
   const tl = live.timeline;
   const now = useNow();
@@ -37,7 +40,6 @@ function Top({ onThanks }: { onThanks: () => void }) {
     <span className={cx('eg-live-label live', streaming && 'on')}>{streaming ? <span className="eg-live-dot is-active" aria-hidden="true" /> : <span className="pr-dot" aria-hidden="true" />}{streaming ? 'En directo' : meldOn ? 'Sin emitir' : 'Sesión'} <b>{tl.startedAt ? mmss((now - +new Date(tl.startedAt)) / 1000) : ''}</b></span>
     <div className="pr-warns">{w}</div>
     <span className="pr-sp" />
-    <button type="button" className={cx('eg-btn eg-btn--sm thanks', tl.pending > 0 ? 'eg-btn--secondary has' : 'eg-btn--ghost')} title="Por agradecer: abre la cronología" onClick={onThanks}><Icon d={IC.heart} className="eg-btn__icon" />Por agradecer <span className="eg-tabs__count">{tl.pending || 0}</span></button>
     <span className="pr-clock clock">{fmtTime(now)}</span>
   </header>;
 }
@@ -161,142 +163,86 @@ function Preguntas() {
   </>;
 }
 
-// ---------- tier list ----------
-function TierList() {
-  const I = useLive(s => s.interactive);
-  const [sel, setSel] = useState<string | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
-  useNow(1000); // cuenta atrás de la votación
-  if (!I) return null;
-  const lists = I.tierlists || [];
-  const v = I.vote;
-  let tlId = v ? v.listId : sel;
-  if (!lists.find(l => l.id === tlId)) tlId = I.shownTierlist || lists[0]?.id || null;
-  const l = lists.find(x => x.id === tlId);
-  if (!l) return <p className="pr-empty">No hay tier lists. Créalas en el panel (Widgets › Tier list) o pídeselas a Claude.</p>;
-  const id = enc(l.id);
-  const shown = I.shownTierlist === l.id;
-  const head = <div className="pr-head">
-    {lists.length > 1 && !v ? <div className="eg-field eg-field--sm pr-grow"><label className="sr-only" htmlFor="pr-tl">Tier list</label><select id="pr-tl" className="eg-field__control" value={l.id} onChange={e => { setSel(e.target.value); setPicked(null); }}>{lists.map(x => <option key={x.id} value={x.id}>{x.title}</option>)}</select></div>
-      : <h2 className="pr-h">{l.title}</h2>}
-    <button type="button" className={cx('eg-btn eg-btn--sm', shown ? 'eg-btn--ghost' : 'eg-btn--secondary')} onClick={guard(() => (shown ? post('/api/tierlists/hide') : post(`/api/tierlists/${id}/show`)))}><Icon d={shown ? IC.eyeOff : IC.eye} className="eg-btn__icon" />{shown ? 'Quitar de pantalla' : 'Mostrar en pantalla'}</button>
-  </div>;
-  if (v && v.listId === l.id) {
-    const max = Math.max(1, ...Object.values<number>(v.counts || {}));
-    const left = v.endsAt ? Math.max(0, Math.ceil((+new Date(v.endsAt) - Date.now()) / 1000)) : null;
-    return <>{head}
-      <article className="eg-post eg-post--row is-active pr-row"><div className="eg-post__content"><span className="eg-post__meta">Votando{left !== null ? ` · quedan ${left} s` : ''} · {v.total} {v.total === 1 ? 'voto' : 'votos'}</span><b className="pr-big">{v.item?.label}</b></div></article>
-      <div className="pr-bars">{l.tiers.map((t: TierListTier) => { const n = v.counts[t.id ?? ''] || 0; return <div key={t.id} className="pr-bar">
-        <span className="pr-bar__tier" style={{ color: t.color }}>{t.label}</span>
-        <span className="eg-progress eg-progress--lg eg-progress--tier" role="img" aria-label={`${t.label}, ${n} votos`} style={{ ['--p' as any]: n / max, ['--bar' as any]: t.color }}><span className="eg-progress__bar" /></span>
-        <span className="pr-bar__n">{n}</span></div>; })}</div>
-      <div className="pr-btns">
-        <button type="button" className="eg-btn eg-btn--primary pr-grow" onClick={guard(async () => { const { result } = await post<{ result?: { winner?: string } }>('/api/vote/close', {}); toast(result?.winner ? 'Colocado en ' + (l.tiers.find(t => t.id === result.winner)?.label || '') : 'Sin votos'); })}><Icon d={IC.check} className="eg-btn__icon" />Cerrar y colocar</button>
-        <button type="button" className="eg-btn eg-btn--secondary" onClick={guard(() => post('/api/vote/cancel'))}>Cancelar</button></div></>;
-  }
-  const free = l.items.filter((it: TierListItem) => !l.placements[it.id]);
-  const it = free.find(x => x.id === picked);
-  return <>{head}
-    <p className="eg-eyebrow pr-eyebrow">Sin colocar · {free.length} · {l.items.length - free.length}/{l.items.length} colocados</p>
-    {free.length ? <div className="pr-chips">{free.map((x: TierListItem) => <button key={x.id} type="button" className="eg-chip" aria-pressed={x.id === picked} onClick={() => setPicked(picked === x.id ? null : x.id)}>{x.label}</button>)}</div> : <p className="pr-empty">Todo colocado</p>}
-    {it ? <>
-      <article className="eg-post eg-post--row is-active pr-row"><div className="eg-post__content"><span className="eg-post__meta">Elegido</span><b className="pr-big">{it.label}</b></div></article>
-      <div className="pr-btns"><button type="button" className="eg-btn eg-btn--primary pr-grow" onClick={guard(async () => { await post(`/api/tierlists/${id}/vote`, { item: picked }); setPicked(null); })}><Icon d={IC.play} className="eg-btn__icon" />Abrir votación</button></div>
-      <p className="eg-eyebrow pr-eyebrow">O colocar directamente</p>
-      <div className="pr-tiers">{l.tiers.map((t: TierListTier) => <button key={t.id} type="button" className="pr-tierbtn" style={{ background: t.color }} onClick={guard(async () => { await post(`/api/tierlists/${id}/place`, { item: picked, tier: t.id }); setPicked(null); }, 'Colocado')}>{t.label}</button>)}</div>
-    </> : free.length ? <p className="pr-empty">Elige un elemento para votarlo o colocarlo.</p> : null}
-  </>;
-}
-
-// ---------- sorteo ----------
-function Sorteo() {
-  const I = useLive(s => s.interactive);
-  if (!I) return null;
-  const g = I.giveaway || {}, c = (I.config?.giveaway || {}) as Record<string, string | number | boolean | undefined>;
-  const last = (g.winners || []).at(-1);
-  const recent = (g.entries || []).slice(-12).reverse().map(e => e.user).join(', ');
-  return <>
-    <div className="pr-head">
-      <div className="eg-stat"><span className="eg-stat__label">Participantes</span><span className="eg-stat__value">{g.count || 0}</span></div>
-      <span className={cx('eg-status', g.open ? 'eg-status--success' : 'eg-status--neutral')}>{g.open && <Icon d={IC.check} />}{g.open ? `Abierto · ${String(c.command || '!sorteo')}` : 'Cerrado'}</span>
-    </div>
-    <div className="pr-btns">
-      {g.open ? <button type="button" className="eg-btn eg-btn--secondary pr-grow" onClick={guard(() => post('/api/giveaway/close'), 'Inscripción cerrada')}>Cerrar inscripción</button>
-        : <button type="button" className="eg-btn eg-btn--secondary pr-grow" onClick={guard(() => post('/api/giveaway/open', { reset: !g.count }), 'Sorteo abierto')}>Abrir sorteo</button>}
-      <button type="button" className="eg-btn eg-btn--primary pr-grow" disabled={!g.count} onClick={guard(() => post('/api/giveaway/draw'), 'Sorteando…')}><Icon d={IC.gift} className="eg-btn__icon" />{last ? 'Sortear otra vez' : 'Sortear'}</button>
-    </div>
-    {g.open && <p className="pr-prize" data-testid="prize">{c.prize ? <>Premio: <b>{String(c.prize)}</b> · </> : null}Se entra con <b>{String(c.command || '!sorteo')}</b></p>}
-    {last && <><p className="eg-eyebrow pr-eyebrow">Ganador{c.prize ? ` · ${String(c.prize)}` : ''}</p>
-      <div className="eg-post eg-post--hot pr-winner"><span>{last.user}</span>{last.platform ? <small><PfIcon platform={last.platform === 'youtube' ? 'youtube' : 'twitch'} /> {PLATFORM_NAMES[last.platform] || ''}</small> : null}</div></>}
-    {recent && <><p className="eg-eyebrow pr-eyebrow">Últimos en entrar</p><p className="pr-names">{recent}</p></>}
-    {!recent && !last && <p className="pr-empty">{g.open ? <>Nadie todavía. Se entra con <b>{String(c.command || '!sorteo')}</b>.</> : 'Abre el sorteo para que el chat pueda entrar.'}</p>}
-  </>;
-}
-
-// ---------- cronología ----------
-const FILTERS: Record<string, string> = { all: 'Todo', pend: 'Por agradecer', marker: 'Marcas', highlight: 'Destacados', saved: 'Guardados' };
+// ---------- eventos: cronología + destacados ----------
+// S7/S8: el panel derecho son dos pestañas. «Eventos» apila dos bloques que llenan el alto:
+// Cronología (alertas, marcas y demás notas) y Destacados (mensajes destacados y guardados).
 const NOTE: Record<string, [string, IconData]> = { marker: ['Marca de short', IC.clapper], highlight: ['Destacado', IC.star], saved: ['Guardado', IC.pin], question: ['Pregunta', IC.question], winner: ['Ganador', IC.gift], queue: ['Cola', IC.layers] };
-const HOT = new Set(['sub', 'resub', 'giftsub', 'raid', 'superchat', 'supersticker', 'member', 'giftmember']);
-function Cronologia({ filter, setFilter }: { filter: string; setFilter: (f: string) => void }) {
-  useLive(s => s);
-  const types = live.state?.types || {};
-  const tl = live.timeline;
+const DESTACADOS = new Set(['highlight', 'saved']);
+type Types = Record<string, { platform?: string; label?: string }>;
+const BUSY = new Set(['sub', 'resub', 'giftsub', 'raid', 'superchat', 'supersticker', 'member', 'giftmember']);
+
+// S4: icono de plataforma en vez de texto. Las alertas lo sacan de su tipo (estado en vivo);
+// las notas, de su campo platform (una marca no tiene: lleva el icono de su tipo de nota).
+function PfOf({ platform }: { platform: string }) {
+  return platform ? <PfIcon platform={platform} /> : null;
+}
+const platformOf = (i: TimelineItem, types: Types) => (i.kind === 'event'
+  ? (types[i.type ?? '']?.platform === 'youtube' ? 'youtube' : 'twitch')
+  : (i.platform === 'youtube' || i.platform === 'twitch' ? i.platform : ''));
+
+function Cronologia({ items, pending, types }: { items: TimelineItem[]; pending: number; types: Types }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [label, setLabel] = useState('');
-  // #5: cuando los filtros no caben, la fila se desplaza sin scrollbar; un fundido en el
-  // borde avisa de que hay más contenido (a la derecha, a la izquierda o en los dos lados)
-  const bar = useRef<HTMLDivElement>(null);
-  const [cue, setCue] = useState<'left' | 'right' | 'both' | null>(null);
-  useEffect(() => {
-    const el = bar.current; if (!el) return;
-    const check = () => {
-      const left = el.scrollLeft > 1, right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
-      setCue(left && right ? 'both' : left ? 'left' : right ? 'right' : null);
-    };
-    check();
-    el.addEventListener('scroll', check, { passive: true });
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    for (const b of Array.from(el.children)) ro.observe(b);
-    return () => { el.removeEventListener('scroll', check); ro.disconnect(); };
-  }, []);
-  const items = (tl.items || []).filter(i => (filter === 'all' ? true : filter === 'pend' ? i.kind === 'event' && !i.done : i.kind === filter)).slice().reverse();
   const startEdit = (i: TimelineItem) => { setEditing(i.id); setLabel(i.label || ''); };
   const saveEdit = async () => { const id = editing; if (!id) return; setEditing(null); try { await put(`/api/timeline/${enc(id)}`, { label }); } catch (e: any) { toast(e.message, true); } };
   const body = (i: TimelineItem) => {
     if (i.kind === 'event') {
-      const extra = i.sub || (i.amount ? i.amount : '');
-      return <><b>{i.user}</b>{extra ? ` · ${extra}` : ''}{i.message && !String(extra).includes(i.message) ? ` · «${i.message}»` : ''}</>;
+      const extra = i.sub || (i.amount ? String(i.amount) : '');
+      return <><b>{types[i.type ?? '']?.label || i.type}</b> · {i.user}{extra ? <> <small>{extra}</small></> : null}{i.message ? <> <small>«{i.message}»</small></> : null}</>;
     }
     if (editing === i.id) return <input className="eg-field__control pr-edit" autoFocus value={label} onChange={e => setLabel(e.target.value)} onFocus={e => e.target.select()} placeholder="¿Qué ha pasado?" maxLength={120} aria-label="Nombre de la marca"
       onKeyDown={e => { if (e.key === 'Escape') setEditing(null); if (e.key === 'Enter') saveEdit(); }} onBlur={saveEdit} onClick={e => e.stopPropagation()} />;
-    return <>{i.user && <><b>{i.user}</b> · </>}{i.label ? i.label : i.kind === 'marker' ? <span className="pr-muted">Sin nombre · toca para ponérselo</span> : null}{i.text ? `«${i.text}»` : ''}{i.twitchError ? <span className="pr-muted"> · solo local</span> : i.twitchMarker ? <span className="pr-muted"> · también en Twitch</span> : null}</>;
+    const [name] = NOTE[i.kind] || [i.kind];
+    return <><b>{name}</b>{i.user ? <> · {i.user}</> : null}{i.label ? <> <small>«{i.label}»</small></> : i.kind === 'marker' ? <span className="pr-muted"> · Sin nombre · toca para ponérselo</span> : null}{i.text ? <> <small>«{i.text}»</small></> : null}{i.twitchError ? <span className="pr-muted"> · solo local</span> : i.twitchMarker ? <span className="pr-muted"> · también en Twitch</span> : null}</>;
   };
-  return <>
-    <button type="button" className="eg-btn eg-btn--primary" onClick={guard(async () => {
-      const { marker } = await post<{ marker: TimelineItem }>('/api/markers', {});
-      if (filter !== 'all' && filter !== 'marker') setFilter('all');
-      startEdit(marker);
-      toast(marker.twitchError ? 'Marca guardada (Twitch: ' + marker.twitchError + ')' : 'Marca creada');
-    })}><Icon d={IC.clapper} className="eg-btn__icon" />Marca de short</button>
-    <div className={cx('pr-filters-cue', cue === 'left' && 'cue-left', cue === 'right' && 'cue-right', cue === 'both' && 'cue-both')}>
-      <div ref={bar} className="eg-tabs pr-filters" role="tablist" aria-label="Filtrar cronología">{Object.entries(FILTERS).map(([k, v]) => <button key={k} type="button" role="tab" className="eg-tabs__item" aria-selected={filter === k} onClick={() => setFilter(k)}>{v}{k === 'pend' && tl.pending ? <span className="eg-tabs__count">{tl.pending}</span> : null}</button>)}</div>
-    </div>
-    {items.length ? <ol className="eg-timeline eg-timeline--lg pr-tl">{items.slice(0, 150).map((i, _n) => {
+  return <section className="ev-block">
+    <h2 className="ev-h">Cronología<span>{items.length} {items.length === 1 ? 'evento' : 'eventos'}{pending ? ` · ${pending} por agradecer` : ''}</span></h2>
+    {items.length ? <ol className="ev-list">{items.map(i => {
       const ev = i.kind === 'event';
-      const [noteLabel, noteIcon] = NOTE[i.kind] || [i.kind, IC.bookmark];
-      return <li key={i.id} className={cx('eg-timeline__item ev', 'k-' + i.kind, ev && HOT.has(i.type ?? '') && !i.done && 'is-new', i.kind === 'highlight' && 'eg-timeline__item--hot', i.done && 'is-done done')} onClick={() => { if (i.kind === 'marker' && editing !== i.id) startEdit(i); }}>
-        <time className="eg-timeline__time">{mmss(i.offset)}</time>
-        <span className="eg-timeline__type">{ev ? <><PfIcon platform={types[i.type ?? '']?.platform === 'youtube' ? 'youtube' : 'twitch'} />{types[i.type ?? '']?.label || i.type}</> : <><Icon d={noteIcon} />{noteLabel}</>}</span>
-        <span className="eg-timeline__body">{body(i)}</span>
-        <span className="eg-timeline__acts tools" onClick={e => e.stopPropagation()}>{ev ? <>
-          <button type="button" className={cx('eg-icon-btn act', i.done && 'is-on done')} aria-label="Agradecido" title="Agradecido" aria-pressed={!!i.done} onClick={guard(() => post(`/api/timeline/${enc(i.id)}/done`, { value: !i.done }))}><Icon d={IC.check} /></button>
+      const [, noteIcon] = NOTE[i.kind] || [i.kind, IC.bookmark];
+      const platform = platformOf(i, types);
+      return <li key={i.id} className={cx('ev', 'ev-item', 'k-' + i.kind, ev && !i.done && 'is-pending', ev && !i.done && BUSY.has(i.type ?? '') && 'is-new', i.done && 'is-done')}
+        onClick={() => { if (i.kind === 'marker' && editing !== i.id) startEdit(i); }}>
+        <time className="ev-min">{mmss(i.offset)}</time>
+        <span className="ev-pf" title={ev ? (types[i.type ?? '']?.label || i.type || '') : (NOTE[i.kind] || [i.kind])[0]}>{platform ? <PfOf platform={platform} /> : <Icon d={noteIcon} />}</span>
+        <span className="ev-txt">{body(i)}</span>
+        {ev && !i.done ? <span className="ev-tag">por agradecer</span> : null}
+        <span className="ev-acts" onClick={e => e.stopPropagation()}>{ev ? <>
+          <button type="button" className={cx('eg-icon-btn act', i.done && 'is-on')} aria-label="Agradecido" title="Agradecido" aria-pressed={!!i.done} onClick={guard(() => post(`/api/timeline/${enc(i.id)}/done`, { value: !i.done }))}><Icon d={IC.check} /></button>
           <button type="button" className="eg-icon-btn act" aria-label="Repetir alerta" title="Repetir alerta" onClick={guard(() => post('/api/replay', { id: i.id }), 'Repitiendo alerta')}><Icon d={IC.repeat} /></button></> : <>
           {i.kind === 'marker' && <button type="button" className="eg-icon-btn act" aria-label="Poner nombre" title="Poner nombre" onClick={() => startEdit(i)}><Icon d={IC.edit} /></button>}
           <button type="button" className="eg-icon-btn x" aria-label="Borrar" title="Borrar" onClick={guard(() => api('DELETE', `/api/timeline/${enc(i.id)}`), 'Borrada')}><Icon d={IC.trash} /></button></>}</span>
-      </li>; })}</ol>
-      : <p className="pr-empty">{filter === 'pend' ? 'Nadie pendiente de agradecer' : 'Todavía no hay nada en la cronología'}</p>}
-  </>;
+      </li>;
+    })}</ol> : <div className="ev-empty"><EmptyState>Todavía no hay nada en la cronología del directo.</EmptyState></div>}
+  </section>;
+}
+
+function Destacados({ items, types }: { items: TimelineItem[]; types: Types }) {
+  return <section className="ev-block">
+    <h2 className="ev-h">Destacados<span>{items.length} {items.length === 1 ? 'mensaje' : 'mensajes'}</span></h2>
+    {items.length ? <ol className="ev-list">{items.map(i => {
+      const platform = platformOf(i, types);
+      return <li key={i.id} className={cx('ev', 'ev-item', 'k-' + i.kind)}>
+        <time className="ev-min">{mmss(i.offset)}</time>
+        <span className="ev-pf" title={(NOTE[i.kind] || [i.kind])[0]}>{platform ? <PfOf platform={platform} /> : <Icon d={(NOTE[i.kind] || [i.kind, IC.pin])[1]} />}</span>
+        <span className="ev-txt"><b>{i.user || '—'}</b>{i.text ? <> {i.text}</> : null}</span>
+        <span className="ev-acts"><button type="button" className="eg-icon-btn x" aria-label="Borrar" title="Borrar" onClick={guard(() => api('DELETE', `/api/timeline/${enc(i.id)}`), 'Borrada')}><Icon d={IC.trash} /></button></span>
+      </li>;
+    })}</ol> : <div className="ev-empty"><EmptyState>Los mensajes destacados y los que guardes con «Guardar» aparecen aquí.</EmptyState></div>}
+  </section>;
+}
+
+function Eventos() {
+  useLive(s => s);   // tipos de alerta, cronología y gracias pendientes llegan por SSE
+  const types = (live.state?.types || {}) as Types;
+  const items = live.timeline.items || [];
+  const pending = live.timeline.pending || 0;
+  const cronologia = items.filter(i => !DESTACADOS.has(i.kind)).slice().reverse();
+  const destacados = items.filter(i => DESTACADOS.has(i.kind)).slice().reverse();
+  return <div className="ev-pane pane" role="tabpanel" aria-label="Eventos">
+    <Cronologia items={cronologia} pending={pending} types={types} />
+    <Destacados items={destacados} types={types} />
+  </div>;
 }
 
 // ---------- vista ----------
@@ -304,10 +250,10 @@ export function Prompter() {
   const ready = useLive(s => !!s);
   const offline = useLive(() => live.failed);
   const tab = useLive(() => live.prompter.tab || 'cronologia');
+  const current = TABS.some(([k]) => k === tab) ? tab : 'cronologia';
   const I = useLive(s => s?.interactive);
   const pending = useLive(() => live.timeline.pending || 0);
   const pr = useLive(s => s?.config?.prompter || {});
-  const [filter, setFilter] = useState('all');
   useEffect(() => { live.load().then(() => live.connect('panel')).catch(e => toast(e.message, true)); }, []);
   useEffect(() => {
     document.documentElement.style.setProperty('--fs', (Number(pr.fontSize) || 22) + 'px');
@@ -316,25 +262,20 @@ export function Prompter() {
   const setTab = (t: string) => { live.prompter = { ...live.prompter, tab: t }; live.emit(); post('/api/prompter', { tab: t }).catch(() => {}); };
   if (!ready) return <div className="off on">Conectando con antena…</div>;
   const badges: Record<string, ReactNode> = {
-    preguntas: I?.questions?.pending || null,
-    tierlist: I?.vote ? 'votando' : null,
-    sorteo: I?.giveaway?.open ? (I.giveaway.count || '0') : null,
     cronologia: pending || null,
+    preguntas: I?.questions?.pending || null,
   };
   return <>
     <style>{pr.css || ''}</style>
     <div className="pr">
-      <Top onThanks={() => { setTab('cronologia'); setFilter('pend'); }} />
+      <Top />
       <div className="pr-main main">
         <Chat />
         <section className="pr-side side" aria-label="Herramientas del directo">
-          <div className="eg-tabs eg-tabs--lg tabs" role="tablist" aria-label="Herramientas">{TABS.map(([k, l]) => <button key={k} type="button" role="tab" className={cx('eg-tabs__item tab', tab === k && 'on')} aria-selected={tab === k} onClick={() => setTab(k)}>{l}{badges[k] ? <span className="eg-tabs__count n">{badges[k]}</span> : null}</button>)}</div>
-          <div className="pr-pane pane on" role="tabpanel">
-            {tab === 'preguntas' && <Preguntas />}
-            {tab === 'tierlist' && <TierList />}
-            {tab === 'sorteo' && <Sorteo />}
-            {tab === 'cronologia' && <Cronologia filter={filter} setFilter={setFilter} />}
-          </div>
+          <div className="eg-tabs eg-tabs--lg tabs" role="tablist" aria-label="Herramientas">{TABS.map(([k, l]) => <button key={k} type="button" role="tab" className={cx('eg-tabs__item tab', current === k && 'on')} aria-selected={current === k} onClick={() => setTab(k)}>{l}{badges[k] ? <span className="eg-tabs__count n">{badges[k]}</span> : null}</button>)}</div>
+          {current === 'preguntas'
+            ? <div className="pr-pane pane on" role="tabpanel" aria-label="Preguntas"><Preguntas /></div>
+            : <Eventos />}
         </section>
       </div>
     </div>

@@ -262,7 +262,7 @@ test('O3.2 css-help: cada campo de CSS lista las clases de su widget', { timeout
     await dom(chrome, `location.hash = '#/prompter/vista'`);
     const prHelp = `document.querySelector('main textarea.code')?.closest('label')?.nextElementSibling`;
     await waitDom(chrome.cdp, `${prHelp}?.classList.contains('css-help') === true`, { timeoutMs: 12000 });
-    eq(await dom(chrome, `['.pr', '.pr-top', '.pr-main', '.pr-chat', '.eg-timeline__item', '.pr-send', '.pr-side', '.pr-pane', '.pr-tierbtn'].every(c => ${prHelp}.textContent.includes(c))`), true);
+    eq(await dom(chrome, `['.pr', '.pr-top', '.pr-main', '.pr-chat', '.eg-timeline__item', '.pr-send', '.pr-side', '.pr-pane', '.ev-pane', '.ev-block', '.ev-item'].every(c => ${prHelp}.textContent.includes(c))`), true);
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
@@ -296,7 +296,7 @@ test('esqueleto común: la miga empieza por el grupo de la barra lateral, interr
     }
     eq(JSON.stringify(bad), '[]');
     // ajustes de sí/no: interruptor (Switch), no casilla suelta
-    for (const [hash, n] of [['#/filtros', 1], ['#/prompter/vista', 3], ['#/meld', 1], ['#/widgets/chat', 4]]) {
+    for (const [hash, n] of [['#/filtros', 1], ['#/prompter/vista', 2], ['#/meld', 1], ['#/widgets/chat', 4]]) {
       await dom(chrome, `location.hash = ${JSON.stringify(hash)}`);
       await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(hash)} && !!document.querySelector('main .view-head h1')`, { timeoutMs: 12000 });
       eq(await dom(chrome, `${JSON.stringify(hash)} + ':' + (document.querySelectorAll('main label.switch').length >= ${n}) + ':' + document.querySelectorAll('main label.check:not(:has(+ label.check)):not(label.check + label.check)').length`), `${hash}:true:0`);

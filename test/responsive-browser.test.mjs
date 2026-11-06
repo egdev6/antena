@@ -5,8 +5,8 @@
 //    item «Récord de espectadores»), nunca a mitad de palabra;
 // 3) el placeholder del chat es corto («Escribe en tu chat…») y el aviso «tus mensajes
 //    no salen en el chat en pantalla» queda como hint de la vista;
-// 4) en /prompter, cuando los filtros de la cronología se cortan en el borde derecho
-//    hay una pista visual (fundido) de que hay más contenido.
+// 4) en /prompter el panel de dos pestañas y los dos bloques de Eventos llenan el alto, cada
+//    uno con su propio scroll y sin desbordar a lo ancho.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
@@ -125,31 +125,42 @@ test('a 1024 la barra lateral corta grupo e items por palabra y el placeholder d
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });
 
-test('en /prompter los filtros de la cronología cortados en el borde muestran una pista de scroll', { timeout: 120000 }, async t => {
+test('en /prompter las dos pestañas caben y los bloques de Eventos llenan el alto con scroll propio', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
-  const { bin, app, base, close } = ctx;
+  const { bin, base, close } = ctx;
   let chrome;
   try {
     chrome = await openChromePage(bin, `${base}/prompter`);
     const c = chrome.cdp;
     await viewport(c, 1280);
-    await waitDom(c, `!!(document.querySelector('.top .clock') && document.querySelector('.pr-filters'))`, { timeoutMs: 15000 });
+    await waitDom(c, `!!(document.querySelector('.top .clock') && document.querySelector('.ev-pane'))`, { timeoutMs: 15000 });
 
-    // #5 en Windows el desborde natural no ocurre (métricas de fuente del SO): forzamos el
-    // corte de forma determinista inyectando CSS de prueba — cada uno de los 5 filtros mide
-    // al menos 320px sin encoger (flex:none), 5×320=1600 > viewport 1280, así el desborde
-    // es independiente de la tipografía. El ResizeObserver de la barra recalcula el cue.
-    await dom(c, `(()=>{const s=document.createElement('style');s.id='i5-force-overflow';s.textContent='.pr-filters .eg-tabs__item{flex:none!important;min-width:320px!important}';document.head.appendChild(s);return true})()`);
+    // S7: solo las dos pestañas nuevas, sin la fila de filtros retirada, y caben a lo ancho
+    assert.equal(await dom(c, `document.querySelectorAll('.pr-side .tabs .tab').length`), 2);
+    assert.equal(await dom(c, `!!document.querySelector('.pr-filters, .pr-filters-cue')`), false, 'la pista de scroll de los filtros se retiró con ellos');
+    assert.equal(await dom(c, `(() => { const t = document.querySelector('.pr-side .tabs'); return t.scrollWidth <= t.clientWidth + 1; })()`), true, 'las dos pestañas no desbordan el panel');
 
-    // la fila se desplaza horizontalmente (sin scrollbar) y el fundido avisa de que hay más
-    const overflow = `(()=>{const el=document.querySelector('.pr-filters');return el.scrollWidth>el.clientWidth+1})()`;
-    await waitDom(c, overflow, { timeoutMs: 9000 });
-    assert.equal(await dom(c, overflow), true, 'precondición: con el CSS de prueba los filtros de la cronología se cortan en el borde derecho');
-    await waitDom(c, `document.querySelector('.pr-filters-cue').classList.contains('cue-right')`, { timeoutMs: 9000 });
+    // llenamos los dos bloques por la API para forzar desborde vertical
+    const post = (p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    for (let i = 0; i < 24; i++) await post('/api/markers', { label: 'marca ' + i });
+    for (let i = 0; i < 24; i++) await post('/api/timeline', { kind: 'saved', user: 'u' + i, text: 'guardado ' + i, platform: 'twitch' });
+    await waitDom(c, `document.querySelectorAll('.ev-list').length === 2 && document.querySelectorAll('.ev-item').length >= 48`, { timeoutMs: 12000 });
 
-    // al llegar al final, la pista de la derecha desaparece y aparece la de la izquierda
-    await dom(c, `document.querySelector('.pr-filters').scrollTo({ left: 9999 })`);
-    await waitDom(c, `(()=>{const q=document.querySelector('.pr-filters-cue');return q.classList.contains('cue-left')&&!q.classList.contains('cue-right')})()`, { timeoutMs: 9000 });
+    const bl = JSON.parse(await dom(c, `(() => {
+      const pane = document.querySelector('.ev-pane').getBoundingClientRect().height;
+      const bs = Array.from(document.querySelectorAll('.ev-block')).map(b => b.getBoundingClientRect().height);
+      const ls = Array.from(document.querySelectorAll('.ev-list')).map(l => ({ over: getComputedStyle(l).overflowY, scrolls: l.scrollHeight > l.clientHeight + 1 }));
+      return JSON.stringify({ pane, bs, ls });
+    })()`));
+    assert.deepEqual(bl.ls.map(l => l.over), ['auto', 'auto']);
+    assert.deepEqual(bl.ls.map(l => l.scrolls), [true, true], 'cada bloque desborda en su propio scroll, no en la página');
+    assert.ok(Math.abs(bl.bs[0] + bl.bs[1] - bl.pane) <= 2, 'los dos bloques se reparten todo el alto del panel');
+
+    // el scroll es independiente: mover el de Cronología no mueve el de Destacados
+    await dom(c, `document.querySelectorAll('.ev-list')[0].scrollTop = 400`);
+    await waitDom(c, `document.querySelectorAll('.ev-list')[0].scrollTop > 0`, { timeoutMs: 9000 });
+    assert.equal(await dom(c, `document.querySelectorAll('.ev-list')[1].scrollTop`), 0);
+    assert.equal(await dom(c, `document.documentElement.scrollWidth <= document.documentElement.clientWidth`), true, 'la página no desborda a lo ancho');
   } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
 });

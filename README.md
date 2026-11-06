@@ -323,16 +323,14 @@ A 1024×600 view designed for the **Elgato Prompter**: you read chat and handle 
 
 What it carries:
 
-- **Top:** stream time, warnings only when something is wrong (mic muted in Meld, alerts paused, Twitch or YouTube down, no overlay) and how many are still **to thank**.
+- **Top:** stream time and warnings only when something is wrong (mic muted in Meld, alerts paused, Twitch or YouTube down, no overlay), about half the height it used to be.
 - **Left, the Twitch and YouTube chat in one column.** Commands and votes do not appear. Messages a viewer sends with «Highlight my message» appear highlighted. On mouse hover, the chat pauses and each message gets ❓ (to the question queue) and 📌 (save to the timeline). At the bottom you can write to the Twitch chat.
-- **Right, in tabs:**
-  - **Questions:** take any of them out of the queue with a click, next, hide and discard.
-  - **Tier list:** pick an item and open its vote or place it directly; live bars, close or cancel.
-  - **Giveaway:** open, close, draw, the winner big on screen and who is joining.
-  - **Timeline:** alerts with ✔ (thanked) and ↺ (replay), named short bookmarks, highlighted messages, saved items, questions shown and winners, each with its minute. Filters: to thank, bookmarks, highlighted, saved.
-- It jumps by itself to the tab of the vote or giveaway when they start.
+- **Right, two tabs:**
+  - **Events,** two stacked blocks that fill the height. **Timeline:** alerts with ✔ (thanked) and ↺ (replay), short bookmarks (rename them with a click), questions shown and winners, each with its minute and its platform logo, and a «to thank» mark on alerts you have not thanked yet. **Highlights:** the messages a viewer highlights in Twitch and the ones you save with «Save», with platform logo, user and minute. The tab counts what is still to thank.
+  - **Questions:** take any of them out of the queue with a click, next, hide and discard; the tab counts the ones waiting.
+- The tier list and the giveaway are handled from the dock and their panel pages; the prompter no longer switches tabs by itself.
 
-**Short bookmarks** land in the timeline with their minute and, if you are live, also as Twitch markers (permission `channel:manage:broadcast`: reconnect Twitch once). They appear in the stream recap, under «Bookmarks for shorts».
+**Short bookmarks** land in the Events tab with their minute and, if you are live, also as Twitch markers (permission `channel:manage:broadcast`: reconnect Twitch once). They appear in the stream recap, under «Bookmarks for shorts».
 
 ### Appearance
 
@@ -376,7 +374,7 @@ What belongs to a button goes to the Stream Deck. With a web requests plugin (fo
 | `/sd/cerrar-votacion` | Close the tier list vote |
 | `/sd/abrir-sorteo`, `/sd/cerrar-sorteo`, `/sd/sortear` | Giveaway |
 | `/sd/agradecido` | Mark the oldest pending one as thanked |
-| `/sd/prompter/preguntas` · `tierlist` · `sorteo` · `cronologia` | Switch the prompter tab |
+| `/sd/prompter/cronologia` · `/sd/prompter/preguntas` | Switch the prompter tab (Events · Questions). The retired `tierlist` and `sorteo` answer without switching, so old shortcuts keep running |
 
 Scenes, mic and loose effects go directly with the Meld plugin for Stream Deck.
 
