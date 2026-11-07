@@ -46,7 +46,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Customizable Stream Deck shortcuts:** each one chains steps (bookmark, pause, scene, layer, chat, prompter tab…) and has its own `/sd/custom/<id>` endpoint.
 - **Dock for Meld:** the whole live show minus the preview — scenes, Meld's audio tracks, alerts, questions, vote, giveaway, teleprompter, and credits — adaptable: three columns in landscape, one tab per section otherwise.
 
-The server has no dependencies (Node ≥ 22). The interface is React compiled with esbuild and the desktop app is Tauri 2, which starts that server as a *sidecar*. Everything stays on your PC.
+The server has no dependencies (Node ≥ 24). The interface is React compiled with esbuild and the desktop app is Tauri 2, which starts that server as a *sidecar*. Everything stays on your PC.
 
 <p align="center"><img src="./.github/assets/funcionalidades-en.webp" alt="Antena feature overview" width="100%" /></p>
 
@@ -81,7 +81,7 @@ The maintainer builds that installer from **Actions › Release** (manual workfl
 
 ### Desktop app (Windows), from source
 
-You need, once: [Rust](https://rustup.rs) (MSVC toolchain), WebView2 (ships with Windows 11), Node 22 and pnpm (`corepack enable` installs the version pinned in `package.json`).
+You need, once: [Rust](https://rustup.rs) (MSVC toolchain), WebView2 (ships with Windows 11), Node 24 and pnpm (`corepack enable` installs the version pinned in `package.json`).
 
 ```powershell
 cd path\to\antena

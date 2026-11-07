@@ -200,7 +200,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                 // entrada en tubería: el servidor vigila su fin para apagarse si la app muere (#88)
                 .stdin(Stdio::piped())
                 .spawn()
-                .map_err(|e| format!("No se pudo arrancar node: {e}. Instala Node 22 o ejecuta pnpm desktop:node."))?;
+                .map_err(|e| format!("No se pudo arrancar node: {e}. Instala Node 24 o ejecuta pnpm desktop:node."))?;
             ServerChild::Plain(child)
         }
         Err(e) => return Err(format!("Falta el Node empaquetado: {e}")),

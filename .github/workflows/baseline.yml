@@ -1,5 +1,5 @@
 # Baseline de CI en vigor: suite completa con la interfaz React compilada
-# (pnpm app:build), en Linux/Windows y Node 22/24. Reactiva la CI (#69).
+# (pnpm app:build), en Linux/Windows con Node 24 (el mínimo soportado). Reactiva la CI (#69).
 name: Baseline
 
 on:
@@ -25,7 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2022]
-        node: ['22', '24']
+        node: ['24']
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
