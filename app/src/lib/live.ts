@@ -55,6 +55,10 @@ class Live {
    *  picked in the teleprompter while the SSE 'open' snapshot is in flight is newer than
    *  that snapshot, which must not bring the previous script back. */
   private touched: Partial<Record<keyof AppState, number>> = {};
+  /** Same epoch per status field (#45): status arrives in parts ('pause', 'persistence') or
+   *  whole ('status'). A field received while a load is in flight is newer than that load's
+   *  snapshot; without this the dock showed «Pausar» while the server was paused. */
+  private statusTouched: Record<string, number> = {};
   private cfgTimer: ReturnType<typeof setTimeout> | undefined;
   private configDraft: ManualDraft<Record<string, unknown>, Config>;
   readonly configSource: DraftSource;
@@ -99,6 +103,10 @@ class Live {
     this.emit();
   }
 
+  private touchStatus(patch: object) {
+    for (const k of Object.keys(patch)) this.statusTouched[k] = (this.statusTouched[k] ?? 0) + 1;
+  }
+
   async load() {
     // #116: cada carga toma un número de generación; solo aplica su instantánea si sigue
     // siendo la más reciente aplicada. Si dos cargas se solapan (arranque y primer open,
@@ -111,6 +119,7 @@ class Live {
     // a ser viejo y no debe pisarla.
     const cfgAtStart = this.cfgTouch;
     const touchedAtStart = { ...this.touched };
+    const statusAtStart = { ...this.statusTouched };
     // ids que llegan por SSE mientras ESTA petición está en curso: cada carga concurrente
     // registra el suyo (la del llamador y la del primer open solapan); solo esos ids se
     // fusionan con el snapshot al aplicarlo (lo local más viejo o borrado no vuelve a entrar).
@@ -136,6 +145,9 @@ class Live {
       const kept: Partial<AppState> = prev ? Object.fromEntries(WHOLE.filter(k => this.touched[k] !== touchedAtStart[k]).map(k => [k, prev[k]])) : {};
       // meld: only the session arrives by SSE; the rest (commands, events) comes from the snapshot.
       if (prev && this.touched.meld !== touchedAtStart.meld) kept.meld = { ...snap.meld, session: prev.meld?.session };
+      // status: keep only the fields received during the flight; the rest comes from the snapshot.
+      const newer = Object.keys(this.statusTouched).filter(k => this.statusTouched[k] !== statusAtStart[k]);
+      if (prev?.status && newer.length) kept.status = { ...snap.status, ...Object.fromEntries(newer.map(k => [k, prev.status[k as keyof AppState['status']]])) };
       this.state = protectDrafts({ ...snap, ...kept, config, widgets: { ...snap.widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } });
     } finally { this.inflightChat.delete(inFlight); this.inflightRemoved.delete(removed); }
     try {
@@ -202,9 +214,9 @@ class Live {
     };
     es.onerror = () => { this.connected = false; this.failed = true; this.emit(); };
     on('gap', () => { this.load().catch(() => {}); });
-    on('status', st => this.update(() => ({ status: st })));
-    on('persistence', p => this.update(s => ({ status: { ...s.status, persistence: p } })));
-    on('pause', p => this.update(s => ({ status: { ...s.status, pause: p } })));
+    on('status', st => { this.touchStatus(st); this.update(() => ({ status: st })); });
+    on('persistence', p => { this.touchStatus({ persistence: p }); this.update(s => ({ status: { ...s.status, persistence: p } })); });
+    on('pause', p => { this.touchStatus({ pause: p }); this.update(s => ({ status: { ...s.status, pause: p } })); });
     on('history', h => this.update(() => ({ history: h })));
     on('interactive', i => this.update(() => ({ interactive: i })));
     on('viewers', v => this.update(() => ({ viewers: v })));
