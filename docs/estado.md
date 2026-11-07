@@ -148,8 +148,11 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   páginas servidas en `http://127.0.0.1` (nunca `localhost` ni otro origen), y solo los cuatro
   comandos que usa la interfaz (monitores, open_prompter, open_dock, desktop_info), declarados en
   `src-tauri/permissions/commands.toml`. Además, una guardia de navegación en `main.rs` solo deja
-  cargar en las tres ventanas el propio servidor: mismo puerto y rutas `/`, `/prompter` y `/dock`
-  (con tests Rust), y `tauri.conf.json` define una CSP (cubre la pantalla de inicio local; las
+  cargar en las ventanas el propio servidor: mismo puerto y rutas `/`, `/prompter`, `/dock` y
+  `/widget/teleprompter` (con tests Rust). Toda ventana nueva HTTP/HTTPS, incluso del servidor
+  local, se abre en el navegador predeterminado; otros esquemas se rechazan. Las navegaciones
+  externas HTTP/HTTPS en la misma ventana también van al navegador, sin salir de la app;
+  el origen interno de Tauri sigue disponible. `tauri.conf.json` define una CSP (cubre la pantalla de inicio local; las
   páginas remotas reciben la del servidor, que hoy no envía cabeceras de CSP). Sin prueba manual
   en Windows todavía: pendiente del mantenedor.
 - Sidecar sin huérfanos (#88): con `ANTENA_DESKTOP=1` y la entrada estándar en tubería, el

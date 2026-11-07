@@ -54,8 +54,12 @@ test('main.rs: todas las ventanas nacen del builder único con la guardia de nav
   // un solo WebviewWindowBuilder::new (dentro de window_builder) y una sola llamada a on_navigation
   assert.equal((MAIN_RS.match(/WebviewWindowBuilder::new/g) ?? []).length, 1,
     'debe existir un único WebviewWindowBuilder::new, dentro de window_builder');
-  assert.match(MAIN_RS, /fn window_builder[\s\S]*?on_navigation\(move \|u\| allowed_navigation/,
-    'window_builder debe aplicar allowed_navigation');
+  const builder = MAIN_RS.slice(MAIN_RS.indexOf('fn window_builder'), MAIN_RS.indexOf('\nfn focus('));
+  assert.match(builder, /\.on_navigation\(/, 'window_builder debe aplicar la guardia');
+  assert.match(builder, /\.on_new_window\(/, 'window_builder debe interceptar ventanas nuevas');
+  assert.match(builder, /NewWindowResponse::Deny/, 'ninguna ventana nueva debe quedar incrustada');
+  assert.equal((MAIN_RS.match(/\.on_navigation\(/g) ?? []).length, 1,
+    'ninguna ventana debe sustituir la guardia central');
   assert.equal((MAIN_RS.match(/window_builder\(/g) ?? []).length, 4,
     'las cuatro ventanas (main, prompter, teleprompter y dock) deben crearse con window_builder');
   assert.ok(!/WebviewWindowBuilder::new\(&app, "(main|prompter|teleprompter|dock)"/.test(MAIN_RS),

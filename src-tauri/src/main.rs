@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::webview::NewWindowResponse;
 use tauri::window::Color;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Position, RunEvent, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
@@ -115,13 +116,61 @@ fn base_url(port: u16) -> String {
 fn allowed_navigation(port: u16, url: &Url) -> bool {
     let local = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]") if matches!(url.scheme(), "http" | "https"));
     if !local {
-        return true;
+        // El origen interno de Tauri aloja la pantalla de inicio, también en Windows.
+        return !matches!(url.scheme(), "http" | "https") || url.host_str() == Some("tauri.localhost");
     }
     // el servidor solo se publica por http en 127.0.0.1: mismo puerto y solo las tres rutas
     url.scheme() == "http"
         && url.host_str() == Some("127.0.0.1")
         && url.port_or_known_default() == Some(port)
         && matches!(url.path(), "/" | "/prompter" | "/dock" | "/widget/teleprompter")
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum NavigationDecision {
+    Allow,
+    Deny,
+    Browser,
+}
+
+fn navigation_decision(port: u16, url: &Url) -> NavigationDecision {
+    if allowed_navigation(port, url) {
+        NavigationDecision::Allow
+    } else if is_loopback_host(url) {
+        // Loopback que la guardia no autoriza (otras rutas, puertos o hosts): sigue bloqueado
+        // y nunca se reenvía al sistema, para no abrir servicios locales ajenos (#37).
+        NavigationDecision::Deny
+    } else {
+        NavigationDecision::Browser
+    }
+}
+
+/// Any loopback or unspecified address (all of 127.0.0.0/8, ::1, IPv4-mapped forms) and any
+/// *.localhost name, with or without a trailing dot.
+fn is_loopback_host(url: &Url) -> bool {
+    use std::net::IpAddr;
+    let Some(host) = url.host_str() else { return false };
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return match ip {
+            IpAddr::V4(v4) => v4.is_loopback() || v4.is_unspecified(),
+            IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified()
+                || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback() || v4.is_unspecified()),
+        };
+    }
+    let name = host.trim_end_matches('.').to_ascii_lowercase();
+    name == "localhost" || name.ends_with(".localhost")
+}
+
+fn new_window_opens_in_browser(raw: &str) -> bool {
+    Url::parse(raw).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
+}
+
+fn open_in_browser(app: &AppHandle, url: &Url) {
+    #[allow(deprecated)]
+    if let Err(err) = app.shell().open(url.as_str(), None) {
+        eprintln!("[antena] no se pudo abrir el navegador: {err}");
+    }
 }
 
 fn splash_error(app: &AppHandle, msg: &str) {
@@ -317,7 +366,23 @@ fn page_url(app: &AppHandle, path: &str) -> Result<Url, String> {
 /// (mismo puerto del servidor y solo las rutas del panel, el prompter y el dock).
 fn window_builder<'a, M: tauri::Manager<tauri::Wry>>(app: &'a M, label: &str, url: WebviewUrl) -> WebviewWindowBuilder<'a, tauri::Wry, M> {
     let port = app.state::<Server>().port;
-    WebviewWindowBuilder::new(app, label, url).on_navigation(move |u| allowed_navigation(port, u))
+    let navigation_app = app.app_handle().clone();
+    let new_window_app = navigation_app.clone();
+    WebviewWindowBuilder::new(app, label, url)
+        .on_navigation(move |url| match navigation_decision(port, url) {
+            NavigationDecision::Allow => true,
+            NavigationDecision::Deny => false,
+            NavigationDecision::Browser => {
+                open_in_browser(&navigation_app, url);
+                false
+            }
+        })
+        .on_new_window(move |url, _features| {
+            if new_window_opens_in_browser(url.as_str()) {
+                open_in_browser(&new_window_app, &url);
+            }
+            NewWindowResponse::Deny
+        })
 }
 
 fn focus(w: &WebviewWindow) {
@@ -617,7 +682,6 @@ fn main() {
                 .min_inner_size(960.0, 600.0)
                 .center()
                 .background_color(Color(0x12, 0x12, 0x14, 0xff))
-                .on_navigation(move |url| allowed_navigation(port, url))
                 .build()?;
             build_tray(app.handle())?;
             let handle = app.handle().clone();
@@ -708,7 +772,42 @@ mod tests {
         let localhost = Url::parse("http://localhost:4500/").unwrap();
         assert!(!allowed_navigation(4500, &localhost));
         let externa = Url::parse("https://ejemplo.com/").unwrap();
-        assert!(allowed_navigation(4500, &externa), "las navegaciones externas no pasan por la guardia");
+        assert!(!allowed_navigation(4500, &externa), "las navegaciones externas no deben cargar en la app");
+    }
+
+    #[test]
+    fn other_loopback_addresses_are_never_forwarded() {
+        for raw in ["http://127.0.0.2:8999/", "https://127.0.0.2/", "http://localhost.:8999/", "http://app.localhost/", "http://0.0.0.0:4500/", "http://[::ffff:127.0.0.1]:4500/"] {
+            assert_eq!(navigation_decision(4500, &Url::parse(raw).unwrap()), NavigationDecision::Deny, "{raw}");
+        }
+    }
+
+    #[test]
+    fn new_windows_only_open_http_and_https_in_browser() {
+        for raw in ["http://example.com/", "https://example.com/", "http://127.0.0.1:4500/x"] {
+            assert!(new_window_opens_in_browser(raw), "{raw}");
+        }
+        for raw in ["file:///tmp/x", "javascript:alert(1)", "data:text/html,hello", "tauri://localhost", "garbage", "http://"] {
+            assert!(!new_window_opens_in_browser(raw), "{raw}");
+        }
+    }
+
+    #[test]
+    fn navigation_routes_external_http_to_browser_and_preserves_internal_origins() {
+        for raw in ["http://example.com/", "https://example.com/"] {
+            assert_eq!(navigation_decision(4500, &Url::parse(raw).unwrap()), NavigationDecision::Browser, "{raw}");
+        }
+        for raw in ["http://tauri.localhost/index.html", "https://tauri.localhost/index.html", "tauri://localhost/index.html", "file:///index.html"] {
+            assert_eq!(navigation_decision(4500, &Url::parse(raw).unwrap()), NavigationDecision::Allow, "{raw}");
+        }
+        // loopback: other ports, hosts and unlisted routes stay blocked, never forwarded to the OS
+        for raw in ["http://127.0.0.1:4500/legacy", "http://127.0.0.1:4500/widget/chat", "http://127.0.0.1:8999/", "http://localhost:4500/", "http://[::1]:4500/", "https://127.0.0.1:4500/"] {
+            assert_eq!(navigation_decision(4500, &Url::parse(raw).unwrap()), NavigationDecision::Deny, "{raw}");
+        }
+        for path in ["/", "/prompter", "/dock", "/widget/teleprompter"] {
+            let url = Url::parse(&format!("http://127.0.0.1:4500{path}")).unwrap();
+            assert_eq!(navigation_decision(4500, &url), NavigationDecision::Allow, "{path}");
+        }
     }
 
     #[test]
