@@ -71,11 +71,11 @@ The server has no dependencies (Node ≥ 22). The interface is React compiled wi
 
 ## Quick start
 
-### Windows installer (publication pending)
+### Windows installer
 
-No public release is available yet. The repository is private, and the existing installer is a maintainer-only draft awaiting validation. The instructions below describe installation after publication; they are not a public download announcement.
+Download the `antena_<version>_x64-setup.exe` installer from the [latest release](https://github.com/egdev6/antena/releases/latest) (notes in [`docs/releases/`](docs/releases/)) and open it; it installs for your user. The installer is **not signed with a Windows certificate**: SmartScreen warns about an «unknown publisher» and you have to click **More info › Run anyway**.
 
-Once a release is published, download the `antena_<version>_x64-setup.exe` installer from that release (notes in [`docs/releases/`](docs/releases/)) and open it; it installs for your user. The installer is **not signed**: Windows SmartScreen warns about an «unknown publisher» and you have to click **More info › Run anyway**. There are no automatic updates: to change version you install the new `.exe` and your data is kept.
+**Updates:** since 0.10.0, **Settings › About** (Ajustes › Acerca de) finds and installs new signed versions without downloading anything by hand. If you come from 0.9.0, install 0.10.0 by hand once. Your data is kept.
 
 The maintainer builds that installer from **Actions › Release** (manual workflow, only from `main`, with the version from `package.json`): it builds on Windows and creates a **draft** release with the `.exe` and the notes from `docs/releases/v<version>.md`, which is reviewed and published by hand.
 
