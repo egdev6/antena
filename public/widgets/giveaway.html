@@ -136,7 +136,9 @@ function apply(s) {
   if (g.rolling && Date.now() - g.rolling.startedAt < g.rolling.seconds * 1000 + 15000) return roll(g.rolling);
   if (!revealed) show(!!g.open);
 }
-connect({ interactive: s => { if (!DEMO) apply(s); } });
+// ?demo (panel preview while closed, #68): demo entries with the saved settings (title, prize,
+// command, CSS); it never opens the giveaway nor adds entries.
+connect({ interactive: s => { if (!DEMO) apply(s); else if (!rollingKey) apply({ ...demoInteractive(), config: s.config }); } });
 if (DEMO) {
   const d = demoInteractive(); apply(d);
   if (qs.has('roll')) setTimeout(() => apply({ ...d, giveaway: { ...d.giveaway, rolling: { winner: 'lucia_codes', startedAt: Date.now(), seconds: 3, names: d.giveaway.entries.map(e => e.user) } } }), 600);
