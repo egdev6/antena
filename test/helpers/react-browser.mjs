@@ -63,11 +63,13 @@ export const buttonByText = text =>
 
 // Clic con reintento: bajo carga el DOM se re-renderiza y el elemento puede ausentarse
 // un instante; se pulsa en cuanto exista en lugar de fallar por una carrera.
+// Un elemento desactivado ignora .click(): se espera a que se active (#47), porque dar ese
+// clic por bueno dejaba al test esperando un efecto que nunca llega.
 export async function clickWhen(c, expr, { tries = 40, ms = 150 } = {}) {
   for (let i = 0; i < tries; i++) {
     try {
       const { evaluateChrome } = await import('./chrome-dom.mjs');
-      if (await evaluateChrome(c, `(() => { const e = ${expr}; if (e) { e.click(); return true; } return false; })()`)) return true;
+      if (await evaluateChrome(c, `(() => { const e = ${expr}; if (e && !e.disabled) { e.click(); return true; } return false; })()`)) return true;
     } catch { /* re-render en curso: se reintenta */ }
     await sleep(ms);
   }
