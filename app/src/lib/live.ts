@@ -264,17 +264,26 @@ export function makeChatLoader(fetch: () => Promise<ChatMessage[]>, apply: (snap
   // chat no se queda vacío; y si la antigua resuelve al final, no pisa lo ya aplicado.
   let applied = 0;
   const inflight = new Set<Set<string>>();
+  // Deletes (ids) and clears (login; null = everything) received during each load in flight (#2):
+  // the response may have been generated before them and must not bring the messages back.
+  const removing = new Set<{ ids: Set<string>; logins: Set<string | null> }>();
   const load = () => {
     const gen = ++seq;
     const ids = new Set<string>();
+    const removed = { ids: new Set<string>(), logins: new Set<string | null>() };
     inflight.add(ids);
+    removing.add(removed);
     return fetch().then(snap => {
       if (gen <= applied) return; // ya se aplicó una carga más reciente
       applied = gen;
-      apply(snap, ids);
-    }).catch(() => { /* la vista funciona sin el chat */ }).finally(() => { inflight.delete(ids); });
+      apply(snap.filter(m => !removed.ids.has(m.id) && !removed.logins.has(null) && !(m.login && removed.logins.has(m.login))), ids);
+    }).catch(() => { /* la vista funciona sin el chat */ }).finally(() => { inflight.delete(ids); removing.delete(removed); });
   };
-  return { load, inflight };
+  /** Records a chatDelete for the loads in flight. */
+  const remove = (id: string) => { for (const r of removing) r.ids.add(id); };
+  /** Records a chatClear (one login, or null for everything) for the loads in flight. */
+  const clear = (login: string | null) => { for (const r of removing) r.logins.add(login); };
+  return { load, inflight, remove, clear };
 }
 
 export const live = new Live();

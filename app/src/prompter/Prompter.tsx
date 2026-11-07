@@ -68,7 +68,7 @@ function Chat() {
     // por SSE mientras una carga está en curso se registran en sus ids y no se pierden
     // al aplicar el snapshot (dedup por id, sin duplicados, desorden ni resurrección de
     // borrados al reconectar o tras un gap).
-    const { load, inflight } = makeChatLoader(
+    const { load, inflight, remove, clear } = makeChatLoader(
       () => get<ChatMessage[]>('/api/chat?limit=120'),
       (r, ids) => setList(l => mergeChat(l, r, ids).slice(-300)),
     );
@@ -76,8 +76,8 @@ function Chat() {
     const offs = [
       live.on('chat', m => { for (const ids of inflight) ids.add(m.id); setList(l => l.some(x => x.id === m.id) ? l : [...l, m].slice(-300)); }),
       live.onOpen(load),
-      live.on('chatDelete', ({ id }) => setList(l => l.filter(x => x.id !== id))),
-      live.on('chatClear', ({ login }) => setList(l => l.filter(x => login && x.login !== login))),
+      live.on('chatDelete', ({ id }) => { remove(id); setList(l => l.filter(x => x.id !== id)); }),
+      live.on('chatClear', ({ login }) => { clear(login || null); setList(l => l.filter(x => login && x.login !== login)); }),
       live.on('gap', load),
     ];
     return () => offs.forEach(f => f());

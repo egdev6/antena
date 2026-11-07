@@ -277,3 +277,49 @@ test('chat local: la carga más antigua que resuelve al final no pisa el chat ya
   assert.equal(applied.length, 1, 'solo se aplicó la carga más reciente');
   assert.deepEqual(applied[0].snap, [{ id: 'nuevo', user: 'u', text: 'n', platform: 'twitch', at: 1 }]);
 });
+
+// #2: el prompter carga su chat con makeChatLoader. Una respuesta de /api/chat generada antes
+// de un borrado o una limpieza que resuelve después no debe devolver lo ya quitado.
+const msg = (id, login) => ({ id, login, user: login, text: id, platform: 'twitch', at: 0 });
+
+async function loaderInFlight(t) {
+  const { makeChatLoader } = await bundleLive();
+  t.after(() => { delete globalThis.__apiImpl; });
+  const resolvers = [], applied = [];
+  const loader = makeChatLoader(() => new Promise(res => resolvers.push(res)), (snap, ids) => applied.push({ snap, ids }));
+  const done = loader.load();
+  return { loader, applied, resolve: async snap => { resolvers[0](snap); await done; } };
+}
+
+test('chat local: un borrado durante la carga no reaparece con la respuesta vieja', async t => {
+  const { loader, applied, resolve } = await loaderInFlight(t);
+  loader.remove('b');
+  await resolve([msg('a', 'ana'), msg('b', 'beto')]);
+  assert.deepEqual(applied[0].snap.map(m => m.id), ['a'], 'el mensaje borrado no vuelve');
+});
+
+test('chat local: una limpieza de usuario durante la carga quita solo sus mensajes', async t => {
+  const { loader, applied, resolve } = await loaderInFlight(t);
+  loader.clear('beto');
+  await resolve([msg('a', 'ana'), msg('b', 'beto'), msg('c', 'beto')]);
+  assert.deepEqual(applied[0].snap.map(m => m.id), ['a']);
+});
+
+test('chat local: una limpieza total durante la carga deja el chat vacío', async t => {
+  const { loader, applied, resolve } = await loaderInFlight(t);
+  loader.clear(null);
+  await resolve([msg('a', 'ana'), msg('b', 'beto')]);
+  assert.deepEqual(applied[0].snap, []);
+});
+
+test('chat local: un borrado anterior a la carga no filtra la respuesta nueva', async t => {
+  const { makeChatLoader } = await bundleLive();
+  t.after(() => { delete globalThis.__apiImpl; });
+  const resolvers = [], applied = [];
+  const loader = makeChatLoader(() => new Promise(res => resolvers.push(res)), snap => applied.push(snap));
+  loader.remove('b'); // sin carga en vuelo: no afecta a cargas futuras
+  const done = loader.load();
+  resolvers[0]([msg('a', 'ana'), msg('b', 'beto')]);
+  await done;
+  assert.deepEqual(applied[0].map(m => m.id), ['a', 'b']);
+});
