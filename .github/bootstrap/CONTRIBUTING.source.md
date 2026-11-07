@@ -25,6 +25,7 @@ desktop app on Windows), Code safety (Semgrep and zizmor) and Secrets scan (gitl
 every pull request and on every push to main.
 Every PR still reports the local checks it ran.
 Report security issues privately as described in [SECURITY.md](SECURITY.md), never in a public issue.
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 Use synthetic data for ordinary tests; report unverified live/platform behavior.
 Do not paste credentials, private paths or unsanitized configuration into reports.
 
