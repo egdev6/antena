@@ -105,3 +105,40 @@ test('meld: un evento de sesión en vuelo conserva la sesión y el resto llega d
   assert.deepEqual(live.state.meld.commands, ['nuevo'], 'el resto de meld llega del snapshot');
   assert.deepEqual(live.state.meld.events, ['e2']);
 });
+
+// #45: status llega por partes ('pause', 'persistence') o entero ('status'). Un campo recibido
+// durante el vuelo gana al snapshot viejo; los campos no tocados siguen viniendo del snapshot.
+// Sin esto el dock mostraba «⏸ Pausar» con las alertas en pausa en el servidor.
+const st = extra => ({ pause: { paused: false }, persistence: { ok: true }, meld: { state: 'conectado' }, ...extra });
+
+test('status: un evento pause en vuelo se conserva y el resto de status llega del snapshot', async t => {
+  const { live, resolveSecond } = await withSecondLoadInFlight(t);
+  globalThis.__fakeEs.emit('pause', { paused: true });
+  await resolveSecond(snap({ status: st({ meld: { state: 'caído' } }) }));
+  assert.deepEqual(live.state.status.pause, { paused: true }, 'la pausa recibida durante el vuelo gana');
+  assert.deepEqual(live.state.status.meld, { state: 'caído' }, 'lo no tocado llega del snapshot');
+  assert.deepEqual(live.state.status.persistence, { ok: true });
+});
+
+test('status: un evento persistence en vuelo no conserva una pausa que no se tocó', async t => {
+  const { live, resolveSecond } = await withSecondLoadInFlight(t);
+  globalThis.__fakeEs.emit('persistence', { ok: false });
+  await resolveSecond(snap({ status: st({ pause: { paused: true } }) }));
+  assert.deepEqual(live.state.status.persistence, { ok: false }, 'la persistencia recibida gana');
+  assert.deepEqual(live.state.status.pause, { paused: true }, 'la pausa llega del snapshot');
+});
+
+test('status: un evento status completo en vuelo conserva los campos que trae', async t => {
+  const { live, resolveSecond } = await withSecondLoadInFlight(t);
+  globalThis.__fakeEs.emit('status', { pause: { paused: true }, meld: { state: 'conectado' } });
+  await resolveSecond(snap({ status: st({ meld: { state: 'caído' }, persistence: { ok: false } }) }));
+  assert.deepEqual(live.state.status.pause, { paused: true });
+  assert.deepEqual(live.state.status.meld, { state: 'conectado' });
+  assert.deepEqual(live.state.status.persistence, { ok: false }, 'el campo que no trae el evento llega del snapshot');
+});
+
+test('status: sin eventos durante el vuelo, el snapshot manda', async t => {
+  const { live, resolveSecond } = await withSecondLoadInFlight(t);
+  await resolveSecond(snap({ status: st({ pause: { paused: true } }) }));
+  assert.deepEqual(live.state.status.pause, { paused: true });
+});
