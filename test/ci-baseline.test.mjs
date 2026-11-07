@@ -128,7 +128,7 @@ test('Los workflows reactivados no arrastran borrador y compilan la interfaz Rea
   }
   assert.match(baseline, /ubuntu-24\.04/, 'matriz de Linux intacta');
   assert.match(baseline, /windows-2022/, 'matriz de Windows intacta');
-  assert.match(baseline, /node: \['22', '24'\]/, 'matriz de Node intacta');
+  assert.match(baseline, /node: \['24'\]/, 'matriz de Node: solo el mínimo soportado (24)');
   assert.ok(baseline.includes('node scripts/ci-baseline.mjs baseline.json baseline.tap'), 'verificación de CI intacta');
   // Los fallos de Windows preexistentes (#83) quedan como aviso: el job no bloquea
   // en windows-2022 mientras esa issue siga abierta.

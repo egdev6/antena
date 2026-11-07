@@ -46,7 +46,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Atajos para Stream Deck** personalizables: cada uno encadena pasos (marca, pausa, escena, capa, chat, pestaña del prompter…) y tiene su dirección `/sd/custom/<id>`.
 - **Dock para Meld:** todo el manejo del directo menos la vista previa —escenas, pistas de audio de Meld, alertas, preguntas, votación, sorteo, teleprompter y créditos— y adaptable: tres columnas en apaisado, una pestaña por sección en el resto.
 
-El servidor no tiene dependencias (Node ≥ 22). La interfaz es React compilada con esbuild y la app de escritorio es Tauri 2, que arranca ese servidor como *sidecar*. Todo se queda en tu PC.
+El servidor no tiene dependencias (Node ≥ 24). La interfaz es React compilada con esbuild y la app de escritorio es Tauri 2, que arranca ese servidor como *sidecar*. Todo se queda en tu PC.
 
 <p align="center"><img src="./.github/assets/funcionalidades-es.webp" alt="Resumen de funcionalidades de Antena" width="100%" /></p>
 
@@ -71,17 +71,17 @@ El servidor no tiene dependencias (Node ≥ 22). La interfaz es React compilada 
 
 ## Inicio rápido
 
-### Instalador de Windows (publicación pendiente)
+### Instalador de Windows
 
-Todavía no hay una release pública. El repositorio es privado y el instalador existente es un borrador del mantenedor pendiente de validación. Las instrucciones siguientes describen la instalación tras su publicación; no anuncian una descarga pública.
+Descarga el instalador `antena_<versión>_x64-setup.exe` de la [última release](https://github.com/egdev6/antena/releases/latest) (notas en [`docs/releases/`](docs/releases/)) y ábrelo; se instala para tu usuario. El instalador **no está firmado con un certificado de Windows**: SmartScreen avisa de «editor desconocido» y hay que pulsar **Más información › Ejecutar de todas formas**.
 
-Cuando se publique una release, descarga el instalador `antena_<versión>_x64-setup.exe` de esa release (notas en [`docs/releases/`](docs/releases/)) y ábrelo; se instala para tu usuario. El instalador **no está firmado**: Windows SmartScreen avisa de «editor desconocido» y hay que pulsar **Más información › Ejecutar de todas formas**. No hay actualizaciones automáticas: para cambiar de versión se instala el nuevo `.exe` y los datos se conservan.
+**Actualizaciones:** desde la 0.10.0, **Ajustes › Acerca de** busca e instala las versiones nuevas, firmadas, sin descargar nada a mano. Si vienes de la 0.9.0, instala la 0.10.0 a mano una vez. Tus datos se conservan.
 
 El mantenedor genera ese instalador desde **Actions › Release** (workflow manual, solo desde `main`, con la versión de `package.json`): compila en Windows y crea un **borrador** de release con el `.exe` y las notas de `docs/releases/v<versión>.md`, que se revisa y se publica a mano.
 
 ### App de escritorio (Windows), desde el código
 
-Hace falta, una vez: [Rust](https://rustup.rs) (toolchain MSVC), WebView2 (viene con Windows 11), Node 22 y pnpm (`corepack enable` instala la versión fijada en `package.json`).
+Hace falta, una vez: [Rust](https://rustup.rs) (toolchain MSVC), WebView2 (viene con Windows 11), Node 24 y pnpm (`corepack enable` instala la versión fijada en `package.json`).
 
 ```powershell
 cd ruta\a\antena

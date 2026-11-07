@@ -2,7 +2,7 @@
 // ODD-01: baseline reproducible durable.
 // Ejecuta la suite exactamente una vez con reporter TAP y cobertura usando
 // spawn (sin shell), y emite un informe JSON estable en stdout. Sin dependencias
-// externas: solo builtins de Node >= 22.
+// externas: solo builtins de Node >= 24.
 import { spawn, spawnSync } from 'node:child_process';
 import { lstatSync, readdirSync, readlinkSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

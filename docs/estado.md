@@ -9,7 +9,7 @@ antena es una herramienta local de alertas, chat y widgets de directo para **Mel
 Studio**, gratis y con identidad EGDEV. Desde la 0.9 es una **app de
 escritorio** (Tauri 2 + React) que arranca el servidor Node de siempre como *sidecar*; se controla
 desde su panel, el Stream Deck, el panel de chat de Meld (dock) y un servidor MCP. El servidor
-sigue sin dependencias (Node ≥ 22); React, esbuild y Tauri son solo de compilación.
+sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compilación.
 
 ## Qué hace hoy
 
@@ -161,7 +161,7 @@ sigue sin dependencias (Node ≥ 22); React, esbuild y Tauri son solo de compila
 - CI de Linux y Windows preparada (#69): Baseline (con la interfaz React compilada
   con `pnpm app:build`), Code safety y Secrets scan (#32, #43). Se ejecutó el 19-10-2026:
   Linux (Node 22 y 24) y los dos workflows de seguridad en verde. Desde #83 Windows
-  (windows-2022, Node 22 y 24) es **obligatorio**: las pruebas de Ctrl+C aceptan en win32 el
+  (windows-2022) es **obligatorio**; desde el 07-11-2026 la matriz usa solo Node 24, el mínimo soportado: las pruebas de Ctrl+C aceptan en win32 el
   aviso documentado de recuperación bloqueada, el helper de ACL recibe una copia del entorno
   (la cobertura ya no lo rompe), el corte del cliente SSE lento es determinista y las pruebas
   solo POSIX se omiten con motivo explícito, permitido únicamente en win32. Los dos ensayos de

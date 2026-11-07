@@ -13,16 +13,17 @@ No workflow automatically approves, assigns or advances issues.
 
 ## Development and checks
 
-Preserve Node >=22, the current ESM/vanilla stack and zero runtime dependencies.
+Preserve Node >=24, the current ESM/vanilla stack and zero runtime dependencies.
 Keep relevant tests and documentation with each reviewable change.
 Use test-first development when a meaningful deterministic test applies;
 for passive documentation/configuration, record structural checks without fake RED.
 Declared checks are `pnpm test` and `pnpm baseline`; record what actually ran.
-Baseline CI covers Linux/Windows with Node 22/24 and browser checks, with its
+Baseline CI covers Linux/Windows with Node 24 and browser checks, with its
 existing skip policy. New security checks do not replace this functional matrix.
-While the repository is private only Baseline runs (Linux and Windows; Windows is required
-since #83); Code safety and Secrets scan stay off until it is public. Every PR still
-reports the local checks it ran.
+Baseline (Linux and Windows; Windows is required since #83), Code safety (Semgrep and
+zizmor) and Secrets scan (gitleaks) run on every pull request and on every push to main.
+Every PR still reports the local checks it ran.
+Report security issues privately as described in [SECURITY.md](SECURITY.md), never in a public issue.
 Use synthetic data for ordinary tests; report unverified live/platform behavior.
 Do not paste credentials, private paths or unsanitized configuration into reports.
 

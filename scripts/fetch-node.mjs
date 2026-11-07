@@ -2,7 +2,7 @@
 // Copia el Node con el que ejecutas este script a src-tauri/binaries/ con el nombre que Tauri espera
 // para el sidecar (node-<target-triple>[.exe]). Así la app instalada no necesita Node en el sistema.
 //   pnpm desktop:node
-// Usa Node 22 o superior (el mismo que pide el servidor).
+// Usa Node 24 o superior (el mismo que pide el servidor).
 import { execFileSync } from 'node:child_process';
 import { chmod, copyFile, mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const major = Number(process.versions.node.split('.')[0]);
-if (major < 22) { console.error(`Hace falta Node 22 o superior (tienes ${process.version}).`); process.exit(1); }
+if (major < 24) { console.error(`Hace falta Node 24 o superior (tienes ${process.version}).`); process.exit(1); }
 
 function triple() {
   try {
