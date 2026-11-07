@@ -177,6 +177,10 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   35 por ejecución, la mayoría en Windows. Windows es obligatorio
   desde #83. Code safety y Secrets scan siguen desactivados a mano hasta que el repositorio
   sea público (`gh workflow enable code-safety.yml` y `secrets-scan.yml`).
+- **Rust en la CI** (07-11-2026): `.github/workflows/rust.yml` corre `cargo test --locked` de
+  `src-tauri` en windows-2022 en cada PR y en cada push a `main` (guardia de navegación, ventanas
+  nuevas de #37, rutas del sidecar). Antes esos tests solo corrían en local. Prepara
+  `app/dist` y el sidecar (`pnpm desktop:node`), que la compilación exige, y cachea cargo.
 - Release manual (#162): `.github/workflows/release.yml` (Actions › Release, solo
   `workflow_dispatch` y solo desde `main`) comprueba la versión con
   `scripts/release-check.mjs`, compila en windows-2022 el instalador NSIS sin firma (con las
