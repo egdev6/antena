@@ -10,6 +10,7 @@ test('rust: cargo test runs on every pull request and push to main', () => {
   assert.ok(existsSync(WORKFLOW), '.github/workflows/rust.yml must exist');
   const yml = readFileSync(WORKFLOW, 'utf8');
   assert.match(yml, /^on:\n {2}pull_request:\n {2}push:\n {4}branches: \[main\]/m, 'every PR and every push to main, without path filters');
+  assert.doesNotMatch(yml, /^\s+paths(?:-ignore)?:/m, 'no path filters on any trigger');
   assert.match(yml, /^permissions:\n {2}contents: read$/m, 'read-only token');
   assert.match(yml, /runs-on: windows-2022/, 'runs on the platform the app ships for');
   assert.match(yml, /persist-credentials: false/);
@@ -22,7 +23,7 @@ test('rust: prepares the sidecar and app/dist before cargo test --locked', () =>
   const at = order.map(step => yml.indexOf(step));
   for (const [i, step] of order.entries()) assert.ok(at[i] >= 0, `missing step: ${step}`);
   assert.deepEqual([...at].sort((a, b) => a - b), at, 'steps run in this order');
-  assert.match(yml, /working-directory: src-tauri/, 'cargo runs in src-tauri');
+  assert.match(yml, /^ {8}working-directory: src-tauri\n {8}run: cargo test --locked$/m, 'cargo runs in src-tauri');
   for (const uses of yml.match(/uses: \S+/g) || []) assert.match(uses, /@[0-9a-f]{40}$/, `${uses} pinned by SHA`);
   assert.doesNotMatch(yml, /secrets\./, 'no secrets');
 });
