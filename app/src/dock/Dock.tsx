@@ -36,7 +36,7 @@ function useWide() {
   return wide;
 }
 
-function Status({ wide }: { wide: boolean }) {
+function Status() {
   const s = useLive(x => x);
   const now = useNow();
   const tl = live.timeline;
@@ -55,7 +55,6 @@ function Status({ wide }: { wide: boolean }) {
       {st.twitch && st.twitch.state !== 'conectado' && <ConnPill platform="twitch" state={st.twitch.state} />}
       {st.youtube?.state === 'en espera' && <ConnPill platform="youtube" state="en espera" label={st.youtube.notice || undefined} />}
     </div>
-    {wide && <a className="d-open" href="/" target="_blank" rel="noopener" title="Abrir el panel completo">Panel ↗</a>}
   </header>;
 }
 
@@ -311,7 +310,6 @@ function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
         else if (e.key === 'Home') { e.preventDefault(); go(0, true); }
         else if (e.key === 'End') { e.preventDefault(); go(TABS.length - 1, true); }
       }}>{label}{id === 'audio' && muted > 0 && <span className="d-dot" role="img" aria-label={`${muted} ${muted === 1 ? 'pista desactivada' : 'pistas desactivadas'}`} />}</button>)}
-    <a className="d-open" href="/" target="_blank" rel="noopener" title="Abrir el panel completo">Panel ↗</a>
   </nav>;
 }
 
@@ -324,7 +322,7 @@ export function Dock() {
   useEffect(() => { try { localStorage.setItem(DOCK_TAB, tab); } catch { /* almacenamiento no disponible: se ignora */ } }, [tab]);
   if (!ready) return <div className="d-boot">Conectando con antena…</div>;
   return <div className={cx('dock', wide && 'dock-wide')}>
-    <Status wide={wide} />
+    <Status />
     {wide
       ? <div className="d-cols">
         <Col id="control" title="Control" meta={<ControlMeta />}><Control /></Col>

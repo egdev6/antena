@@ -35,8 +35,6 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-warn.soft{--st:var(--warn)}
 .d-warn.big{font:800 13px/1 var(--font-display);text-transform:uppercase;padding:6px 10px;border-radius:var(--radius-md);background:var(--gradient-btn-primary);color:var(--color-action-primary-solid-fg);border-color:transparent;animation:blink 1.2s infinite}
 @keyframes blink{50%{opacity:.4}}
-.d-open{margin-left:auto;align-self:center;font-size:12px;color:var(--grey);text-decoration:none;padding:4px 6px}
-.d-open:hover{color:var(--pink)}
 /* ---------- pestañas (ventana no apaisada o < 1000 px) ---------- */
 .d-tabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:var(--s0)}
 .d-tabs button,.d-itabs button{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:8px 12px;min-height:40px;border-radius:var(--radius-md) var(--radius-md) 0 0;font:700 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
