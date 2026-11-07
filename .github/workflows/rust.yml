@@ -1,0 +1,55 @@
+# Rust tests of the desktop app (src-tauri): navigation guard, new-window policy (#37), sidecar
+# and data paths. They only ran locally before; Baseline does not compile Rust.
+# windows-2022 is the platform the app ships for and already has the Rust toolchain (as Release).
+name: Rust
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-test:
+    name: cargo test (windows-2022)
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: pnpm
+        run: corepack enable pnpm
+      - name: Install build dependencies
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+        run: pnpm install --frozen-lockfile
+      # tauri.conf.json bundles app/dist and the Node sidecar: the build script needs both to exist.
+      - name: Build the React interface
+        run: pnpm app:build
+      - name: Node sidecar
+        run: pnpm desktop:node
+      - name: Cargo cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --locked
