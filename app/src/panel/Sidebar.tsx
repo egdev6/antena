@@ -61,7 +61,7 @@ export function Sidebar({ current }: { current: string }) {
     ['produccion', 'Producción', [
       { href: '#/fuentes', label: 'Fuentes para Meld' },
       { href: '#/meld', label: 'Meld Studio', tail: <span className={cx('nav-n', meldOn && 'is-live')} aria-label={meldOn ? 'conectado' : 'sin conectar'}>●</span> },
-      { href: '#/prompter', label: 'Prompter y dock' },
+      { href: '#/prompter', label: 'Paneles' },
     ]],
     ['registro', 'Registro', [
       { href: '#/historial', label: 'Historial de alertas' },

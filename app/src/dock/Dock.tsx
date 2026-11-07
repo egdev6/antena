@@ -1,16 +1,16 @@
 // Dock del directo: todo el manejo del directo menos la vista previa (S1) y sin chat (S12).
-// En una ventana apaisada y ancha se ven las tres columnas Escenas | Audio | Control; en el
+// En una ventana apaisada y ancha se ven las tres columnas Control | Audio | Interactivos; en el
 // resto (estrecha, retrato, tablet vertical) una pestaña por sección, con Control primero.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { enc, post } from '../lib/api';
+import { post } from '../lib/api';
 import { IC } from '../lib/icons';
 import { live, useLive, useLiveVersion } from '../lib/live';
 import { patchIx } from '../lib/patch';
 import { ConnPill, cx, guard, Icon, mmss, toast, Toaster } from '../lib/ui';
-import type { MeldTrack, ShortcutConfig, TeleprompterState, TimelineItem } from '../lib/types';
-import { stepText } from '../panel/views/Atajos';
+import type { MeldTrack, TeleprompterState, TimelineItem } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
+const INTERACTIVE_TAB = 'egdev.dock.interactive.tab';
 /** La misma regla que documenta el README: apaisado y ≥1000 px de ancho → tres columnas. */
 const WIDE_MEDIA = '(orientation: landscape) and (min-width: 1000px)';
 
@@ -59,8 +59,9 @@ function Status({ wide }: { wide: boolean }) {
   </header>;
 }
 
-// ---------- Escenas (S9) ----------
-const isVertical = (name: string) => /\[vertical\]\s*$/i.test(String(name || '').trim());
+// ---------- Escenas (S7) ----------
+const VERTICAL_SUFFIX = ' [Vertical]';
+const isVertical = (name: string) => name.endsWith(VERTICAL_SUFFIX);
 
 function Scenes() {
   const scenes = useLive(s => s.meld?.session?.scenes || []);
@@ -68,26 +69,25 @@ function Scenes() {
   const [busy, setBusy] = useState<string | null>(null);
   if (!meldOn) return <p className="d-muted d-empty">Meld no está conectado. Conéctalo en Meld Studio y sus escenas aparecerán aquí.</p>;
   if (!scenes.length) return <p className="d-muted d-empty">Meld todavía no informa de ninguna escena.</p>;
-  const vertical = scenes.filter(x => isVertical(x.name));
-  const horizontal = scenes.filter(x => !isVertical(x.name));
-  // Sin escenas verticales hay un solo grupo, sin encabezados que lo partan (S9).
-  const groups = vertical.length ? [{ title: 'Horizontal', list: horizontal }, { title: 'Vertical', list: vertical }] : [{ title: '', list: scenes }];
-  const show = (id: string) => guard(async () => {
+  const horizontal = scenes.filter(sc => !isVertical(sc.name));
+  const entries = scenes.filter(sc => !isVertical(sc.name) || !horizontal.some(h => h.name + VERTICAL_SUFFIX === sc.name));
+  const show = (id: string, verticalId?: string) => guard(async () => {
     setBusy(id);
-    try { const r = await post<{ scene: string }>('/api/meld/scene', { scene: id }); toast(`Escena «${r.scene}»`); }
-    finally { setBusy(null); }
+    try {
+      const r = await post<{ scene: string }>('/api/meld/scene', { scene: id });
+      if (verticalId) await post('/api/meld/scene', { scene: verticalId });
+      toast(`Escena «${r.scene}»`);
+    } finally { setBusy(null); }
   })();
-  return <div className="d-groups">{groups.map(g => {
-    const air = g.list.find(x => x.current);
-    return <section className="d-group" key={g.title || 'todas'} aria-label={g.title || 'Escenas'}>
-      {g.title ? <h3 className="d-sub">{g.title}{air ? <span>al aire: {air.name}</span> : null}</h3> : null}
-      <div className="d-scenes">{g.list.map(sc => <button key={sc.id} type="button"
-        className={cx('d-btn d-scene', sc.current && 'on', busy === sc.id && 'busy')}
-        aria-pressed={!!sc.current} title={sc.name} onClick={() => show(sc.id)}>
-        <span className="d-scene-n">{sc.name}</span>
-        {sc.current ? <span className="d-air">AL AIRE</span> : null}
-      </button>)}</div>
-    </section>;
+  return <div className="d-scenes">{entries.map(sc => {
+    const vertical = !isVertical(sc.name) ? scenes.find(v => v.name === sc.name + VERTICAL_SUFFIX) : undefined;
+    const h = !isVertical(sc.name) && !!sc.current;
+    const v = !!(vertical?.current || (isVertical(sc.name) && sc.current));
+    const air = h && v ? 'H + V' : h ? 'H' : v ? 'V' : '';
+    return <button key={sc.id} type="button" className={cx('d-btn d-scene', air && 'on', busy === sc.id && 'busy')}
+      aria-pressed={!!air} aria-label={sc.name} title={sc.name} onClick={() => show(sc.id, vertical?.id)}>
+      <span className="d-scene-n">{sc.name}</span>{air ? <span className="d-air">AL AIRE · {air}</span> : null}
+    </button>;
   })}</div>;
 }
 
@@ -159,14 +159,9 @@ const sd = (a: string, ok?: string) => guard(() => post('/sd/' + a), ok);
 
 function Control() {
   useLiveVersion(); // la cronología (pendientes) vive fuera del snapshot de /api/state
-  const I = useLive(s => s.interactive);
   const pause = useLive(s => s.status.pause || {});
   const tp = useLive(s => s.teleprompter) as TeleprompterState | undefined;
   const credits = useLive(s => (s.widgets?.credits as { names?: string[] }[] | undefined) || []);
-  const q = I?.questions;
-  const qc = (I?.config?.questions || {}) as { enabled?: unknown; command?: unknown };
-  const g = I?.giveaway;
-  const vote = I?.vote;
   const pend = live.timeline.pending || 0;
   const names = credits.reduce((n, gr) => n + (gr.names?.length || 0), 0);
   const script = tp?.script;
@@ -184,40 +179,7 @@ function Control() {
       <button className="d-btn" disabled={!pend} onClick={sd('agradecido')} title={pend ? `${pend} por agradecer` : 'Nada por agradecer todavía'}>✔ Agradecido<small>{pend} por agradecer</small></button>
     </div>
 
-    {q && <section className="d-card" aria-label="Preguntas">
-      <div className="d-card-h">
-        <button type="button" className="d-sw" role="switch" aria-checked={!!qc.enabled} aria-label="Preguntas del chat"
-          title={qc.enabled ? 'El comando del chat está activo' : 'El comando del chat está desactivado'}
-          onClick={() => patchIx('questions', { enabled: !qc.enabled })} />
-        Preguntas<span className="d-meta">{qc.command ? `${qc.command} · ` : ''}{q.pending || 0} en cola</span>
-      </div>
-      {q.current ? <p className="d-q"><b>{q.current.user}</b> {q.current.text}</p> : <p className="d-muted">Ninguna en pantalla</p>}
-      <div className="d-row">
-        <button className="d-btn sm grow" disabled={!q.pending} title={q.pending ? 'Pasa a la siguiente pregunta de la cola' : 'No hay preguntas en cola'}
-          onClick={guard(() => post('/api/questions/next'))}>Siguiente</button>
-        <button className="d-btn sm" disabled={!q.current} title={q.current ? 'Quita la pregunta de la pantalla' : 'No hay ninguna pregunta en pantalla'}
-          onClick={guard(() => post('/api/questions/hide'), 'Pregunta oculta')}>Ocultar</button>
-      </div>
-    </section>}
-
-    {vote && <section className="d-card" aria-label="Tier list">
-      <div className="d-card-h">Tier list<span className="d-meta">{vote.item?.label ? `Votando ${vote.item.label} · ` : ''}{vote.total} votos</span></div>
-      <div className="d-row">
-        <button className="d-btn sm grow" onClick={guard(() => post('/api/vote/close', { apply: true }), 'Votación colocada')}>Cerrar y colocar</button>
-        <button className="d-btn sm" onClick={guard(() => post('/api/vote/cancel'), 'Votación cancelada')}>Cancelar</button>
-      </div>
-    </section>}
-
-    {g && <section className="d-card" aria-label="Sorteo">
-      <div className="d-card-h">Sorteo<span className="d-meta">{g.open ? 'abierto' : 'cerrado'} · {g.count === 1 ? '1 participante' : `${g.count || 0} participantes`}</span></div>
-      <div className="d-row">
-        {g.open
-          ? <button className="d-btn sm grow" onClick={guard(() => post('/api/giveaway/close'), 'Sorteo cerrado')}>Cerrar</button>
-          : <button className="d-btn sm grow" onClick={guard(() => post('/api/giveaway/open', { reset: true }), 'Sorteo abierto')}>Abrir</button>}
-        <button className="d-btn sm grow pri" disabled={!g.count} title={g.count ? 'Elige un ganador' : 'Todavía no hay participantes'}
-          onClick={guard(() => post('/api/giveaway/draw'), 'Sorteado')}>Sortear</button>
-      </div>
-    </section>}
+    <section className="d-sec" aria-label="Escenas"><h3 className="d-sub">Escenas</h3><Scenes /></section>
 
     <section className="d-card" aria-label="Teleprompter">
       <div className="d-card-h">Teleprompter<span className="d-meta">{hasScript ? `«${script!.title}» · ${block + 1}/${script!.blocks.length}` : 'sin guion'}</span></div>
@@ -246,36 +208,74 @@ function Control() {
   </>;
 }
 
-function Shortcuts() {
-  const list: ShortcutConfig[] = useLive(s => s.config.shortcuts || []);
-  const [busy, setBusy] = useState<string | null>(null);
-  if (!list.length) return <section className="d-sec"><p className="d-muted">Crea tus atajos en el panel (Meld y Stream Deck › Atajos) y salen aquí como botones.</p></section>;
-  return <section className="d-sec">
-    <div className="d-card-h">Mis atajos<span className="d-meta">{list.length}</span></div>
-    <div className="d-grid">{list.map(sc => <button key={sc.id} className={cx('d-btn sc', busy === sc.id && 'busy')} style={{ ['--sc' as any]: sc.color || 'var(--line2)' }} title={(sc.steps || []).map(stepText).join(' → ')}
-      onClick={guard(async () => {
-        setBusy(sc.id);
-        try { const r = await post<{ errors?: string[] }>(`/api/shortcuts/${enc(sc.id)}/run`); toast(r.errors?.length ? `${sc.name}: ${r.errors.join(' · ')}` : sc.name, !!r.errors?.length); }
-        finally { setBusy(null); }
-      })}>{sc.name}<small>{(sc.steps || []).length} {(sc.steps || []).length === 1 ? 'paso' : 'pasos'}</small></button>)}</div>
-  </section>;
+const INTERACTIVE_TABS = [['preguntas', 'Preguntas'], ['tier', 'Tier list'], ['sorteo', 'Sorteo']] as const;
+type InteractiveTab = (typeof INTERACTIVE_TABS)[number][0];
+
+function Interactivos() {
+  const I = useLive(s => s.interactive);
+  const q = I?.questions, g = I?.giveaway, vote = I?.vote;
+  const qc = (I?.config?.questions || {}) as { enabled?: unknown; command?: unknown };
+  const [tab, setTab] = useState<InteractiveTab>(() => {
+    const saved = localStorage.getItem(INTERACTIVE_TAB);
+    return saved === 'tier' || saved === 'sorteo' ? saved : 'preguntas';
+  });
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  useEffect(() => { try { localStorage.setItem(INTERACTIVE_TAB, tab); } catch { /* sin almacenamiento */ } }, [tab]);
+  const go = (index: number) => {
+    const i = (index + INTERACTIVE_TABS.length) % INTERACTIVE_TABS.length;
+    setTab(INTERACTIVE_TABS[i][0]); refs.current[i]?.focus();
+  };
+  return <div className="d-inter">
+    <nav className="d-itabs" role="tablist" aria-label="Interactivos">
+      {INTERACTIVE_TABS.map(([id, label], i) => <button key={id} type="button" role="tab" id={`d-i-${id}`} aria-controls={`d-ip-${id}`}
+        aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} ref={el => { refs.current[i] = el; }} onClick={() => setTab(id)}
+        onKeyDown={e => {
+          if (e.key === 'ArrowRight') { e.preventDefault(); go(i + 1); }
+          else if (e.key === 'ArrowLeft') { e.preventDefault(); go(i - 1); }
+          else if (e.key === 'Home') { e.preventDefault(); go(0); }
+          else if (e.key === 'End') { e.preventDefault(); go(INTERACTIVE_TABS.length - 1); }
+        }}>{label}{id === 'preguntas' && <span className="d-badge">{q?.pending || 0}</span>}
+        {id === 'tier' && vote && <span className="d-dot vote" role="img" aria-label="Votación abierta" />}
+        {id === 'sorteo' && <span className="d-badge">{g?.count || 0}</span>}
+      </button>)}
+    </nav>
+    <div className="d-body" role="tabpanel" id="d-ip-preguntas" aria-labelledby="d-i-preguntas" hidden={tab !== 'preguntas'}>
+      {q && <section className="d-card" aria-label="Preguntas">
+        <div className="d-card-h"><button type="button" className="d-sw" role="switch" aria-checked={!!qc.enabled} aria-label="Preguntas del chat"
+          title={qc.enabled ? 'El comando del chat está activo' : 'El comando del chat está desactivado'} onClick={() => patchIx('questions', { enabled: !qc.enabled })} />
+          Preguntas<span className="d-meta">{qc.command ? `${qc.command} · ` : ''}{q.pending || 0} en cola</span></div>
+        {q.current ? <p className="d-q"><b>{q.current.user}</b> {q.current.text}</p> : <p className="d-muted">Ninguna en pantalla</p>}
+        <div className="d-row"><button className="d-btn sm grow" disabled={!q.pending} title={q.pending ? 'Pasa a la siguiente pregunta de la cola' : 'No hay preguntas en cola'}
+          onClick={guard(() => post('/api/questions/next'))}>Siguiente</button>
+          <button className="d-btn sm" disabled={!q.current} title={q.current ? 'Quita la pregunta de la pantalla' : 'No hay ninguna pregunta en pantalla'}
+          onClick={guard(() => post('/api/questions/hide'), 'Pregunta oculta')}>Ocultar</button></div>
+      </section>}
+    </div>
+    <div className="d-body" role="tabpanel" id="d-ip-tier" aria-labelledby="d-i-tier" hidden={tab !== 'tier'}>
+      {vote ? <section className="d-card" aria-label="Tier list"><div className="d-card-h">Tier list<span className="d-meta">{vote.item?.label ? `Votando ${vote.item.label} · ` : ''}{vote.total} votos</span></div>
+        <div className="d-row"><button className="d-btn sm grow" onClick={guard(() => post('/api/vote/close', { apply: true }), 'Votación colocada')}>Cerrar y colocar</button>
+        <button className="d-btn sm" onClick={guard(() => post('/api/vote/cancel'), 'Votación cancelada')}>Cancelar</button></div></section>
+        : <p className="d-muted">Ninguna votación abierta.</p>}
+    </div>
+    <div className="d-body" role="tabpanel" id="d-ip-sorteo" aria-labelledby="d-i-sorteo" hidden={tab !== 'sorteo'}>
+      {g && <section className="d-card" aria-label="Sorteo"><div className="d-card-h">Sorteo<span className="d-meta">{g.open ? 'abierto' : 'cerrado'} · {g.count === 1 ? '1 participante' : `${g.count || 0} participantes`}</span></div>
+        <div className="d-row">{g.open ? <button className="d-btn sm grow" onClick={guard(() => post('/api/giveaway/close'), 'Sorteo cerrado')}>Cerrar</button>
+          : <button className="d-btn sm grow" onClick={guard(() => post('/api/giveaway/open', { reset: true }), 'Sorteo abierto')}>Abrir</button>}
+          <button className="d-btn sm grow pri" disabled={!g.count} title={g.count ? 'Elige un ganador' : 'Todavía no hay participantes'} onClick={guard(() => post('/api/giveaway/draw'), 'Sorteado')}>Sortear</button></div></section>}
+    </div>
+  </div>;
 }
 
 // ---------- forma de la ventana ----------
-const TABS = [['control', 'Control'], ['escenas', 'Escenas'], ['audio', 'Audio']] as const;
+const TABS = [['control', 'Control'], ['audio', 'Audio'], ['interactivos', 'Interactivos']] as const;
 type Tab = (typeof TABS)[number][0];
-const tabOf = (value: string | null): Tab => (value === 'escenas' || value === 'audio' ? value : 'control');
+const tabOf = (value: string | null): Tab => (value === 'interactivos' || value === 'audio' ? value : 'control');
 
 function Col({ id, title, meta, children }: { id: string; title: string; meta?: ReactNode; children?: ReactNode }) {
   return <section className="d-col" aria-labelledby={`d-h-${id}`}>
     <h2 className="d-col-h" id={`d-h-${id}`}>{title}{meta ? <span>{meta}</span> : null}</h2>
     <div className="d-body">{children}</div>
   </section>;
-}
-
-function ScenesMeta() {
-  const n = useLive(s => s.meld?.session?.scenes?.length || 0);
-  return <>{n}</>;
 }
 
 function AudioMeta() {
@@ -290,6 +290,11 @@ function ControlMeta() {
 }
 
 function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+  const tracks = useLive(s => s.meld?.session?.tracks || []);
+  const scenes = useLive(s => s.meld?.session?.scenes || []);
+  const onAir = new Set(scenes.filter(s => s.current).map(s => s.id));
+  const meldOn = useLive(s => s.status.meld?.state === 'conectado');
+  const muted = meldOn ? tracks.filter(t => t.muted && (!t.parent || onAir.has(t.parent))).length : 0;
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const go = (index: number, focus: boolean) => {
     const next = TABS[(index + TABS.length) % TABS.length][0];
@@ -305,7 +310,7 @@ function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
         else if (e.key === 'ArrowLeft') { e.preventDefault(); go(i - 1, true); }
         else if (e.key === 'Home') { e.preventDefault(); go(0, true); }
         else if (e.key === 'End') { e.preventDefault(); go(TABS.length - 1, true); }
-      }}>{label}</button>)}
+      }}>{label}{id === 'audio' && muted > 0 && <span className="d-dot" role="img" aria-label={`${muted} ${muted === 1 ? 'pista desactivada' : 'pistas desactivadas'}`} />}</button>)}
     <a className="d-open" href="/" target="_blank" rel="noopener" title="Abrir el panel completo">Panel ↗</a>
   </nav>;
 }
@@ -322,16 +327,16 @@ export function Dock() {
     <Status wide={wide} />
     {wide
       ? <div className="d-cols">
-        <Col id="escenas" title="Escenas" meta={<ScenesMeta />}><Scenes /></Col>
+        <Col id="control" title="Control" meta={<ControlMeta />}><Control /></Col>
         <Col id="audio" title="Audio" meta={<AudioMeta />}><Audio /></Col>
-        <Col id="control" title="Control" meta={<ControlMeta />}><Control /><Shortcuts /></Col>
+        <section className="d-col d-col-inter" aria-labelledby="d-h-interactivos"><h2 className="d-col-h" id="d-h-interactivos">Interactivos</h2><Interactivos /></section>
       </div>
       : <>
         <Tabs tab={tab} onTab={setTab} />
         <div className="d-panels">
-          <main className="d-body" role="tabpanel" id="d-p-control" aria-labelledby="d-t-control" hidden={tab !== 'control'}><Control /><Shortcuts /></main>
-          <main className="d-body" role="tabpanel" id="d-p-escenas" aria-labelledby="d-t-escenas" hidden={tab !== 'escenas'}><Scenes /></main>
+          <main className="d-body" role="tabpanel" id="d-p-control" aria-labelledby="d-t-control" hidden={tab !== 'control'}><Control /></main>
           <main className="d-body" role="tabpanel" id="d-p-audio" aria-labelledby="d-t-audio" hidden={tab !== 'audio'}><Audio /></main>
+          <main className="d-inter-panel" role="tabpanel" id="d-p-interactivos" aria-labelledby="d-t-interactivos" hidden={tab !== 'interactivos'}><Interactivos /></main>
         </div>
       </>}
     {offline && <div className="d-off">Sin conexión con antena. Reintentando…</div>}

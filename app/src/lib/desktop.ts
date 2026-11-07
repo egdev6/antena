@@ -13,6 +13,13 @@ export const listMonitors = () => invoke<Monitor[]>('monitors');
 export const openPrompter = (monitor?: string | null, fullscreen = true) => invoke('open_prompter', { monitor: monitor || null, fullscreen });
 export const openTeleprompter = (monitor?: string | null, fullscreen = true) => invoke('open_teleprompter', { monitor: monitor || null, fullscreen });
 export const openDock = (alwaysOnTop = true) => invoke('open_dock', { alwaysOnTop });
+export type PanelWindows = { dock: boolean; prompter: boolean; teleprompter: 'closed' | 'floating' | 'screen' };
+export const panelWindows = () => invoke<PanelWindows>('panel_windows');
+export const closePanelWindow = (label: 'prompter' | 'teleprompter') => invoke<void>('close_panel_window', { label });
+export async function onPanelWindowsChange(callback: () => void): Promise<() => void> {
+  if (!isDesktop() || !window.__TAURI__?.event?.listen) return () => {};
+  return window.__TAURI__.event.listen('antena://panel-windows', callback);
+}
 export const desktopInfo = () => invoke<{ port: number; managed: boolean; dataDir: string; version: string }>('desktop_info');
 
 // Actualizaciones: las buscan e instalan los comandos de la app (update_check, update_install), que

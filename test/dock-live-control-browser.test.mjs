@@ -1,5 +1,5 @@
-// Dock nuevo (S2–S13): la ventana adapta su forma al tamaño (tres columnas Escenas |
-// Audio | Control en apaisado ancho, pestañas Control/Escenas/Audio en el resto) y cada
+// Dock nuevo (S1–S7): tres columnas Control | Audio | Interactivos en apaisado
+// ancho, pestañas Control/Audio/Interactivos en el resto; cada
 // módulo manda las acciones reales del directo a la API. Meld es el simulado de
 // test/helpers/fake-meld.mjs: escenas, pistas y gainUpdated salen de ahí.
 import { test } from 'node:test';
@@ -109,22 +109,20 @@ const setRange = (selector, value) => `(() => {
   return true;
 })()`;
 
-test('dock ancho: tres columnas, escenas agrupadas, al aire y nombre largo recortado', { timeout: 120000 }, async t => {
+test('dock ancho: columnas, escenas emparejadas, al aire y nombre largo recortado', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const chrome = await openDock(t, ctx);
   const c = chrome.cdp;
 
   await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && !!document.querySelector('.d-scene')`, { timeoutMs: 15000 });
-  assert.equal(await dom(chrome, `document.querySelectorAll('[role="tablist"], [role="tab"]').length`), 0, 'en ancho no hay pestañas: las tres columnas se ven a la vez');
-  assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-col-h')).map(h => h.firstChild.textContent.trim())`), ['Escenas', 'Audio', 'Control']);
+  assert.equal(await dom(chrome, `document.querySelectorAll('[role="tablist"]').length`), 1, 'solo las subpestañas de interactivos');
+  assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-col-h')).map(h => h.firstChild.textContent.trim())`), ['Control', 'Audio', 'Interactivos']);
+  assert.equal(await dom(chrome, `document.querySelectorAll('.d-btn.sc').length`), 0, 'sin atajos');
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-chat, .d-msgs, .d-send').length`), 0, 'sin chat en el dock (S12)');
 
-  // grupos Horizontal / Vertical (nombre acabado en «[Vertical]»)
-  const sceneSubs = `Array.from(Array.from(document.querySelectorAll('.d-col'))[0].querySelectorAll('.d-sub')).map(h => h.firstChild.textContent.trim())`;
-  assert.deepEqual(await dom(chrome, sceneSubs), ['Horizontal', 'Vertical']);
-  assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-group')).map(g => Array.from(g.querySelectorAll('.d-scene-n')).map(n => n.textContent))`),
-    [['Full cam', 'Pausa'], ['Full cam [Vertical]', LONG_VERTICAL]]);
+  assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-scene-n')).map(n => n.textContent)`),
+    ['Full cam', 'Pausa', LONG_VERTICAL]);
 
   // la escena al aire se marca con «AL AIRE» (texto, no solo color)
   const onAir = await dom(chrome, `(() => {
@@ -132,7 +130,7 @@ test('dock ancho: tres columnas, escenas agrupadas, al aire y nombre largo recor
     return { n: b.length, text: b[0]?.textContent.trim(), pressed: b[0]?.getAttribute('aria-pressed') };
   })()`);
   assert.equal(onAir.n, 1);
-  assert.match(onAir.text, /Full cam\s*AL AIRE/);
+  assert.match(onAir.text, /Full cam\s*AL AIRE · H/);
   assert.equal(onAir.pressed, 'true');
 
   // nombre largo: dos líneas con puntos suspensivos y el nombre entero en title
@@ -143,49 +141,67 @@ test('dock ancho: tres columnas, escenas agrupadas, al aire y nombre largo recor
   })()`);
   assert.equal(long.clamp, '2', 'el nombre de la escena se corta a dos líneas');
   assert.equal(long.title, LONG_VERTICAL, 'el nombre entero queda en el title del botón');
+  assert.equal(await dom(chrome, `document.querySelector(${JSON.stringify(`button[title="${LONG_VERTICAL}"]`)}).getAttribute('aria-label')`), LONG_VERTICAL);
 
-  // pulsar una escena la muestra en Meld (showScene por id)
+  // Los indicadores distinguen ambos formatos y el vertical por sí solo.
+  const fullAir = `Array.from(document.querySelectorAll('.d-scene')).find(b => b.title === 'Full cam')`;
+  ctx.meld.setCurrentScenes(['s1', 's3']);
+  await waitDom(c, `${fullAir}?.textContent.includes('AL AIRE · H + V')`, { timeoutMs: 9000 });
+  ctx.meld.setCurrentScenes(['s3']);
+  await waitDom(c, `${fullAir}?.textContent.includes('AL AIRE · V')`, { timeoutMs: 9000 });
+  ctx.meld.setCurrentScenes(['s1']);
+  await waitDom(c, `${fullAir}?.textContent.includes('AL AIRE · H') && !${fullAir}?.textContent.includes('H + V')`, { timeoutMs: 9000 });
+  await clickWhen(c, fullAir);
+  await until(() => ctx.meld.state.calls.filter(x => x[0] === 10).length >= 2, 'showScene H y V');
+  assert.deepEqual(ctx.meld.state.calls.filter(x => x[0] === 10).slice(-2).map(x => x[1]), ['s1', 's3']);
   await clickWhen(c, buttonByText('Pausa'));
   await until(() => ctx.meld.state.calls.some(x => x[0] === 10 && x[1] === 's2'), 'showScene s2');
   await waitDom(c, `Array.from(document.querySelectorAll('.d-scene.on .d-scene-n')).some(n => n.textContent === 'Pausa')`, { timeoutMs: 9000 });
+  await clickWhen(c, `Array.from(document.querySelectorAll('.d-scene')).find(b => b.title === ${JSON.stringify(LONG_VERTICAL)})`);
+  await until(() => ctx.meld.state.calls.some(x => x[0] === 10 && x[1] === 's4'), 'showScene vertical sin pareja');
+  await waitDom(c, `Array.from(document.querySelectorAll('.d-scene')).find(b => b.title === ${JSON.stringify(LONG_VERTICAL)})?.textContent.includes('AL AIRE · V')`, { timeoutMs: 9000 });
+
+  // Fallar la segunda petición no revierte la horizontal y muestra el error.
+  await dom(chrome, `(() => { const original = window.fetch; window.fetch = (url, opts) => String(url).includes('/api/meld/scene') && JSON.parse(opts.body).scene === 's3' ? Promise.resolve(new Response(JSON.stringify({error:'falló vertical'}), {status:500, headers:{'Content-Type':'application/json'}})) : original(url, opts); return true; })()`);
+  const callsBefore = ctx.meld.state.calls.filter(x => x[0] === 10).length;
+  await clickWhen(c, fullAir);
+  await until(() => ctx.meld.state.calls.filter(x => x[0] === 10).length === callsBefore + 1, 'showScene horizontal antes del error');
+  await waitDom(c, `document.querySelector('.toast.err')?.textContent.includes('falló vertical')`, { timeoutMs: 9000 });
+  assert.equal(ctx.meld.state.calls.filter(x => x[0] === 10).at(-1)[1], 's1');
+  assert.equal(ctx.meld.state.session.items.s1.current, true);
 });
 
-test('dock estrecho: pestañas Control/Escenas/Audio, teclado, memoria y cambio de forma', { timeout: 120000 }, async t => {
+test('dock estrecho: pestañas Control/Audio/Interactivos, teclado, memoria y cambio de forma', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const chrome = await openDock(t, ctx, { width: 420, height: 780 });
   const c = chrome.cdp;
 
-  await waitDom(c, `document.querySelectorAll('[role="tab"]').length === 3`, { timeoutMs: 15000 });
-  assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('[role="tab"]')).map(x => x.textContent.trim())`), ['Control', 'Escenas', 'Audio']);
+  await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 3`, { timeoutMs: 15000 });
+  assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-tabs [role="tab"]')).map(x => x.firstChild.textContent.trim())`), ['Control', 'Audio', 'Interactivos']);
+  assert.ok(await dom(chrome, `!!document.querySelector('#d-t-audio [aria-label*="desactivada"]')`), 'Audio avisa de pistas silenciadas');
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-col').length`), 0, 'en estrecho no hay columnas');
   assert.equal(await dom(chrome, `document.querySelector('[role="tab"][aria-selected="true"]').textContent.trim()`), 'Control', 'Control va primera y seleccionada');
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-chat, .d-msgs, .d-send').length`), 0, 'sin chat en el dock (S12)');
 
-  // teclado: flecha derecha pasa a Escenas, mueve el foco y el panel
-  await dom(chrome, `(() => { const t = document.querySelector('[role="tab"][aria-selected="true"]'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); return true; })()`);
-  await waitDom(c, `document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.trim() === 'Escenas' && document.activeElement?.textContent.trim() === 'Escenas'`, { timeoutMs: 9000 });
-  await waitDom(c, `!!document.querySelector('[role="tabpanel"]:not([hidden]) .d-scene')`, { timeoutMs: 9000 });
-  await dom(chrome, `(() => { const t = document.querySelector('[role="tab"][aria-selected="true"]'); t.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); return true; })()`);
-  await waitDom(c, `document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.trim() === 'Control'`, { timeoutMs: 9000 });
-  await dom(chrome, `(() => { const t = document.querySelector('[role="tab"][aria-selected="true"]'); t.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); return true; })()`);
-  await waitDom(c, `document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.trim() === 'Audio'`, { timeoutMs: 9000 });
-
-  // la última pestaña se recuerda entre recargas
-  await clickWhen(c, `Array.from(document.querySelectorAll('[role="tab"]')).find(x => x.textContent.trim() === 'Escenas')`);
-  await waitDom(c, `document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.trim() === 'Escenas'`, { timeoutMs: 9000 });
+  // Flechas mueven foco y panel, también con vuelta circular.
+  await dom(chrome, `(() => { const t = document.querySelector('#d-t-control'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); return true; })()`);
+  await waitDom(c, `document.activeElement?.id === 'd-t-audio' && document.querySelector('#d-t-audio').getAttribute('aria-selected') === 'true' && !document.querySelector('#d-p-audio').hidden`, { timeoutMs: 9000 });
+  await dom(chrome, `(() => { document.querySelector('#d-t-audio').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); return true; })()`);
+  await waitDom(c, `document.activeElement?.id === 'd-t-control'`, { timeoutMs: 9000 });
+  await dom(chrome, `(() => { document.querySelector('#d-t-control').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); return true; })()`);
+  await waitDom(c, `document.activeElement?.id === 'd-t-interactivos'`, { timeoutMs: 9000 });
+  await clickWhen(c, `document.querySelector('#d-i-sorteo')`);
   await c.send('Page.reload');
-  await waitDom(c, `document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.trim() === 'Escenas'`, { timeoutMs: 20000 });
+  await waitDom(c, `document.querySelector('#d-t-interactivos')?.getAttribute('aria-selected') === 'true' && document.querySelector('#d-i-sorteo')?.getAttribute('aria-selected') === 'true'`, { timeoutMs: 20000 });
 
-  // tablet en retrato (768×1024): sigue en pestañas
+  // tablet en retrato: pestañas; apaisado ancho: columnas; vuelta a pestañas.
   await resize(chrome, 768, 1024);
-  await waitDom(c, `document.querySelectorAll('[role="tab"]').length === 3 && document.querySelectorAll('.d-col').length === 0`, { timeoutMs: 9000 });
-
-  // y en apaisado ancho pasa a columnas, sin pestañas; de vuelta, otra vez pestañas
+  await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 3 && document.querySelectorAll('.d-col').length === 0`, { timeoutMs: 9000 });
   await resize(chrome, 1256, 780);
-  await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && document.querySelectorAll('[role="tablist"]').length === 0`, { timeoutMs: 9000 });
+  await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && document.querySelectorAll('[role="tablist"]').length === 1`, { timeoutMs: 9000 });
   await resize(chrome, 420, 780);
-  await waitDom(c, `document.querySelectorAll('[role="tab"]').length === 3 && document.querySelectorAll('.d-col').length === 0`, { timeoutMs: 9000 });
+  await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 3 && document.querySelectorAll('.d-col').length === 0`, { timeoutMs: 9000 });
 });
 
 test('dock audio: globales y de la escena al aire, interruptor de mute y fader con el gain real', { timeout: 120000 }, async t => {
@@ -252,9 +268,14 @@ test('dock interactivos: preguntas (siguiente, ocultar, interruptor persistido),
   const chrome = await openDock(t, ctx);
   const c = chrome.cdp;
   await waitDom(c, `!!document.querySelector('.d-card[aria-label="Preguntas"]')`, { timeoutMs: 15000 });
+  assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-itabs [role="tab"]')).map(x => x.firstChild.textContent.trim())`), ['Preguntas', 'Tier list', 'Sorteo']);
+  await dom(chrome, `(() => { const t = document.querySelector('#d-i-preguntas'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); return true; })()`);
+  await waitDom(c, `document.activeElement?.id === 'd-i-tier' && !document.querySelector('#d-ip-tier').hidden`, { timeoutMs: 9000 });
+  assert.match(await dom(chrome, `document.querySelector('#d-ip-tier').textContent`), /ninguna votación/i);
+  await clickWhen(c, `document.querySelector('#d-i-preguntas')`);
 
   await ctx.api('POST', '/api/questions', { user: 'Espectadora', text: '¿cómo hiciste los overlays?' });
-  await waitDom(c, `document.querySelector('.d-card[aria-label="Preguntas"] .d-meta')?.textContent.includes('1 en cola')`, { timeoutMs: 9000 });
+  await waitDom(c, `document.querySelector('.d-card[aria-label="Preguntas"] .d-meta')?.textContent.includes('1 en cola') && document.querySelector('#d-i-preguntas').textContent.includes('1')`, { timeoutMs: 9000 });
   await clickWhen(c, buttonByText('Siguiente'));
   await waitDom(c, `document.querySelector('.d-q')?.textContent.includes('¿cómo hiciste los overlays?')`, { timeoutMs: 9000 });
 
@@ -268,16 +289,19 @@ test('dock interactivos: preguntas (siguiente, ocultar, interruptor persistido),
   await waitDom(c, `!document.querySelector('.d-q')`, { timeoutMs: 9000 });
 
   // sorteo: abrir (reinicia la lista), participantes y sortear
+  await clickWhen(c, `document.querySelector('#d-i-sorteo')`);
   await clickWhen(c, buttonByText('Abrir'));
   await waitDom(c, `document.querySelector('.d-card[aria-label="Sorteo"] .d-meta')?.textContent.includes('abierto')`, { timeoutMs: 9000 });
   await ctx.api('POST', '/api/giveaway/join', { user: 'Ana' });
-  await waitDom(c, `document.querySelector('.d-card[aria-label="Sorteo"] .d-meta')?.textContent.includes('1 part')`, { timeoutMs: 9000 });
+  await waitDom(c, `document.querySelector('.d-card[aria-label="Sorteo"] .d-meta')?.textContent.includes('1 part') && document.querySelector('#d-i-sorteo').textContent.includes('1')`, { timeoutMs: 9000 });
   await clickWhen(c, buttonByText('Sortear'));
   await until(async () => (await ctx.api('GET', '/api/giveaway')).winners.length === 1, 'ganador del sorteo');
 
   // votación de tier list abierta: cerrar o cancelar desde el dock
   const list = await ctx.api('POST', '/api/tierlists', { title: 'React', items: ['useState', 'useEffect'] });
   await ctx.api('POST', `/api/tierlists/${list.tierlist.id}/vote`, { item: 'useState' });
+  await waitDom(c, `!!document.querySelector('#d-i-tier [aria-label="Votación abierta"]')`, { timeoutMs: 9000 });
+  await clickWhen(c, `document.querySelector('#d-i-tier')`);
   await waitDom(c, `!!document.querySelector('.d-card[aria-label="Tier list"]')`, { timeoutMs: 9000 });
   await clickWhen(c, buttonByText('Cancelar'));
   await until(async () => (await ctx.api('GET', '/api/interactive')).vote === null, 'votación cancelada');

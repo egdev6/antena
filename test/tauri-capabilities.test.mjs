@@ -32,6 +32,22 @@ test('capability: permisos mínimos para los comandos que usa la interfaz', () =
   assert.deepEqual(capability.windows, ['main', 'prompter', 'dock']);
 });
 
+test('Paneles: comandos nuevos solo para main y sin ampliar el origen remoto', () => {
+  const panel = JSON.parse(readFileSync(path.join(root, 'src-tauri/capabilities/panel.json'), 'utf8'));
+  assert.deepEqual(panel.windows, ['main']);
+  assert.deepEqual(panel.remote, capability.remote);
+  assert.deepEqual(panel.permissions, ['allow-panel-windows', 'allow-close-panel-window']);
+  assert.ok(!capability.windows.includes('teleprompter'));
+  assert.ok(!capability.permissions.some(p => panel.permissions.includes(p)));
+  const updater = JSON.parse(readFileSync(path.join(root, 'src-tauri/capabilities/updater.json'), 'utf8'));
+  assert.deepEqual(updater.windows, ['main']);
+  assert.deepEqual(updater.remote, capability.remote);
+  assert.deepEqual(updater.permissions, ['allow-update-check', 'allow-update-install']);
+  const perms = readFileSync(path.join(root, 'src-tauri/permissions/commands.toml'), 'utf8');
+  assert.match(perms, /identifier = "allow-panel-windows"[\s\S]*?commands\.allow = \["panel_windows"\]/);
+  assert.match(perms, /identifier = "allow-close-panel-window"[\s\S]*?commands\.allow = \["close_panel_window"\]/);
+});
+
 const MAIN_RS = readFileSync(path.join(root, 'src-tauri/src/main.rs'), 'utf8');
 
 test('main.rs: todas las ventanas nacen del builder único con la guardia de navegación', () => {
@@ -63,4 +79,11 @@ test('open_teleprompter: sin pantalla elegida se va a la principal (no a la últ
   assert.match(MAIN_RS, /"\/widget\/teleprompter"/, 'la ventana carga la ruta del widget de teleprompter');
   const perms = readFileSync(new URL('../src-tauri/permissions/commands.toml', import.meta.url), 'utf8');
   assert.match(perms, /allow-open-teleprompter/, 'permiso allow-open-teleprompter declarado');
+});
+
+test('every capability allows exactly the local server origin', () => {
+  for (const file of ['default.json', 'panel.json', 'updater.json']) {
+    const cap = JSON.parse(readFileSync(path.join(root, 'src-tauri/capabilities', file), 'utf8'));
+    assert.deepEqual(cap.remote.urls, ['http://127.0.0.1:*'], file);
+  }
 });

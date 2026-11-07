@@ -1,4 +1,4 @@
-/* Dock del directo: tres columnas (Escenas | Audio | Control) en apaisado y ≥1000 px de ancho;
+/* Dock del directo: tres columnas (Control | Audio | Interactivos) en apaisado y ≥1000 px de ancho;
    en el resto, una pestaña por sección con Control primero. Sin chat ni vista previa. EGDEV Foundation. */
 :root{
   --font-display:'EG Barlow Condensed','Barlow Condensed','Arial Narrow',sans-serif;
@@ -39,8 +39,15 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-open:hover{color:var(--pink)}
 /* ---------- pestañas (ventana no apaisada o < 1000 px) ---------- */
 .d-tabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:var(--s0)}
-.d-tabs button{background:none;border:0;padding:8px 12px;min-height:40px;border-radius:var(--radius-md) var(--radius-md) 0 0;font:700 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
-.d-tabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--red)}
+.d-tabs button,.d-itabs button{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:8px 12px;min-height:40px;border-radius:var(--radius-md) var(--radius-md) 0 0;font:700 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+.d-tabs button[aria-selected="true"],.d-itabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--red)}
+.d-itabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:var(--s0)}
+.d-itabs button{padding:7px 10px;font-size:12px}
+.d-inter-panel,.d-inter{min-height:0;overflow:hidden}
+.d-inter{height:100%;display:grid;grid-template-rows:auto 1fr}
+.d-dot{width:6px;height:6px;flex:none;border-radius:50%;background:var(--warn)}
+.d-dot.vote{background:var(--red)}
+.d-badge{font:600 11px/1 var(--font-mono);letter-spacing:0;color:var(--muted)}
 .d-panels{display:grid;min-height:0}
 [role="tabpanel"][hidden]{display:none!important}
 /* ---------- tres columnas (apaisado y ≥1000 px) ---------- */
@@ -54,7 +61,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .dock-wide .d-body{padding:10px 12px}
 .d-sec{display:grid;gap:8px}
 .d-empty{padding:10px 2px}
-.d-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px}
+.d-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .d-btn{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-height:48px;padding:7px 10px;border-radius:var(--radius-md);cursor:pointer;text-align:left;
   background:var(--gradient-sheen),var(--s2);border:1px solid var(--line2);box-shadow:var(--shadow-edge),var(--shadow-elev-1);font:700 14px/1.1 var(--font-display);text-transform:uppercase;letter-spacing:.03em}
 .d-btn small{font:500 11px/1.2 var(--font-sans);text-transform:none;letter-spacing:0;color:var(--muted)}
@@ -67,7 +74,6 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-btn.sm{min-height:36px;padding:6px 10px;align-items:center}
 .dock-wide .d-btn.sm{min-height:38px}
 .d-btn.grow{flex:1}
-.d-btn.sc{border-left:4px solid var(--sc)}
 .d-btn.busy{opacity:.6}
 .d-row{display:flex;gap:6px}
 .d-card{padding:8px 10px;border-radius:var(--radius-md);background:var(--gradient-sheen),var(--s1);border:1px solid var(--line);display:grid;gap:6px}

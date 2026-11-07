@@ -29,7 +29,7 @@ The panel follows one hierarchy, drawn on the canvas «antena — Rediseño» (p
   *Widgets › Objetivos › Objetivo*). Addresses: `#/<page>/<id>[/<tab>]`; the old ones redirect
   (`panel/router.ts`).
 - **Pages without a list → page tabs**, linkable (`#/apariencia/iconos`, `usePageTab`): Apariencia,
-  Preguntas, Sorteo, Filtros y voz, General, Meld Studio, Prompter y dock, Fuentes.
+  Preguntas, Sorteo, Filtros y voz, General, Meld Studio, Paneles, Fuentes.
 - **Creating** is the same everywhere: «+ Nuevo X» opens the slide in «Nuevo» mode with the minimum fields
   and a starting template (`lv-tiles`); the other tabs are locked until «Crear». The sidebar footer has a
   «Crear» menu with every «+ Nuevo».
