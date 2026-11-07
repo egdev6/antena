@@ -66,6 +66,14 @@ test('socket real: lector sobrevive a la ráfaga, cliente lento es cortado', { t
   slowRes.socket.cork();
   slow.on('error', () => { /* el corte destruye el socket: reset esperado */ });
 
+  // #52: each client is followed by identity, with its server-side 'close' observed BEFORE the
+  // burst. Counting bus.clients alone hid a cut reader under load: both clients left the bus,
+  // the slow client's 'close' was missed and the test failed as «slow client not cut».
+  const inBus = res => [...bus.clients].some(c => c.res === res);
+  let readerServerClosed = false;
+  const readerDied = new Promise(resolve => readerRes.once('close', () => { readerServerClosed = true; resolve(); }));
+  const slowCut = new Promise(resolve => slowRes.once('close', resolve));
+
   // Ráfaga de un solo tick: sin verificación diferida, ambos se cortan a mitad.
   for (let i = 0; i < TOTAL; i++) bus.send(EVENT, { id: i, text: PAYLOAD });
 
@@ -76,21 +84,19 @@ test('socket real: lector sobrevive a la ráfaga, cliente lento es cortado', { t
     const drained = readerRes.writableLength === 0
       ? Promise.resolve()
       : new Promise(resolve => readerRes.once('drain', resolve));
-    const readerDied = new Promise(resolve => readerRes.once('close', resolve));
     await Promise.race([drained, readerDied]);
-    assert.ok(!readerClosed, 'el lector no se corta por una ráfaga');
+    assert.ok(!readerServerClosed && !readerClosed && inBus(readerRes), 'el lector no se corta por una ráfaga');
     assert.ok(!readerGap, 'el lector no recibe gap');
 
-    // El cliente lento fue cortado: el 'close' de su socket en el servidor retira al
-    // cliente del bus. Se espera esa señal y el retiro resultante, con techo amplio.
-    await new Promise(resolve => {
-      if (bus.clients.size === 1) return resolve();
-      slowRes.once('close', resolve);
-      setTimeout(resolve, 5000);
-    });
-    const removalDeadline = Date.now() + 5000;
-    while (bus.clients.size > 1 && Date.now() < removalDeadline) await new Promise(resolve => setImmediate(resolve));
-    assert.equal(bus.clients.size, 1, 'el cliente lento fue cortado y retirado del bus');
+    // El cliente lento fue cortado: su 'close' en el servidor (observado desde antes de la
+    // ráfaga, no se puede perder) lo retira del bus. El techo es solo una guarda de fallo.
+    let guard;
+    const cut = await Promise.race([slowCut.then(() => true), new Promise(resolve => { guard = setTimeout(resolve, 10000, false); })]);
+    clearTimeout(guard);
+    assert.ok(cut, 'el cliente lento fue cortado');
+    assert.equal(inBus(slowRes), false, 'el cliente lento salió del bus');
+    assert.ok(!readerServerClosed && inBus(readerRes), 'el lector sigue en el bus tras cortar al lento');
+    assert.equal(bus.clients.size, 1, 'solo queda el lector');
 
     // El lector sigue operativo y recibe la ráfaga completa: ya drenó todo su backlog,
     // los bytes están en camino; la espera solo cubre el reparto de chunks en el cliente.
