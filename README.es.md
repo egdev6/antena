@@ -46,7 +46,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Atajos para Stream Deck** personalizables: cada uno encadena pasos (marca, pausa, escena, capa, chat, pestaña del prompter…) y tiene su dirección `/sd/custom/<id>`.
 - **Dock para Meld:** todo el manejo del directo menos la vista previa —escenas, pistas de audio de Meld, alertas, preguntas, votación, sorteo, teleprompter y créditos— y adaptable: tres columnas en apaisado, una pestaña por sección en el resto.
 
-El servidor no tiene dependencias (Node ≥ 22). La interfaz es React compilada con esbuild y la app de escritorio es Tauri 2, que arranca ese servidor como *sidecar*. Todo se queda en tu PC.
+El servidor no tiene dependencias (Node ≥ 24). La interfaz es React compilada con esbuild y la app de escritorio es Tauri 2, que arranca ese servidor como *sidecar*. Todo se queda en tu PC.
 
 <p align="center"><img src="./.github/assets/funcionalidades-es.webp" alt="Resumen de funcionalidades de Antena" width="100%" /></p>
 
@@ -81,7 +81,7 @@ El mantenedor genera ese instalador desde **Actions › Release** (workflow manu
 
 ### App de escritorio (Windows), desde el código
 
-Hace falta, una vez: [Rust](https://rustup.rs) (toolchain MSVC), WebView2 (viene con Windows 11), Node 22 y pnpm (`corepack enable` instala la versión fijada en `package.json`).
+Hace falta, una vez: [Rust](https://rustup.rs) (toolchain MSVC), WebView2 (viene con Windows 11), Node 24 y pnpm (`corepack enable` instala la versión fijada en `package.json`).
 
 ```powershell
 cd ruta\a\antena
