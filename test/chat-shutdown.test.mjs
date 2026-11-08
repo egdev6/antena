@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { TwitchChat } from '../src/chat.mjs';
 import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
 import { withoutHeldRecoveryWarning } from './helpers/held-recovery-warning.mjs';
@@ -198,35 +199,60 @@ process.stdin.on('data', d => {
 console.log('READY');
 `;
 
-async function child(t, root, scenario, observe = () => {}) {
+async function child(t, root, scenario, observe = () => {}, { launch = (args, options) => process.platform === 'win32'
+  ? launchSignalChild(process.execPath, args, options)
+  : spawn(process.execPath, args, options), onCleanup = () => {} } = {}) {
+  let setup, launchPromise, exit, close, cleanupPromise;
+  let stopping = false;
+  const cleanup = () => {
+    if (!cleanupPromise) {
+      stopping = true;
+      cleanupPromise = (async () => {
+        await setup?.catch(() => {});
+        const proc = await launchPromise?.catch(() => null);
+        if (!proc) return;
+        if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL');
+        await close;
+      })();
+    }
+    return cleanupPromise;
+  };
+  t.after(cleanup);
+  onCleanup(cleanup);
   observe('directory');
   const dir = path.join(root, scenario);
-  await mkdir(dir, { recursive: true });
+  setup = mkdir(dir, { recursive: true });
+  await setup;
+  if (stopping || t.signal.aborted) throw new Error('IRC child launch cancelled');
   const env = { ...process.env, ANTENA_DATA: dir, ANTENA_MEDIA: path.join(dir, 'media'), PORT: '0' };
   delete env.NODE_TEST_CONTEXT; delete env.NODE_TEST_WORKER_ID; delete env.NODE_OPTIONS;
   const args = ['--input-type=module', '-e', CHILD, scenario];
   const options = { env, stdio: ['pipe', 'pipe', 'pipe'] };
-  observe('launch');
-  const proc = process.platform === 'win32'
-    ? await launchSignalChild(process.execPath, args, options)
-    : spawn(process.execPath, args, options);
-  observe('ready-wait');
-  proc.stdin.on('error', () => {});
   let out = '', err = '';
   const waiters = new Set();
   const resolveWaiters = force => { const all = out + err; for (const w of [...waiters]) if (force || all.includes(w.needle)) { clearTimeout(w.timer); waiters.delete(w); w.resolve(all.includes(w.needle)); } };
-  proc.stdout.setEncoding('utf8'); proc.stderr.setEncoding('utf8');
-  proc.stdout.on('data', d => { out += d; resolveWaiters(false); });
-  proc.stderr.on('data', d => { err += d; resolveWaiters(false); });
-  const exit = new Promise(r => proc.once('exit', (code, signal) => r({ code, signal })));
-  exit.then(() => resolveWaiters(true));
+  observe('launch');
+  launchPromise = Promise.resolve(launch(args, options)).then(proc => {
+    proc.stdin.on('error', () => {});
+    proc.stdout.setEncoding('utf8'); proc.stderr.setEncoding('utf8');
+    proc.stdout.on('data', d => { out += d; resolveWaiters(false); });
+    proc.stderr.on('data', d => { err += d; resolveWaiters(false); });
+    exit = new Promise(r => proc.once('exit', (code, signal) => r({ code, signal })));
+    close = new Promise(r => proc.once('close', (code, signal) => r({ code, signal })));
+    exit.then(() => resolveWaiters(true));
+    return proc;
+  });
+  const proc = await launchPromise;
+  if (stopping || t.signal.aborted) { await cleanup(); throw new Error('IRC child launch cancelled'); }
+  observe('ready-wait');
   const wait = (needle, ms = 6000) => {
     if ((out + err).includes(needle)) return Promise.resolve(true);
     if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve(false);
     return new Promise(resolve => { const w = { needle, resolve, timer: setTimeout(() => { waiters.delete(w); resolve((out + err).includes(needle)); }, ms) }; waiters.add(w); });
   };
-  t.after(async () => { if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL'); await exit; });
-  assert.ok(await wait('READY'), 'sin READY: ' + out + err);
+  const ready = await wait('READY');
+  if (stopping || t.signal.aborted) { await cleanup(); throw new Error('IRC child launch cancelled'); }
+  assert.ok(ready, 'sin READY: ' + out + err);
   observe('ready');
   return { proc, exit, wait, out: () => out, err: () => err, send: m => { try { proc.stdin.write(m + '\n'); } catch { /* hijo muerto */ } }, dir };
 }
@@ -246,7 +272,75 @@ async function exited(c, ms = 4000) {
   } finally { clearTimeout(timer); }
 }
 
-test('fixture IRC asigna puerto en el hijo sin reserva previa del padre', { timeout: 10000 }, async t => {
+test('IRC cleanup prevents a launch after setup is aborted', { timeout: 10000 }, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'EGDEV-CHAT-CANCEL-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const controller = new AbortController();
+  const hooks = [];
+  const fakeTest = { signal: controller.signal, after: hook => hooks.push(hook) };
+  let launched = false;
+  const result = child(fakeTest, root, 'cancelled', () => {}, {
+    launch: () => { launched = true; throw new Error('unexpected launch'); },
+  }).then(value => ({ value }), error => ({ error }));
+  controller.abort();
+  await Promise.all(hooks.map(hook => hook()));
+  assert.equal(launched, false, 'aborted setup must not start a child or controller');
+  assert.equal((await result).error?.message, 'IRC child launch cancelled');
+});
+
+test('IRC cleanup waits for and stops a late child launch', { timeout: 10000 }, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'EGDEV-CHAT-LATE-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const controller = new AbortController();
+  const hooks = [];
+  const fakeTest = { signal: controller.signal, after: hook => hooks.push(hook) };
+  let releaseLaunch, launchObserved;
+  const launchGate = new Promise(resolve => { releaseLaunch = resolve; });
+  const launching = new Promise(resolve => { launchObserved = resolve; });
+  const proc = spawn(process.execPath, ['-e', "console.log('READY'); process.stdin.resume();"], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const controlled = Object.assign(new EventEmitter(), { stdin: proc.stdin, stdout: proc.stdout, stderr: proc.stderr });
+  Object.defineProperties(controlled, {
+    exitCode: { get: () => proc.exitCode }, signalCode: { get: () => proc.signalCode },
+  });
+  controlled.kill = signal => proc.kill(signal);
+  proc.once('exit', (code, signal) => controlled.emit('exit', code, signal));
+  let releaseController, controllerClosed = false;
+  const controllerGate = new Promise(resolve => { releaseController = resolve; });
+  const closed = new Promise(resolve => proc.once('close', (code, signal) => {
+    resolve({ code, signal });
+    void controllerGate.then(() => { controllerClosed = true; controlled.emit('close', code, signal); });
+  }));
+  const result = child(fakeTest, root, 'late', phase => {
+    if (phase === 'launch') launchObserved();
+  }, { launch: () => launchGate }).then(value => ({ value }), error => ({ error }));
+  try {
+    await launching;
+    controller.abort();
+    let cleaned = false;
+    const cleanup = Promise.all(hooks.map(hook => hook())).then(() => { cleaned = true; });
+    await tick();
+    assert.equal(cleaned, false, 'teardown must wait for an in-flight launch');
+    releaseLaunch(controlled);
+    assert.notEqual((await closed).code, 0);
+    await tick();
+    assert.equal(cleaned, false, 'teardown must wait for controller close after target exit');
+    releaseController();
+    await cleanup;
+    assert.equal(proc.killed, true, 'the late child must be terminated');
+    assert.equal(controllerClosed, true, 'teardown must wait for the controller and its output to close');
+    assert.ok((await result).error, 'an aborted launch must not continue to READY');
+  } finally {
+    releaseLaunch(controlled);
+    releaseController();
+    if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL');
+    await closed;
+    await result;
+  }
+});
+
+// Windows can spend 10 s each on parent identity, native launch and interrupt,
+// plus READY, exit and controller output drain. Keep the original Linux budget.
+test('fixture IRC asigna puerto en el hijo sin reserva previa del padre', { timeout: process.platform === 'win32' ? 60000 : 10000 }, async t => {
   const started = Date.now();
   let phase = 'setup';
   const phases = { setup: 0 };
@@ -254,10 +348,18 @@ test('fixture IRC asigna puerto en el hijo sin reserva previa del padre', { time
   // Tiempos del padre: el abort no identifica por sí solo la causa del timeout.
   const report = () => t.diagnostic('IRC_PHASE ' + JSON.stringify({ phase, elapsedMs: Date.now() - started, phases }));
   t.signal.addEventListener('abort', report, { once: true });
-  const root = await mkdtemp(path.join(tmpdir(), 'EGDEV-CHATPORT-'));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const rootPromise = mkdtemp(path.join(tmpdir(), 'EGDEV-CHATPORT-'));
+  let cleanupChild = async () => {};
+  t.after(async () => {
+    const root = await rootPromise;
+    observe('cleanup');
+    await cleanupChild();
+    await rm(root, { recursive: true, force: true });
+  });
+  const root = await rootPromise;
+  if (t.signal.aborted) throw new Error('IRC fixture setup cancelled');
   t.mock.method(net, 'createServer', () => { throw new Error('reserva previa de puerto prohibida'); });
-  const c = await child(t, root, 'healthy', observe);
+  const c = await child(t, root, 'healthy', observe, { onCleanup: cleanup => { cleanupChild = cleanup; } });
   const port = Number(c.out().match(/^BOUND:(\d+)$/m)?.[1]);
   assert.ok(Number.isInteger(port) && port > 0, 'puerto asignado por el socket real');
   observe('interrupt');

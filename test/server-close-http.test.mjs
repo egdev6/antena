@@ -207,9 +207,15 @@ if (scenario === 'close-fail') app.closeHttp = () => { console.log('CLOSE-FAIL')
 if (scenario === 'close-hang') app.closeHttp = () => { console.log('CLOSE-HANG'); return new Promise(() => {}); };
 if (scenario === 'relisten') app.store.config.access.lan = true;
 const realExit = process.exit.bind(process);
-process.exit = code => { console.log('WILLEXIT:' + code); realExit(code); };
+process.exit = code => { process.stdout.write('WILLEXIT:' + code + '\\n', () => realExit(code)); };
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', async chunk => {
+  if (scenario === 'flush-output' && String(chunk).includes('go')) {
+    process.stderr.write('BACKPRESSURE\\n', () => {
+      process.stdout.write('x'.repeat(4 * 1024 * 1024) + 'FLUSH-END\\n');
+      process.exit(0);
+    });
+  }
   if (scenario === 'relisten' && String(chunk).includes('go')) {
     app.emit('relisten');
     if (typeof app.closeHttp === 'function') await app.closeHttp(); else console.log('NOCLOSE');
@@ -221,7 +227,7 @@ process.stdin.on('data', async chunk => {
     }, 250);
   }
 });
-if (scenario === 'relisten') process.stdin.resume(); else process.stdin.destroy();
+if (scenario === 'relisten' || scenario === 'flush-output') process.stdin.resume(); else process.stdin.destroy();
 console.log('READY');
 `;
 
@@ -259,6 +265,7 @@ async function launchChild({ dataDir, port, scenario, timeoutMs, program }) {
   child.stdout.on('data', d => { out = (out + d).slice(-40000); });
   child.stderr.on('data', d => { err = (err + d).slice(-40000); });
   const exitInfo = new Promise(res => child.once('exit', (code, signal) => res({ code, signal })));
+  const closeInfo = new Promise(res => child.once('close', (code, signal) => res({ code, signal })));
   const waitFor = async (needle, ms = 8000) => {
     const end = Date.now() + ms;
     while (Date.now() < end) {
@@ -268,15 +275,24 @@ async function launchChild({ dataDir, port, scenario, timeoutMs, program }) {
     }
     return (out + err).includes(needle);
   };
-  return { child, exitInfo, waitFor, send: m => { try { child.stdin.write(m + '\n'); } catch { /* el hijo pudo morir */ } }, stdout: () => out, stderr: () => err };
+  return { child, exitInfo, closeInfo, waitFor, send: m => { try { child.stdin.write(m + '\n'); } catch { /* el hijo pudo morir */ } }, stdout: () => out, stderr: () => err };
 }
 
 async function awaitExit(c, ms = 3000) {
   let timer;
   const watchdog = new Promise(resolve => { timer = setTimeout(() => resolve(null), ms); });
+  let res;
   try {
-    const res = await Promise.race([c.exitInfo, watchdog]);
+    res = await Promise.race([c.exitInfo, watchdog]);
     if (!res) { c.child.kill('SIGKILL'); await c.exitInfo; assert.fail(`el hijo no salió en ${ms}ms: ${c.stdout()}${c.stderr()}`); }
+  } finally { clearTimeout(timer); }
+
+  // Windows publishes exit before the controller has drained the output pipes.
+  const closeDeadlineMs = 15000;
+  const closeWatchdog = new Promise(resolve => { timer = setTimeout(() => resolve(false), closeDeadlineMs); });
+  try {
+    const closed = await Promise.race([c.closeInfo.then(() => true), closeWatchdog]);
+    assert.ok(closed, `child output did not close within ${closeDeadlineMs}ms: ${c.stdout()}${c.stderr()}`);
     return res;
   } finally { clearTimeout(timer); }
 }
@@ -285,7 +301,7 @@ async function makeChildRoot(t, children) {
   const root = await mkdtemp(path.join(tmpdir(), 'EGDEV-CLOSEHTTP-'));
   t.after(async () => {
     for (const c of children) if (c.child.exitCode === null && c.child.signalCode === null) c.child.kill('SIGKILL');
-    await Promise.all(children.map(c => c.exitInfo));
+    await Promise.all(children.map(c => c.closeInfo));
     await rm(root, { recursive: true, force: true });
   });
   return root;
@@ -302,6 +318,74 @@ async function startChild(children, root, name, scenario, timeoutMs, program = C
   assert.ok(await c.waitFor('READY'), `el hijo no llegó a READY (${name}): ${c.stdout()}${c.stderr()}`);
   return c;
 }
+
+test('fixture flushes buffered stdout before process exit', { timeout: 45000 }, async t => {
+  const children = []; const root = await makeChildRoot(t, children);
+  const c = await startChild(children, root, 'flush-output', 'flush-output');
+  c.child.stdout.pause();
+  try {
+    c.send('go');
+    assert.ok(await c.waitFor('BACKPRESSURE'), c.stderr());
+    let exited = false;
+    c.exitInfo.then(() => { exited = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(exited, false, 'the child must wait for stdout backpressure to clear');
+  } finally {
+    c.child.stdout.resume();
+  }
+  assert.deepEqual(await awaitExit(c, 5000), { code: 0, signal: null });
+  assert.ok(c.stdout().endsWith('FLUSH-END\nWILLEXIT:0\n'), 'the final buffered markers must reach stdout');
+});
+
+test('child exit does not complete the wait before inherited stdout closes', { timeout: process.platform === 'win32' ? 45000 : 15000 }, async t => {
+  const children = [];
+  let accept;
+  const connected = new Promise(resolve => { accept = resolve; });
+  const sockets = new Set();
+  const server = net.createServer(socket => {
+    sockets.add(socket);
+    socket.on('error', () => {});
+    socket.once('close', () => sockets.delete(socket));
+    accept(socket);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    for (const socket of sockets) socket.destroy();
+    await new Promise(resolve => server.close(resolve));
+  });
+  const root = await makeChildRoot(t, children);
+  const descendant = `
+import net from 'node:net';
+const socket = net.connect(Number(process.argv[1]), '127.0.0.1');
+socket.once('connect', () => process.send('connected'));
+socket.once('data', () => process.stdout.write('AFTER-EXIT\\n', () => socket.end()));
+socket.once('error', () => { process.exitCode = 1; });
+`;
+  const program = `
+import { spawn } from 'node:child_process';
+const descendant = spawn(process.execPath, ['--input-type=module', '-e', ${JSON.stringify(descendant)}, ${JSON.stringify(String(server.address().port))}], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+descendant.once('error', () => process.exit(1));
+descendant.once('message', () => process.exit(0));
+`;
+  const c = await launchChild({ dataDir: root, port: 0, scenario: 'drain', program });
+  children.push(c);
+  const drained = new Promise(resolve => c.child.stdout.once('end', resolve));
+  const socket = await connected;
+  let completed = false;
+  const finished = awaitExit(c, 5000).then(result => { completed = true; return result; });
+  try {
+    assert.deepEqual(await c.exitInfo, { code: 0, signal: null });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(completed, false, 'exit must not stand in for drained stdout');
+    socket.write('release');
+    assert.deepEqual(await finished, { code: 0, signal: null });
+    assert.match(c.stdout(), /AFTER-EXIT/);
+  } finally {
+    if (!socket.destroyed) socket.write('release');
+    await drained;
+    await finished.catch(() => {});
+  }
+});
 
 test('tras closeHttp, ni un relisten nuevo ni el callback ya encolado reviven el servidor', { timeout: 20000 }, async t => {
   const children = []; const root = await makeChildRoot(t, children);
