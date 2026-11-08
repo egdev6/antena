@@ -2,15 +2,16 @@
 // settings (title, prize), and switches to the real widget once the giveaway opens.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { findChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, findChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
-async function start() {
+async function start(t) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-giveaway-68-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -22,7 +23,7 @@ async function start() {
 test('giveaway widget demo uses the saved title and prize and creates no entries', { timeout: 90000 }, async t => {
   const bin = await findChrome();
   if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la regresión de navegador');
-  const { base, api, close } = await start();
+  const { base, api, close } = await start(t);
   let chrome;
   try {
     await api('PUT', '/api/interactive/config', { giveaway: { title: 'Gran sorteo', prize: 'un teclado', command: '!entro' } });
@@ -35,13 +36,13 @@ test('giveaway widget demo uses the saved title and prize and creates no entries
     assert.equal(s.giveaway.open, false, 'the preview does not open the giveaway');
     assert.equal(s.giveaway.count, 0, 'the preview creates no entries');
     assert.deepEqual(s.giveaway.winners, [], 'the preview creates no winners');
-  } finally { chrome?.child.kill(); chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('panel giveaway preview: demo while closed, real widget once open', { timeout: 120000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
-  const { base, api, close } = await start();
+  const { base, api, close } = await start(t);
   let chrome;
   try {
     chrome = await openChromePage(bin, `${base}/#/sorteo/ajustes`);
@@ -51,5 +52,5 @@ test('panel giveaway preview: demo while closed, real widget once open', { timeo
     assert.match(await evaluateChrome(c, `document.querySelector('main .preview-col .eg-stage__bar').textContent`), /Datos de ejemplo/);
     await api('POST', '/api/giveaway/open', {});
     await waitDom(c, `(${src}) === '/widget/giveaway?debug'`, { timeoutMs: 10000 });
-  } finally { chrome?.child.kill(); chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });

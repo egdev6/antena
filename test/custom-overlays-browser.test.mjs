@@ -5,11 +5,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { findChrome, openChromePage } from './helpers/react-browser.mjs';
+import { closeChrome, findChrome, openChromePage } from './helpers/react-browser.mjs';
 import { fakeMeld } from './helpers/fake-meld.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -44,6 +44,7 @@ test('un overlay propio recibe la alerta por el SDK dentro del marco opaco', { t
   if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la prueba de navegador');
   const back = await recorder();
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-browser-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -80,7 +81,7 @@ test('un overlay propio recibe la alerta por el SDK dentro del marco opaco', { t
     assert.equal(hit.searchParams.get('user'), 'ana');
     assert.equal(hit.searchParams.get('title'), 'Nuevo seguidor');
   } finally {
-    if (chrome) { chrome.child.kill(); try { await chrome.cdp.close(); } catch { /* socket ya cerrado */ } }
+    if (chrome) await closeChrome(chrome);
     await back.close();
     app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
   }
@@ -93,6 +94,7 @@ test('probar_overlay: la prueba llega al marco de su capa y a ninguna otra', { t
   if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la prueba de navegador');
   const back = await recorder();
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-probar-browser-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -133,7 +135,7 @@ test('probar_overlay: la prueba llega al marco de su capa y a ninguna otra', { t
     const seen = new URL(await back.waitFor(h => h === '/a-viewers?current=' + current), back.base);
     assert.equal(seen.searchParams.get('current'), String(current));
   } finally {
-    if (chrome) { chrome.child.kill(); try { await chrome.cdp.close(); } catch { /* socket ya cerrado */ } }
+    if (chrome) await closeChrome(chrome);
     await back.close();
     app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
   }
@@ -149,6 +151,7 @@ test('S11b: antena.run aprobado ejecuta la acción y Meld cambia de escena', { t
   const meldSrv = fakeMeld();
   await new Promise(r => meldSrv.server.listen(0, '127.0.0.1', r));
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-action-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -176,7 +179,7 @@ test('S11b: antena.run aprobado ejecuta la acción y Meld cambia de escena', { t
     assert.deepEqual(meldSrv.state.calls, [[10, 's2']], 'el motor cambió de escena en Meld');
     assert.equal(app.meld.session().scenes.find(s => s.current).name, 'Pantalla');
   } finally {
-    if (chrome) { chrome.child.kill(); try { await chrome.cdp.close(); } catch { /* socket ya cerrado */ } }
+    if (chrome) await closeChrome(chrome);
     await back.close();
     meldSrv.server.close();
     app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
@@ -191,6 +194,7 @@ test('S11b: antena.run sin aprobación rechaza la promesa y no toca Meld', { tim
   const meldSrv = fakeMeld();
   await new Promise(r => meldSrv.server.listen(0, '127.0.0.1', r));
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-action-denied-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -218,7 +222,7 @@ test('S11b: antena.run sin aprobación rechaza la promesa y no toca Meld', { tim
     assert.deepEqual(meldSrv.state.calls, [], 'no se ejecutó ninguna acción');
     assert.equal(app.meld.session().scenes.find(s => s.current).name, 'Cámara');
   } finally {
-    if (chrome) { chrome.child.kill(); try { await chrome.cdp.close(); } catch { /* socket ya cerrado */ } }
+    if (chrome) await closeChrome(chrome);
     await back.close();
     meldSrv.server.close();
     app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
@@ -14,7 +14,10 @@ async function start() {
     const r = await fetch(base + p, { method, body: body === undefined ? undefined : JSON.stringify(body) });
     const d = await r.json(); if (!r.ok) throw new Error(d.error); return d;
   };
-  return { app, base, call, close: () => new Promise(r => { app.meld.stop(); app.server.closeAllConnections(); app.server.close(r); }) };
+  return { app, base, call, close: async () => {
+    await new Promise(r => { app.meld.stop(); app.server.closeAllConnections(); app.server.close(r); });
+    await rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } };
 }
 
 /** Opens an SSE stream and returns a reader that resolves the next payload of a given event. */
@@ -97,7 +100,7 @@ test('widgets.viewers config has defaults and is editable through PUT /api/widge
 // #64: with "Color de cada plataforma" on, each platform card takes its own theme color
 // (like the goal bars, via pf-<platform>), and the total card keeps the general accent.
 test('viewers widget paints each platform card with its theme color', { timeout: 90000 }, async t => {
-  const { findChrome, openChromePage, waitDom } = await import('./helpers/react-browser.mjs');
+  const { closeChrome, findChrome, openChromePage, waitDom } = await import('./helpers/react-browser.mjs');
   const { evaluateChrome } = await import('./helpers/chrome-dom.mjs');
   const bin = await findChrome();
   if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la regresión de navegador');
@@ -112,5 +115,5 @@ test('viewers widget paints each platform card with its theme color', { timeout:
     const red = await evaluateChrome(c, `JSON.stringify(Object.fromEntries(['twitch', 'youtube', 'total'].map(id =>
       [id, getComputedStyle(document.querySelector('.item-' + id)).getPropertyValue('--red').trim().toLowerCase()])))`);
     assert.deepEqual(JSON.parse(red), { twitch: '#9146ff', youtube: '#ff0000', total: '#00ff00' });
-  } finally { chrome?.child.kill(); chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });

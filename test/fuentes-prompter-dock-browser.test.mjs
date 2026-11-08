@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
@@ -34,7 +34,7 @@ test('Fuentes para Meld lists the layers without tabs', { timeout: 60000 }, asyn
     await dom(chrome, `location.hash = '#/fuentes/paneles'`);
     await waitDom(chrome.cdp, `!!document.querySelector('main .lv-list tbody tr')`, { timeoutMs: 12000 });
     assert.doesNotMatch(await dom(chrome, `document.querySelector('main').textContent`), /Paneles dentro de Meld/, 'old tab links fall back to the list');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await ctx.close(); }
+  } finally { if (chrome) await closeChrome(chrome); await ctx.close(); }
 });
 
 test('Paneles offers opening the dock in ventanas flotantes', { timeout: 60000 }, async t => {
@@ -50,5 +50,5 @@ test('Paneles offers opening the dock in ventanas flotantes', { timeout: 60000 }
     await dom(chrome, `Array.from(document.querySelectorAll('main .eg-btn')).find(b => b.textContent.trim() === 'Abrir el dock').click()`);
     await waitDom(chrome.cdp, `window.__opened.length === 1`, { timeoutMs: 5000 });
     assert.equal(await dom(chrome, `window.__opened[0][0]`), '/dock');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await ctx.close(); }
+  } finally { if (chrome) await closeChrome(chrome); await ctx.close(); }
 });

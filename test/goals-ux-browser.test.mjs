@@ -4,11 +4,11 @@
 // su subida (O1.6) y, en el panel, pestañas por objetivo (O1.7), hint de clases CSS (O1.4)
 // y preview que se recarga al cambiar la config (O1.5).
 import { test } from 'node:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -17,6 +17,7 @@ async function start(t) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-o1-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -92,7 +93,7 @@ test('O1 overlay: relleno recortado, color de plataforma, cabecera configurable 
     await waitDom(chrome.cdp, `getComputedStyle(document.getElementById('kick')).display === 'none' && getComputedStyle(document.getElementById('title')).display === 'none'`, { timeoutMs: 12000 });
     await putBox(app, { label: '', showLabel: true, showTitle: true });
     await waitDom(chrome.cdp, `document.getElementById('kick').textContent === 'Objetivo' && getComputedStyle(document.getElementById('kick')).display !== 'none' && getComputedStyle(document.getElementById('title')).display !== 'none'`, { timeoutMs: 12000 });
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('O1 panel: tabla de objetivos → slide, + Nuevo objetivo, cabecera, hint CSS y preview que se recarga con la config', { timeout: 120000 }, async t => {
@@ -141,7 +142,7 @@ test('O1 panel: tabla de objetivos → slide, + Nuevo objetivo, cabecera, hint C
     await waitDom(chrome.cdp, `location.hash.startsWith('#/widgets/objetivos/') && !location.hash.endsWith('/nuevo') && ${title} === 'Nuevo objetivo'`, { timeoutMs: 12000 });
     await dom(chrome, `location.hash = '#/widgets/objetivos'`);
     await waitDom(chrome.cdp, `${rows}.length === 3`, { timeoutMs: 12000 });
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 async function eventually(read, expected, timeoutMs = 5000) {
@@ -198,5 +199,5 @@ test('O1 panel: cambiar la plataforma de una barra se guarda con una métrica v�
     await waitDom(chrome.cdp, `!!document.querySelector('.toast.on.err')`, { timeoutMs: 9000 });
     await waitDom(chrome.cdp, `${meta}.value === '200'`, { timeoutMs: 9000 });
     eq(bar('b1').target, 200);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });

@@ -3,17 +3,18 @@
 // desconectado» y «Meld · desconectado». Antes cada superficie la redactaba a su manera
 // («Twitch: desconectado», «Twitch sin conectar», «YouTube · parado»).
 import { test } from 'node:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-conn-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -51,19 +52,19 @@ test('las tres superficies redactan el estado de conexión igual', { timeout: 90
     // las tres superficies muestren el MISMO texto para ese estado.
     eq(panel.twitch, 'Twitch · desconectado');
     eq(panel.youtube, 'YouTube · desconectado');
-    await chrome.cdp.close(); chrome.child.kill();
+    await closeChrome(chrome); chrome = null;
 
     // Dock: los avisos de la cabecera usan la misma píldora y la misma redacción.
     chrome = await openChromePage(bin, `${base}/dock`);
     await waitDom(chrome.cdp, `!!(${pillText('.d-warns', 'Twitch ·')} && ${pillText('.d-warns', 'Meld ·')})`, { timeoutMs: 15000 });
     eq(await dom(chrome, pillText('.d-warns', 'Twitch ·')), panel.twitch);
     eq(await dom(chrome, pillText('.d-warns', 'Meld ·')), panel.meld);
-    await chrome.cdp.close(); chrome.child.kill();
+    await closeChrome(chrome); chrome = null;
 
     // Prompter: la barra superior usa la misma píldora y la misma redacción.
     chrome = await openChromePage(bin, `${base}/prompter`);
     await waitDom(chrome.cdp, `!!(${pillText('.pr-warns', 'Twitch ·')} && ${pillText('.pr-warns', 'Meld ·')})`, { timeoutMs: 15000 });
     eq(await dom(chrome, pillText('.pr-warns', 'Twitch ·')), panel.twitch);
     eq(await dom(chrome, pillText('.pr-warns', 'Meld ·')), panel.meld);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });

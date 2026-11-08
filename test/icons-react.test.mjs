@@ -3,12 +3,12 @@
 // (marcado capturado de main 42f0a15).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 test('ninguna fuente de app/src usa dangerouslySetInnerHTML', async () => {
@@ -33,6 +33,7 @@ test('los iconos pintan el mismo SVG que antes (barra lateral e IconBtn)', { tim
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-icons-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -53,7 +54,7 @@ test('los iconos pintan el mismo SVG que antes (barra lateral e IconBtn)', { tim
     })`, { timeoutMs: 12000 }));
     assert.deepEqual(got, BEFORE);
   } finally {
-    chrome?.child.kill(); await chrome?.cdp.close();
+    if (chrome) await closeChrome(chrome);
     app.timers.stop(); app.server.closeAllConnections(); app.server.close();
   }
 });

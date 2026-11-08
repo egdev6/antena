@@ -3,13 +3,13 @@
 // Navegador real por CDP; sin Chrome o sin app/dist se omite con motivo (#115: el clásico se retiró).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { TOOLS } from '../src/mcp.mjs';
 import { evaluateChrome, waitChromeDom } from './helpers/chrome-dom.mjs';
+import { closeChrome, findChrome, openChromePage } from './helpers/react-browser.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -21,37 +21,6 @@ test('MCP: la pausa también detiene los mensajes programados y los campos docum
   for (const name of ['crear_mensaje', 'editar_mensaje', 'editar_alerta', 'crear_comando']) assert.match(d(name), /destination/, name);
   assert.match(d('enviar_mensaje_ahora'), /plataforma/i);
 });
-
-async function findChrome() {
-  for (const p of [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium'].filter(Boolean)) {
-    try { await stat(p); return p; } catch {}
-  }
-  return null;
-}
-
-// Perfil y proceso propios; una única navegación observada, sin reintentos.
-async function openPanel(bin, url) {
-  const profile = await mkdtemp(path.join(tmpdir(), 'egdev-chrome-'));
-  const child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-gpu', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: 'ignore' });
-  try {
-    let port, page;
-    for (let i = 0; i < 150 && !port; i++) { try { port = (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0].trim(); } catch { await sleep(100); } }
-    for (let i = 0; port && i < 100 && !page; i++) {
-      page = (await fetch(`http://127.0.0.1:${port}/json/list`).then(r => r.json()).catch(() => [])).find(x => x.type === 'page' && x.url === 'about:blank');
-      if (!page) await sleep(100);
-    }
-    if (!page) throw new Error('Chrome no expuso la página');
-    const ws = new WebSocket(page.webSocketDebuggerUrl); let id = 0; const waiters = new Map();
-    await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
-    ws.onmessage = ev => { const m = JSON.parse(ev.data); const w = waiters.get(m.id); if (!w) return; waiters.delete(m.id); m.error ? w.reject(Object.assign(new Error('CDP: comando rechazado'), { code: m.error.code })) : w.resolve(m.result); };
-    const cdp = { send: (method, params = {}) => new Promise((res, rej) => { const i = ++id; waiters.set(i, { resolve: res, reject: rej }); ws.send(JSON.stringify({ id: i, method, params })); }), close: () => ws.close() };
-    await cdp.send('Runtime.enable'); await cdp.send('Page.enable');
-    const nav = await cdp.send('Page.navigate', { url });
-    if (nav?.errorText) throw new Error('Chrome no navegó al panel: ' + nav.errorText);
-    await cdp.send('Page.bringToFront');
-    return { child, cdp };
-  } catch (e) { child.kill(); throw e; }
-}
 
 async function until(fn, what) {
   for (let i = 0; i < 80; i++) { if (fn()) return; await sleep(100); }
@@ -71,6 +40,7 @@ catch (e) {
 const bin = await findChrome();
 if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la regresión de navegador');
 const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-mb-'));
+t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {}));
 const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
 await new Promise(r => app.server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -81,8 +51,9 @@ try {
     await call('PUT', '/api/alerts/follow', { actions: [{ kind: 'chat', text: 'hola {user}' }] });
     const sent = [];
     app.twitch.sendChat = async text => { sent.push(text); return { id: 'tw-1' }; };
-    chrome = await openPanel(bin, `${base}/#/mensaje/${timer.id}`);
+    chrome = await openChromePage(bin, `${base}/#/mensaje/${timer.id}`);
     const c = chrome.cdp;
+    await c.send('Page.bringToFront');
     const ev = expr => evaluateChrome(c, expr);
     const waitDom = expr => waitChromeDom(c, expr, { timeoutMs: 9000 });
     const timerDestination = reactSeg('Dónde se publica');
@@ -210,7 +181,9 @@ try {
         t.diagnostic('Transiciones del toast: ' + JSON.stringify(observed));
     }
 } finally {
-    chrome?.cdp?.close(); chrome?.child?.kill();
-    await new Promise(r => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(r); });
+    try { if (chrome) await closeChrome(chrome); }
+    finally {
+        await new Promise(r => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(r); });
+    }
 }
 });

@@ -1,8 +1,6 @@
-// Helpers compartidos para las pruebas de navegador de la interfaz React (#105).
-// Chrome por CDP con perfil y proceso propios (mismo patrón que test/panel-mvp-bot.test.mjs):
-// cada página se abre una vez, sin reintentos, y el proceso de Chrome lo cierra el test.
+// Shared browser helpers: each page gets its own Chrome process and profile.
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -27,30 +25,97 @@ export async function skipIfNoBrowserOrUi(t) {
   return bin;
 }
 
-/** Abre una página del servidor local en Chrome headless y devuelve { child, cdp }. */
+const childStates = new WeakMap();
+const closeTasks = new WeakMap();
+
+function trackChild(child) {
+  let state = childStates.get(child);
+  if (state) return state;
+  state = { closed: false, error: null };
+  // Install this at spawn time so exit before cleanup cannot hide the later close event.
+  state.done = new Promise(resolve => {
+    const finish = () => { state.closed = true; child.removeListener('close', finish); resolve(); };
+    child.once('close', finish);
+    const exited = child.exitCode !== null || child.signalCode !== null;
+    const streamsOpen = child.connected || child.stdio?.some(stream => stream && !stream.closed);
+    // An externally launched child may already have emitted close before being tracked.
+    if (exited && !streamsOpen) setImmediate(finish);
+  });
+  child.on('error', error => { state.error = error; });
+  childStates.set(child, state);
+  return state;
+}
+
+async function closesWithin(done, ms) {
+  let timer;
+  try {
+    return await Promise.race([done.then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), ms); })]);
+  } finally { clearTimeout(timer); }
+}
+
+/** Close CDP and Chrome once, then best-effort remove its temporary profile. */
+export function closeChrome(chrome) {
+  if (closeTasks.has(chrome)) return closeTasks.get(chrome);
+  const task = (async () => {
+    const { child, cdp, profile } = chrome;
+    try {
+      try { cdp?.close(); } catch { /* The socket may already be closed. */ }
+      if (child) {
+        const state = trackChild(child);
+        if (!state.closed && child.exitCode === null && child.signalCode === null) child.kill();
+        if (!await closesWithin(state.done, 1500)) {
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+          if (!await closesWithin(state.done, 3000)) throw new Error('Chrome process did not close after forced shutdown');
+        }
+      }
+    } finally {
+      // Chrome descendants can still hold profile files after the browser closes.
+      if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }).catch(() => {});
+    }
+  })();
+  closeTasks.set(chrome, task);
+  return task;
+}
+
+/** Open a headless page and return its child, CDP connection, and temporary profile. */
 export async function openChromePage(bin, url) {
   const profile = await mkdtemp(path.join(tmpdir(), 'egdev-chrome-'));
-  const child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-gpu', '--disable-dev-shm-usage', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: 'ignore' });
+  const chrome = { profile };
   try {
+    const child = chrome.child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-gpu', '--disable-dev-shm-usage', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: 'ignore' });
+    const state = trackChild(child);
+    const checkStartup = () => {
+      if (state.error) throw state.error;
+      if (state.closed) throw new Error('Chrome exited during startup');
+    };
     let port, page;
     // The first Chrome start on a fresh CI runner (cold profile and font cache) took over 15 s
     // once on ubuntu Node 24: the port wait gets 30 s, and the error names the phase that failed.
-    for (let i = 0; i < 300 && !port; i++) { try { port = (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0].trim(); } catch { await sleep(100); } }
+    for (let i = 0; i < 300 && !port; i++) {
+      checkStartup();
+      try { port = (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0].trim(); } catch { await sleep(100); }
+    }
+    checkStartup();
     if (!port) throw new Error('Chrome no arrancó: no escribió DevToolsActivePort en 30 s');
     for (let i = 0; i < 100 && !page; i++) {
+      checkStartup();
       page = (await fetch(`http://127.0.0.1:${port}/json/list`).then(r => r.json()).catch(() => [])).find(x => x.type === 'page' && x.url === 'about:blank');
       if (!page) await sleep(100);
     }
+    checkStartup();
     if (!page) throw new Error('Chrome no expuso la página');
     const ws = new WebSocket(page.webSocketDebuggerUrl); let id = 0; const waiters = new Map();
+    const cdp = chrome.cdp = { send: (method, params = {}) => new Promise((res, rej) => { const i = ++id; waiters.set(i, { resolve: res, reject: rej }); ws.send(JSON.stringify({ id: i, method, params })); }), close: () => ws.close() };
     await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
     ws.onmessage = ev => { const m = JSON.parse(ev.data); const w = waiters.get(m.id); if (!w) return; waiters.delete(m.id); m.error ? w.reject(Object.assign(new Error('CDP: comando rechazado'), { code: m.error.code })) : w.resolve(m.result); };
-    const cdp = { send: (method, params = {}) => new Promise((res, rej) => { const i = ++id; waiters.set(i, { resolve: res, reject: rej }); ws.send(JSON.stringify({ id: i, method, params })); }), close: () => ws.close() };
     await cdp.send('Runtime.enable'); await cdp.send('Page.enable');
     const nav = await cdp.send('Page.navigate', { url });
     if (nav?.errorText) throw new Error('Chrome no navegó a la página: ' + nav.errorText);
-    return { child, cdp };
-  } catch (e) { child.kill(); throw e; }
+    return chrome;
+  } catch (error) {
+    try { await closeChrome(chrome); } catch (cleanupError) { error.cleanupError = cleanupError; }
+    throw error;
+  }
 }
 
 /** Espera hasta que una expresión del DOM sea cierta (waitChromeDom ya trae diagnóstico). */
