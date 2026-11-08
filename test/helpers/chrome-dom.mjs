@@ -108,7 +108,9 @@ export async function waitChromeDom(c, expression, {
   timeoutMs = 9000, intervalMs = 80, now = Date.now,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
 } = {}) {
+  if (!Number.isFinite(timeoutMs)) throw new TypeError('timeoutMs must be a finite number');
   const deadline = now() + timeoutMs;
+  if (!Number.isFinite(deadline)) throw new TypeError('DOM wait deadline must be a finite number');
   let last;
   for (;;) {
     try {

@@ -80,6 +80,62 @@ test('snapshot distingue about:blank de error de navegador y registra estado sin
   }
 });
 
+test('a permanently false DOM condition fails at its own deadline', { timeout: 5000 }, async () => {
+  let time = 0;
+  let polls = 0;
+  const sleeps = [];
+  const c = { send: async (method, params) => {
+    if (method === 'Runtime.evaluate' && params.expression === expression) {
+      polls++;
+      return { result: { value: false } };
+    }
+    if (method === 'Page.getFrameTree') return { frameTree: { frame: {} } };
+    if (method === 'Page.getNavigationHistory') return { entries: [] };
+    return { result: { value: { readyState: 'complete' } } };
+  } };
+  const checkTimeout = error => {
+    assert.match(error.message, /timeout CDP/);
+    assert.equal(error.diagnostic.last.kind, 'false');
+    return true;
+  };
+  await assert.rejects(waitChromeDom(c, expression, { timeoutMs: 40, intervalMs: 15,
+    now: () => time, sleep: async ms => { sleeps.push(ms); time += ms; } }), checkTimeout);
+  assert.equal(time, 40);
+  assert.equal(polls, 4);
+  assert.deepEqual(sleeps, [15, 15, 10]);
+
+  // A real timer must report the DOM deadline rather than the outer test timeout.
+  await assert.rejects(waitChromeDom(c, expression, { timeoutMs: 40, intervalMs: 15 }), checkTimeout);
+});
+
+for (const [name, timeoutMs] of [
+  ['NaN', NaN], ['an options object', { timeoutMs: 10 }], ['a string', '10'],
+  ['null', null], ['Infinity', Infinity], ['negative Infinity', -Infinity],
+]) {
+  test(`DOM wait rejects ${name} as a timeout before evaluating`, async () => {
+    let evaluations = 0;
+    const c = { send: async () => { evaluations++; return { result: { value: false } }; } };
+    await assert.rejects(waitChromeDom(c, expression, { timeoutMs, now: () => 0,
+      sleep: async () => { throw new Error('invalid timeout reached sleep'); } }),
+    { name: 'TypeError', message: 'timeoutMs must be a finite number' });
+    assert.equal(evaluations, 0);
+  });
+}
+
+for (const [name, now, timeoutMs] of [
+  ['NaN', () => NaN, 10], ['a string', () => '0', 10],
+  ['overflow', () => Number.MAX_VALUE, Number.MAX_VALUE],
+]) {
+  test(`DOM wait rejects ${name} as a deadline before evaluating`, async () => {
+    let evaluations = 0;
+    const c = { send: async () => { evaluations++; return { result: { value: false } }; } };
+    await assert.rejects(waitChromeDom(c, expression, { timeoutMs, now,
+      sleep: async () => { throw new Error('invalid deadline reached sleep'); } }),
+    { name: 'TypeError', message: 'DOM wait deadline must be a finite number' });
+    assert.equal(evaluations, 0);
+  });
+}
+
 test('eventos Chrome retienen clase/línea/código de red pero nunca argumentos ni mensajes crudos', () => {
   assert.deepEqual(chromeDiagnosticEvent({ method: 'Runtime.exceptionThrown', params: { exceptionDetails: {
     lineNumber: 17, columnNumber: 4, exception: { className: 'SyntaxError', description: 'PRIVATE_CANARY' },
