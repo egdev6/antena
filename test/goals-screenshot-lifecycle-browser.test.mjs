@@ -50,8 +50,10 @@ test('goal screenshots are retained and reported when a browser test fails', { t
   assert.match(result.output, /not ok 1 - overlay goal\.html:/);
   const match = /Screenshots retained at ([^\r\n]+)/.exec(result.output);
   assert.ok(match, result.output);
-  const retained = match[1].trim();
-  assert.equal(path.dirname(retained), root);
+  // The path reaches TAP inside a serialized error: on Windows its backslashes arrive escaped
+  // and with a trailing separator, so normalize before comparing.
+  const retained = path.resolve(match[1].trim().replaceAll('\\\\', '\\').replace(/[\\/]+$/, ''));
+  assert.equal(path.dirname(retained), path.resolve(root));
   assert.equal((await stat(retained)).isDirectory(), true);
   assert.deepEqual(await screenshots(root), [path.basename(retained)]);
 });
