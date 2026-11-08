@@ -822,9 +822,33 @@ test('discoverTestFiles lista y ordena test/*.test.mjs sin helpers', async () =>
   }
 });
 
-test('testCommand fija reporter TAP, cobertura opcional y orden de ficheros', () => {
-  assert.deepEqual(testCommand(['test/a.test.mjs']), ['--test', '--test-reporter=tap', '--experimental-test-coverage', 'test/a.test.mjs']);
-  assert.deepEqual(testCommand(['test/a.test.mjs'], { coverage: false }), ['--test', '--test-reporter=tap', 'test/a.test.mjs']);
+test('testCommand fija reporter TAP, timeout por test, cobertura opcional y orden de ficheros', () => {
+  assert.deepEqual(testCommand(['test/a.test.mjs']), ['--test', '--test-reporter=tap', '--test-timeout=300000', '--test-force-exit', '--experimental-test-coverage', 'test/a.test.mjs']);
+  assert.deepEqual(testCommand(['test/a.test.mjs'], { coverage: false }), ['--test', '--test-reporter=tap', '--test-timeout=300000', '--test-force-exit', 'test/a.test.mjs']);
+  assert.deepEqual(testCommand(['test/a.test.mjs'], { coverage: false, timeoutMs: 500 }), ['--test', '--test-reporter=tap', '--test-timeout=500', '--test-force-exit', 'test/a.test.mjs']);
+});
+
+// #87: a hung test must fail with its own name instead of blocking the whole run.
+test('testCommand: un test colgado falla con su nombre por el timeout por defecto', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'egdev-baseline-hang-'));
+  try {
+    const file = path.join(root, 'hang.test.mjs');
+    await writeFile(file, "import { test } from 'node:test';\ntest('se queda colgado', () => new Promise(() => { setInterval(() => {}, 1000); }));\ntest('termina', () => {});\n");
+    const run = await runSuite({ cwd: root, execPath: process.execPath, args: testCommand([file], { coverage: false, timeoutMs: 500 }), timeoutMs: 20_000 });
+    assert.equal(run.timedOut, false, 'the whole run must not hang');
+    assert.match(run.stdout, /^not ok 1 - se queda colgado$/m);
+    assert.match(run.stdout, /test timed out after 500ms/);
+    assert.match(run.stdout, /^ok 2 - termina$/m);
+    assert.notEqual(run.exitCode, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('pnpm test usa el mismo timeout por test que el baseline', async () => {
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.match(pkg.scripts.test, /--test-timeout=300000(\s|$)/);
+  assert.match(pkg.scripts.test, /--test-force-exit(\s|$)/);
 });
 
 test('runSuite arranca un runner inyectable sin shell y captura su TAP', async () => {

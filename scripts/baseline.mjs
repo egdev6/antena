@@ -27,8 +27,14 @@ export function discoverTestFiles(repoRoot) {
     .sort();
 }
 
-export function testCommand(files, { coverage = true } = {}) {
-  return ['--test', '--test-reporter=tap', ...(coverage ? ['--experimental-test-coverage'] : []), ...files];
+// #87: Node's default per-test timeout is Infinity, so one hung test used to block the whole run
+// (and the CI job) until the suite watchdog. With a default, it fails with its own name; tests
+// that set an explicit { timeout } keep their own budget. --test-force-exit ends each file once its
+// tests are done even if a leaked handle (timer, socket) would keep the event loop alive.
+export const DEFAULT_TEST_TIMEOUT_MS = 300_000;
+
+export function testCommand(files, { coverage = true, timeoutMs = DEFAULT_TEST_TIMEOUT_MS } = {}) {
+  return ['--test', '--test-reporter=tap', `--test-timeout=${timeoutMs}`, '--test-force-exit', ...(coverage ? ['--experimental-test-coverage'] : []), ...files];
 }
 
 // --- Parser TAP --------------------------------------------------------------
