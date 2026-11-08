@@ -68,7 +68,9 @@ async function open(t, ctx, route) {
     const exited = chrome.child.exitCode === null && chrome.child.signalCode === null ? once(chrome.child, 'exit') : Promise.resolve();
     chrome.child.kill();
     await exited;
-    await rm(profile, { recursive: true, force: true });
+    // Chrome helpers can still hold profile files after the main process exits (ENOTEMPTY on
+    // Linux, EBUSY on Windows): retry, and never fail the test over temp cleanup.
+    await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {});
   });
   await waitDom(chrome.cdp, route === '/dock' ? `!!document.querySelector('.d-scene')` : `!!document.querySelector('.scene-tiles button')`, { timeoutMs: 20000 });
   return chrome;
