@@ -23,10 +23,13 @@
 .pool .chip{opacity:.55;height:52px;font-size:21px}
 .pool:empty{display:none}
 /* votación */
-.vote{display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:center;padding:18px 22px;border-radius:16px;border:2px solid var(--red-2);
+/* #66: fixed column split and single-line texts, so changing votes or names never resizes the panel */
+.vote{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:22px;align-items:center;padding:18px 22px;border-radius:16px;border:2px solid var(--red-2);
   background:linear-gradient(160deg,rgba(60,10,22,.9),rgba(16,8,10,.95));box-shadow:0 0 30px color-mix(in srgb,var(--red) calc(55% * var(--glow,1)),transparent),inset 0 0 26px color-mix(in srgb,var(--red) calc(18% * var(--glow,1)),transparent)}
 .vote[hidden]{display:none}
-.vote .what .kick{font-size:18px}
+.vote .what{min-width:0}
+.vote .what .kick{font-size:18px;white-space:nowrap}
+.vote .what .big,.vote .what .how{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vote .what .big{font-size:60px;margin-top:6px}
 .vote .what .how{margin-top:8px;font:600 21px var(--f-body);color:var(--grey)}
 .vote .what .how b{color:var(--white)}
@@ -34,9 +37,9 @@
 .bar{display:grid;grid-template-columns:44px 1fr 60px;align-items:center;gap:12px;font:800 24px var(--f-cond)}
 .bar i{display:block;height:24px;border-radius:8px;background:rgba(255,255,255,.07);overflow:hidden}
 .bar i b{display:block;height:100%;width:0;border-radius:8px;transition:width .5s cubic-bezier(.2,1,.3,1)}
-.bar .n{text-align:right;color:var(--grey)}
+.bar .n{text-align:right;color:var(--grey);font-variant-numeric:tabular-nums}
 .bar.win .n{color:var(--white)}
-.timer{font:700 18px var(--f-mono);color:var(--pink)}
+.timer{font:700 18px var(--f-mono);color:var(--pink);font-variant-numeric:tabular-nums}
 }
 </style></head>
 <body><div class="root"><div class="board eg-card soft" id="board">
