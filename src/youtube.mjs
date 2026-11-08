@@ -123,7 +123,7 @@ export class YouTube extends EventEmitter {
     // search.list cuesta 100 unidades: solo una vez por directo.
     const d = await this.api('/search', { part: 'id', channelId: this.cfg.channelId, eventType: 'live', type: 'video', maxResults: 1 });
     const id = d.items?.[0]?.id?.videoId;
-    if (!id) throw new Error('No hay ningún directo en marcha en el canal.');
+    if (!id) throw Object.assign(new Error('No hay ningún directo en marcha en el canal.'), { reason: 'noLive' });
     return id;
   }
 
@@ -172,7 +172,7 @@ export class YouTube extends EventEmitter {
       if (this.pollClosed) return;
       const item = d.items?.[0];
       const liveChatId = item?.liveStreamingDetails?.activeLiveChatId;
-      if (!liveChatId) throw new Error('Ese vídeo no tiene un chat en directo activo.');
+      if (!liveChatId) throw Object.assign(new Error('Ese vídeo no tiene un chat en directo activo.'), { reason: 'noLiveChat' });
       this.setStatus({ state: 'escuchando', videoId, liveChatId, title: item.snippet?.title });
       this.pageToken = null;
       this.primed = false;
@@ -253,6 +253,7 @@ export class YouTube extends EventEmitter {
   }
 
   fail(err) {
+    this.lastError = err; // #73: la conexión automática decide si reintentar según el motivo
     this.running = false;
     clearTimeout(this.timer);
     this.log('[youtube]', err.message);

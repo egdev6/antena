@@ -478,6 +478,8 @@ Permisos: `moderator:read:followers`, `channel:read:subscriptions`, `bits:read`,
 1. En Google Cloud Console activa **YouTube Data API v3** y crea una **API key**.
 2. Pégala en **Conexiones**, con el ID de tu canal (`UC…`) o el enlace del directo, y pulsa **Escuchar el chat**.
 
+**Conexión automática:** cuando Meld empieza a emitir (o antena arranca con el directo ya en marcha), antena se pone a escuchar el chat de YouTube sola, sin tu cuenta. Mientras YouTube aún no muestra el directo, reintenta cada 30 s, hasta 10 veces (con el ID del canal cada intento cuesta 100 unidades de cuota; con el enlace del directo, mucho menos). Al terminar el directo, el chat se detiene y el estado queda limpio. Si unos segundos después de empezar alguna plataforma configurada (Twitch o YouTube) sigue sin conectar, el panel muestra un aviso con un botón para conectar cada una.
+
 Cuota: 10.000 unidades al día. Cada lectura cuesta unas 5, así que con 8 s entre lecturas hay para unas 4 horas. YouTube no avisa en tiempo real de los suscriptores nuevos.
 
 **Escribir en el chat de YouTube** necesita tu cuenta (una vez):

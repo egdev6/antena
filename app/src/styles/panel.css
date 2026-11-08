@@ -488,6 +488,8 @@ textarea.code{min-height:200px;font:500 13px/1.55 var(--font-mono);tab-size:2;wh
 .modal-backdrop{position:fixed;inset:0;z-index:85;display:grid;place-items:center;padding:24px;background:var(--bg-scrim-backdrop);backdrop-filter:blur(2px)}
 .modal{width:min(880px,100%);max-height:min(90vh,900px);overflow:auto;outline:none}
 .modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.platform-warning{width:min(520px,100%)}
+.platform-warning .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .title-input.sm{font-size:22px;width:auto;flex:1;min-width:0}
 .colors{margin:10px 0}
 .color-dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--line2);padding:0;cursor:pointer;background-image:linear-gradient(135deg,transparent 45%,var(--line2) 45% 55%,transparent 55%)}
