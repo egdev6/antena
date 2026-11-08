@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { fakeMeld } from './helpers/fake-meld.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const LONG_VERTICAL = 'Invitado con la pantalla compartida y el chat encima de la cámara [Vertical]';
@@ -63,17 +63,7 @@ async function start(t) {
 
 async function openTrackedPage(t, bin, url) {
   const chrome = await openChromePage(bin, url);
-  const profile = chrome.child.spawnargs.find(arg => arg.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length);
-  t.after(async () => {
-    const stopped = chrome.child.exitCode !== null || chrome.child.signalCode !== null
-      ? Promise.resolve() : new Promise(resolve => chrome.child.once('exit', resolve));
-    try { chrome.cdp.close(); } catch { /* already closed */ }
-    chrome.child.kill();
-    await stopped;
-    // Chrome's child processes may still be closing files after the browser exits.
-    await wait(200);
-    if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-  });
+  t.after(() => closeChrome(chrome));
   return chrome;
 }
 
