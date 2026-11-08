@@ -167,9 +167,9 @@ test('regresión: en pausa la acción de chat espera y sale a ambas plataformas 
 // ---------- S2 · S12 · el panel recibe el resultado de una acción de chat que falla ----------
 
 // Lee eventos SSE del canal del panel hasta encontrar `name` y devuelve los que llegaron.
-async function panelEvents(base, t) {
+async function panelEvents(base, t, kind = 'panel') {
   const ctrl = new AbortController(); t.after(() => ctrl.abort());
-  const res = await fetch(base + '/api/stream?client=panel', { signal: ctrl.signal });
+  const res = await fetch(`${base}/api/stream?client=${kind}`, { signal: ctrl.signal });
   const reader = res.body.getReader(), dec = new TextDecoder(), seen = [];
   let buf = '';
   return async name => {
@@ -225,4 +225,86 @@ test('S11/S12: el fallo de una acción de comando llega al panel con el disparad
   assert.equal(r.origin.commandId, command.id);
   assert.equal(r.origin.trigger, '!web');
   assert.equal(r.platforms.youtube.error, 'YouTube sin directo');
+});
+
+async function waitFor(check) {
+  for (let i = 0; i < 100; i++) {
+    if (check()) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.fail('Expected chat reply was not sent without an overlay ACK');
+}
+
+test('chat-only replies use the source platform without alerts or ACKs and respect pause', async t => {
+  const { app, sent, ytSent, raw, call } = await start(t);
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const overlay = await panelEvents(base, t, 'overlay');
+  const widget = await panelEvents(base, t, 'widget');
+  const { command } = await call('POST', '/api/commands', { trigger: '!hello', cooldownSec: 0, userCooldownSec: 0,
+    actions: [{ kind: 'chat', text: 'legacy action', destination: 'both' }] });
+  // Generic config is a public API and lets this test exercise the engine before the new fields exist.
+  await call('PUT', '/api/config', { commands: [{ ...command, outputMode: 'chat', chatReply: 'Hello {user}: {args}' }] });
+  const history = await call('GET', '/api/history');
+  for (const target of ['live', 'preview']) {
+    const response = await raw('POST', '/api/test', { commandId: command.id, target });
+    assert.equal(response.status, 400, `${target} must not create a test alert`);
+    assert.equal((await response.json()).error, 'Los comandos de solo chat se prueban desde el simulador del chat.');
+  }
+  await call('POST', '/api/chat/simulate', { user: 'Ana', text: '!hello there', platform: 'twitch' });
+  assert.deepEqual(await call('GET', '/api/history'), history, 'chat-only must not create an alert');
+  await waitFor(() => sent.length === 1);
+  assert.deepEqual(sent, ['Hello Ana: there']);
+  assert.deepEqual(ytSent, []);
+  await call('POST', '/api/chat/simulate', { user: 'Bea', text: '!hello again', platform: 'youtube' });
+  await waitFor(() => ytSent.length === 1);
+  assert.deepEqual(ytSent, ['Hello Bea: again']);
+  assert.deepEqual(sent, ['Hello Ana: there']);
+
+  await call('POST', '/api/pause');
+  await call('POST', '/api/chat/simulate', { user: 'Cleo', text: '!hello later', platform: 'youtube' });
+  assert.deepEqual(ytSent, ['Hello Bea: again'], 'pause holds the reply');
+  assert.equal((await call('GET', '/api/status')).pause.held, 1);
+  assert.deepEqual(await call('GET', '/api/history'), history);
+  await call('POST', '/api/resume');
+  await waitFor(() => ytSent.length === 2);
+  assert.deepEqual(ytSent, ['Hello Bea: again', 'Hello Cleo: later']);
+  await call('POST', '/api/pause');
+  await call('POST', '/api/chat/simulate', { user: 'Dan', text: '!hello discarded', platform: 'twitch' });
+  assert.equal((await call('POST', '/api/resume', { discard: true })).discarded, 1);
+  assert.deepEqual(sent, ['Hello Ana: there']);
+  await call('PUT', `/api/commands/${command.id}`, { chatReply: '' });
+  await call('POST', '/api/chat/simulate', { user: 'Eli', text: '!hello', platform: 'twitch' });
+  assert.deepEqual(sent, ['Hello Ana: there'], 'an empty reply sends nothing');
+  assert.deepEqual(ytSent, ['Hello Bea: again', 'Hello Cleo: later'], 'saved alert actions do not run');
+  assert.deepEqual(await call('GET', '/api/history'), history);
+
+  // A real sentinel makes any earlier command alert the first event, without a timing-based absence check.
+  await call('POST', '/api/alert/custom', { title: 'sentinel' });
+  assert.equal((await overlay('alert')).find(e => e.ev === 'alert').data.type, 'custom', 'no command reached the overlay');
+  assert.equal((await widget('publicAlert')).find(e => e.ev === 'publicAlert').data.type, 'custom', 'no command reached widgets');
+});
+
+test('existing commands still deliver an alert and run their chat action only after ACK', async t => {
+  const { app, sent, ytSent, call } = await start(t);
+  const overlay = await panelEvents(`http://127.0.0.1:${app.server.address().port}`, t, 'overlay');
+  await call('POST', '/api/commands', { trigger: '!legacy', actions: [{ kind: 'chat', text: 'Hi {user}', destination: 'both' }] });
+  await call('POST', '/api/chat/simulate', { user: 'Eva', text: '!legacy', platform: 'youtube' });
+  const alert = (await overlay('alert')).find(e => e.ev === 'alert').data;
+  assert.equal(alert.type, 'command');
+  assert.deepEqual(sent, []);
+  assert.deepEqual(ytSent, []);
+  assert.equal((await call('GET', '/api/history'))[0].id, alert.id);
+  await call('POST', '/api/overlay/shown', { id: alert.id });
+  await waitFor(() => sent.length === 1 && ytSent.length === 1);
+  assert.deepEqual(sent, ['Hi Eva']);
+  assert.deepEqual(ytSent, ['Hi Eva']);
+  const preview = await call('POST', '/api/test', { commandId: alert.commandId, target: 'preview' });
+  assert.equal(preview.alert.type, 'command', 'legacy command previews still work');
+  const { timer } = await call('POST', '/api/timers', { message: 'Timer', outputMode: 'chat', chatReply: 'ignored' });
+  assert.equal(Object.hasOwn(timer, 'outputMode'), false, 'command fields do not change timer creation');
+  assert.equal(Object.hasOwn(timer, 'chatReply'), false);
+  const { timer: edited } = await call('PUT', `/api/timers/${timer.id}`, { outputMode: 'chat', chatReply: 'ignored' });
+  assert.equal(Object.hasOwn(edited, 'outputMode'), false, 'command fields do not change timer editing');
+  assert.equal(Object.hasOwn(edited, 'chatReply'), false);
+  assert.equal((await call('POST', '/api/test', { timerId: timer.id, target: 'preview' })).alert.type, 'custom');
 });

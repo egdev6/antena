@@ -115,9 +115,13 @@ export class Engine extends EventEmitter {
     if (m.used) return;
     const hit = this.commands.match(this.config.commands || [], m);
     if (hit) {
-      const a = buildCommandAlert(hit.cmd, cleanVars(hit.vars, this.config.filters), this.config);
+      const vars = cleanVars(hit.vars, this.config.filters);
       this.log(`[comando] ${hit.cmd.trigger} · ${m.user}`);
-      this.deliver(a);
+      if (hit.cmd.outputMode === 'chat') {
+        if (!['twitch', 'youtube'].includes(m.platform) || !hit.cmd.chatReply?.trim()) return;
+        this.deliver({ id: randomUUID(), type: 'command', commandId: hit.cmd.id, chatOnly: true, vars,
+          actions: [{ kind: 'chat', text: hit.cmd.chatReply, destination: m.platform }] });
+      } else this.deliver(buildCommandAlert(hit.cmd, vars, this.config));
     }
   }
   deleteChat(id) { this.chat = this.chat.filter(c => c.id !== id); this.bus.send('chatDelete', { id }, ['widget', 'panel']); }
@@ -135,7 +139,7 @@ export class Engine extends EventEmitter {
       this.bus.send('alert', a, ['preview']);
       return a;
     }
-    if (!a.test) {
+    if (!a.test && !a.chatOnly) {
       this.bus.history.unshift(a);
       this.bus.history.length = Math.min(this.bus.history.length, this.bus.historySize);
       this.pushHistory();
@@ -150,6 +154,10 @@ export class Engine extends EventEmitter {
   }
 
   send(a) {
+    if (a.chatOnly) {
+      this.runActions(a.actions, a.vars, undefined, this.#origin(a)).catch(e => this.log('[acciones]', e.message));
+      return;
+    }
     // #66: política de ráfagas. Primero se intenta agrupar con otra alerta igual ya en cola;
     // si se agrupa, esta no se envía ni registra acciones propias (las suyas pasan al lote).
     if (this.#mergeQueued(a)) return;

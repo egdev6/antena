@@ -108,6 +108,8 @@ export interface CommandConfig {
   title?: string;
   text?: string;
   sub?: string;
+  outputMode?: 'alert' | 'chat';
+  chatReply?: string;
   enabled?: boolean;
   permission?: string;
   platforms?: string[];

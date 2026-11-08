@@ -24,6 +24,7 @@ function Tiles({ value, onChange, items }: { value: string; onChange: (v: string
 const CMD_TEMPLATES: [string, string, string][] = [
   ['alerta', 'Alerta en pantalla', 'Saca su alerta con quién lo escribe y lo que va detrás'],
   ['chat', 'Alerta y respuesta', 'Además contesta en el chat (Twitch y YouTube)'],
+  ['solo', 'Solo chat', 'Sin alerta: responde en la plataforma de origen'],
   ['meld', 'Alerta y escena', 'Además cambia de escena en Meld unos segundos'],
 ];
 function NuevoComando() {
@@ -35,7 +36,8 @@ function NuevoComando() {
     const t = trigger.trim();
     const actions = tpl === 'chat' ? [{ kind: 'chat', text: 'Escribe aquí la respuesta para {user}', destination: 'both', delaySec: 0 }]
       : tpl === 'meld' ? [{ kind: 'scene', scene: '', returnAfterSec: 10, delaySec: 0 }] : [];
-    const d = await post<{ command: CommandConfig }>('/api/commands', { trigger: t, permission: perm, title: t.replace(/^[!¡?.#]/, ''), text: '{user}', sub: '{args}', actions });
+    const d = await post<{ command: CommandConfig }>('/api/commands', { trigger: t, permission: perm, title: t.replace(/^[!¡?.#]/, ''), text: '{user}', sub: '{args}', actions,
+      ...(tpl === 'solo' ? { outputMode: 'chat', chatReply: 'Escribe aquí la respuesta para {user}' } : {}) });
     live.update(s => ({ config: { ...s.config, commands: [...(s.config.commands || []), d.command] } }));
     go(`#/comandos/${enc(d.command.id)}`);
   });
@@ -61,15 +63,15 @@ export function Comandos({ parts }: { parts: string[] }) {
         name: <NameCell href={href} name={<span className="mono">{c.trigger}</span>} sub={[c.title, c.sub].filter(Boolean).join(' · ')} />,
         state: <Dot tone={c.enabled === false ? 'off' : 'ok'}>{c.enabled === false ? 'Apagado' : 'Activo'}</Dot>,
         perm: PERMS.find(p => p[0] === c.permission)?.[1] || 'Todo el mundo',
-        tags: <Tags items={[...(c.platforms || ['twitch', 'youtube']).map(p => ({ t: PLATFORM_NAMES[p] || p })), ...((c.actions || []).length ? [{ t: `${c.actions!.length} ${c.actions!.length === 1 ? 'acción' : 'acciones'}`, on: true }] : []), ...(c.ttsEnabled ? [{ t: 'Voz', on: true }] : [])]} />,
+        tags: <Tags items={[...(c.platforms || ['twitch', 'youtube']).map(p => ({ t: PLATFORM_NAMES[p] || p })), ...(c.outputMode === 'chat' ? [{ t: 'Solo chat', on: true }] : [...((c.actions || []).length ? [{ t: `${c.actions!.length} ${c.actions!.length === 1 ? 'acción' : 'acciones'}`, on: true }] : []), ...(c.ttsEnabled ? [{ t: 'Voz', on: true }] : [])])]} />,
         wait: <span className="lv-mono">{c.cooldownSec ? `${c.cooldownSec} s` : 'sin espera'}{c.userCooldownSec ? ` · ${c.userCooldownSec} s/persona` : ''}</span>,
-        test: <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/test', { commandId: c.id }), 'Enviado al directo')}>Probar</button>,
+        test: c.outputMode === 'chat' ? <span className="hint">Simulador</span> : <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/test', { commandId: c.id }), 'Enviado al directo')}>Probar</button>,
       } };
     });
   const n = (fn: (c: CommandConfig) => boolean) => list.filter(fn).length;
   return <>
     <PageHead crumb={`Configurar · ${list.length} ${list.length === 1 ? 'comando' : 'comandos'}`} title="Comandos de chat"
-      desc="Cuando alguien escribe el comando en Twitch o YouTube, sale su alerta y se lanzan sus acciones."
+      desc="Cuando alguien escribe el comando en Twitch o YouTube, sale su alerta y sus acciones, o responde solo en el chat."
       actions={<a className="eg-btn eg-btn--primary eg-btn--sm" href="#/comandos/nuevo">+ Nuevo comando</a>} />
     <Kpis items={[
       { value: list.length, label: `comandos · ${n(c => c.enabled !== false)} activos` },

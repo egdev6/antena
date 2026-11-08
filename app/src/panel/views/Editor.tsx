@@ -118,7 +118,7 @@ function testBody(t: Target, where: 'preview' | 'live') {
 
 // Campo → pestaña, para el punto de «cambios sin guardar» de cada pestaña.
 const FIELD_TAB: Record<string, string> = {
-  conditions: 'when', trigger: 'cmd', permission: 'cmd', cooldownSec: 'cmd', userCooldownSec: 'cmd', platforms: 'cmd',
+  conditions: 'when', trigger: 'cmd', permission: 'cmd', cooldownSec: 'cmd', userCooldownSec: 'cmd', platforms: 'cmd', outputMode: 'cmd', chatReply: 'cmd',
   message: 'chat', intervalMin: 'chat', minChatLines: 'chat', destination: 'chat', onlyWhenLive: 'chat', announce: 'chat', announceColor: 'chat', showAlert: 'chat',
   title: 'message', text: 'message', sub: 'message', minAmount: 'message',
   sound: 'sound', soundVolume: 'sound', ttsEnabled: 'sound', ttsTemplate: 'sound', ttsMinAmount: 'sound',
@@ -169,7 +169,8 @@ function useEditor(t: Target) {
     });
   });
   const preview = async () => {
-    if (!active.current || (t.kind === 'timer' && !editorCfg(live.state, t).showAlert)) return;
+    const cfg = editorCfg(live.state, t);
+    if (!active.current || (t.kind === 'timer' && !cfg.showAlert) || (t.kind === 'command' && cfg.outputMode === 'chat')) return;
     // el CSS común también va como está en pantalla (se edita en la pestaña CSS con guardado manual)
     await post('/api/test', { ...testBody(t, 'preview'), draft: buffer.dirty() ? findTarget(live.state, t) : undefined, globalCss: live.state?.config.overlay?.css ?? '' });
   };
@@ -272,7 +273,7 @@ export function Editor({ target }: { target: Target }) {
   const isMedia = a.layout === 'media';
   const isMixed = a.layout === 'mixed';
   const isVideo = (isMedia || isMixed) && mediaKind === 'video';
-  const showAlert = kind !== 'timer' || !!a.showAlert;
+  const showAlert = kind === 'timer' ? !!a.showAlert : kind !== 'command' || a.outputMode !== 'chat';
   const when = { card: !isMedia && !isMixed, media: isMedia, mixed: isMixed, bg: isMedia || isMixed, video: isVideo, fixed: !isVideo || a.durationMode !== 'media' };
   const mediaThumb = a.media && mediaKind === 'image' ? <img src={`/media/${enc(a.media)}`} alt="" /> : a.media && mediaKind === 'video' ? <video src={`/media/${enc(a.media)}`} muted preload="metadata" /> : <Icon d={IC.camera} className="eg-icon eg-icon--lg" />;
   const pickLayout = (l: string) => { set('layout', l); if (l !== 'card' && mediaKind === 'video' && a.layout === 'card') set('durationMode', 'media'); };
@@ -345,7 +346,7 @@ export function Editor({ target }: { target: Target }) {
     : <button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => { if (isSaving() || !confirmDelete(item.trigger, 'este comando')) return; ed.discard(); const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar comando…</button>;
   const headRight = kind === 'timer'
     ? <button className="eg-btn eg-btn--primary eg-btn--sm" title="Envía lo guardado" onClick={guard(async () => { await fireTimer(item.id, (text, err) => setFireMsg({ text, err: !!err })); })}>Enviar ahora</button>
-    : <button className="eg-btn eg-btn--primary eg-btn--sm" title="Prueba lo guardado en Meld" onClick={testLive}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>;
+    : !showAlert ? null : <button className="eg-btn eg-btn--primary eg-btn--sm" title="Prueba lo guardado en Meld" onClick={testLive}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>;
 
   const c = kind === 'variation' ? { ...s.conditionDefaults, ...v.conditions } : null;
   const nActions = (a.actions || []).length, nVars = (a.variations || []).length;
@@ -388,6 +389,9 @@ export function Editor({ target }: { target: Target }) {
         </>)}
 
         {kind === 'command' && pane('cmd', <>
+          <label>Modo de salida <select aria-label="Modo de salida" value={item.outputMode || 'alert'} onChange={e => set('outputMode', e.target.value)}><option value="alert">Alerta en pantalla</option><option value="chat">Solo chat</option></select></label>
+          {!showAlert && <><label data-field="chatReply">Respuesta en el chat <textarea value={item.chatReply || ''} onChange={e => set('chatReply', e.target.value)} /></label>
+            <p className="hint">Responde en la plataforma de origen, sin alerta ni vista previa. Las acciones de alerta se conservan, pero no se ejecutan. Si la respuesta está vacía, no se envía nada. En pausa espera hasta reanudar. El simulador puede enviar la respuesta al chat real si estás conectado.</p></>}
           <div className="row2">
             <label>Quién puede usarlo <select value={item.permission} onChange={e => set('permission', e.target.value)}>{PERMS.map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></label>
             <div className="lbl">Plataformas<div className="row field-ctl">
