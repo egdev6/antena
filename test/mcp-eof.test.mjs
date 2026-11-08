@@ -119,7 +119,9 @@ async function launch(t, scenario, external, entry = [MCP], bootstrapName = 'boo
   delete env.NODE_TEST_CONTEXT; delete env.NODE_TEST_WORKER_ID; delete env.ANTENA_NO_EMBED;
   if (external) env.ANTENA_NO_EMBED = '1';
   if (native) env.MCP_RELEASE_ENDPOINT = path.join(root, 'release-port');
-  const args = ['--import', pathToFileURL(bootstrap).href, ...entry];
+  const args = ['--import', pathToFileURL(bootstrap).href,
+    ...(scenario === 'startup-deadline-probe' ? ['--import', new URL('./helpers/mcp-deadline.mjs', import.meta.url).href] : []),
+    ...entry];
   const child = native
     ? await launchSignalChild(process.execPath, args, { env, stdio: ['pipe', 'pipe', 'pipe'] })
     : spawn(process.execPath, args, { env, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
@@ -145,10 +147,10 @@ async function launch(t, scenario, external, entry = [MCP], bootstrapName = 'boo
   const response = id => messages().find(msg => msg.id === id);
   const send = (id, name, args = {}) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id,
     method: 'tools/call', params: { name, arguments: args } }) + '\n');
-  const exited = async () => {
+  const exited = async (ms = 7500) => {
     let timer;
     try {
-      const result = await Promise.race([exit, new Promise(resolve => { timer = setTimeout(() => resolve(null), 7500); })]);
+      const result = await Promise.race([exit, new Promise(resolve => { timer = setTimeout(() => resolve(null), ms); })]);
       assert.ok(result, 'watchdog: ' + out + err);
       return result;
     } finally { clearTimeout(timer); }
@@ -461,13 +463,60 @@ for (const name of ['SIGINT', 'SIGTERM']) {
   }
 }
 
-for (const scenario of ['startup-deadline', 'work-deadline', 'late-deadline']) {
+async function signalAgain(c, name) {
+  const marker = 'FIXTURE:SIGNAL:' + (process.platform === 'win32' ? 'SIGINT' : name);
+  const count = c.err().split(marker).length - 1;
+  await signal(c, name);
+  assert.ok(await c.until(() => c.err().split(marker).length - 1 > count), c.err());
+}
+
+test('MCP señal plazo total startup-deadline no se reinicia por señal ni EOF', { timeout: 15000 }, async t => {
+  const c = await launchSignalFixture(t, 'startup-deadline-probe');
+  c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
+  assert.ok(await c.until(() => c.err().includes('FIXTURE:BOUND')), c.err());
+  await signal(c, 'SIGINT');
+  assert.ok(await c.until(() => c.err().includes('FIXTURE:DEADLINE:REGISTER:')), c.err());
+  const registrations = () => [...c.err().matchAll(/FIXTURE:DEADLINE:REGISTER:([^\r\n]*)/g)].map(match => match[1]);
+  assert.deepEqual(registrations(), ['5000'], c.err());
+
+  await signalAgain(c, 'SIGTERM');
+  c.child.stdin.end();
+  assert.ok(await c.until(() => c.err().includes('FIXTURE:DEADLINE:EOF')), c.err());
+  assert.equal(c.child.exitCode, null, c.err());
+  assert.deepEqual(registrations(), ['5000'], c.err());
+  assert.doesNotMatch(c.err(), /FIXTURE:DEADLINE:(?:CLEAR|REFRESH|EXPIRE)/);
+
+  await c.release();
+  assert.deepEqual(await c.exited(), { code: 1, signal: null }, c.err());
+  assert.deepEqual(registrations(), ['5000'], c.err());
+  assert.doesNotMatch(c.err(), /FIXTURE:DEADLINE:(?:CLEAR|REFRESH)/);
+  assert.equal((c.err().match(/FIXTURE:DEADLINE:EXPIRE/g) || []).length, 1, c.err());
+  assert.ok(c.err().indexOf('FIXTURE:DEADLINE:EOF') < c.err().indexOf('FIXTURE:DEADLINE:EXPIRE'), c.err());
+  assert.match(c.err(), /\[parada\] drenado MCP agotado/);
+  assert.doesNotMatch(c.err(), /PRIVATE_|FIXTURE:FLUSH|\[parada\] drenado agotado/);
+});
+
+test('MCP startup deadline expires in a real process after signals and EOF', { timeout: 15000 }, async t => {
+  const c = await launchSignalFixture(t, 'startup-deadline');
+  c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
+  assert.ok(await c.until(() => c.err().includes('FIXTURE:BOUND')), c.err());
+  await signal(c, 'SIGINT');
+  const start = performance.now();
+  await signalAgain(c, 'SIGTERM');
+  c.child.stdin.end();
+  assert.deepEqual(await c.exited(9000), { code: 1, signal: null }, c.err());
+  const elapsed = performance.now() - start;
+  assert.ok(elapsed < 9000, 'MCP startup deadline exceeded smoke bound: ' + elapsed + ' ' + c.err());
+  assert.match(c.err(), /\[parada\] drenado MCP agotado/);
+  assert.doesNotMatch(c.err(), /PRIVATE_|FIXTURE:FLUSH|\[parada\] drenado agotado/);
+});
+
+for (const scenario of ['work-deadline', 'late-deadline']) {
   test(`MCP señal plazo total ${scenario} no se reinicia por señal ni EOF`, { timeout: 15000 }, async t => {
     const c = await launchSignalFixture(t, scenario);
-    if (scenario !== 'startup-deadline') await warm(c);
+    await warm(c);
     c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
-    const marker = scenario === 'startup-deadline' ? 'FIXTURE:BOUND' : 'FIXTURE:WORK';
-    assert.ok(await c.until(() => c.err().includes(marker)), c.err());
+    assert.ok(await c.until(() => c.err().includes('FIXTURE:WORK')), c.err());
     const start = Date.now(); await signal(c, 'SIGINT');
     await new Promise(resolve => setTimeout(resolve, 2000));
     if (process.platform === 'win32') await signal(c, 'SIGTERM');
