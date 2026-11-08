@@ -18,7 +18,7 @@ function warnUnknown(event) {
 }
 
 export class Bus {
-  constructor({ historySize = 100, byteBudget = 512 * 1024, backlogGraceMs = 100 } = {}) {
+  constructor({ historySize = 100, byteBudget = 512 * 1024, backlogGraceMs = 100, backlogMaxMs = 5000 } = {}) {
     this.clients = new Set();
     this.history = [];
     this.historySize = historySize;
@@ -28,7 +28,11 @@ export class Bus {
     // ráfaga: una ráfaga de un solo tick parece lenta siempre. Solo se corta un cliente cuyo
     // backlog sigue por encima del presupuesto en el tick siguiente (setImmediate) sin que
     // haya drenado; el 'drain' resetea la contrapresión y libera el crédito.
+    // #57: the grace is progress-based. A client over budget whose backlog shrinks between
+    // checks is reading and keeps its connection; one that did not shrink in a whole window is
+    // stalled and is cut; and none stays over budget longer than backlogMaxMs (bounded memory).
     this.backlogGraceMs = backlogGraceMs;
+    this.backlogMaxMs = backlogMaxMs;
     this.byteBudget = byteBudget;
   }
 
@@ -47,7 +51,11 @@ export class Bus {
       res, kind,
       closing: false,          // saturado: se cuenta lo perdido y se programa el gap + cierre
       gapScheduled: false,
-      checkScheduled: false,   // verificación de backlog persistente pendiente (setImmediate)
+      checkScheduled: false,   // verificación de backlog persistente pendiente (setTimeout)
+      overBudgetSince: null,   // #57: cuándo superó el presupuesto (null = por debajo)
+      lastBacklog: 0,          // #57: backlog en la comprobación anterior
+      bytesWritten: 0,         // #57: bytes escritos al socket (consumido = antes + escrito - ahora)
+      lastBytesWritten: 0,
       throttled: false,        // backlog sobre presupuesto: los snapshots se coalescen
       atRisk: 0,               // efímeros escritos con backlog sobre presupuesto (en riesgo)
       droppedEphemeral: 0,     // efímeros no entregados (riesgo al corte + envíos posteriores)
@@ -73,17 +81,26 @@ export class Bus {
   #scheduleBacklogCheck(client) {
     if (client.checkScheduled) return;
     client.checkScheduled = true;
+    if (client.overBudgetSince === null) client.overBudgetSince = Date.now();
+    client.lastBacklog = client.res.writableLength || 0;
+    client.lastBytesWritten = client.bytesWritten;
     setTimeout(() => {
       client.checkScheduled = false;
       if (client.closing) return;
-      if ((client.res.writableLength || 0) > this.byteBudget) this.#saturate(client);
+      const backlog = client.res.writableLength || 0;
+      if (backlog <= this.byteBudget) { client.overBudgetSince = null; return; }
+      // Bytes the client actually read during the window; new writes do not hide progress.
+      const consumed = client.lastBacklog + (client.bytesWritten - client.lastBytesWritten) - backlog;
+      if (consumed <= 0) return this.#saturate(client, 'stalled');
+      if (Date.now() - client.overBudgetSince >= this.backlogMaxMs) return this.#saturate(client, 'backlog-timeout');
+      this.#scheduleBacklogCheck(client); // progressing: renew the window
     }, this.backlogGraceMs);
   }
 
   /** Cliente saturado: gap visible con el recuento de efímeros perdidos y cierre para
    *  reconectar con snapshot. El gap se envía tras comprobar el backlog persistente y
    *  con el recuento final de la ráfaga. */
-  #saturate(client) {
+  #saturate(client, cause) {
     if (client.gapScheduled) return;
     client.closing = true;
     client.throttled = true;
@@ -94,6 +111,7 @@ export class Bus {
       reason: 'slow-client',
       kind: client.kind,
       droppedEphemeral: client.droppedEphemeral,
+      cause, // #57: 'stalled' (no progress in a grace window) | 'backlog-timeout' (over budget too long)
     })}\n\n`;
     try { client.res.write(gap); } catch { /* socket ya muerto */ }
     try { client.res.end(); } catch { /* idem */ }
@@ -129,6 +147,7 @@ export class Bus {
       this.clients.delete(client);
       return false;
     }
+    client.bytesWritten += Buffer.byteLength(msg);
     if (!ok) client.throttled = true; // contrapresión real: 'drain' liberará el throttle
     if ((res.writableLength || 0) > this.byteBudget) {
       // Backlog sobre presupuesto: los efímeros escritos a partir de aquí están en riesgo
@@ -153,6 +172,7 @@ export class Bus {
         this.clients.delete(client);
         return;
       }
+      client.bytesWritten += Buffer.byteLength(msg);
       if ((client.res.writableLength || 0) > this.byteBudget) {
         this.#scheduleBacklogCheck(client);
         return;
