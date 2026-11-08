@@ -1,4 +1,5 @@
 // El bus mantiene sus tramas SSE; WebSocket evita el límite HTTP por host en las capas.
+const RECONNECT_TIMEOUT_MS = 10_000; // plazo de un reintento cuyo upgrade no abre ni cierra
 export class AntenaStream extends EventTarget {
   constructor(url) {
     super();
@@ -65,14 +66,19 @@ export class AntenaStream extends EventTarget {
       if (!this.opened) this.fallback();
       else this.timer = setTimeout(() => this.connect(), this.retry);
     });
-    // Some HTTP-only proxies leave the upgrade pending instead of rejecting it.
-    if (!this.opened) this.timer = setTimeout(() => {
-      if (this.readyState === 2 || ws !== this.socket || this.opened) return;
+    // Some HTTP-only proxies leave the upgrade pending instead of rejecting it. Before the first
+    // open that means falling back to SSE; on a later reconnect WebSocket already worked, so the
+    // stalled attempt is retired (its events are ignored) and a fresh one is scheduled.
+    const firstAttempt = !this.opened;
+    this.timer = setTimeout(() => {
+      if (this.readyState === 2 || ws !== this.socket || this.readyState === 1) return;
       this.socket = null;
       try { ws.close(); } catch { /* ya cerrado */ }
       this.emit(new Event('error'));
-      if (this.readyState !== 2) this.fallback();
-    }, this.retry);
+      if (this.readyState === 2) return;
+      if (firstAttempt) this.fallback();
+      else this.timer = setTimeout(() => this.connect(), this.retry);
+    }, firstAttempt ? this.retry : Math.max(this.retry, RECONNECT_TIMEOUT_MS));
   }
 
   // Cada mensaje WS contiene una trama SSE completa; una trama sin data no es un evento.
