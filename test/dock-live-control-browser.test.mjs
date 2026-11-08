@@ -120,6 +120,7 @@ test('dock ancho: columnas, escenas emparejadas, al aire y nombre largo recortad
   assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-col-h')).map(h => h.firstChild.textContent.trim())`), ['Control', 'Audio', 'Interactivos']);
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-btn.sc').length`), 0, 'sin atajos');
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-chat, .d-msgs, .d-send').length`), 0, 'sin chat en el dock (S12)');
+  assert.equal(await dom(chrome, `document.querySelectorAll('.d-open, a[href="/"]').length`), 0, 'sin botón Panel en el dock (#65)');
 
   assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-scene-n')).map(n => n.textContent)`),
     ['Full cam', 'Pausa', LONG_VERTICAL]);
@@ -183,6 +184,7 @@ test('dock estrecho: pestañas Control/Audio/Interactivos, teclado, memoria y ca
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-col').length`), 0, 'en estrecho no hay columnas');
   assert.equal(await dom(chrome, `document.querySelector('[role="tab"][aria-selected="true"]').textContent.trim()`), 'Control', 'Control va primera y seleccionada');
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-chat, .d-msgs, .d-send').length`), 0, 'sin chat en el dock (S12)');
+  assert.equal(await dom(chrome, `document.querySelectorAll('.d-open, a[href="/"]').length`), 0, 'sin botón Panel en el dock (#65)');
 
   // Flechas mueven foco y panel, también con vuelta circular.
   await dom(chrome, `(() => { const t = document.querySelector('#d-t-control'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); return true; })()`);
