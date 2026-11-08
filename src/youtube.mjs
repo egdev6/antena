@@ -29,6 +29,7 @@ export class YouTube extends EventEmitter {
     this.pollClosePromise = null;
     this.status = { state: 'parado', videoId: null, liveChatId: null, title: null, errors: [], polls: 0, account: store.secrets?.youtube?.channel || null };
     this.pending = new Map(); // state → { verifier, redirect }
+    this.rawLog = null; // RawEventLog opcional (src/raw-events.mjs)
   }
 
   get token() { return this.store.secrets.youtube; }
@@ -122,7 +123,7 @@ export class YouTube extends EventEmitter {
     // search.list cuesta 100 unidades: solo una vez por directo.
     const d = await this.api('/search', { part: 'id', channelId: this.cfg.channelId, eventType: 'live', type: 'video', maxResults: 1 });
     const id = d.items?.[0]?.id?.videoId;
-    if (!id) throw new Error('No hay ningún directo en marcha en el canal.');
+    if (!id) throw Object.assign(new Error('No hay ningún directo en marcha en el canal.'), { reason: 'noLive' });
     return id;
   }
 
@@ -171,7 +172,7 @@ export class YouTube extends EventEmitter {
       if (this.pollClosed) return;
       const item = d.items?.[0];
       const liveChatId = item?.liveStreamingDetails?.activeLiveChatId;
-      if (!liveChatId) throw new Error('Ese vídeo no tiene un chat en directo activo.');
+      if (!liveChatId) throw Object.assign(new Error('Ese vídeo no tiene un chat en directo activo.'), { reason: 'noLiveChat' });
       this.setStatus({ state: 'escuchando', videoId, liveChatId, title: item.snippet?.title });
       this.pageToken = null;
       this.primed = false;
@@ -217,14 +218,18 @@ export class YouTube extends EventEmitter {
       });
       this.pageToken = d.nextPageToken;
       wait = Math.max(wait, d.pollingIntervalMillis || 0);
-      // La primera lectura trae mensajes antiguos: no se alertan.
-      if (this.primed) {
-        for (const item of d.items || []) {
+      // La primera lectura trae mensajes antiguos: no se alertan, pero sí se registran
+      // en bruto (handled=false) para poder diagnosticar qué envía YouTube.
+      for (const item of d.items || []) {
+        let handled = false;
+        if (this.primed) {
           const n = normalizeYouTube(item);
           if (n) this.emit('event', { externalId: 'yt:' + item.id, ...n });
           const c = youtubeChatMessage(item);
           if (c) this.emit('chat', c);
+          handled = !!(n || c);
         }
+        try { this.rawLog?.record('youtube', item?.snippet?.type, handled, item); } catch {}
       }
       this.primed = true;
       // El aviso de espera se retira en cuanto la lectura vuelve a funcionar.
@@ -248,6 +253,7 @@ export class YouTube extends EventEmitter {
   }
 
   fail(err) {
+    this.lastError = err; // #73: la conexión automática decide si reintentar según el motivo
     this.running = false;
     clearTimeout(this.timer);
     this.log('[youtube]', err.message);

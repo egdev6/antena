@@ -311,6 +311,7 @@ Están en **Widgets** y cada uno tiene su capa de navegador. Su estado (pregunta
 - **Retención de sesiones:** por defecto se conservan todos los directos archivados. Con `sessions.retention` (en `data/config.json`) a un número N, tras cada corte solo quedan los N archivados más recientes (el media de cada directo nunca se borra). El listado del panel se alimenta de metadatos ligeros, sin leer cada archivo entero.
 - **Chat:** Twitch y YouTube juntos y filtrados, con el icono de cada plataforma. Escribes en **Twitch, YouTube o los dos** (el selector junto al cuadro de texto; se recuerda y vale también para el prompter y el MCP). **Tus mensajes no salen en el chat en pantalla** del directo (Widgets › Chat en pantalla › «Ocultar mis mensajes», activado de serie) y no pasan por el filtro de enlaces.
 - **Historial:** las últimas alertas, con «Repetir».
+- **Registro de eventos en bruto:** todo evento recibido de YouTube y Twitch se añade a `data/raw-events.jsonl` (una línea JSON: `at`, `platform`, `kind`, `handled`, `raw`). `handled: false` marca lo que la plataforma envió y antena ignoró, útil para encontrar alertas que faltan. Al superar 5 MB el fichero rota a `raw-events.1.jsonl`.
 - **Pausa:** botón fijo en la barra lateral. Detiene las alertas en pantalla y los mensajes programados (los automáticos y «Enviar ahora»). Las alertas que llegan se guardan y, al reanudar, salen o se descartan; cada mensaje programado vuelve a contar su intervalo. Lo que escribes tú en el chat no se pausa.
 
 ### Prompter
@@ -477,6 +478,8 @@ Permisos: `moderator:read:followers`, `channel:read:subscriptions`, `bits:read`,
 1. En Google Cloud Console activa **YouTube Data API v3** y crea una **API key**.
 2. Pégala en **Conexiones**, con el ID de tu canal (`UC…`) o el enlace del directo, y pulsa **Escuchar el chat**.
 
+**Conexión automática:** cuando Meld empieza a emitir (o antena arranca con el directo ya en marcha), antena se pone a escuchar el chat de YouTube sola, sin tu cuenta. Mientras YouTube aún no muestra el directo, reintenta cada 30 s, hasta 10 veces (con el ID del canal cada intento cuesta 100 unidades de cuota; con el enlace del directo, mucho menos). Al terminar el directo, el chat se detiene y el estado queda limpio. Si unos segundos después de empezar alguna plataforma configurada (Twitch o YouTube) sigue sin conectar, el panel muestra un aviso con un botón para conectar cada una.
+
 Cuota: 10.000 unidades al día. Cada lectura cuesta unas 5, así que con 8 s entre lecturas hay para unas 4 horas. YouTube no avisa en tiempo real de los suscriptores nuevos.
 
 **Escribir en el chat de YouTube** necesita tu cuenta (una vez):
@@ -529,6 +532,7 @@ src/timers.mjs     mensajes programados
 src/interactive.mjs preguntas, tier list y sorteo
 src/filters.mjs    filtro de palabras, enlaces y usuarios
 src/store.mjs      config y secretos en data/
+src/raw-events.mjs registro en bruto de eventos de plataforma (data/raw-events.jsonl)
 public/            overlay, widgets, tokens del sistema de diseño y la página mínima sin app/dist
 app/src/           interfaz React: panel/, prompter/, dock/, lib/ (estado en vivo, API, escritorio)
 app/splash/        pantalla de arranque de la app de escritorio
