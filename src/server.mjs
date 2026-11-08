@@ -12,6 +12,7 @@ import { validatePatch, validatePath, warnUnknownKeys } from './config-schema.mj
 import { Bus } from './bus.mjs';
 import { Twitch } from './twitch.mjs';
 import { YouTube } from './youtube.mjs';
+import { RawEventLog } from './raw-events.mjs';
 import { TwitchChat } from './chat.mjs';
 import { Meld, MELD_COMMANDS, MELD_STREAM_EVENTS } from './meld.mjs';
 import { Session, METRICS } from './session.mjs';
@@ -153,6 +154,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const bus = new Bus();
   const twitch = new Twitch(store, log);
   const youtube = new YouTube(store, log);
+  // Registro en bruto de todo lo que envían las plataformas (data/raw-events.jsonl).
+  youtube.rawLog = twitch.rawLog = new RawEventLog(store.dir, { log });
   const chat = new TwitchChat(log);
   const meld = new Meld(log);
   // #68: la retención de archivados sale de la configuración (0 = sin límite); se lee

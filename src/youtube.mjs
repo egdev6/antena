@@ -29,6 +29,7 @@ export class YouTube extends EventEmitter {
     this.pollClosePromise = null;
     this.status = { state: 'parado', videoId: null, liveChatId: null, title: null, errors: [], polls: 0, account: store.secrets?.youtube?.channel || null };
     this.pending = new Map(); // state → { verifier, redirect }
+    this.rawLog = null; // RawEventLog opcional (src/raw-events.mjs)
   }
 
   get token() { return this.store.secrets.youtube; }
@@ -217,14 +218,18 @@ export class YouTube extends EventEmitter {
       });
       this.pageToken = d.nextPageToken;
       wait = Math.max(wait, d.pollingIntervalMillis || 0);
-      // La primera lectura trae mensajes antiguos: no se alertan.
-      if (this.primed) {
-        for (const item of d.items || []) {
+      // La primera lectura trae mensajes antiguos: no se alertan, pero sí se registran
+      // en bruto (handled=false) para poder diagnosticar qué envía YouTube.
+      for (const item of d.items || []) {
+        let handled = false;
+        if (this.primed) {
           const n = normalizeYouTube(item);
           if (n) this.emit('event', { externalId: 'yt:' + item.id, ...n });
           const c = youtubeChatMessage(item);
           if (c) this.emit('chat', c);
+          handled = !!(n || c);
         }
+        try { this.rawLog?.record('youtube', item?.snippet?.type, handled, item); } catch {}
       }
       this.primed = true;
       // El aviso de espera se retira en cuanto la lectura vuelve a funcionar.
