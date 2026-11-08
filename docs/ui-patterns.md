@@ -39,9 +39,11 @@ The panel follows one hierarchy, drawn on the canvas «antena — Rediseño» (p
   frame when any of those change (also when they change outside the panel: alert saves are pushed as
   `config` to the panel). A video stays on its first frame; hovering or focusing the card plays it in a
   silent loop (the frame answers `postMessage` `play`/`pause` and reports duration and progress).
-- **Sidebar** (as drawn in the canvas): fixed group labels (no folding), one compact entry with its icon per
-  page, the active one with the red bar on the left, and on the right a mono number (red when something is
-  live: questions in queue, voting, Meld connected) or a warning dot (alerts with a missing file).
+- **Sidebar** (as drawn in the canvas): fixed group labels (no folding), compact entries with icons and a
+  red bar on the active entry. Preguntas, Tier list, Sorteo and Teleprompter open from their Widgets cards
+  and select «Widgets» in the sidebar, including on nested routes. Widgets shows a red live tail when a vote
+  or giveaway is open (or both); its cards show the queue, voting, giveaway and reading states. Other entries
+  keep their mono number or live indicator, or a warning dot (alerts with a missing file).
 
 ### Manual save
 
@@ -129,7 +131,7 @@ by what the neighbouring view did: the same data gets the same control in every 
 
 ## Widget pages
 
-Every page of the «Widgets» sidebar group (Preguntas, Teleprompter, Tier list, Sorteo, Chat en pantalla,
+Every page reached from the «Widgets» catalog (Preguntas, Teleprompter, Tier list, Sorteo, Chat en pantalla,
 Objetivos, Últimos y ticker, Créditos) uses one layout, `WidgetLayout`, below the header (and below the
 `ItemTabs` when the page has them):
 

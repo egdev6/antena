@@ -272,6 +272,42 @@ test('#118: PUT /api/config rechaza hojas inválidas de cada sección con 400 si
   assert.equal(app.store.config.shortcuts.length, 0, 'memoria sin cambios');
 });
 
+test('command output mode and reply validate on every public write without partial changes', async t => {
+  const { base } = await fixture(t);
+  const request = async (method, endpoint, body) => {
+    const response = await fetch(base + endpoint, { method, headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(2500) });
+    return { status: response.status, body: await response.json() };
+  };
+  const empty = (await request('GET', '/api/commands')).body;
+  const invalidCreate = await request('POST', '/api/commands', { trigger: '!bad', outputMode: 'both' });
+  assert.equal(invalidCreate.status, 400);
+  assert.equal(invalidCreate.body.error, 'commands.0.outputMode: se esperaba uno de: alert, chat');
+  assert.deepEqual((await request('GET', '/api/commands')).body, empty);
+
+  const created = await request('POST', '/api/commands', { trigger: '!reply', outputMode: 'chat', chatReply: 'Hi {user}' });
+  assert.equal(created.status, 200);
+  assert.equal(created.body.command.outputMode, 'chat');
+  assert.equal(created.body.command.chatReply, 'Hi {user}');
+  const before = (await request('GET', '/api/commands')).body;
+  const cases = [
+    ['PUT', `/api/commands/${created.body.command.id}`, { outputMode: 'both' }, 'commands.0.outputMode: se esperaba uno de: alert, chat'],
+    ['PUT', `/api/commands/${created.body.command.id}`, { chatReply: 42 }, 'commands.0.chatReply: se esperaba un texto'],
+    ['PUT', '/api/config', { commands: [{ ...created.body.command, outputMode: 'both' }] }, 'commands.0.outputMode: se esperaba uno de: alert, chat'],
+    ['POST', '/api/config/set', { path: 'commands.0.outputMode', value: 'both' }, 'commands.0.outputMode: se esperaba uno de: alert, chat'],
+  ];
+  for (const [method, endpoint, body, message] of cases) {
+    const result = await request(method, endpoint, body);
+    assert.equal(result.status, 400, `${method} ${endpoint}`);
+    assert.equal(result.body.error, message);
+    assert.deepEqual((await request('GET', '/api/commands')).body, before, 'rejection does not change stored commands');
+  }
+  const updated = await request('PUT', `/api/commands/${created.body.command.id}`, { outputMode: 'alert', chatReply: 'Updated' });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.command.outputMode, 'alert');
+  assert.equal(updated.body.command.chatReply, 'Updated');
+});
+
 // ---------- MCP ----------
 test('El MCP devuelve el mensaje de validación en cambiar_config y fijar_valor', async t => {
   const { app } = await fixture(t);

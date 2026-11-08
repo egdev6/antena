@@ -368,7 +368,16 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         throw httpError(400, 'Destino de la acción de chat no válido. Usa twitch, youtube o both.');
     }
   };
-  const COMMAND_KEYS = [...ALERT_KEYS, 'trigger', 'permission', 'cooldownSec', 'userCooldownSec', 'platforms'];
+  const COMMAND_KEYS = [...ALERT_KEYS, 'trigger', 'permission', 'cooldownSec', 'userCooldownSec', 'platforms', 'outputMode', 'chatReply'];
+  const commandFields = body => {
+    const fields = pick(body, COMMAND_KEYS);
+    for (const key of ['outputMode', 'chatReply']) {
+      const [error] = validatePath(`commands.0.${key}`, fields[key]);
+      if (error) throw httpError(400, error.message);
+    }
+    checkActions(fields.actions);
+    return fields;
+  };
 
   // ---------- ocultado diferido de capas Meld ----------
   // El horario aceptado por POST /api/meld/layer no se toca: el temporizador original sigue
@@ -532,7 +541,11 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const useDraft = draft && typeof draft === 'object' && !Array.isArray(draft) && target === 'preview';
     const cfg = useDraft ? structuredClone(store.config) : store.config;
     if (timerId) a = { ...buildCustomAlert(alertFields(useDraft ? { ...timerOf(timerId), ...draft } : timerOf(timerId)), { ...timers.vars(), ...(vars || {}) }, cfg), test: true };
-    else if (commandId) a = buildCommandAlert(useDraft ? { ...commandOf(commandId), ...draft } : commandOf(commandId), { ...SAMPLES.command, ...(vars || {}) }, cfg, { test: true });
+    else if (commandId) {
+      const command = useDraft ? { ...commandOf(commandId), ...draft } : commandOf(commandId);
+      if (command.outputMode === 'chat') throw httpError(400, 'Los comandos de solo chat se prueban desde el simulador del chat.');
+      a = buildCommandAlert(command, { ...SAMPLES.command, ...(vars || {}) }, cfg, { test: true });
+    }
     else {
       if (!ALERT_TYPES[type]) throw httpError(400, 'Tipo desconocido');
       if (useDraft && !variationId) cfg.alerts[type] = { ...cfg.alerts[type], ...draft };
@@ -581,8 +594,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // comandos de chat
   route('GET', '/api/commands', async () => store.config.commands || []);
   route('POST', '/api/commands', async body => {
-    checkActions(body?.actions);
-    const c = newCommand(pick(body, COMMAND_KEYS));
+    const c = newCommand(commandFields(body));
     if ((store.config.commands || []).some(x => normalizeTrigger(x.trigger) === c.trigger)) throw httpError(409, `Ya existe el comando ${c.trigger}`);
     (store.config.commands ||= []).push(c);
     await store.save('commands');
@@ -590,8 +602,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
   route('PUT', '/api/commands/:id', async ({ id }, body) => {
     const c = commandOf(decodeURIComponent(id));
-    checkActions(body?.actions);
-    Object.assign(c, pick(body, COMMAND_KEYS));
+    Object.assign(c, commandFields(body));
     if (body.trigger) c.trigger = normalizeTrigger(body.trigger);
     await store.save('commands');
     return { command: c };
@@ -609,7 +620,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (!t) throw httpError(404, `No existe el mensaje programado «${id}»`);
     return t;
   };
-  const TIMER_FIELDS = [...COMMAND_KEYS.filter(k => !['trigger', 'permission', 'cooldownSec', 'userCooldownSec', 'platforms'].includes(k)), ...TIMER_KEYS];
+  const TIMER_FIELDS = [...COMMAND_KEYS.filter(k => !['trigger', 'permission', 'cooldownSec', 'userCooldownSec', 'platforms', 'outputMode', 'chatReply'].includes(k)), ...TIMER_KEYS];
   // Ausente = Twitch; cualquier otro valor se rechaza sin guardar nada.
   const timerFields = body => {
     const fields = pick(body, TIMER_FIELDS);

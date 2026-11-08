@@ -35,8 +35,6 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-warn.soft{--st:var(--warn)}
 .d-warn.big{font:800 13px/1 var(--font-display);text-transform:uppercase;padding:6px 10px;border-radius:var(--radius-md);background:var(--gradient-btn-primary);color:var(--color-action-primary-solid-fg);border-color:transparent;animation:blink 1.2s infinite}
 @keyframes blink{50%{opacity:.4}}
-.d-open{margin-left:auto;align-self:center;font-size:12px;color:var(--grey);text-decoration:none;padding:4px 6px}
-.d-open:hover{color:var(--pink)}
 /* ---------- pestañas (ventana no apaisada o < 1000 px) ---------- */
 .d-tabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:var(--s0)}
 .d-tabs button,.d-itabs button{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:8px 12px;min-height:40px;border-radius:var(--radius-md) var(--radius-md) 0 0;font:700 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
@@ -82,6 +80,20 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-card-h .d-sw{flex:none}
 .d-q{margin:0;font-size:14px;overflow-wrap:anywhere}.d-q b{color:var(--pink)}
 .d-muted{margin:0;color:var(--muted);font-size:12px}
+/* Compact interactive lists and forms. */
+.d-pick{display:grid;gap:4px;min-width:0;color:var(--grey);font-size:12px}
+.d-pick select{width:100%;min-width:0;padding:7px 8px;font:inherit;color:var(--text);border:1px solid var(--line2);border-radius:var(--radius-md);background:var(--s0)}
+.d-pick select:focus-visible{outline:none;box-shadow:var(--shadow-focus)}
+.d-add{display:grid;gap:6px;min-width:0}
+.d-add .d-row{min-width:0}
+.d-add input:not([type="checkbox"]){flex:1;min-width:0;width:100%;padding:7px 8px;border:1px solid var(--line2);border-radius:var(--radius-md);background:var(--s0)}
+.d-items{display:grid;gap:5px;min-width:0}
+.d-item{display:grid;gap:5px;min-width:0;padding:7px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--s0)}
+.d-item-text{min-width:0;overflow-wrap:anywhere}
+.d-item-text small{display:block;color:var(--muted);font-size:12px}
+.d-item-actions{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
+.d-check{display:flex;align-items:center;gap:5px;color:var(--grey);font-size:12px}
+.d-winners{display:grid;gap:6px;min-width:0}
 /* ---------- escenas ---------- */
 .d-groups{display:grid;gap:10px}
 .d-group{display:grid;gap:6px}

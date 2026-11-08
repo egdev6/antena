@@ -33,7 +33,9 @@ function render() {
   const card = (id, label, d) => {
     const up = prev[id] != null && d.current > prev[id];
     prev[id] = d.current;
-    return `<div class="item eg-card soft item-${id} ${d.live ? '' : 'off'} ${up ? 'up' : ''}"><p class="kick">${esc(label)}</p><p class="big">${d.live ? fmt(d.current) : '—'}</p>${showPeak && d.live ? `<p class="extra">Pico ${fmt(d.peak)}</p>` : ''}</div>`;
+    // pf-<platform>: the platform color from Apariencia paints the card, like the goal bars (#64).
+    const pf = LABELS[id] ? 'pf-' + id : '';
+    return `<div class="item eg-card soft item-${id} ${pf} ${d.live ? '' : 'off'} ${up ? 'up' : ''}"><p class="kick">${esc(label)}</p><p class="big">${d.live ? fmt(d.current) : '—'}</p>${showPeak && d.live ? `<p class="extra">Pico ${fmt(d.peak)}</p>` : ''}</div>`;
   };
   const items = platforms.map(p => card(p, LABELS[p], data[p] || {}));
   if (showTotal) {

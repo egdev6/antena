@@ -114,7 +114,7 @@ tool('borrar_variacion', 'Borra una variación.', { tipo, variacion: S.str('Id o
 tool('ordenar_variaciones', 'Cambia la prioridad de las variaciones (la primera que encaja es la que sale).', { tipo, ids: S.arr('Ids en el orden deseado', { type: 'string' }) }, ({ tipo: t, ids }) => post(`/api/alerts/${t}/variations-order`, { ids }), ['tipo', 'ids']);
 
 // lanzar y controlar
-tool('probar_alerta', 'Lanza una alerta de prueba (no se guarda en el directo). Se puede probar una variación o un comando concreto.',
+tool('probar_alerta', 'Lanza una alerta de prueba (no se guarda en el directo). Se puede probar una variación o un comando con alerta; los comandos de solo chat se prueban desde el simulador del chat.',
   { tipo, variacion: S.str('Id o nombre de variación'), comando: S.str('Id o disparador de un comando de chat (en vez de tipo)'), datos: S.obj('Datos de ejemplo: user, amount, message…'), destino: S.enum('Dónde se ve', ['directo', 'vista_previa']) },
   ({ tipo: t, variacion, comando, datos, destino }) => post('/api/test', { type: t, variationId: variacion, commandId: comando, vars: datos, target: destino === 'vista_previa' ? 'preview' : 'live' }));
 tool('simular_evento', 'Simula un evento real (pasa por filtros y variaciones y SE GUARDA en el directo, cuenta para objetivos y créditos).', { tipo, datos: S.obj('user, amount, message, tier…') }, ({ tipo: t, datos }) => post('/api/simulate', { type: t, vars: datos }), ['tipo']);
@@ -122,17 +122,17 @@ tool('lanzar_alerta', 'Lanza ahora una alerta libre con el diseño que quieras (
   { title: S.str('Antetítulo'), text: S.str('Texto grande'), sub: S.str('Línea de apoyo'), diseño: S.obj('Cualquier otro campo de alerta: layout, media, sound, durationMs, actions…') },
   ({ title, text, sub, diseño }) => post('/api/alert/custom', { title, text, sub, ...(diseño || {}) }));
 tool('decir', 'Lee un texto en voz alta en el overlay.', { texto: S.str('Texto'), voz: S.str('Nombre de la voz del sistema'), velocidad: S.num('0.5–2'), tono: S.num('0–2') }, ({ texto, voz, velocidad, tono }) => post('/api/say', { text: texto, voice: voz, rate: velocidad, pitch: tono }), ['texto']);
-tool('pausar_alertas', 'Pausa las alertas y los mensajes programados: las alertas se guardan en cola y no salen hasta reanudar; los mensajes programados no se envían, ni solos ni con enviar_mensaje_ahora. El chat que escribes tú (escribir_chat) sigue funcionando.', {}, () => post('/api/pause'));
-tool('reanudar_alertas', 'Reanuda las alertas y saca las que estaban en cola (o las descarta). Los mensajes programados vuelven a contar su intervalo completo desde ahora: lo que venció en pausa no se recupera.', { descartar: S.bool('Descartar las acumuladas') }, ({ descartar }) => post('/api/resume', { discard: !!descartar }));
+tool('pausar_alertas', 'Pausa las alertas y los mensajes programados: las alertas y las respuestas de comandos de solo chat se guardan en cola hasta reanudar; los mensajes programados no se envían, ni solos ni con enviar_mensaje_ahora. El chat que escribes tú (escribir_chat) sigue funcionando.', {}, () => post('/api/pause'));
+tool('reanudar_alertas', 'Reanuda las alertas y las respuestas de comandos en cola (o las descarta). Los mensajes programados vuelven a contar su intervalo completo desde ahora: lo que venció en pausa no se recupera.', { descartar: S.bool('Descartar las acumuladas') }, ({ descartar }) => post('/api/resume', { discard: !!descartar }));
 tool('saltar_alerta', 'Quita la alerta que se está viendo.', {}, () => post('/api/skip'));
 tool('vaciar_cola', 'Quita la alerta actual y vacía la cola del overlay.', {}, () => post('/api/clear'));
 tool('historial_alertas', 'Últimas alertas reales que han salido.', {}, () => get('/api/history'));
 tool('repetir_alerta', 'Repite una alerta del historial.', { id: S.str('Id del historial') }, ({ id }) => post('/api/replay', { id }), ['id']);
 
 // comandos de chat
-const CMD_HELP = 'Campos: trigger («!engram»), enabled, permission (everyone|members|vips|mods|broadcaster), cooldownSec, userCooldownSec, platforms (["twitch","youtube"]) y cualquier campo de alerta (title, text, sub con {user} {args}, layout, media, sound, actions…; las acciones chat admiten destination twitch|youtube|both, sin él Twitch).';
-tool('listar_comandos', 'Lista los comandos de chat que lanzan alertas.', {}, () => get('/api/commands'));
-tool('crear_comando', 'Crea un comando de chat que lanza una alerta. ' + CMD_HELP, { comando: S.obj('Campos del comando (mínimo trigger)') }, ({ comando }) => post('/api/commands', comando), ['comando']);
+const CMD_HELP = 'Campos: trigger («!engram»), enabled, permission (everyone|members|vips|mods|broadcaster), cooldownSec, userCooldownSec, platforms (["twitch","youtube"]), outputMode (alert por defecto | chat) y chatReply (texto con {user} y {args} para solo chat). En modo chat responde en la plataforma de origen sin alerta ni espera de ACK; en pausa se retiene hasta reanudar. En modo alerta admite cualquier campo de alerta (title, text, sub, layout, media, sound, actions…; las acciones chat admiten destination twitch|youtube|both, sin él Twitch).';
+tool('listar_comandos', 'Lista los comandos de chat, con alerta o solo chat.', {}, () => get('/api/commands'));
+tool('crear_comando', 'Crea un comando de chat. ' + CMD_HELP, { comando: S.obj('Campos del comando (mínimo trigger)') }, ({ comando }) => post('/api/commands', comando), ['comando']);
 tool('editar_comando', 'Edita un comando (por id o disparador). ' + CMD_HELP, { id: S.str('Id o disparador'), cambios: S.obj('Campos a cambiar') }, ({ id, cambios }) => put('/api/commands/' + enc(id), cambios), ['id', 'cambios']);
 tool('borrar_comando', 'Borra un comando.', { id: S.str('Id o disparador') }, ({ id }) => del('/api/commands/' + enc(id)), ['id']);
 
@@ -222,7 +222,7 @@ tool('escribir_chat', 'Escribe un mensaje en tu chat con tu cuenta: Twitch, YouT
   ({ texto, plataforma }) => post('/api/chat/send', { text: texto, to: plataforma }), ['texto']);
 tool('youtube_conectar_cuenta', 'Devuelve el enlace para dar permiso a antena a escribir en tu chat de YouTube (ábrelo en el navegador del PC).', {}, () => post('/api/youtube/auth'));
 tool('youtube_desconectar_cuenta', 'Quita el permiso de tu cuenta de YouTube.', {}, () => post('/api/youtube/logout'));
-tool('simular_chat', 'Simula un mensaje de chat (útil para probar comandos y el widget de chat).', { usuario: S.str('Nombre'), texto: S.str('Mensaje'), plataforma: S.enum('Plataforma', ['twitch', 'youtube']), mod: S.bool('Es moderador') }, ({ usuario, texto, plataforma, mod }) => post('/api/chat/simulate', { user: usuario, text: texto, platform: plataforma, mod }), ['texto']);
+tool('simular_chat', 'Simula un mensaje de chat (útil para probar comandos y el widget de chat). Los comandos pueden enviar respuestas al chat real si la plataforma está conectada.', { usuario: S.str('Nombre'), texto: S.str('Mensaje'), plataforma: S.enum('Plataforma', ['twitch', 'youtube']), mod: S.bool('Es moderador') }, ({ usuario, texto, plataforma, mod }) => post('/api/chat/simulate', { user: usuario, text: texto, platform: plataforma, mod }), ['texto']);
 tool('unir_chat', 'Lee el chat de otro canal de Twitch (vacío = el tuyo).', { canal: S.str('Canal de Twitch') }, ({ canal }) => post('/api/chat/join', { channel: canal }));
 
 // widgets

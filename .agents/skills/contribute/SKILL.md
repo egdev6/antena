@@ -14,7 +14,7 @@ Activate to work on `egdev6/antena`. Read [docs/estado.md](../../../docs/estado.
 
 ## Hard Rules
 
-- The open issues are the plan. `docs/estado.md` is the current state; there is no roadmap index.
+- The open issues are the plan, ordered by milestone in the roadmap index [#62](https://github.com/egdev6/antena/issues/62). `docs/estado.md` is the current state.
 - Recommend only open issues without assignees and without an open PR covering them. Show the
   contributor's own assigned work separately as resumable.
 - Assign only when the contributor explicitly starts an issue: `gh issue edit N --add-assignee LOGIN`,

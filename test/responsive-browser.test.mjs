@@ -102,7 +102,7 @@ test('a 1024 la barra lateral corta grupo e items por palabra y el placeholder d
     chrome = await openChromePage(bin, `${base}/#/directo`);
     const c = chrome.cdp;
     await viewport(c, 1024);
-    await waitDom(c, `document.querySelectorAll('#nav a[href^="#/"]').length > 20`, { timeoutMs: 15000 });
+    await waitDom(c, `!!document.querySelector('#nav a[href="#/acerca"]')`, { timeoutMs: 15000 });
 
     // grupo «Producción» (jerarquía v2): entero o cortado por palabra, nunca a mitad
     await waitDom(c, `!!document.querySelector('#nav [data-grp=produccion] .grp-l')`, { timeoutMs: 9000 });

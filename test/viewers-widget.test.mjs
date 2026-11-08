@@ -93,3 +93,24 @@ test('widgets.viewers config has defaults and is editable through PUT /api/widge
     assert.deepEqual(after.widgets.viewers, { platforms: ['youtube'], showTotal: false, showPeak: false, css: '.root{gap:4px}' });
   } finally { await close(); }
 });
+
+// #64: with "Color de cada plataforma" on, each platform card takes its own theme color
+// (like the goal bars, via pf-<platform>), and the total card keeps the general accent.
+test('viewers widget paints each platform card with its theme color', { timeout: 90000 }, async t => {
+  const { findChrome, openChromePage, waitDom } = await import('./helpers/react-browser.mjs');
+  const { evaluateChrome } = await import('./helpers/chrome-dom.mjs');
+  const bin = await findChrome();
+  if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la regresión de navegador');
+  const { base, call, close } = await start();
+  let chrome;
+  try {
+    await call('PUT', '/api/theme', { accent: '#00ff00', platformAccent: true, twitchColor: '#9146ff', youtubeColor: '#ff0000' });
+    chrome = await openChromePage(bin, `${base}/widget/viewers?demo`);
+    const c = chrome.cdp;
+    await waitDom(c, `document.querySelectorAll('.item').length === 3`, { timeoutMs: 12000 });
+    await waitDom(c, `getComputedStyle(document.querySelector('.item-total')).getPropertyValue('--red').trim().toLowerCase() === '#00ff00'`, { timeoutMs: 5000 });
+    const red = await evaluateChrome(c, `JSON.stringify(Object.fromEntries(['twitch', 'youtube', 'total'].map(id =>
+      [id, getComputedStyle(document.querySelector('.item-' + id)).getPropertyValue('--red').trim().toLowerCase()])))`);
+    assert.deepEqual(JSON.parse(red), { twitch: '#9146ff', youtube: '#ff0000', total: '#00ff00' });
+  } finally { chrome?.child.kill(); chrome?.cdp.close(); await close(); }
+});

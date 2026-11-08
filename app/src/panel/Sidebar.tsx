@@ -8,10 +8,6 @@ const P = (d: string) => ['path', { d }] as const;
 const ICONS = {
   directo: [P('M4.9 19.1C1 15.2 1 8.8 4.9 4.9'), P('M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5'), ['circle', { cx: '12', cy: '12', r: '2' }], P('M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5'), P('M19.1 4.9C23 8.8 23 15.1 19.1 19')],
   chat: [P('M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z')],
-  preguntas: [['circle', { cx: '12', cy: '12', r: '10' }], P('M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3'), P('M12 17h.01')],
-  tierlist: [P('M3 5h18M3 12h12M3 19h6')],
-  sorteo: [['rect', { x: '3', y: '8', width: '18', height: '4', rx: '1' }], P('M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7')],
-  teleprompter: [['rect', { x: '3', y: '4', width: '18', height: '16', rx: '2' }], P('M7 9h10M7 13h10M7 17h6')],
   alertas: [P('M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'), P('M10.3 21a1.94 1.94 0 0 0 3.4 0')],
   comandos: [P('m4 17 6-6-6-6'), P('M12 19h8')],
   mensajes: [['circle', { cx: '12', cy: '12', r: '9' }], P('M12 7v5l3 2')],
@@ -41,20 +37,18 @@ export function Sidebar({ current }: { current: string }) {
   const num = (v: number | undefined) => (v ? <span className="nav-n">{v}</span> : null);
   const live = (t: string, label?: string) => <span className="nav-n is-live" aria-label={label}>{t}</span>;
   const warns = alertWarnings(s).length;
+  const widgetTail = I.vote && I.giveaway?.open ? live('2 activos', 'votación en curso y sorteo abierto')
+    : I.vote ? live('votando', 'votación en curso') : I.giveaway?.open ? live('sorteo', 'sorteo abierto') : num(9);
   const groups: [string, string, Item[]][] = [
     ['directo', 'En directo', [
       { href: '#/directo', label: 'Directo', tail: s.status?.meld?.streaming ? live('●', 'en directo') : null },
       { href: '#/chat', label: 'Chat' },
-      { href: '#/preguntas', label: 'Preguntas', tail: I.questions?.pending ? live(String(I.questions.pending), `${I.questions.pending} en cola`) : null },
-      { href: '#/tierlist', label: 'Tier list', tail: I.vote ? live('votando') : null },
-      { href: '#/sorteo', label: 'Sorteo', tail: I.giveaway?.open ? live('abierto') : null },
-      { href: '#/teleprompter', label: 'Teleprompter', tail: s.teleprompter?.playback?.playing ? live('leyendo') : null },
     ]],
     ['configurar', 'Configurar', [
       { href: '#/alertas', label: 'Alertas', tail: warns ? <span className="nav-w" role="img" aria-label={warns === 1 ? '1 aviso' : `${warns} avisos`} title="Alertas con avisos" /> : null },
       { href: '#/comandos', label: 'Comandos de chat', tail: num(s.config.commands?.length) },
       { href: '#/mensajes', label: 'Mensajes programados', tail: num(s.config.timers?.length) },
-      { href: '#/widgets', label: 'Widgets', tail: num(9) },
+      { href: '#/widgets', label: 'Widgets', tail: widgetTail },
       { href: '#/overlays', label: 'Overlays', tail: num((s.customOverlays || []).length) },
       { href: '#/atajos', label: 'Atajos y Stream Deck', tail: num(s.config.shortcuts?.length) },
     ]],
@@ -76,8 +70,10 @@ export function Sidebar({ current }: { current: string }) {
       { href: '#/acerca', label: 'Acerca de' },
     ]],
   ];
-  // la entrada activa: la página (primer tramo de la dirección), aunque haya un slide abierto
-  const active = (href: string) => href.split('/')[1] === current.split('/')[1];
+  // Interactive pages are reached from Widgets; nested pages keep the same active entry.
+  const page = current.split('/')[1];
+  const activePage = ['preguntas', 'tierlist', 'sorteo', 'teleprompter'].includes(page) ? 'widgets' : page;
+  const active = (href: string) => href.split('/')[1] === activePage;
   return <aside className="side">
     <a className="brand" href="#/directo" aria-label="antena, inicio">
       <img className="brand-mark" src="/brand/logo.png" alt="" aria-hidden="true" />

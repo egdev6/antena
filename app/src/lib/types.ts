@@ -108,6 +108,8 @@ export interface CommandConfig {
   title?: string;
   text?: string;
   sub?: string;
+  outputMode?: 'alert' | 'chat';
+  chatReply?: string;
   enabled?: boolean;
   permission?: string;
   platforms?: string[];
@@ -287,7 +289,7 @@ export interface Meld { session?: MeldSession | null; commands?: string[]; event
 
 // ---------- interactivos (preguntas, tier list, sorteo) ----------
 export interface Question { id: string; at: string | number; platform: string; user: string; text: string; status: string; [k: string]: unknown }
-export interface TierListTier { id?: string; label: string; color: string; [k: string]: unknown }
+export interface TierListTier { id?: string; label: string; color: string; voteText?: string; [k: string]: unknown }
 export interface TierListItem { id: string; label: string; [k: string]: unknown }
 export interface TierList {
   id: string;

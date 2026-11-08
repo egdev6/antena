@@ -6,8 +6,10 @@ import { post } from '../lib/api';
 import { IC } from '../lib/icons';
 import { live, useLive, useLiveVersion } from '../lib/live';
 import { groupMeldScenes } from '../lib/meld-scenes';
-import { patchIx } from '../lib/patch';
 import { ConnPill, cx, guard, Icon, mmss, toast, Toaster } from '../lib/ui';
+import { DockQuestions } from './DockQuestions';
+import { DockTierlist } from './DockTierlist';
+import { DockGiveaway } from './DockGiveaway';
 import type { MeldTrack, TeleprompterState, TimelineItem } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
@@ -37,7 +39,7 @@ function useWide() {
   return wide;
 }
 
-function Status({ wide }: { wide: boolean }) {
+function Status() {
   const s = useLive(x => x);
   const now = useNow();
   const tl = live.timeline;
@@ -56,7 +58,6 @@ function Status({ wide }: { wide: boolean }) {
       {st.twitch && st.twitch.state !== 'conectado' && <ConnPill platform="twitch" state={st.twitch.state} />}
       {st.youtube?.state === 'en espera' && <ConnPill platform="youtube" state="en espera" label={st.youtube.notice || undefined} />}
     </div>
-    {wide && <a className="d-open" href="/" target="_blank" rel="noopener" title="Abrir el panel completo">Panel ↗</a>}
   </header>;
 }
 
@@ -207,7 +208,6 @@ type InteractiveTab = (typeof INTERACTIVE_TABS)[number][0];
 function Interactivos() {
   const I = useLive(s => s.interactive);
   const q = I?.questions, g = I?.giveaway, vote = I?.vote;
-  const qc = (I?.config?.questions || {}) as { enabled?: unknown; command?: unknown };
   const [tab, setTab] = useState<InteractiveTab>(() => {
     const saved = localStorage.getItem(INTERACTIVE_TAB);
     return saved === 'tier' || saved === 'sorteo' ? saved : 'preguntas';
@@ -233,28 +233,13 @@ function Interactivos() {
       </button>)}
     </nav>
     <div className="d-body" role="tabpanel" id="d-ip-preguntas" aria-labelledby="d-i-preguntas" hidden={tab !== 'preguntas'}>
-      {q && <section className="d-card" aria-label="Preguntas">
-        <div className="d-card-h"><button type="button" className="d-sw" role="switch" aria-checked={!!qc.enabled} aria-label="Preguntas del chat"
-          title={qc.enabled ? 'El comando del chat está activo' : 'El comando del chat está desactivado'} onClick={() => patchIx('questions', { enabled: !qc.enabled })} />
-          Preguntas<span className="d-meta">{qc.command ? `${qc.command} · ` : ''}{q.pending || 0} en cola</span></div>
-        {q.current ? <p className="d-q"><b>{q.current.user}</b> {q.current.text}</p> : <p className="d-muted">Ninguna en pantalla</p>}
-        <div className="d-row"><button className="d-btn sm grow" disabled={!q.pending} title={q.pending ? 'Pasa a la siguiente pregunta de la cola' : 'No hay preguntas en cola'}
-          onClick={guard(() => post('/api/questions/next'))}>Siguiente</button>
-          <button className="d-btn sm" disabled={!q.current} title={q.current ? 'Quita la pregunta de la pantalla' : 'No hay ninguna pregunta en pantalla'}
-          onClick={guard(() => post('/api/questions/hide'), 'Pregunta oculta')}>Ocultar</button></div>
-      </section>}
+      <DockQuestions />
     </div>
     <div className="d-body" role="tabpanel" id="d-ip-tier" aria-labelledby="d-i-tier" hidden={tab !== 'tier'}>
-      {vote ? <section className="d-card" aria-label="Tier list"><div className="d-card-h">Tier list<span className="d-meta">{vote.item?.label ? `Votando ${vote.item.label} · ` : ''}{vote.total} votos</span></div>
-        <div className="d-row"><button className="d-btn sm grow" onClick={guard(() => post('/api/vote/close', { apply: true }), 'Votación colocada')}>Cerrar y colocar</button>
-        <button className="d-btn sm" onClick={guard(() => post('/api/vote/cancel'), 'Votación cancelada')}>Cancelar</button></div></section>
-        : <p className="d-muted">Ninguna votación abierta.</p>}
+      <DockTierlist />
     </div>
     <div className="d-body" role="tabpanel" id="d-ip-sorteo" aria-labelledby="d-i-sorteo" hidden={tab !== 'sorteo'}>
-      {g && <section className="d-card" aria-label="Sorteo"><div className="d-card-h">Sorteo<span className="d-meta">{g.open ? 'abierto' : 'cerrado'} · {g.count === 1 ? '1 participante' : `${g.count || 0} participantes`}</span></div>
-        <div className="d-row">{g.open ? <button className="d-btn sm grow" onClick={guard(() => post('/api/giveaway/close'), 'Sorteo cerrado')}>Cerrar</button>
-          : <button className="d-btn sm grow" onClick={guard(() => post('/api/giveaway/open', { reset: true }), 'Sorteo abierto')}>Abrir</button>}
-          <button className="d-btn sm grow pri" disabled={!g.count} title={g.count ? 'Elige un ganador' : 'Todavía no hay participantes'} onClick={guard(() => post('/api/giveaway/draw'), 'Sorteado')}>Sortear</button></div></section>}
+      <DockGiveaway />
     </div>
   </div>;
 }
@@ -304,7 +289,6 @@ function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
         else if (e.key === 'Home') { e.preventDefault(); go(0, true); }
         else if (e.key === 'End') { e.preventDefault(); go(TABS.length - 1, true); }
       }}>{label}{id === 'audio' && muted > 0 && <span className="d-dot" role="img" aria-label={`${muted} ${muted === 1 ? 'pista desactivada' : 'pistas desactivadas'}`} />}</button>)}
-    <a className="d-open" href="/" target="_blank" rel="noopener" title="Abrir el panel completo">Panel ↗</a>
   </nav>;
 }
 
@@ -317,7 +301,7 @@ export function Dock() {
   useEffect(() => { try { localStorage.setItem(DOCK_TAB, tab); } catch { /* almacenamiento no disponible: se ignora */ } }, [tab]);
   if (!ready) return <div className="d-boot">Conectando con antena…</div>;
   return <div className={cx('dock', wide && 'dock-wide')}>
-    <Status wide={wide} />
+    <Status />
     {wide
       ? <div className="d-cols">
         <Col id="control" title="Control" meta={<ControlMeta />}><Control /></Col>

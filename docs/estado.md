@@ -26,7 +26,13 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
 - **Chat y moderación local:** Twitch y YouTube unificados, envío a una o a las dos
   plataformas con resultado por plataforma, filtro local y reflejo de la moderación de Twitch.
 - **Comandos y timers multicanal:** comandos con permisos y esperas, y mensajes programados
-  con destino Twitch, YouTube o ambos y pausa global.
+  con destino Twitch, YouTube o ambos y pausa global. Los comandos pueden usar «Solo chat»:
+  `outputMode: "chat"` envía `chatReply` (con `{user}` y `{args}`) a la plataforma de origen,
+  sin alerta, overlay ni espera de ACK. Sin `outputMode` siguen sacando su alerta; la plantilla
+  «Alerta y respuesta» mantiene además su acción de chat a ambas plataformas. En solo chat las
+  acciones de alerta se conservan sin ejecutarse y una respuesta vacía no se envía. La pausa
+  retiene las respuestas hasta reanudar (o descartarlas); se prueban desde el simulador de chat,
+  que puede enviar la respuesta al chat real si hay una cuenta conectada.
 - **Meld remoto:** escenas, capas, efectos, mute y ganancia, media, comandos y eventos.
 - **Panel, MCP y Stream Deck:** panel por API REST, MCP con 142 herramientas y atajos `/sd/…`.
 - **Teleprompter:** guiones por bloques que avanzan solos a X palabras/min, con notas entre
@@ -39,6 +45,8 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   de pantalla la abren a pantalla completa (comando `open_teleprompter`, quinta ventana con la
   misma guardia de navegación, sin IPC: no está en la capability); «La principal» resuelve el
   monitor primario del sistema.
+- **Tier list:** cada nivel admite un texto de voto opcional para la capa; si está vacío se muestra
+  el nombre. El texto es solo visual: el chat sigue votando con el nombre o el id del nivel.
 - **Prompter:** vista 1024×600 para el Elgato Prompter con chat, preguntas, tier list,
   sorteo y cronología. La app la abre a pantalla completa en la pantalla de 1024×600.
 - **Panel v2 (jerarquía):** listado → panel a todo el ancho con pestañas en Alertas (y
@@ -46,6 +54,10 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   teleprompter, Directos anteriores, Archivos y Conexiones; pestañas de página en el resto;
   creación unificada con plantillas y guardado manual (Guardar/Descartar) con aviso al salir.
   El catálogo fijo (alertas, conexiones, widgets) se ve en tarjetas; los objetivos, dentro de la suya.
+  Preguntas, Tier list, Sorteo y Teleprompter se abren desde sus tarjetas de Widgets o por su URL
+  directa; al abrirlos queda marcado «Widgets» en la barra lateral. Sus tarjetas muestran la cola,
+  la votación, el sorteo y la lectura en marcha. La entrada «Widgets» avisa en rojo de una votación
+  o un sorteo abierto (y de ambos a la vez), incluso desde otras vistas.
 - **Fuentes para Meld:** `GET /api/sources` y la vista «Fuentes para Meld» listan cada capa
   con su URL y tamaño (un objetivo por cada uno configurado y un overlay por cada overlay propio),
   más el dock y el prompter.
@@ -64,7 +76,11 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   `editar_overlay`, `borrar_overlay` y `probar_overlay`.
 - **Atajos personalizados:** pasos encadenados (acciones `/sd/…`, pestaña del prompter y
   acciones de Meld/chat/voz) con dirección `/sd/custom/<id>`, editables en el panel y por MCP.
-- **Dock:** `/dock`, vista estrecha para el panel de chat de Meld o ventana flotante.
+- **Dock:** `/dock`, vista estrecha para el panel de chat de Meld o ventana flotante; en ancho
+  apaisado usa columnas y en estrecho pestañas. En Interactivos permite añadir, ordenar, mostrar
+  y descartar preguntas; elegir la tier list en pantalla, añadir o quitar elementos y abrir su
+  votación; y añadir o quitar participantes y consultar los ganadores del sorteo. Los cambios
+  se comparten al momento con el panel y las capas.
 - **Escenas de Meld:** el panel y el dock agrupan cada escena con su pareja ` [Vertical]` e
   indican cuál está en directo. El panel muestra si cada entrada tiene H, V o ambas; al pulsarla
   cambia las variantes disponibles. Si falla la segunda, muestra el error y no revierte la primera.

@@ -179,7 +179,9 @@ function TierSlide({ id, tab }: { id: string; tab: string }) {
             <ul className="tiers-ed">{l.tiers.map((t: TierListTier, i: number) => <li key={t.id || i}>
               <input type="color" aria-label={`Color de ${t.label}`} value={t.color} onChange={e => { const tiers = structuredClone(l.tiers); tiers[i].color = e.target.value; saveTiers(tiers).catch(() => {}); }} />
               <LazyInput aria-label={`Nombre del tier ${i + 1}`} value={t.label} onCommit={x => { const tiers = structuredClone(l.tiers); tiers[i].label = x; saveTiers(tiers).catch(e => toast(e.message, true)); }} />
+              <LazyInput aria-label={`Texto de voto del tier ${i + 1}`} placeholder="Texto de voto (opcional)" value={t.voteText ?? ''} onCommit={x => { const tiers = structuredClone(l.tiers); tiers[i].voteText = x; saveTiers(tiers).catch(e => toast(e.message, true)); }} />
               <IconBtn icon={IC.x} label="Quitar tier" disabled={l.tiers.length <= 1} onClick={guard(() => saveTiers(l.tiers.filter((_: TierListTier, j: number) => j !== i)))} /></li>)}</ul>
+            <p className="hint">El texto de voto solo se muestra en pantalla. El chat vota con el nombre o el id del nivel; vacío muestra el nombre.</p>
             <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => saveTiers([...l.tiers, { label: '?', color: '#888888' }]))}><Icon d={IC.plus} className="eg-btn__icon" />Nivel</button>
           </div>
         </Box>}
@@ -226,7 +228,7 @@ export function Sorteo({ parts }: { parts: string[] }) {
         </Sec>
       </div>
       <div className="stack"><Stage eyebrow="En pantalla" src="/widget/giveaway?debug" /></div>
-    </div> : <WidgetLayout source={<BrowserSource url={origin() + '/widget/giveaway'} size="1920×1080" />} preview={<Stage eyebrow="Vista previa" src="/widget/giveaway?debug" />}>
+    </div> : <WidgetLayout source={<BrowserSource url={origin() + '/widget/giveaway'} size="1920×1080" />} preview={<Stage key={g.open ? 'live' : 'demo'} eyebrow="Vista previa" src={g.open ? '/widget/giveaway?debug' : '/widget/giveaway?demo'} aside={<span>{g.open ? 'El sorteo abierto' : 'Datos de ejemplo'}</span>} />}>
         <Sec title="Ajustes" id="h-gaj">
           <div className="row2">
             <IxField k="giveaway.title" label="Título" />

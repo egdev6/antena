@@ -50,6 +50,10 @@ async function start(t) {
   await api('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${meld.server.address().port}` });
   await until(() => app.meld.status.state === 'conectado', 'Meld conectado');
   t.after(async () => {
+    app.timers.stop();
+    app.interactive.quiesceVoteTimer();
+    await app.interactive.drainDraws().catch(() => {});
+    await app.interactive.flush().catch(() => {});
     await new Promise(r => { app.meld.stop(); app.server.closeAllConnections(); app.server.close(r); });
     await new Promise(r => meld.server.close(r));
     await rm(dataDir, { recursive: true, force: true }).catch(() => {});
@@ -57,9 +61,24 @@ async function start(t) {
   return { bin, app, base, meld, api };
 }
 
+async function openTrackedPage(t, bin, url) {
+  const chrome = await openChromePage(bin, url);
+  const profile = chrome.child.spawnargs.find(arg => arg.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length);
+  t.after(async () => {
+    const stopped = chrome.child.exitCode !== null || chrome.child.signalCode !== null
+      ? Promise.resolve() : new Promise(resolve => chrome.child.once('exit', resolve));
+    try { chrome.cdp.close(); } catch { /* already closed */ }
+    chrome.child.kill();
+    await stopped;
+    // Chrome's child processes may still be closing files after the browser exits.
+    await wait(200);
+    if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  });
+  return chrome;
+}
+
 async function openDock(t, ctx, { width = 1256, height = 780 } = {}) {
-  const chrome = await openChromePage(ctx.bin, 'about:blank');
-  t.after(() => { try { chrome.child.kill(); } catch { /* ya cerrado */ } try { chrome.cdp.close(); } catch { /* ya cerrado */ } });
+  const chrome = await openTrackedPage(t, ctx.bin, 'about:blank');
   await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await chrome.cdp.send('Page.navigate', { url: `${ctx.base}/dock` });
   await waitDom(chrome.cdp, `!!document.querySelector('.dock') && !!document.querySelector('.d-top')`, { timeoutMs: 20000 });
@@ -120,6 +139,7 @@ test('dock ancho: columnas, escenas emparejadas, al aire y nombre largo recortad
   assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-col-h')).map(h => h.firstChild.textContent.trim())`), ['Control', 'Audio', 'Interactivos']);
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-btn.sc').length`), 0, 'sin atajos');
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-chat, .d-msgs, .d-send').length`), 0, 'sin chat en el dock (S12)');
+  assert.equal(await dom(chrome, `document.querySelectorAll('.d-open, a[href="/"]').length`), 0, 'sin botón Panel en el dock (#65)');
 
   assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-scene-n')).map(n => n.textContent)`),
     ['Full cam', 'Pausa', LONG_VERTICAL]);
@@ -183,6 +203,7 @@ test('dock estrecho: pestañas Control/Audio/Interactivos, teclado, memoria y ca
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-col').length`), 0, 'en estrecho no hay columnas');
   assert.equal(await dom(chrome, `document.querySelector('[role="tab"][aria-selected="true"]').textContent.trim()`), 'Control', 'Control va primera y seleccionada');
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-chat, .d-msgs, .d-send').length`), 0, 'sin chat en el dock (S12)');
+  assert.equal(await dom(chrome, `document.querySelectorAll('.d-open, a[href="/"]').length`), 0, 'sin botón Panel en el dock (#65)');
 
   // Flechas mueven foco y panel, también con vuelta circular.
   await dom(chrome, `(() => { const t = document.querySelector('#d-t-control'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); return true; })()`);
@@ -334,4 +355,173 @@ test('dock cierre: créditos al widget y teleprompter con guion', { timeout: 120
   await until(async () => (await ctx.api('GET', '/api/teleprompter')).playback.playing === true, 'teleprompter en marcha');
   await clickWhen(c, `document.querySelector('button[aria-label="Bloque siguiente"]')`);
   await until(async () => (await ctx.api('GET', '/api/teleprompter')).playback.block === 1, 'siguiente bloque del teleprompter');
+});
+
+const setText = (selector, value) => `(() => {
+  const input = document.querySelector(${JSON.stringify(selector)});
+  if (!input) return false;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+})()`;
+
+const dockItem = (panel, text) => `Array.from(document.querySelectorAll(${JSON.stringify(`#d-ip-${panel} .d-item`)})).find(row => row.textContent.includes(${JSON.stringify(text)}))`;
+
+async function assertDockFits(chrome) {
+  assert.equal(await dom(chrome, `(() => {
+    const body = document.querySelector('.d-inter [role="tabpanel"]:not([hidden])');
+    const bounds = document.querySelector('.d-inter').getBoundingClientRect();
+    const controls = [...body.querySelectorAll('input, select, button, .d-item-text')].filter(el => el.getClientRects().length);
+    return document.documentElement.scrollWidth <= innerWidth && body.scrollWidth <= body.clientWidth && controls.every(el => {
+      const rect = el.getBoundingClientRect();
+      return rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
+    });
+  })()`), true, 'interactive controls fit without horizontal scrolling');
+}
+
+test('dock questions manage the queue and synchronize panel and overlay', { timeout: 120000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const dock = await openDock(t, ctx, { width: 420, height: 780 });
+  const c = dock.cdp;
+  await clickWhen(c, `document.querySelector('#d-t-interactivos')`);
+  assert.ok(await dom(dock, `!!document.querySelector('input[aria-label="Añadir una pregunta a mano"]')`), 'manual question input exists');
+  const panel = await openTrackedPage(t, ctx.bin, `${ctx.base}/#/preguntas`);
+  const widget = await openTrackedPage(t, ctx.bin, `${ctx.base}/widget/question`);
+  await waitDom(panel.cdp, `!!document.querySelector('#h-cola')`);
+  await waitDom(widget.cdp, `!!document.querySelector('#count')`);
+  const input = 'input[aria-label="Añadir una pregunta a mano"]';
+  const submit = `document.querySelector(${JSON.stringify(input)}).closest('form').querySelector('button[type="submit"]')`;
+  const first = 'How do you prepare a livestream?';
+  const second = 'Question' + 'Long'.repeat(25);
+  for (const text of [first, second]) {
+    assert.equal(await dom(dock, setText(input, text)), true);
+    await clickWhen(c, submit);
+    await until(async () => (await ctx.api('GET', '/api/interactive')).questions.list.some(q => q.text === text), 'question added');
+    await waitDom(c, `document.querySelector(${JSON.stringify(input)}).value === ''`);
+  }
+  await waitDom(panel.cdp, `document.querySelector('#h-cola').closest('section').textContent.includes(${JSON.stringify(second)})`);
+  await waitDom(widget.cdp, `document.querySelector('#count').textContent === '2 en cola'`);
+  await assertDockFits(dock);
+  await resize(dock, 1256, 780);
+  await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && !!(${dockItem('preguntas', second)})`);
+  await assertDockFits(dock);
+  await resize(dock, 420, 780);
+  await waitDom(c, `document.querySelector('#d-t-interactivos')?.getAttribute('aria-selected') === 'true' && !!(${dockItem('preguntas', second)})`);
+
+  const before = (await ctx.api('GET', '/api/interactive')).questions;
+  await dom(dock, setText(input, 'short'));
+  await clickWhen(c, submit);
+  await waitDom(c, `document.querySelector('.toast.err')?.textContent === 'La pregunta es demasiado corta.'`);
+  assert.deepEqual((await ctx.api('GET', '/api/interactive')).questions, before);
+  assert.equal(await dom(dock, `document.querySelector(${JSON.stringify(input)}).value`), 'short');
+
+  await clickWhen(c, `${dockItem('preguntas', second)}.querySelector('button[aria-label^="Subir"]')`);
+  await waitDom(panel.cdp, `document.querySelector('#h-cola').closest('section').querySelector('.eg-post__content b')?.textContent === ${JSON.stringify(second)}`);
+  assert.equal((await ctx.api('GET', '/api/interactive')).questions.list[0].text, second);
+  await clickWhen(c, `${dockItem('preguntas', second)}.querySelector('button[aria-label^="Bajar"]')`);
+  await waitDom(panel.cdp, `document.querySelector('#h-cola').closest('section').querySelector('.eg-post__content b')?.textContent === ${JSON.stringify(first)}`);
+  await clickWhen(c, `${dockItem('preguntas', second)}.querySelector('button[aria-label^="Mostrar"]')`);
+  await waitDom(widget.cdp, `document.querySelector('#q').classList.contains('on') && document.querySelector('#text').textContent === ${JSON.stringify(second)}`);
+  await waitDom(panel.cdp, `document.querySelector('#h-cola').closest('section').textContent.includes(${JSON.stringify(first)}) && !document.querySelector('#h-cola').closest('section').textContent.includes(${JSON.stringify(second)})`);
+  await clickWhen(c, `${dockItem('preguntas', first)}.querySelector('button[aria-label^="Descartar"]')`);
+  await waitDom(panel.cdp, `document.querySelector('#h-done').closest('section').textContent.includes(${JSON.stringify(first)})`);
+  await waitDom(widget.cdp, `document.querySelector('#count').hidden`);
+  assert.equal((await ctx.api('GET', '/api/interactive')).questions.list.find(q => q.text === first).status, 'discarded');
+  await assertDockFits(dock);
+  await resize(dock, 1256, 780);
+  await waitDom(c, `document.querySelectorAll('.d-col').length === 3`);
+  await assertDockFits(dock);
+});
+
+test('dock tier list chooses a list, manages items and opens voting across views', { timeout: 120000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const first = (await ctx.api('POST', '/api/tierlists', { title: 'Games', items: ['Chess'] })).tierlist;
+  const second = (await ctx.api('POST', '/api/tierlists', { title: 'Music', items: ['Piano'] })).tierlist;
+  const dock = await openDock(t, ctx, { width: 420, height: 780 });
+  const c = dock.cdp;
+  await clickWhen(c, `document.querySelector('#d-t-interactivos')`);
+  await clickWhen(c, `document.querySelector('#d-i-tier')`);
+  const select = 'select[aria-label="Lista en pantalla"]';
+  assert.ok(await dom(dock, `!!document.querySelector(${JSON.stringify(select)})`), 'tier list selector exists');
+  const panel = await openTrackedPage(t, ctx.bin, `${ctx.base}/#/tierlist/${second.id}`);
+  const widget = await openTrackedPage(t, ctx.bin, `${ctx.base}/widget/tierlist`);
+  await waitDom(panel.cdp, `!!document.querySelector('.tl-row')`);
+  await waitDom(widget.cdp, `document.querySelector('#title')?.textContent === 'Games'`);
+  await dom(dock, `(() => { const el = document.querySelector(${JSON.stringify(select)}); el.value = ${JSON.stringify(second.id)}; el.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  await waitDom(widget.cdp, `document.querySelector('#title').textContent === 'Music' && document.querySelector('#pool').textContent.includes('Piano')`);
+  await waitDom(panel.cdp, `document.body.textContent.includes('En pantalla')`);
+  assert.equal((await ctx.api('GET', '/api/interactive')).shownTierlist, second.id);
+  const input = 'input[aria-label="Añadir un elemento"]';
+  await dom(dock, setText(input, 'Drums'));
+  await clickWhen(c, `document.querySelector(${JSON.stringify(input)}).closest('form').querySelector('button[type="submit"]')`);
+  await waitDom(panel.cdp, `Array.from(document.querySelectorAll('.tl-row')).some(row => row.textContent.includes('Drums'))`);
+  await waitDom(widget.cdp, `document.querySelector('#pool').textContent.includes('Drums')`);
+  await clickWhen(c, `${dockItem('tier', 'Piano')}.querySelector('button[aria-label^="Quitar"]')`);
+  await waitDom(panel.cdp, `!Array.from(document.querySelectorAll('.tl-row')).some(row => row.textContent.includes('Piano'))`);
+  await waitDom(widget.cdp, `!document.querySelector('#pool').textContent.includes('Piano')`);
+  const state = await ctx.api('GET', '/api/interactive');
+  assert.deepEqual(state.tierlists.find(list => list.id === first.id).items.map(item => item.label), ['Chess']);
+  assert.deepEqual(state.tierlists.find(list => list.id === second.id).items.map(item => item.label), ['Drums']);
+  await clickWhen(c, `${dockItem('tier', 'Drums')}.querySelector('button[aria-label^="Votar"]')`);
+  await waitDom(panel.cdp, `document.body.textContent.includes('Votando: Drums')`);
+  await waitDom(widget.cdp, `!document.querySelector('#vote').hidden && document.querySelector('#vitem').textContent === 'Drums'`);
+  assert.equal((await ctx.api('GET', '/api/interactive')).vote.item.label, 'Drums');
+  await assertDockFits(dock);
+  await resize(dock, 1256, 780);
+  await waitDom(c, `document.querySelectorAll('.d-col').length === 3`);
+  await assertDockFits(dock);
+  await clickWhen(c, buttonByText('Cerrar y colocar'));
+  await until(async () => (await ctx.api('GET', '/api/interactive')).vote === null, 'vote closed');
+  await waitDom(widget.cdp, `document.querySelector('#vote').hidden`);
+});
+
+test('dock giveaway manages entries and shows winners across panel and overlay', { timeout: 120000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  await ctx.api('PUT', '/api/interactive/config', { giveaway: { announceInChat: false, meldConfetti: false, rollSeconds: 1 } });
+  const dock = await openDock(t, ctx, { width: 420, height: 780 });
+  const c = dock.cdp;
+  await clickWhen(c, `document.querySelector('#d-t-interactivos')`);
+  await clickWhen(c, `document.querySelector('#d-i-sorteo')`);
+  const input = 'input[aria-label="Añadir participante"]';
+  assert.ok(await dom(dock, `!!document.querySelector(${JSON.stringify(input)})`), 'participant input exists');
+  const panel = await openTrackedPage(t, ctx.bin, `${ctx.base}/#/sorteo`);
+  const widget = await openTrackedPage(t, ctx.bin, `${ctx.base}/widget/giveaway`);
+  await waitDom(panel.cdp, `!!document.querySelector('#h-part')`);
+  await waitDom(widget.cdp, `!!document.querySelector('#count')`);
+  await clickWhen(c, buttonByText('Abrir'));
+  await waitDom(widget.cdp, `document.querySelector('#g').classList.contains('on')`);
+  const submit = `document.querySelector(${JSON.stringify(input)}).closest('form').querySelector('button[type="submit"]')`;
+  const longName = 'SyntheticParticipant'.repeat(5);
+  for (const name of ['Ana', longName]) {
+    await dom(dock, setText(input, name));
+    await clickWhen(c, submit);
+    await waitDom(c, `!!(${dockItem('sorteo', name)})`);
+    await waitDom(c, `document.querySelector(${JSON.stringify(input)}).value === ''`);
+  }
+  await waitDom(panel.cdp, `document.querySelector('#h-part').closest('section').textContent.includes(${JSON.stringify(longName)})`);
+  await waitDom(widget.cdp, `document.querySelector('#count').textContent.includes('2 participantes') && document.querySelector('#last').textContent.includes(${JSON.stringify(longName)})`);
+  await assertDockFits(dock);
+  const before = await ctx.api('GET', '/api/giveaway');
+  await dom(dock, setText(input, 'Ana'));
+  await clickWhen(c, submit);
+  await waitDom(c, `document.querySelector('.toast.err')?.textContent === 'Esta persona ya está en el sorteo.'`);
+  assert.deepEqual(await ctx.api('GET', '/api/giveaway'), before);
+  assert.equal(await dom(dock, `document.querySelector(${JSON.stringify(input)}).value`), 'Ana');
+  await clickWhen(c, `${dockItem('sorteo', longName)}.querySelector('button[aria-label^="Quitar"]')`);
+  await waitDom(panel.cdp, `!document.querySelector('#h-part').closest('section').textContent.includes(${JSON.stringify(longName)})`);
+  await waitDom(widget.cdp, `document.querySelector('#count').textContent.includes('1 participante') && !document.querySelector('#last').textContent.includes(${JSON.stringify(longName)})`);
+  await clickWhen(c, buttonByText('Sortear'));
+  await waitDom(c, `document.querySelector('.d-winners')?.textContent.includes('Ana')`);
+  await waitDom(panel.cdp, `document.querySelector('#h-win').closest('section').textContent.includes('Ana')`);
+  await waitDom(widget.cdp, `document.querySelector('#g').classList.contains('winner') && document.querySelector('#name').textContent === 'Ana'`);
+  assert.deepEqual((await ctx.api('GET', '/api/giveaway')).winners.map(winner => winner.user), ['Ana']);
+  await resize(dock, 1256, 780);
+  await waitDom(c, `document.querySelectorAll('.d-col').length === 3`);
+  await assertDockFits(dock);
+  await clickWhen(c, buttonByText('Cerrar'));
+  await until(async () => (await ctx.api('GET', '/api/giveaway')).open === false, 'giveaway closed');
+  await waitDom(widget.cdp, `document.querySelector('#join').textContent === 'Inscripción cerrada'`);
 });
