@@ -31,6 +31,17 @@ test('response mirrors backpressure, emits drain, and ends once with a 1000 clos
   assert.equal(closes, 1); assert.equal(errors, 1); assert.equal(res.destroyed, true);
 });
 
+test('destroy closes the upgraded transport and emits close only once', () => {
+  const socket = new Socket(), res = new WsResponse(socket);
+  let closes = 0; res.on('close', () => closes++);
+  assert.equal(res.destroy(), res);
+  assert.equal(socket.destroyed, true);
+  assert.equal(res.destroyed, true);
+  assert.equal(res.write('late'), false);
+  res.destroy();
+  assert.equal(closes, 1);
+});
+
 test('remote end prevents writes even before the socket is destroyed', () => {
   const socket = new Socket(), res = new WsResponse(socket);
   let closes = 0; res.on('close', () => closes++);

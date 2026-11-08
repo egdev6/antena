@@ -95,8 +95,8 @@ const sources = [
   },
 ];
 
-// Observe initial SSE reload completion and later server events, without disabling SSE.
-// Two /api/prompter JSON reads mark the initial load and the SSE-open reload. Waiting
+// Observe initial stream reload completion and later server events, without disabling delivery.
+// Two /api/prompter JSON reads mark the initial load and the stream-open reload. Waiting
 // for these prevents an unfinished boot snapshot from contaminating the save experiment.
 const bootObserver = `(() => {
   window.__raceBoot = { loads: 0, events: {} };
@@ -109,12 +109,15 @@ const bootObserver = `(() => {
     }
     return response;
   };
-  const OriginalEventSource = window.EventSource;
-  window.EventSource = class extends OriginalEventSource {
+  const OriginalWebSocket = window.WebSocket;
+  window.WebSocket = class extends OriginalWebSocket {
     constructor(...args) {
       super(...args);
-      for (const name of ['config', 'theme', 'teleprompter']) this.addEventListener(name, () => {
-        window.__raceBoot.events[name] = (window.__raceBoot.events[name] || 0) + 1;
+      this.addEventListener('message', event => {
+        const name = typeof event.data === 'string' && event.data.split('\\n', 1)[0].slice(7);
+        if (['config', 'theme', 'teleprompter'].includes(name)) {
+          window.__raceBoot.events[name] = (window.__raceBoot.events[name] || 0) + 1;
+        }
       });
     }
   };

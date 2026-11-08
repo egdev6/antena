@@ -1,5 +1,6 @@
 // Estado en vivo: /api/state + eventos SSE (/api/stream). Un solo almacén para toda la vista.
 import { useSyncExternalStore } from 'react';
+import { AntenaStream } from '../../../public/stream-client.js';
 import { warnUnknownClientEvent } from '../../../src/events.mjs'; // contrato único de eventos SSE (#72)
 import { mergeChat } from './chat-merge.mjs';
 import { api, withKey } from './api';
@@ -197,7 +198,7 @@ class Live {
 
   connect(client = 'panel') {
     if (this.es) return;
-    const es = new EventSource(withKey(`/api/stream?client=${client}`));
+    const es = new AntenaStream(withKey(`/api/stream?client=${client}`)) as unknown as EventSource;
     this.es = es;
     const on = <E extends LiveEventName>(ev: E, fn: (d: LiveEvents[E]) => void) => {
       warnUnknownClientEvent(ev); // avisa (una vez) si el nombre no está en el contrato

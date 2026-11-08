@@ -68,12 +68,15 @@ export function Apariencia({ parts }: { parts: string[] }) {
     });
     return () => { active.current = false; clearTimeout(timer.current); clearTimeout(sampleTimer.current); unregister(); buffer.dispose(); };
   }, [buffer]);
-  // al abrir la pestaña de alertas sale una de ejemplo para ver el tema; igual que en el editor,
-  // se dispara cuando el marco termina de cargar (onload), nunca antes: si el iframe tarda, el ejemplo no se pierde (#6)
+  // El ejemplo espera al marco Y a su conexión: onload por sí solo no garantiza que el bus lo haya admitido.
   const viewRef = useRef(view); viewRef.current = view;
   const sampleFrame = useCallback((el: HTMLIFrameElement | null) => {
-    if (el) el.onload = () => {
+    if (el) el.onload = async () => {
       clearTimeout(sampleTimer.current);
+      const doc = el.contentDocument;
+      const frame = el.contentWindow as (Window & { antenaPreviewReady?: Promise<void> }) | null;
+      await frame?.antenaPreviewReady;
+      if (!el.isConnected || el.contentDocument !== doc) return;
       sampleTimer.current = setTimeout(() => { if (active.current && viewRef.current === 'alert') post('/api/test', { type: 'follow', target: 'preview' }).catch(() => {}); }, 300);
     };
   }, []);

@@ -181,7 +181,8 @@ body.debug{background:#1b1d22 url('data:image/svg+xml;utf8,<svg xmlns="http://ww
 
 <!-- logos de plataforma a color para los iconos y la etiqueta del tema (Apariencia) -->
 <script type="module">import * as P from '/platform-icons.js'; window.egPlatform = P;</script>
-<script>
+<script type="module">
+import { AntenaStream } from '/stream-client.js';
 const ICONS = {
   heart:'<path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z"/>',
   star:'<path d="M12 3.2l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17.2l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
@@ -508,7 +509,9 @@ if (STILL) {
 
 // ---------- conexión ----------
 if (PREVIEW) stage.insertAdjacentHTML('beforebegin', '<div class="hint" id="hint">Vista previa</div>');
-const es = STILL ? new EventTarget() : new EventSource('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay') + (qs.has('themeDraft') ? '&themeDraft=1' : ''));
+const es = STILL ? new EventTarget() : new AntenaStream('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay') + (qs.has('themeDraft') ? '&themeDraft=1' : ''));
+// El panel no debe enviar el ejemplo hasta que el servidor haya admitido este marco.
+if (PREVIEW && !STILL) window.antenaPreviewReady = new Promise(resolve => { es.onopen = resolve; });
 es.addEventListener('alert', e => {
   document.getElementById('hint')?.remove();
   const a = JSON.parse(e.data);

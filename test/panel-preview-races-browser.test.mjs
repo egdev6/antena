@@ -26,8 +26,8 @@ async function within(promise, label, ms = 6000) {
   } finally { clearTimeout(timer); }
 }
 
-// Observe real boot/SSE delivery. Only the response-first experiment queues config
-// listeners; release invokes the original listeners with the original MessageEvent.
+// Observe real boot/stream delivery. Only the response-first experiment queues config
+// frames; release invokes the original WebSocket listener with the original MessageEvent.
 const observer = `(() => {
   if (window !== top) return;
   const state = window.__previewRace = { loads: 0, hold: false, held: [] };
@@ -41,13 +41,14 @@ const observer = `(() => {
     }
     return response;
   };
-  const ES = window.EventSource;
-  window.EventSource = class extends ES {
+  const WS = window.WebSocket;
+  window.WebSocket = class extends WS {
     addEventListener(name, listener, options) {
-      if (name !== 'config') return super.addEventListener(name, listener, options);
+      if (name !== 'message') return super.addEventListener(name, listener, options);
       return super.addEventListener(name, event => {
         const deliver = () => typeof listener === 'function' ? listener.call(this, event) : listener.handleEvent(event);
-        if (state.hold) state.held.push(deliver); else deliver();
+        if (state.hold && typeof event.data === 'string' && event.data.startsWith('event: config\\n')) state.held.push(deliver);
+        else deliver();
       }, options);
     }
   };

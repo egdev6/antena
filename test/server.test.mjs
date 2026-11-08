@@ -139,7 +139,7 @@ test('el overlay recibe por SSE las alertas de prueba y los eventos reales', asy
 test('sirve el panel y el overlay, y bloquea rutas fuera de public', async () => {  const { base, close } = await start();
   try {
     assert.equal((await fetch(base + '/')).status, 200);
-    assert.match(await (await fetch(base + '/overlay')).text(), /EventSource/);
+    assert.match(await (await fetch(base + '/overlay')).text(), /AntenaStream/);
     assert.equal((await fetch(base + '/..%2Fsrc%2Fserver.mjs')).status, 403);
   } finally { await close(); }
 });

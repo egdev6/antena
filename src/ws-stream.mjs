@@ -52,6 +52,7 @@ export class WsResponse extends EventEmitter {
   get writableLength() { return this.queuedBytes + this.socket.writableLength; }
   get writableEnded() { return this.ended || this.socket.writableEnded; }
   get destroyed() { return this.socket.destroyed; }
+  destroy(error) { this.socket.destroy(error); return this; }
   close() {
     if (this.closed) return;
     this.closed = true; this.outbound = []; this.pendingPong = null; this.queuedBytes = 0; this.needsDrain = false;

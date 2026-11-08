@@ -1017,13 +1017,21 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const sockets = new Set(), upgraded = new Set();
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
   const closeUpgradedConnections = () => { for (const socket of upgraded) socket.destroy(); };
+  // Node's HTTP close/closeAllConnections do not include upgraded sockets; close them
+  // as the listener stops, rather than waiting for its 'close' event (which needs them gone).
+  const closeServer = server.close;
+  server.close = function (...args) {
+    const result = closeServer.apply(this, args);
+    closeUpgradedConnections();
+    return result;
+  };
   server.on('upgrade', (req, socket, head) => {
     socket.on('error', () => { /* el cliente puede irse antes de completar el upgrade */ });
     const reject = (code, message) => {
       const body = JSON.stringify({ error: message });
       socket.end(`HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`, () => socket.destroy());
     };
-    if (closing) return reject(503, CLOSING_MESSAGE);
+    if (closing || !server.listening) return reject(503, CLOSING_MESSAGE);
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { return reject(400, 'Petición no válida'); }
     // Evita que authorized intente redirigir una página sobre el socket del upgrade.
