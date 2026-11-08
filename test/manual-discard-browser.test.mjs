@@ -2,11 +2,11 @@
 // Both explicit discard and confirmed navigation restore it; cancelling keeps the draft.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const input = label => `Array.from(document.querySelectorAll('main label')).find(l => l.textContent.trim().startsWith(${JSON.stringify(label)}))?.querySelector('input')`;
@@ -65,6 +65,7 @@ for (const unit of units) {
       const bin = await skipIfNoBrowserOrUi(t);
       if (!bin) return;
       const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-manual-discard-'));
+      t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
       const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
       // Synthetic fixtures only: never open or mutate the user's real configuration.
       Object.assign(app.store.config.widgets.chat, { fontSize: 26, maxMessages: 8 });
@@ -129,8 +130,7 @@ for (const unit of units) {
           await assertForm(c, unit, false);
         }
       } finally {
-        chrome?.child.kill();
-        await chrome?.cdp.close();
+        if (chrome) await closeChrome(chrome);
         app.timers.stop();
         app.server.closeAllConnections();
         app.server.close();

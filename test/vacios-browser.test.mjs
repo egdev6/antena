@@ -1,17 +1,18 @@
 // #4 · patrón de estado vacío con caja y CTA en Chat, Archivos (General) y el chat del prompter,
 // y copy unificado: ningún vacío de las vistas del panel dice «Aún no hay» (familia «Todavía no…»).
 import { test } from 'node:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-vacios-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -40,7 +41,7 @@ test('#4 chat vacío: caja de estado vacío con CTA a conexiones, no texto suelt
     app.engine.handleChat({ id: 'c-1', user: 'EspectadorBot', text: 'hola', platform: 'twitch', color: '#3B5CFF' });
     await waitDom(chrome.cdp, `Array.from(document.querySelectorAll('main ol.chatlog li')).some(li => li.textContent.includes('EspectadorBot'))`, { timeoutMs: 9000 });
     eq(await dom(chrome, `document.querySelectorAll('main .eg-post--empty').length`), 0, 'con mensajes no queda la caja');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('#4 archivos vacíos en Archivos: caja con CTA «Subir archivos» y desaparece al subir', { timeout: 90000 }, async t => {
@@ -62,7 +63,7 @@ test('#4 archivos vacíos en Archivos: caja con CTA «Subir archivos» y desapar
     await dom(chrome, `setTimeout(() => location.reload(), 0); 'ok'`);
     await waitDom(chrome.cdp, `!!document.querySelector('main table.lv-list tbody tr')`, { timeoutMs: 12000 });
     eq(await dom(chrome, `document.querySelectorAll('main .empty-state').length`), 0, 'con archivos no queda la caja');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('#4 recorrido del panel: ninguna vista dice «Aún no hay»', { timeout: 120000 }, async t => {
@@ -91,5 +92,5 @@ test('#4 recorrido del panel: ninguna vista dice «Aún no hay»', { timeout: 12
     await waitDom(chrome.cdp, `${EMPTY}.some(x => x.startsWith('Todavía no hay archivos'))`, { timeoutMs: 12000 });
     await dom(chrome, `location.hash = '#/directo'`);
     await waitDom(chrome.cdp, `${EMPTY}.some(x => x.startsWith('Todavía no hay mensajes'))`, { timeoutMs: 12000 });
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });

@@ -3,11 +3,11 @@
 // Each scenario owns its app/browser: one RED must not prevent the other reproductions.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const q = JSON.stringify;
@@ -194,6 +194,7 @@ async function withPanel(t, template, run) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'antena-save-race-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   let chrome;
   try {
@@ -247,8 +248,7 @@ async function withPanel(t, template, run) {
     } catch (error) {
       t.diagnostic(`fetch restoration unavailable: ${error.kind || error.name}; browser is being closed`);
     } finally {
-      chrome?.child.kill();
-      chrome?.cdp.close();
+      if (chrome) await closeChrome(chrome);
       app.timers.stop();
       app.teleprompter.stop();
       app.viewers.stop();

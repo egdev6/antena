@@ -6,12 +6,13 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { observeChromeStartup, chromePortFileDiagnostic, chromeTargetDiagnostic } from './helpers/chrome-startup.mjs';
 import { evaluateChrome, waitChromeDom, chromeDiagnosticEvent } from './helpers/chrome-dom.mjs';
+import { closeChrome } from './helpers/react-browser.mjs';
 
 // El panel React requiere app/dist compilado; el servidor ya no tiene panel clásico de repliegue.
 
@@ -20,7 +21,10 @@ async function start() {
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const port = app.server.address().port;
-  const close = () => new Promise(r => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(r); });
+  const close = async () => {
+    await new Promise(r => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(r); });
+    await rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  };
   return { app, port, close };
 }
 
@@ -213,6 +217,7 @@ test('sd/agradecido marca el más antiguo pendiente y salta los ya agradecidos',
 
 test('mutaciones: IPv6 loopback sigue siendo same-origin', async t => {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-rg6-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   const close = async () => { app.timers.stop(); app.server.closeAllConnections(); await new Promise(r => app.server.close(() => r())); };
   const up = await new Promise(r => { app.server.once('error', () => r(false)); app.server.listen(0, '::1', () => r(true)); });
@@ -274,10 +279,11 @@ async function openPrompter(bin, url) {
   assert.equal(response.status, 200, 'la página HTTP del fixture debe responder 200 antes de Chrome');
   assert.equal(html, true, 'la página HTTP del fixture debe ser HTML');
   const profile = await mkdtemp(path.join(tmpdir(), 'egdev-chrome-'));
+  const chrome = { profile };
   const diagnose = true; // stderr acotado también en Windows, sin relajar sandbox.
-  const child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-default-apps', '--disable-gpu', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: diagnose ? ['ignore', 'ignore', 'pipe'] : 'ignore' });
-  const startup = diagnose ? observeChromeStartup(child, profile) : null;
   try {
+    const child = chrome.child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-default-apps', '--disable-gpu', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: diagnose ? ['ignore', 'ignore', 'pipe'] : 'ignore' });
+    const startup = diagnose ? observeChromeStartup(child, profile) : null;
     const portFile = path.join(profile, 'DevToolsActivePort'); let port; let page;
     let discovery = { attempted: false }, targets = [];
     // Identidad acotada: nunca rutas configuradas, salvo los fallbacks literales conocidos.
@@ -325,7 +331,7 @@ async function openPrompter(bin, url) {
       throw new Error('Chrome no expuso la página del prompter' + '; Chrome startup: ' +
         JSON.stringify({ portAvailable: !!port, pageAvailable: !!page, probe, devTools: { discovery, atFailure, targets }, ...(startup?.snapshot() || { unavailable: true }) }));
     }
-    const cdp = await connectCdp(page.webSocketDebuggerUrl);
+    const cdp = chrome.cdp = await connectCdp(page.webSocketDebuggerUrl);
     cdp.chromeStartup = chromeSnapshot;
     // Lectura fresca sólo para el diagnóstico de fallo; no reintenta ni navega.
     cdp.chromeTargetsNow = async () => (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1000) })
@@ -344,8 +350,11 @@ async function openPrompter(bin, url) {
     }
     // Navegada por CDP la pestaña no recibe foco; el original lo tenía y blur/focus dependen de él.
     await cdp.send('Page.bringToFront');
-    return { child, cdp };
-  } catch (e) { child.kill(); throw e; }
+    return chrome;
+  } catch (error) {
+    try { await closeChrome(chrome); } catch (cleanupError) { error.cleanupError = cleanupError; }
+    throw error;
+  }
 }
 
 const cdpEval = (c, expression) => evaluateChrome(c, expression);
@@ -430,7 +439,7 @@ test('prompter React: guardar una marca libera la cronología (Enter/blur, SSE y
     await waitDom(c, '!document.querySelector(".pr-edit")');
     const mok = await marker(base, 'Tras el fallo');
     await waitDom(c, `document.body.innerText.includes(${JSON.stringify(mok.label)})`);
-  } finally { chrome?.cdp?.close(); chrome?.child?.kill(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('panel React: el aviso de configuración/secretos persiste, no finge guardado y se recupera sin recargar', { timeout: 90000 }, async t => {
@@ -501,5 +510,5 @@ test('panel React: el aviso de configuración/secretos persiste, no finge guarda
     app.store.secFile = path.join(dataDir, 'secrets.json');
     await app.store.setSecret('youtube', { access: 'ok' });
     await waitDom(c, '!document.querySelector(".persist")');
-  } finally { release?.(); chrome?.cdp?.close(); chrome?.child?.kill(); await close(); }
+  } finally { release?.(); if (chrome) await closeChrome(chrome); await close(); }
 });
