@@ -98,7 +98,7 @@ const variacionItem = {
 // Las alertas conocidas: hojas de alerta más sus variaciones (que a su vez llevan hojas y acciones).
 const alertaItem = { ...hojasAlerta, variations: list(variacionItem) };
 const comandoItem = {
-  id: str, trigger: str,
+  id: str, trigger: str, outputMode: en(['alert', 'chat']), chatReply: str,
   permission: en(PERMISOS), cooldownSec: num({ int: true, min: 0 }), userCooldownSec: num({ int: true, min: 0 }),
   platforms: arrStr(['twitch', 'youtube']),
   ...hojasAlerta,
