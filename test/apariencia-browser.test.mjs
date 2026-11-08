@@ -5,11 +5,11 @@
 // más que el disparo (la carrera del informe UX), el ejemplo no se puede perder.
 import { test } from 'node:test';
 import http from 'node:http';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { clickWhen, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { clickWhen, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 
 const chipDe = texto => `Array.from(document.querySelectorAll('.ap-tabs .eg-chip')).find(b => b.textContent.trim() === ${JSON.stringify(texto)})`;
 // la alerta de ejemplo salió: nodo .alert del tipo de serie y sin marca de agua
@@ -22,6 +22,7 @@ test('apariencia: la vista previa muestra una alerta de ejemplo al cargar', { ti
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-apariencia-6-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const appPort = app.server.address().port;
@@ -56,7 +57,7 @@ test('apariencia: la vista previa muestra una alerta de ejemplo al cargar', { ti
     await clickWhen(c, chipDe('Alerta'));
     await waitDom(c, hayAlertaDeEjemplo, { timeoutMs: 15000 });
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     proxy.closeAllConnections(); app.server.closeAllConnections();
     await new Promise(r => app.server.close(r));
     await new Promise(r => proxy.close(r));

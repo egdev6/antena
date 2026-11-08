@@ -1,11 +1,11 @@
 // #125: regresión del commit c873c9e, adaptada al scroll exclusivo de navegación.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 // Simula la app de escritorio sin invocar Tauri, cuentas ni hardware reales: ni siquiera ahí hay pie.
@@ -15,6 +15,7 @@ test('barra lateral: activo, grupos y scroll exclusivo bajo el logo, sin pie', {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-panel-125-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -98,7 +99,7 @@ test('barra lateral: activo, grupos y scroll exclusivo bajo el logo, sin pie', {
     assert.ok(movil.scroll > 0, 'navegación horizontal móvil accesible');
     assert.deepEqual(movil.orden, orden, 'sin reordenar ni ocultar destinos');
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     app.timers.stop();
     app.server.closeAllConnections();
     await new Promise(r => app.server.close(r));

@@ -18,6 +18,9 @@ const WINDOWS_POSIX_SKIPS = [
   // ensayos de ACL reales: un proceso elevado (runner alojado) no es dueño de sus ficheros con el SID
   // del usuario; en un Windows sin elevar sí se ejecutan (#83)
   'Requires a non-elevated Windows user: an elevated process (hosted runner) does not own its files with the user SID',
+  // #87: POSIX-only test scenarios (inherited stdout after exit, ignoring SIGTERM)
+  'POSIX inherited-stdout scenario; the Windows signal controller does not relay grandchild output after exit',
+  'POSIX signals: Windows has no SIGTERM a process can ignore; forced termination is covered by the other close tests',
 ];
 
 export function checkCiBaseline(report, tap) {

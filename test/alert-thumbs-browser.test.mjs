@@ -2,11 +2,11 @@
 // y se rehacen cuando cambia lo que se ve (Apariencia o la propia alerta), sin recargar el panel.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const frame = type => `document.querySelector('.lv-still iframe[src*="still=${type}&"]')`;
@@ -16,6 +16,7 @@ test('alertas: la miniatura es el overlay real y sigue a Apariencia y a la confi
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-thumbs-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -49,7 +50,7 @@ test('alertas: la miniatura es el overlay real y sigue a Apariencia y a la confi
     await waitDom(c, `${frame('raid')}?.src !== ${JSON.stringify(src1)}`, { timeoutMs: 9000 });
     await waitDom(c, inFrame('raid', `getComputedStyle(d.querySelector('.alert')).getPropertyValue('--accent').trim().toUpperCase() === '#00D1FF'`), { timeoutMs: 12000 });
   } finally {
-    chrome?.child.kill(); await chrome?.cdp.close();
+    if (chrome) await closeChrome(chrome);
     app.timers.stop(); app.server.closeAllConnections(); app.server.close();
   }
 });

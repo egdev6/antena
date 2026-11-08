@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const q = JSON.stringify;
@@ -97,7 +97,7 @@ test('save bar: fixed at the bottom, only shown with pending changes', { timeout
     assert.equal(await ev(`document.body.textContent.includes('Abrir, sortear y quitar participantes se aplica al momento.')`), false, 'the giveaway hint is gone');
     assert.equal(await ev(`!!(${bar})?.querySelector('.hint')`), false, 'the save bar carries no hint');
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     app.timers.stop(); app.server.closeAllConnections(); app.server.close();
     await rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }

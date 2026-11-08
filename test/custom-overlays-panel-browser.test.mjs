@@ -4,11 +4,11 @@
 // públicas (panel, HTTP y SSE): la prueba no lee el estado interno de la vista.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome as closeSharedChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -17,6 +17,7 @@ async function start(t) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-overlays-panel-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   app.store.config.panel = { onboardingDone: true };   // la bienvenida taparía la vista
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
@@ -93,7 +94,7 @@ async function sse(base, client, t) {
   };
 }
 
-const closeChrome = async chrome => { if (!chrome) return; chrome.child.kill(); await chrome.cdp.close(); };
+const closeChrome = async chrome => { if (chrome) await closeSharedChrome(chrome); };
 
 test('panel: Overlays en el grupo de Widgets, estado vacío que habla del agente, crear y Fuentes para Meld', { timeout: 120000 }, async t => {
   const ctx = await start(t);

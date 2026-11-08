@@ -4,11 +4,11 @@
 // instalar llama a update_install y pinta el progreso.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
@@ -20,6 +20,7 @@ async function start(t) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-acerca-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   app.store.config.panel.onboardingDone = true;   // la bienvenida taparía la vista
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
@@ -62,7 +63,7 @@ test('acerca de: en el navegador muestra la versión, los créditos y las releas
     }
     assert.equal(await dom(chrome, `!!${buttonByText('Buscar actualizaciones')}`), false, 'sin Tauri no hay botón de actualizar');
     assert.equal(await dom(chrome, `!!document.querySelector('.acerca-browser a[href="${RELEASES}"]')`), true);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await ctx.close(); }
+  } finally { if (chrome) await closeChrome(chrome); await ctx.close(); }
 });
 
 test('acerca de: en la app busca e instala con los comandos de la app y enseña el resultado', { timeout: 120000 }, async t => {
@@ -99,5 +100,5 @@ test('acerca de: en la app busca e instala con los comandos de la app y enseña 
     const calls = await dom(chrome, `window.__calls.join(',')`);
     assert.ok(calls.includes('update_install'), calls);
     assert.doesNotMatch(calls, /plugin:/, 'no se usan los comandos JS del plugin');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await ctx.close(); }
+  } finally { if (chrome) await closeChrome(chrome); await ctx.close(); }
 });

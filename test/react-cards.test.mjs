@@ -3,11 +3,11 @@
 // secciones y un pie opcional con texto atenuado a izquierda y derecha.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 
 const cssOf = (c, sel, prop) => `getComputedStyle(document.querySelector(${JSON.stringify(sel)})).${prop}`;
 
@@ -15,6 +15,7 @@ test('tarjeta común del panel: cabecera, separadores finos y pie opcional', { t
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-cards-127-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -55,7 +56,7 @@ test('tarjeta común del panel: cabecera, separadores finos y pie opcional', { t
     assert.equal(foot.sep, '1px', 'el pie se separa del contenido con un filete de 1px');
     assert.equal(foot.atenuado, true, 'el texto del pie va atenuado');
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
   }
 });

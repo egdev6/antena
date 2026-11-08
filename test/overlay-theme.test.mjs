@@ -4,16 +4,17 @@
 // posición del tema, todo llegando por SSE (`theme` + `alert` de vista previa).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 
 test('overlay: icono por tipo, etiqueta como logo y posición del tema', { timeout: 90000 }, async t => {
   const bin = await findChrome();
   if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la regresión de navegador');
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-overlay-157-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -49,7 +50,7 @@ test('overlay: icono por tipo, etiqueta como logo y posición del tema', { timeo
     assert.equal(p2.status, 200);
     await waitDom(c, `!!document.querySelector('.alert-card.type-sub .tile svg.logo')`, { timeoutMs: 9000 });
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
   }
 });

@@ -3,16 +3,17 @@
 // Efecto observable: notas en la sesión del servidor (app.session.data.notes), no solo el DOM.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
 
 test('prompter React: pestañas, chat por SSE y marca en la cronología guardada en el servidor', { timeout: 90000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return; // sin app/dist o sin Chrome: omitido con motivo (t.skip)
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-pr-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -49,7 +50,7 @@ test('prompter React: pestañas, chat por SSE y marca en la cronología guardada
     assert.equal(saved.user, 'EspectadorBot');
     assert.equal(saved.text, 'hola desde el test');
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
   }
 });
@@ -60,6 +61,7 @@ test('prompter React: insignia de mod en el chat', { timeout: 90000 }, async t =
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return; // sin app/dist o sin Chrome: omitido con motivo (t.skip)
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-pr-117-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -73,7 +75,7 @@ test('prompter React: insignia de mod en el chat', { timeout: 90000 }, async t =
     app.engine.handleChat({ id: 'c-mod-1', user: 'ModBot', text: 'presente', platform: 'twitch', color: '#3B5CFF', mod: true });
     await waitDom(c, `!!Array.from(document.querySelectorAll('.chat .msg')).find(m => m.textContent.includes('ModBot') && m.querySelector('[title="Moderador"]'))`, { timeoutMs: 9000 });
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
   }
 });

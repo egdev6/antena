@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { findChrome, openChromePage, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome, findChrome, openChromePage, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const q = JSON.stringify;
@@ -76,8 +76,7 @@ const mediaProbe = `(() => {
 // Existing helper intentionally exposes commands only. Attach a second CDP socket to
 // the SAME page for Fetch events; do not replace its command handler or start Chrome.
 async function responseGate(chrome, urlPattern, method, cleanups) {
-  const profile = chrome.child.spawnargs.find(arg => arg.startsWith('--user-data-dir=')).slice('--user-data-dir='.length);
-  const port = (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0].trim();
+  const port = (await readFile(path.join(chrome.profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0].trim();
   const { targetInfo } = await within(chrome.cdp.send('Target.getTargetInfo'), 'CDP target lookup did not complete');
   const ws = new WebSocket(`ws://127.0.0.1:${port}/devtools/page/${targetInfo.targetId}`);
   let seq = 0, waiter, closing = false;
@@ -187,26 +186,7 @@ async function withPanel(run) {
     const failures = [];
     for (const cleanup of cleanups.reverse()) { try { await cleanup(); } catch (error) { failures.push(error); } }
     if (chrome) {
-      const exited = chrome.child.exitCode !== null || chrome.child.signalCode !== null;
-      const closed = exited ? Promise.resolve() : new Promise(resolve => chrome.child.once('close', resolve));
-      try {
-        if (!exited) {
-          // Prefer Chrome's graceful shutdown: SIGTERM/exit alone can leave profile
-          // writers racing rm. A disconnect during Browser.close is expected.
-          try {
-            await within(Promise.race([chrome.cdp.send('Browser.close'), closed]), 'Chrome shutdown request did not complete', 3000);
-          } catch { chrome.child.kill(); }
-        }
-        try { await within(closed, 'Chrome did not close'); }
-        catch (error) {
-          chrome.child.kill('SIGKILL');
-          try { await within(closed, 'Chrome did not close after forced shutdown', 3000); }
-          catch (forcedError) { failures.push(error, forcedError); }
-        }
-      } finally { chrome.cdp.close(); }
-      const profile = chrome.child.spawnargs.find(arg => arg.startsWith('--user-data-dir=')).slice('--user-data-dir='.length);
-      try { await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
-      catch (error) { failures.push(error); }
+      try { await closeChrome(chrome); } catch (error) { failures.push(error); }
     }
     if (app) {
       for (const name of ['timers', 'teleprompter', 'viewers', 'meld', 'chat']) {
