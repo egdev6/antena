@@ -11,7 +11,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { launchSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { freePort } from './helpers/free-port.mjs';
 
 const SERVER = fileURLToPath(new URL('../src/server.mjs', import.meta.url));
@@ -66,7 +66,7 @@ async function puertoLibre(port) {
   });
 }
 
-test('con ANTENA_DESKTOP=1, cerrar la entrada estándar provoca el apagado ordenado', { timeout: 30000 }, async t => {
+test('con ANTENA_DESKTOP=1, cerrar la entrada estándar provoca el apagado ordenado', { timeout: windowsTimeout(1, 30000) }, async t => {
   const c = await lanzarServidor(t, { desktop: true });
   c.proc.stdin.end(); // simula la muerte del padre: la app ya no mantiene la tubería
   const resultado = await Promise.race([
@@ -79,7 +79,7 @@ test('con ANTENA_DESKTOP=1, cerrar la entrada estándar provoca el apagado orden
   assert.ok(await puertoLibre(c.port), 'el puerto debe quedar libre tras el apagado');
 });
 
-test('sin ANTENA_DESKTOP, cerrar la entrada estándar no apaga el servidor', { timeout: 30000 }, async t => {
+test('sin ANTENA_DESKTOP, cerrar la entrada estándar no apaga el servidor', { timeout: windowsTimeout(1, 30000) }, async t => {
   const c = await lanzarServidor(t, { desktop: false });
   c.proc.stdin.end();
   await delay(3000);

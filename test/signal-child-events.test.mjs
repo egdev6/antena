@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { WINDOWS_STARTUP_STAGE_MS } from './helpers/signal-child.mjs';
 
 // Clase y cola reales con EventEmitter real; sólo se sustituyen transporte y scheduling.
 // No ejecuta PowerShell, procesos nativos ni el poll de archivos.
@@ -17,7 +18,7 @@ assert.ok(launcherTail);
 function fixture(t, returned = true) {
   const scheduled = [];
   const ActualChild = runInNewContext(`(${source.slice(start, end).trim()})`, {
-    EventEmitter, PassThrough, controllers: new WeakMap(), limit: 10000,
+    EventEmitter, PassThrough, controllers: new WeakMap(), limit: 10000, WINDOWS_STARTUP_STAGE_MS,
     setTimeout: () => ({}), clearTimeout: () => {},
     setImmediate: callback => { scheduled.push(callback); },
   });

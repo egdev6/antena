@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { controllerFailure } from './helpers/signal-child.mjs';
+import { controllerFailure, WINDOWS_STARTUP_STAGE_MS } from './helpers/signal-child.mjs';
 
 // Portable contract tests: actual class/poll/events, not Windows runtime proof.
 const source = readFileSync(new URL('./helpers/signal-child.mjs', import.meta.url), 'utf8');
@@ -22,7 +22,7 @@ function fixture(t, exitCode = 0) {
     ['complete.json', exit(exitCode, 'complete')]]);
   const reads = [], writes = [], removed = [], scheduled = [], timers = [], errors = [], events = [];
   const ActualChild = runInNewContext(`(${source.slice(start, end).trim()})`, {
-    EventEmitter, PassThrough, process, controllers: new WeakMap(), limit: 10000,
+    EventEmitter, PassThrough, process, controllers: new WeakMap(), limit: 10000, WINDOWS_STARTUP_STAGE_MS,
     controllerFailure, requestName,
     signals: runInNewContext(`${source.match(/const signals = .*;/)[0]} signals`),
     fault: message => Object.assign(new Error(message), { code: 'ERR_SIGNAL_CONTROLLER' }),

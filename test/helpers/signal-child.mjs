@@ -11,6 +11,16 @@ import { fileURLToPath } from 'node:url';
 const controllerScript = fileURLToPath(new URL('./windows-signal-child.ps1', import.meta.url));
 const controllers = new WeakMap();
 const limit = 10000;
+export const WINDOWS_STARTUP_STAGE_MS = 30_000;
+
+// Preserve the existing scenario budget on POSIX. Each Windows launch also
+// needs an identity query, native startup, and time for the app's READY marker.
+export function windowsTimeout(launches, scenarioMs, platform = process.platform) {
+  return platform === 'win32'
+    ? launches * (2 * WINDOWS_STARTUP_STAGE_MS + 10_000) + scenarioMs
+    : scenarioMs;
+}
+
 const signals = new Set(['SIGINT', 'SIGTERM', 'SIGKILL']);
 const fault = message => Object.assign(new Error(message), { code: 'ERR_SIGNAL_CONTROLLER' });
 
@@ -64,7 +74,7 @@ function queryParentCreationTime(options) {
         '-ParentIdentityPid', String(process.pid),
       ], {
         cwd: options.cwd, env: options.env, windowsHide: true, shell: false,
-        encoding: 'utf8', timeout: limit, maxBuffer: 128, killSignal: 'SIGKILL',
+        encoding: 'utf8', timeout: WINDOWS_STARTUP_STAGE_MS, maxBuffer: 128, killSignal: 'SIGKILL',
       }, (error, stdout, stderr) => {
         if (error || stderr.length !== 0) { failed(); return; }
         try { resolve(parseParentCreationTime(stdout)); }
@@ -129,7 +139,7 @@ class WindowsSignalChild extends EventEmitter {
     // Other controller failures are observed through its private report/close event.
     this.stdin.on('error', () => {});
     controllers.set(this, this);
-    this._startupTimer = setTimeout(() => this._fail(this._startupTimeout()), limit);
+    this._startupTimer = setTimeout(() => this._fail(this._startupTimeout()), WINDOWS_STARTUP_STAGE_MS);
     void this._poll();
   }
 

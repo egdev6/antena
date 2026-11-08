@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 
 const SERVER = new URL('../src/server.mjs', import.meta.url).href;
 const PROGRAM = String.raw`
@@ -219,7 +219,7 @@ test('oráculo final rechaza deadline y errores almacenados en JSONL', () => {
   }
 });
 
-test('HTTP custom admitido: readBody atraviesa SIGINT; post-corte no añade held', { timeout: 25000 }, async t => {
+test('HTTP custom admitido: readBody atraviesa SIGINT; post-corte no añade held', { timeout: windowsTimeout(1, 25000) }, async t => {
   const c = await launch(t, 'http');
   const accepted = request(t, c, '/api/alert/custom', { body: JSON.stringify({ text: 'Fixture accepted', vars: { user: 'Fixture HTTP' } }), partial: true });
   await c.wait('body-chunk');
@@ -240,7 +240,7 @@ test('HTTP custom admitido: readBody atraviesa SIGINT; post-corte no añade held
   before(events, 'body-chunk', 'cut'); before(events, 'probe', 'http-idle');
 });
 
-test('EventSub callback real: held síncrono y socket histórico retenido antes del sampler', { timeout: 25000 }, async t => {
+test('EventSub callback real: held síncrono y socket histórico retenido antes del sampler', { timeout: windowsTimeout(1, 25000) }, async t => {
   const c = await launch(t, 'eventsub');
   await interruptSignalChild(c.child, 'SIGINT'); await c.wait('eventsub-cut');
   await rejectLate(t, c); await c.command('stale');
@@ -257,7 +257,7 @@ test('EventSub callback real: held síncrono y socket histórico retenido antes 
   before(events, 'admitted', 'cut'); before(events, 'stale', 'physical'); before(events, 'physical', 'eventsub-idle');
 });
 
-test('OAuth YouTube HTTP admitido: token/canal atraviesan SIGINT y secreto precede flush', { timeout: 25000 }, async t => {
+test('OAuth YouTube HTTP admitido: token/canal atraviesan SIGINT y secreto precede flush', { timeout: windowsTimeout(1, 25000) }, async t => {
   const c = await launch(t, 'oauth');
   const auth = await request(t, c, '/api/youtube/auth', { body: '{}' }).response;
   assert.equal(auth.status, 200);

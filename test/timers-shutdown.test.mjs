@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { launchChildOnFreePort } from './helpers/free-port.mjs';
 import { Timers } from '../src/timers.mjs';
 
@@ -279,7 +279,7 @@ async function exited(c, ms = 2000) {
   } finally { clearTimeout(timer); }
 }
 
-test('SIGINT/SIGTERM: HTTP idle → EventSub → Device → Timers real → snapshot/flush; fallo/deadline/throw salen 1', { timeout: 25000 }, async t => {
+test('SIGINT/SIGTERM: HTTP idle → EventSub → Device → Timers real → snapshot/flush; fallo/deadline/throw salen 1', { timeout: windowsTimeout(9, 25000) }, async t => {
   // Windows: ambos positivos usan Ctrl+C; SIGTERM nativo es forzado y se prueba aparte abajo.
   const gracefulSignal = signal => process.platform === 'win32' && signal === 'SIGTERM' ? 'SIGINT' : signal;
   for (const signal of ['SIGINT', 'SIGTERM']) {
