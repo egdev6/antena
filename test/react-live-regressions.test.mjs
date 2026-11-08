@@ -4,11 +4,11 @@
 // La interfaz React trae el cap en app/src/lib/live.ts (slice(-200), ventana propia por
 // /api/chat?limit=200) y el aviso en App.tsx (.offline vía live.failed).
 import { test } from 'node:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -19,6 +19,7 @@ async function start(t) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-115-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -92,7 +93,7 @@ test('chat React: tope de 200 mensajes con anclaje de scroll y borrador intactos
       const draft = document.querySelector('.chat-send input:not([placeholder="canal de Twitch (vacío = el tuyo)"])').value;
       return a.row.text === b.row.text && Math.abs(a.row.y - b.row.y) <= 4 && a.sel === b.sel && draft === 'Borrador sintético, sin enviar' && log.querySelectorAll('li').length <= 200;
     })()`, { timeoutMs: 10000 });
-  } finally { chrome?.cdp.close(); chrome?.child.kill(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 // Carrera real (CI de Windows): un gap o una reconexión lanza load() y la instantánea de
@@ -141,7 +142,7 @@ test('chat React: un borrado durante una recarga en vuelo no reaparece con la in
     await sleep(500);
     const text = await dom(chrome, `document.querySelector('.chatlog').textContent`);
     if (/Se borra|Se limpia/.test(text) || !/Se queda/.test(text)) throw new Error('la instantánea vieja deshizo el borrado: ' + text);
-  } finally { chrome?.cdp.close(); chrome?.child.kill(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('chat React: tras un corte de SSE reconecta, recarga el snapshot y muestra el aviso', { timeout: 90000 }, async t => {
@@ -169,5 +170,5 @@ test('chat React: tras un corte de SSE reconecta, recarga el snapshot y muestra 
     await waitDom(c, `Array.from(document.querySelectorAll('.chatlog li')).some(li => li.textContent.includes('Durante el corte'))`, { timeoutMs: 20000 });
     await waitDom(c, '!document.querySelector(".offline")', { timeoutMs: 15000 });
     await waitDom(c, `Array.from(document.querySelectorAll('.chatlog li')).some(li => li.textContent.includes('Antes del corte'))`, { timeoutMs: 5000 });
-  } finally { chrome?.cdp.close(); chrome?.child.kill(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });

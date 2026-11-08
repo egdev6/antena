@@ -1,21 +1,27 @@
 // #128 · pruebas de navegador del overlay goal.html y del bloque Goals del panel:
 // dos barras con metas diferentes, progreso real, visibilidad de caja y barra,
-// showMetric, crear/editar/ocultar/borrar y add/set. Capturas en /tmp.
+// showMetric, crear/editar/ocultar/borrar y add/set. Capturas temporales por ejecución.
 import { test } from 'node:test';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const SHOTS = '/tmp/egdev-128-shots';
+const SHOTS = await mkdtemp(path.join(tmpdir(), 'egdev-128-shots-'));
+process.once('exit', code => {
+  if (code === 0) rmSync(SHOTS, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  else console.error(`Screenshots retained at ${SHOTS}`);
+});
 
 async function start(t) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-128-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -89,7 +95,7 @@ test('overlay goal.html: caja con dos barras, progreso, visibilidad de caja/barr
     await sleep(80);
     await waitDom(chrome.cdp, `document.getElementById('goal').style.display === '' && document.querySelectorAll('#bars .bar').length === 1`, { timeoutMs: 12000 });
     await shot(chrome, 'overlay-caja-restaurada.png');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('panel: el bloque Goals muestra cajas y barras; crear/editar/ocultar/borrar y add/set funcionan en la UI', { timeout: 120000 }, async t => {
@@ -154,7 +160,7 @@ test('panel: el bloque Goals muestra cajas y barras; crear/editar/ocultar/borrar
     await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 680, height: 1000, deviceScaleFactor: 1, mobile: false });
     assert2(await dom(chrome, `document.querySelector('.goal-card').scrollWidth <= document.querySelector('.goal-card').clientWidth`), true);
     await shot(chrome, '129-panel-estrecho.png');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('#129: Directo agrupa cajas y respeta visibilidad; overlay conserva cero, negativos y metas superadas en estrecho', { timeout: 90000 }, async t => {
@@ -205,7 +211,7 @@ test('#129: Directo agrupa cajas y respeta visibilidad; overlay conserva cero, n
     await waitDom(chrome.cdp, `document.querySelectorAll('.goals .goal-bar').length === 1`);
     await putBox(app, { visible: false });
     await waitDom(chrome.cdp, `document.querySelectorAll('.goals .goal').length === 0`);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 // Espera a que el valor guardado llegue (sondeo, no un sleep fijo): en un runner lento el guardado

@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
 
 const call = (base, method, p, body) => fetch(base + p, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) }).then(r => r.json());
 
@@ -49,7 +49,7 @@ test('dock React: estado, pausa, pestañas sin atajos ni chat', { timeout: 12000
     await clickWhen(c, buttonByText('⏭ Saltar'));
     await waitDom(c, `document.querySelector('.toast[role="status"]')?.textContent.includes('Saltada')`, { timeoutMs: 9000 });
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
     await rm(dataDir, { recursive: true, force: true });
   }

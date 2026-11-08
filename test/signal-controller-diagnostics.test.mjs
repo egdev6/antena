@@ -269,7 +269,7 @@ function startupFixture(t, initialFiles = [], pathApi = path) {
   };
   const hints = () => reads.filter(read => read.name.startsWith('startup-'));
   const timeout = async expected => {
-    await advance(10000 - now);
+    await advance(signalChild.WINDOWS_STARTUP_STAGE_MS - now);
     assert.equal(child._failure?.message, expected);
     assert.equal(outcome, child._failure, 'original error identity rejects startup');
     assert.equal(child._failure.code, 'ERR_SIGNAL_CONTROLLER');
@@ -277,7 +277,7 @@ function startupFixture(t, initialFiles = [], pathApi = path) {
     assert.doesNotMatch(child._failure.stack, /PRIVATE_CANARY|target exists|cleanup complete|no target/i);
     assert.equal(writes.length, 1);
     assert.equal(writes[0].file, pathApi.join(ownedDirectory, 'cancel.json.tmp'));
-    assert.equal(writes[0].time, 10000, 'cancellation is synchronous at the original deadline');
+    assert.equal(writes[0].time, signalChild.WINDOWS_STARTUP_STAGE_MS, 'cancellation is synchronous at the startup deadline');
     assert.equal(writes[0].value.launchId, launchId);
     assert.equal(child.pid, undefined); assert.equal(child.exitCode, null);
     assert.deepEqual(events, []); assert.deepEqual(removed, []);
@@ -353,7 +353,9 @@ for (const boundary of ['ready', 'error', 'deadline']) test(`pending diagnostic 
 
 test('startup sampling uses only existing polls, at most three reads per 100ms and 100 batches', async t => {
   const f = startupFixture(t);
-  await f.advance(9999);
+  await f.advance(signalChild.WINDOWS_STARTUP_STAGE_MS - 1);
+  assert.equal(f.child._failure, undefined, 'startup remains open until the stage deadline');
+  assert.equal(f.writes.length, 0, 'no early cancellation');
   const batches = Map.groupBy(f.hints(), read => read.time);
   assert.equal(batches.size, 100);
   const times = [...batches.keys()];
@@ -362,7 +364,7 @@ test('startup sampling uses only existing polls, at most three reads per 100ms a
     assert.equal(new Set(batches.get(times[i]).map(read => read.name)).size, batches.get(times[i]).length);
     if (i) assert.ok(times[i] - times[i - 1] >= 100);
   }
-  assert.ok(f.delays.every(delay => delay === 10 || delay === 10000), 'no diagnostic timer stack');
+  assert.ok(f.delays.every(delay => delay === 10 || delay === signalChild.WINDOWS_STARTUP_STAGE_MS), 'no diagnostic timer stack');
   await f.timeout('Native startup timed out');
   await f.advance(200);
   assert.equal(f.hints().length, 300);

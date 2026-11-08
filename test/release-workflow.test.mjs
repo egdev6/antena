@@ -21,7 +21,8 @@ function repo({ pkg = '0.9.0', tauri = '0.9.0', cargo = '0.9.0' } = {}) {
     `[package]\nname = "antena"\nversion = "${cargo}"\n\n[dependencies]\nserde = { version = "1" }\n`);
   return dir;
 }
-const check = (args, cwd = ROOT) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8' });
+// #87: a synchronous child cannot be interrupted by --test-timeout; bound it here.
+const check = (args, cwd = ROOT) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8', timeout: 60_000 });
 
 test('release-check acepta la versión cuando coincide en los tres manifiestos', () => {
   const dir = repo();

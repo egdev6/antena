@@ -6,7 +6,7 @@ import path from 'node:path';
 import { launchChildOnFreePort } from './helpers/free-port.mjs';
 import { spawn } from 'node:child_process';
 import { createApp } from '../src/server.mjs';
-import { launchSignalChild as launchNativeSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild as launchNativeSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { HELD_RECOVERY_BLOCKED, withoutHeldRecoveryWarning } from './helpers/held-recovery-warning.mjs';
 
 const SERVER_MODULE_URL = new URL('../src/server.mjs', import.meta.url).href;
@@ -255,7 +255,7 @@ test('el fallo de checkpoint de Session llega al log de forma genérica y acotad
   }
 });
 
-test('las señales reales de producción drenan Session: éxito persiste; fallo exit 1 y log genérico', { timeout: 20000 }, async t => {
+test('las señales reales de producción drenan Session: éxito persiste; fallo exit 1 y log genérico', { timeout: windowsTimeout(3, 20000) }, async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'CANARY-SESSION-SIG-'));   // prefijo propio: delata cualquier ruta filtrada
   const children = [];
   t.after(async () => {

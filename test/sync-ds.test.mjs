@@ -24,7 +24,8 @@ async function fakeDs() {
   return { dir, sha: git('rev-parse', '--short', 'HEAD') };
 }
 
-const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
+// #87: a synchronous child cannot be interrupted by --test-timeout; bound it here.
+const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', timeout: 60_000 });
 
 test('copia tokens.css y bundle.css sellados con el commit del sistema de diseño', async () => {
   const { dir, sha } = await fakeDs();

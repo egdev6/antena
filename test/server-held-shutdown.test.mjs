@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { launchChildOnFreePort } from './helpers/free-port.mjs';
 
 globalThis.WebSocket = class { constructor() { throw new Error('External WebSocket forbidden'); } };
@@ -118,7 +118,7 @@ async function crearHijo(t, root, scenario, port) {
   let watchdog;
   const boundedExit = Promise.race([
     exit,
-    new Promise(resolve => { watchdog = setTimeout(() => { child.kill('SIGKILL'); resolve({ code: null, signal: 'WATCHDOG' }); }, 4000); })
+    new Promise(resolve => { watchdog = setTimeout(() => { child.kill('SIGKILL'); resolve({ code: null, signal: 'WATCHDOG' }); }, windowsTimeout(1, 4000)); })
   ]);
   t.after(async () => {
     clearTimeout(watchdog);
@@ -161,7 +161,8 @@ const cases = [
   ['test', 0, 0]
 ];
 for (const [scenario, code, held] of cases) {
-  test(`shutdown ${scenario}: preserves retained state and accepted persistence`, async t => {
+  test(`shutdown ${scenario}: preserves retained state and accepted persistence`,
+    process.platform === 'win32' ? { timeout: windowsTimeout(scenario === 'late-held' ? 2 : 1, 15000) } : {}, async t => {
     const { result, stdout, stderr } = await runScenario(t, scenario);
     assert.deepEqual(result, { code, signal: null }, stdout + stderr);
     assert.equal(stderr, held ? NOTICE + '\n' : '', 'constant notice without payload or duplicate');

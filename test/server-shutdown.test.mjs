@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 
 const SERVER_MODULE_URL = new URL('../src/server.mjs', import.meta.url).href;
 const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -482,7 +482,7 @@ function ownChildren(t, root, children) {
   });
 }
 
-test('votación abierta se conserva por señales; timer se sella antes de idle y votos causales persisten', { timeout: 15000 }, async t => {
+test('votación abierta se conserva por señales; timer se sella antes de idle y votos causales persisten', { timeout: windowsTimeout(2, 15000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, signal, 'vote-gate');
@@ -544,7 +544,7 @@ for (const scenario of ['close-fail', 'close-throw']) {
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  test(`app.close más ${signal} comparten transición y resultado`, { timeout: 15000 }, async t => {
+  test(`app.close más ${signal} comparten transición y resultado`, { timeout: windowsTimeout(1, 15000) }, async t => {
     const root = await tempRoot(); const children = []; ownChildren(t, root, children);
     const c = await startChild(children, root, signal, 'close-mixed');
     c.late();
@@ -573,7 +573,7 @@ test('app.close mantiene deadline terminal sin señales ni consumidor que salga'
   assert.equal(c.stderr(), '');
 });
 
-test('Meld espera RPC y cierre físico tras autoSession antes de persistir; señales repetidas', { timeout: 15000 }, async t => {
+test('Meld espera RPC y cierre físico tras autoSession antes de persistir; señales repetidas', { timeout: windowsTimeout(2, 15000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, signal, 'meld-gate');
@@ -599,7 +599,7 @@ test('Meld espera RPC y cierre físico tras autoSession antes de persistir; señ
 });
 
 for (const scenario of ['meld-reject', 'meld-throw', 'meld-log-throw', 'meld-auto-fail', 'meld-deadline', 'meld-close-deadline']) {
-  test(`${scenario}: conserva fallos y persistencia independiente bajo deadline global`, { timeout: 15000 }, async t => {
+  test(`${scenario}: conserva fallos y persistencia independiente bajo deadline global`, { timeout: windowsTimeout(2, 15000) }, async t => {
     const root = await tempRoot(); const children = []; ownChildren(t, root, children);
     for (const signal of ['SIGINT', 'SIGTERM']) {
       const c = await startChild(children, root, scenario + signal, scenario, 100);
@@ -628,7 +628,7 @@ for (const scenario of ['meld-reject', 'meld-throw', 'meld-log-throw', 'meld-aut
   });
 }
 
-test('YouTube pendiente se procesa antes de Engine y persistencia con señales repetidas', { timeout: 15000 }, async t => {
+test('YouTube pendiente se procesa antes de Engine y persistencia con señales repetidas', { timeout: windowsTimeout(2, 15000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   const order = ['YT:TIMERS', 'YT:CUT', 'YT:RESPONSE', 'YT:DONE', 'YT:ENGINE', 'YT:DRAWS', 'YT:AUTH', 'YT:FLUSH', 'WILLEXIT:0'];
   for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -671,7 +671,7 @@ test('YouTube pendiente se procesa antes de Engine y persistencia con señales r
 });
 
 for (const scenario of ['yt-reject', 'yt-throw', 'yt-timers-fail', 'yt-deadline']) {
-  test(`${scenario}: conserva fallo, drenajes independientes y deadline global`, { timeout: 15000 }, async t => {
+  test(`${scenario}: conserva fallo, drenajes independientes y deadline global`, { timeout: windowsTimeout(2, 15000) }, async t => {
     const root = await tempRoot(); const children = []; ownChildren(t, root, children);
     for (const signal of ['SIGINT', 'SIGTERM']) {
       const c = await startChild(children, root, scenario + signal, scenario, 100);
@@ -696,7 +696,7 @@ for (const scenario of ['yt-reject', 'yt-throw', 'yt-timers-fail', 'yt-deadline'
   });
 }
 
-test('auth pendiente se espera después de sorteos; señales repetidas no duplican el snapshot', { timeout: 15000 }, async t => {
+test('auth pendiente se espera después de sorteos; señales repetidas no duplican el snapshot', { timeout: windowsTimeout(2, 15000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, signal, 'auth-gate');
@@ -720,7 +720,7 @@ test('auth pendiente se espera después de sorteos; señales repetidas no duplic
 });
 
 for (const scenario of ['auth-reject', 'auth-throw', 'auth-draw-fail', 'auth-deadline']) {
-  test(`${scenario}: señal real conserva fallo y persistencia independiente o deadline`, { timeout: 10000 }, async t => {
+  test(`${scenario}: señal real conserva fallo y persistencia independiente o deadline`, { timeout: windowsTimeout(2, 10000) }, async t => {
     const root = await tempRoot(); const children = []; ownChildren(t, root, children);
     for (const signal of ['SIGINT', 'SIGTERM']) {
       const c = await startChild(children, root, scenario + signal, scenario, 100);
@@ -747,7 +747,7 @@ for (const scenario of ['auth-reject', 'auth-throw', 'auth-draw-fail', 'auth-dea
   });
 }
 
-test('señales reales drenan sorteo completo, persisten historial pese a errores y respetan deadline', { timeout: 20000 }, async t => {
+test('señales reales drenan sorteo completo, persisten historial pese a errores y respetan deadline', { timeout: windowsTimeout(6, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     for (const scenario of ['draw-ok', 'draw-fail', 'draw-deadline']) {
@@ -771,7 +771,7 @@ test('señales reales drenan sorteo completo, persisten historial pese a errores
   }
 });
 
-test('chat pendiente: la señal espera drainChat tras sorteos y antes de auth; señales repetidas no duplican', { timeout: 20000 }, async t => {
+test('chat pendiente: la señal espera drainChat tras sorteos y antes de auth; señales repetidas no duplican', { timeout: windowsTimeout(2, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, 'chat-gate-' + signal, 'chat-gate');
@@ -794,7 +794,7 @@ test('chat pendiente: la señal espera drainChat tras sorteos y antes de auth; s
   }
 });
 
-test('chat rechazado: exit 1 con aviso constante y flush independiente de Session/Store', { timeout: 20000 }, async t => {
+test('chat rechazado: exit 1 con aviso constante y flush independiente de Session/Store', { timeout: windowsTimeout(1, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   const c = await startChild(children, root, 'chat-fail', 'chat-fail');
   await interruptSignalChild(c.child, positiveSignal('SIGINT'));
@@ -854,7 +854,7 @@ test('shutdown-trace: el plazo del hijo rechaza relojes mezclados', () => {
   assert.throws(() => assertChildDeadline(childDeadlineShape(510, 'parent:1')), /clock domains/);
 });
 
-test('chat-deadline: el deadline total corta un envío colgado tras las esperas previas con exit 1', { timeout: 25000 }, async t => {
+test('chat-deadline: el deadline total corta un envío colgado tras las esperas previas con exit 1', { timeout: windowsTimeout(2, 25000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const timing = { requestedSignal: signal, effectiveSignal: positiveSignal(signal),
@@ -911,7 +911,8 @@ test('chat-deadline: el deadline total corta un envío colgado tras las esperas 
   }
 });
 
-test('el fixture asigna el puerto en el hijo sin reservar y liberar uno en el padre', async t => {
+test('el fixture asigna el puerto en el hijo sin reservar y liberar uno en el padre',
+  process.platform === 'win32' ? { timeout: windowsTimeout(1, 15000) } : {}, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   t.mock.method(net, 'createServer', () => { throw new Error('reserva previa de puerto prohibida'); });
   const c = await startChild(children, root, 'kernel-port', 'healthy');
@@ -921,7 +922,7 @@ test('el fixture asigna el puerto en el hijo sin reservar y liberar uno en el pa
   assert.deepEqual(await awaitExit(c), { code: 0, signal: null });
 });
 
-test('shutdown espera la cola aceptada de Store y luego sale 0', { timeout: 20000 }, async t => {
+test('shutdown espera la cola aceptada de Store y luego sale 0', { timeout: windowsTimeout(1, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   const c = await startChild(children, root, 'gate', 'gate');
   await interruptSignalChild(c.child, positiveSignal('SIGINT'));
@@ -939,7 +940,7 @@ test('shutdown espera la cola aceptada de Store y luego sale 0', { timeout: 2000
   assert.equal(inter.questions.length, 1);
 });
 
-test('el fallo de Interactive fuerza exit 1 con SIGINT y SIGTERM', { timeout: 20000 }, async t => {
+test('el fallo de Interactive fuerza exit 1 con SIGINT y SIGTERM', { timeout: windowsTimeout(2, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const sig of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, 'ifail-' + sig, 'interactive-fail');
@@ -949,7 +950,7 @@ test('el fallo de Interactive fuerza exit 1 con SIGINT y SIGTERM', { timeout: 20
   }
 });
 
-test('un fallo de escritura de Store deja dirty y fuerza exit 1', { timeout: 20000 }, async t => {
+test('un fallo de escritura de Store deja dirty y fuerza exit 1', { timeout: windowsTimeout(1, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   const c = await startChild(children, root, 'dirty', 'store-dirty');
   assert.ok(await c.waitFor('DIRTY:true'), 'la escritura fallida debe dejar dirty visible: ' + c.stdout());
@@ -963,7 +964,7 @@ async function readSecrets(dataDir) {
   catch (e) { if (e.code === 'ENOENT') return {}; throw e; }
 }
 
-test('S13: un setSecret encolado tras la comprobación de persistencia y retenido al salir fuerza exit 1', { timeout: 20000 }, async t => {
+test('S13: un setSecret encolado tras la comprobación de persistencia y retenido al salir fuerza exit 1', { timeout: windowsTimeout(2, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const sig of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, 'late-held-' + sig, 'late-held');
@@ -981,7 +982,7 @@ test('S13: un setSecret encolado tras la comprobación de persistencia y retenid
   }
 });
 
-test('S13: un setSecret tardío que llega a disco antes de finish conserva exit 0', { timeout: 20000 }, async t => {
+test('S13: un setSecret tardío que llega a disco antes de finish conserva exit 0', { timeout: windowsTimeout(2, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const sig of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, 'late-done-' + sig, 'late-done');
@@ -994,7 +995,7 @@ test('S13: un setSecret tardío que llega a disco antes de finish conserva exit 
   }
 });
 
-test('un rechazo de Session no salta el flush de Interactive y sale 1', { timeout: 20000 }, async t => {
+test('un rechazo de Session no salta el flush de Interactive y sale 1', { timeout: windowsTimeout(1, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   const c = await startChild(children, root, 'srej', 'session-reject');
   await interruptSignalChild(c.child, positiveSignal('SIGTERM'));
@@ -1003,7 +1004,7 @@ test('un rechazo de Session no salta el flush de Interactive y sale 1', { timeou
   assert.equal(inter.questions.length, 1, 'Interactive debe persistir pese al fallo de Session');
 });
 
-test('un throw síncrono de Session no salta a Interactive y sale 1', { timeout: 20000 }, async t => {
+test('un throw síncrono de Session no salta a Interactive y sale 1', { timeout: windowsTimeout(1, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   const c = await startChild(children, root, 'ssync', 'session-sync-throw');
   await interruptSignalChild(c.child, positiveSignal('SIGINT'));
@@ -1012,7 +1013,7 @@ test('un throw síncrono de Session no salta a Interactive y sale 1', { timeout:
   assert.equal(inter.questions.length, 1, 'Interactive debe drenar pese al throw síncrono de Session');
 });
 
-test('señales repetidas se ignoran: un solo flush y sin corte por defecto', { timeout: 20000 }, async t => {
+test('señales repetidas se ignoran: un solo flush y sin corte por defecto', { timeout: windowsTimeout(1, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   const c = await startChild(children, root, 'repeat', 'repeat');
   await interruptSignalChild(c.child, positiveSignal('SIGINT'));
@@ -1027,14 +1028,14 @@ test('señales repetidas se ignoran: un solo flush y sin corte por defecto', { t
   assert.equal((c.stdout().match(/FLUSH:session/g) || []).length, 1);
 });
 
-test('el deadline de shutdown corta un drain bloqueado con exit 1', { timeout: 15000 }, async t => {
+test('el deadline de shutdown corta un drain bloqueado con exit 1', { timeout: windowsTimeout(1, 15000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   const c = await startChild(children, root, 'deadline', 'deadline', 100);
   await interruptSignalChild(c.child, positiveSignal('SIGINT'));
   assert.deepEqual(await awaitExit(c, 1500), { code: 1, signal: null });
 });
 
-test('shutdown sano por SIGINT/SIGTERM sale 0 y conserva Store/Session/Interactive', { timeout: 20000 }, async t => {
+test('shutdown sano por SIGINT/SIGTERM sale 0 y conserva Store/Session/Interactive', { timeout: windowsTimeout(3, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const sig of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, 'ok-' + sig, 'healthy');
@@ -1067,7 +1068,7 @@ async function postLayerChild(c, body) {
 }
 
 for (const scenario of ['layer-gate', 'layer-fail', 'layer-auth-fail']) {
-  test(`${scenario}: señal real drena el ocultado diferido y persiste pese al fallo`, { timeout: 20000 }, async t => {
+  test(`${scenario}: señal real drena el ocultado diferido y persiste pese al fallo`, { timeout: windowsTimeout(2, 20000) }, async t => {
     const root = await tempRoot(); const children = []; ownChildren(t, root, children);
     for (const signal of ['SIGINT', 'SIGTERM']) {
       const c = await startChild(children, root, scenario + '-' + signal, scenario);
@@ -1096,7 +1097,7 @@ for (const scenario of ['layer-gate', 'layer-fail', 'layer-auth-fail']) {
   });
 }
 
-test('layer-deadline: el deadline global corta un ocultado diferido largo con exit 1', { timeout: 15000 }, async t => {
+test('layer-deadline: el deadline global corta un ocultado diferido largo con exit 1', { timeout: windowsTimeout(2, 15000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, 'layer-deadline-' + signal, 'layer-deadline', 100);
@@ -1112,7 +1113,7 @@ test('layer-deadline: el deadline global corta un ocultado diferido largo con ex
 
 // ODD-08: cierre del inicio automático de sesión de Meld. El hijo real engancha startNew para
 // dejar la transición en vuelo; señales, orden y persistencia son las de producción.
-test('autoSession: la señal espera el inicio pendiente; repetidos y evento tardío no duplican', { timeout: 20000 }, async t => {
+test('autoSession: la señal espera el inicio pendiente; repetidos y evento tardío no duplican', { timeout: windowsTimeout(2, 20000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, 'auto-gate-' + signal, 'auto-gate');
@@ -1140,7 +1141,7 @@ test('autoSession: la señal espera el inicio pendiente; repetidos y evento tard
 });
 
 for (const scenario of ['auto-reject']) {
-  test(`${scenario}: el fallo capturado durante el cierre sale 1 con mensaje constante y persiste`, { timeout: 20000 }, async t => {
+  test(`${scenario}: el fallo capturado durante el cierre sale 1 con mensaje constante y persiste`, { timeout: windowsTimeout(2, 20000) }, async t => {
     const root = await tempRoot(); const children = []; ownChildren(t, root, children);
     for (const signal of ['SIGINT', 'SIGTERM']) {
       const c = await startChild(children, root, scenario + signal, scenario);
@@ -1164,7 +1165,7 @@ for (const scenario of ['auto-reject']) {
   });
 }
 
-test('auto-deadline: el deadline global corta un inicio automático colgado con exit 1', { timeout: 15000 }, async t => {
+test('auto-deadline: el deadline global corta un inicio automático colgado con exit 1', { timeout: windowsTimeout(2, 15000) }, async t => {
   const root = await tempRoot(); const children = []; ownChildren(t, root, children);
   for (const signal of ['SIGINT', 'SIGTERM']) {
     const c = await startChild(children, root, 'auto-deadline-' + signal, 'auto-deadline', 100);

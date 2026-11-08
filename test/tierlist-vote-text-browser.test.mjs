@@ -1,11 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
@@ -15,16 +14,7 @@ async function start(t) {
   const pages = [];
   let app;
   t.after(async () => {
-    for (const page of pages) {
-      page.cdp.close();
-      if (page.child.exitCode === null && page.child.signalCode === null) {
-        const exited = once(page.child, 'exit');
-        page.child.kill();
-        await exited;
-      }
-      const profile = page.child.spawnargs.find(arg => arg.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length);
-      if (profile) await rm(profile, { recursive: true, force: true });
-    }
+    for (const page of pages) await closeChrome(page);
     if (app) { app.timers.stop(); await app.closeHttp(); await app.interactive.flush(); }
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -51,6 +41,43 @@ const setInput = (label, value) => `(() => {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 })()`;
 
+async function reloadTierInputs(c) {
+  // Page.reload can be acknowledged while the old document still matches the values.
+  await evaluateChrome(c, 'window.__tierVoteBeforeReload = true');
+  await c.send('Page.reload');
+  await waitDom(c, `window.__tierVoteBeforeReload !== true && document.querySelector('input[aria-label="Texto de voto del tier 1"]')?.value === 'Excellent' && !!document.querySelector('input[aria-label="Texto de voto del tier 2"]')`, { timeoutMs: 12000 });
+}
+
+test('tier vote text: reload readiness cannot be satisfied by the previous document', { timeout: 30000 }, async t => {
+  const bin = await skipIfNoBrowserOrUi(t);
+  if (!bin) return;
+  const html = '<input aria-label="Texto de voto del tier 1" value="Excellent"><input aria-label="Texto de voto del tier 2" value="">';
+  const chrome = await openChromePage(bin, `data:text/html,${encodeURIComponent(html)}`);
+  t.after(() => closeChrome(chrome));
+  const real = chrome.cdp;
+  await waitDom(real, `document.querySelector('input[aria-label="Texto de voto del tier 1"]')?.value === 'Excellent'`);
+  await evaluateChrome(real, 'window.__previousTierDocument = true');
+  let release, checked;
+  const firstCheck = new Promise(resolve => { checked = resolve; });
+  // Model a reload acknowledged before navigation commits, keeping the real old DOM available.
+  const c = { ...real, send(method, params) {
+    if (method === 'Page.reload') { release = () => real.send(method, params); return Promise.resolve({}); }
+    const result = real.send(method, params);
+    if (method === 'Runtime.evaluate' && params.expression.includes('Texto de voto del tier 1')) result.then(() => setImmediate(checked));
+    return result;
+  } };
+  let finished = false;
+  const reloaded = reloadTierInputs(c).then(() => { finished = true; });
+  await firstCheck;
+  try {
+    assert.equal(finished, false, 'the old inputs must not satisfy reload readiness before navigation commits');
+  } finally {
+    await release();
+    await reloaded;
+  }
+  assert.equal(await evaluateChrome(real, 'window.__previousTierDocument === undefined'), true);
+});
+
 test('tier vote text: panel edits every tier and retains the changes', { timeout: 90000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
@@ -73,8 +100,7 @@ test('tier vote text: panel edits every tier and retains the changes', { timeout
   assert.deepEqual((await tiers()).map(tier => tier.voteText), ['Excellent', 'Good']);
   await evaluateChrome(c, setInput('Texto de voto del tier 2', ''));
   await until(async () => (await tiers())[1].voteText === '');
-  await c.send('Page.reload');
-  await waitDom(c, `document.querySelector('input[aria-label="Texto de voto del tier 1"]')?.value === 'Excellent'`, { timeoutMs: 12000 });
+  await reloadTierInputs(c);
   assert.equal(await evaluateChrome(c, `document.querySelector('input[aria-label="Texto de voto del tier 2"]').value`), '');
 });
 

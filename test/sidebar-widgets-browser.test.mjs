@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const destinations = [
@@ -24,16 +24,7 @@ async function setup(t) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'antena-sidebar-74-'));
   let app, chrome;
   t.after(async () => {
-    if (chrome) {
-      const child = chrome.child;
-      const exited = child.exitCode !== null || child.signalCode !== null;
-      const closed = exited ? Promise.resolve() : new Promise(resolve => child.once('close', resolve));
-      chrome.cdp.close();
-      if (!exited) child.kill();
-      await closed;
-      const profile = child.spawnargs.find(arg => arg.startsWith('--user-data-dir=')).slice('--user-data-dir='.length);
-      await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    }
+    if (chrome) await closeChrome(chrome);
     if (app) {
       for (const name of ['timers', 'teleprompter', 'viewers', 'meld', 'chat']) app[name].stop();
       await app.closeHttp();

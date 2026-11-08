@@ -6,7 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const MCP = fileURLToPath(new URL('../src/mcp.mjs', import.meta.url));
@@ -330,7 +330,7 @@ for (const scenario of ['output-throw', 'handler-reject']) {
 }
 
 for (const scenario of ['opt-out', 'standalone', 'imported-tools']) {
-  test(`MCP señal ownership ${scenario} conserva listeners ajenos y quiet no decide propiedad`, { timeout: 15000 }, async t => {
+  test(`MCP señal ownership ${scenario} conserva listeners ajenos y quiet no decide propiedad`, { timeout: windowsTimeout(scenario === 'imported-tools' ? 1 : 0, 15000) }, async t => {
     const entry = `
       import { startServer } from ${JSON.stringify(moduleUrl('server'))};
       import { TOOLS } from ${JSON.stringify(new URL('../src/mcp.mjs', import.meta.url).href)};
@@ -380,7 +380,7 @@ async function protocolReady(c) {
 
 for (const name of ['SIGINT', 'SIGTERM']) {
   for (const scenario of ['work', 'startup']) {
-    test(`MCP señal ${name} conserva ${scenario}, repeticiones y EOF causal`, { timeout: 15000 }, async t => {
+    test(`MCP señal ${name} conserva ${scenario}, repeticiones y EOF causal`, { timeout: windowsTimeout(name === 'SIGINT' && scenario === 'work' ? 2 : 1, 15000) }, async t => {
       const c = await launchSignalFixture(t, scenario);
       let baseline = 0;
       if (scenario === 'work') { await warm(c); await domain(c); baseline = await autosaved(c); }
@@ -431,7 +431,7 @@ for (const name of ['SIGINT', 'SIGTERM']) {
     });
   }
   for (const scenario of ['empty', 'tool-error', 'output', 'output-throw', 'handler-reject', 'fail']) {
-    test(`MCP señal ${name} respeta ${scenario} y barrera de salida`, { timeout: 15000 }, async t => {
+    test(`MCP señal ${name} respeta ${scenario} y barrera de salida`, { timeout: windowsTimeout(1, 15000) }, async t => {
       const c = await launchSignalFixture(t, scenario);
       if (scenario === 'fail') { await warm(c); await domain(c); }
       else await protocolReady(c);
@@ -470,7 +470,7 @@ async function signalAgain(c, name) {
   assert.ok(await c.until(() => c.err().split(marker).length - 1 > count), c.err());
 }
 
-test('MCP señal plazo total startup-deadline no se reinicia por señal ni EOF', { timeout: 15000 }, async t => {
+test('MCP señal plazo total startup-deadline no se reinicia por señal ni EOF', { timeout: windowsTimeout(1, 15000) }, async t => {
   const c = await launchSignalFixture(t, 'startup-deadline-probe');
   c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
   assert.ok(await c.until(() => c.err().includes('FIXTURE:BOUND')), c.err());
@@ -496,7 +496,7 @@ test('MCP señal plazo total startup-deadline no se reinicia por señal ni EOF',
   assert.doesNotMatch(c.err(), /PRIVATE_|FIXTURE:FLUSH|\[parada\] drenado agotado/);
 });
 
-test('MCP startup deadline expires in a real process after signals and EOF', { timeout: 15000 }, async t => {
+test('MCP startup deadline expires in a real process after signals and EOF', { timeout: windowsTimeout(1, 15000) }, async t => {
   const c = await launchSignalFixture(t, 'startup-deadline');
   c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
   assert.ok(await c.until(() => c.err().includes('FIXTURE:BOUND')), c.err());
@@ -512,7 +512,7 @@ test('MCP startup deadline expires in a real process after signals and EOF', { t
 });
 
 for (const scenario of ['work-deadline', 'late-deadline']) {
-  test(`MCP señal plazo total ${scenario} no se reinicia por señal ni EOF`, { timeout: 15000 }, async t => {
+  test(`MCP señal plazo total ${scenario} no se reinicia por señal ni EOF`, { timeout: windowsTimeout(1, 15000) }, async t => {
     const c = await launchSignalFixture(t, scenario);
     await warm(c);
     c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
@@ -534,7 +534,7 @@ for (const scenario of ['work-deadline', 'late-deadline']) {
   });
 }
 
-test('MCP señal EOF primero comparte cierre con señales posteriores', { timeout: 15000 }, async t => {
+test('MCP señal EOF primero comparte cierre con señales posteriores', { timeout: windowsTimeout(1, 15000) }, async t => {
   const c = await launchSignalFixture(t, 'output'); await protocolReady(c);
   c.child.stdin.end();
   assert.ok(await c.until(() => c.err().includes('FIXTURE:OUTPUT-BARRIER')), c.err());
@@ -545,7 +545,7 @@ test('MCP señal EOF primero comparte cierre con señales posteriores', { timeou
   assert.equal((c.err().match(/FIXTURE:OUTPUT-BARRIER/g) || []).length, 1);
 });
 
-test('MCP señal conserva solicitud externa aceptada sin cerrar servidor ajeno', { timeout: 15000 }, async t => {
+test('MCP señal conserva solicitud externa aceptada sin cerrar servidor ajeno', { timeout: windowsTimeout(1, 15000) }, async t => {
   let entered = false, release; const gate = new Promise(resolve => { release = resolve; });
   const server = http.createServer(async (req, res) => {
     if (req.url === '/api/config') { entered = true; await gate; }

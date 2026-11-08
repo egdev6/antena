@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { launchChildOnFreePort } from './helpers/free-port.mjs';
 import { Twitch } from '../src/twitch.mjs';
 
@@ -459,7 +459,7 @@ async function awaitExit(c, ms = 3000) {
   } finally { clearTimeout(timer); }
 }
 
-test('la señal real espera quiesceEventSub antes de persistir; bloqueo/error salen 1', { timeout: 40000 }, async t => {
+test('la señal real espera quiesceEventSub antes de persistir; bloqueo/error salen 1', { timeout: windowsTimeout(4, 40000) }, async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'EGDEV-EVENTSUB-'));
   const children = [];
   t.after(async () => {
@@ -515,7 +515,7 @@ test('la señal real espera quiesceEventSub antes de persistir; bloqueo/error sa
   assert.equal(d.out().includes('FLUSH'), false, 'quiesce colgado no admite persistencia prematura');
 });
 
-test('fallo asentado de EventSub guarda lo aceptado antes de salir 1, también con throw síncrono', { timeout: 40000 }, async t => {
+test('fallo asentado de EventSub guarda lo aceptado antes de salir 1, también con throw síncrono', { timeout: windowsTimeout(2, 40000) }, async t => {
   // El throw síncrono también debe drenar: Ctrl+C en Windows, SIGTERM real en Unix.
   for (const [scenario, signal] of [
     ['persist-fail', 'SIGINT'],

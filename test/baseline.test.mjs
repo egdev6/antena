@@ -822,9 +822,70 @@ test('discoverTestFiles lista y ordena test/*.test.mjs sin helpers', async () =>
   }
 });
 
-test('testCommand fija reporter TAP, cobertura opcional y orden de ficheros', () => {
-  assert.deepEqual(testCommand(['test/a.test.mjs']), ['--test', '--test-reporter=tap', '--experimental-test-coverage', 'test/a.test.mjs']);
-  assert.deepEqual(testCommand(['test/a.test.mjs'], { coverage: false }), ['--test', '--test-reporter=tap', 'test/a.test.mjs']);
+test('testCommand fija reporter TAP, timeout por test, cobertura opcional y orden de ficheros', () => {
+  assert.deepEqual(testCommand(['test/a.test.mjs']), ['--test', '--test-reporter=tap', '--test-timeout=300000', '--experimental-test-coverage', 'test/a.test.mjs']);
+  assert.deepEqual(testCommand(['test/a.test.mjs'], { coverage: false }), ['--test', '--test-reporter=tap', '--test-timeout=300000', 'test/a.test.mjs']);
+  assert.deepEqual(testCommand(['test/a.test.mjs'], { coverage: false, timeoutMs: 500 }), ['--test', '--test-reporter=tap', '--test-timeout=500', 'test/a.test.mjs']);
+});
+
+// #87: a hung test must fail with its own name instead of blocking the whole run.
+test('testCommand: un test colgado falla con su nombre por el timeout por defecto', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'egdev-baseline-hang-'));
+  try {
+    const file = path.join(root, 'hang.test.mjs');
+    await writeFile(file, "import { test } from 'node:test';\ntest('se queda colgado', () => new Promise(() => {}));\ntest('termina', () => {});\n");
+    const run = await runSuite({ cwd: root, execPath: process.execPath, args: testCommand([file], { coverage: false, timeoutMs: 500 }), timeoutMs: 20_000 });
+    assert.equal(run.timedOut, false, 'the whole run must not hang');
+    assert.match(run.stdout, /^not ok 1 - se queda colgado$/m);
+    assert.match(run.stdout, /test timed out after 500ms/);
+    assert.match(run.stdout, /^ok 2 - termina$/m);
+    assert.notEqual(run.exitCode, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// #87 (independent verification): --test-force-exit dropped a failure thrown after the test
+// returned and the run exited 0. The baseline command must keep such late failures.
+test('testCommand: un fallo tardío tras terminar el test no se pierde (sin falso verde)', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'egdev-baseline-late-'));
+  try {
+    const file = path.join(root, 'late.test.mjs');
+    await writeFile(file, "import { test } from 'node:test';\ntest('late assertion', () => { setTimeout(() => { console.log('LATE_STDOUT'); throw new Error('LATE_FAILURE'); }, 100); });\n");
+    const run = await runSuite({ cwd: root, execPath: process.execPath, args: testCommand([file], { coverage: false }), timeoutMs: 20_000 });
+    assert.equal(run.timedOut, false, 'runner must terminate');
+    assert.equal(run.exitCode, 1, `late failure lost:\n${run.stdout}`);
+    assert.match(run.stdout, /LATE_STDOUT/);
+    assert.match(run.stdout, /LATE_FAILURE/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('testCommand: hooks esperados, stdout completo y cobertura conviven con el timeout', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'egdev-baseline-hooks-'));
+  try {
+    const file = path.join(root, 'hooks.test.mjs');
+    await writeFile(file, "import { test, after } from 'node:test';\nafter(async () => { await new Promise(r => setTimeout(r, 20)); console.log('GLOBAL_HOOK_DONE'); });\ntest('last', async t => { t.after(async () => { await new Promise(r => setTimeout(r, 20)); console.log('TEST_HOOK_DONE'); }); process.stdout.write('BEGIN:' + 'X'.repeat(100000) + ':END\\n'); });\n");
+    const run = await runSuite({ cwd: root, execPath: process.execPath, args: testCommand([file]), timeoutMs: 20_000 });
+    assert.equal(run.timedOut, false);
+    assert.equal(run.exitCode, 0, run.stderr);
+    assert.match(run.stdout, /TEST_HOOK_DONE/);
+    assert.match(run.stdout, /GLOBAL_HOOK_DONE/);
+    // TAP wraps long stdout into several '# ' comment lines; rejoin before comparing.
+    const begin = run.stdout.indexOf('BEGIN:'), end = run.stdout.indexOf(':END');
+    assert.ok(begin >= 0 && end > begin, 'stdout of the last test is complete');
+    assert.equal(run.stdout.slice(begin + 6, end).replaceAll('\n# ', ''), 'X'.repeat(100000));
+    assert.match(run.stdout, /# end of coverage report/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('pnpm test usa el mismo timeout por test que el baseline', async () => {
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.match(pkg.scripts.test, /--test-timeout=300000(\s|$)/);
+  assert.doesNotMatch(pkg.scripts.test, /--test-force-exit/, 'force-exit hides late failures');
 });
 
 test('runSuite arranca un runner inyectable sin shell y captura su TAP', async () => {

@@ -2,11 +2,11 @@
 // y borrar un atajo, comprobando el efecto en la API (config del servidor y notas de sesión).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
 
 // Los inputs controlados de React necesitan el setter nativo + evento input.
 const typeInto = (el, text) => `(() => {
@@ -19,6 +19,7 @@ test('atajos React: crear, editar, probar y borrar un atajo desde el panel', { t
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return; // sin app/dist o sin Chrome: omitido con motivo (t.skip)
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-sc-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -63,7 +64,7 @@ test('atajos React: crear, editar, probar y borrar un atajo desde el panel', { t
     await new Promise(r => setTimeout(r, 400));
     assert.equal(custom().length, 0, 'el atajo se borró de la configuración del servidor');
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
   }
 });
