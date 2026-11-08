@@ -37,8 +37,8 @@ const burst = (bus, n, size = 1000) => {
 };
 
 test('a client that keeps reading is not cut by a burst bigger than the budget', t => {
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  const bus = new Bus({ byteBudget: 10_000, backlogGraceMs: 100 });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setImmediate', 'Date'] });
+  const bus = new Bus({ byteBudget: 10_000, backlogGraceMs: 100, now: () => Date.now() });
   const reader = sink();
   bus.addClient(reader, 'panel');
   burst(bus, 60); // ~60 KB, six times the budget, in one tick
@@ -52,14 +52,15 @@ test('a client that keeps reading is not cut by a burst bigger than the budget',
 });
 
 test('a stalled client is still cut after one grace window, with the cause', t => {
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  const bus = new Bus({ byteBudget: 10_000, backlogGraceMs: 100 });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setImmediate', 'Date'] });
+  const bus = new Bus({ byteBudget: 10_000, backlogGraceMs: 100, now: () => Date.now() });
   const stalled = sink();
   bus.addClient(stalled, 'overlay');
   burst(bus, 30);
   t.mock.timers.tick(99);
   assert.equal(stalled.closed, false, 'never cut inside the grace window');
   t.mock.timers.tick(1);
+  t.mock.timers.tick(0); // the bus yields one I/O turn before calling a client stalled
   assert.equal(stalled.closed, true, 'no progress in one window: cut');
   const [gap] = gaps(stalled);
   assert.equal(gap.reason, 'slow-client');
@@ -72,8 +73,8 @@ test('a stalled client is still cut after one grace window, with the cause', t =
 });
 
 test('a client that progresses but never catches up is cut at backlogMaxMs, with the cause', t => {
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  const bus = new Bus({ byteBudget: 10_000, backlogGraceMs: 100, backlogMaxMs: 1000 });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setImmediate', 'Date'] });
+  const bus = new Bus({ byteBudget: 10_000, backlogGraceMs: 100, backlogMaxMs: 1000, now: () => Date.now() });
   const crawler = sink();
   bus.addClient(crawler, 'prompter');
   burst(bus, 60);
@@ -89,8 +90,8 @@ test('a client that progresses but never catches up is cut at backlogMaxMs, with
 });
 
 test('backlogMaxMs defaults to 5000 ms', t => {
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  const bus = new Bus({ byteBudget: 10_000, backlogGraceMs: 100 });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setImmediate', 'Date'] });
+  const bus = new Bus({ byteBudget: 10_000, backlogGraceMs: 100, now: () => Date.now() });
   const crawler = sink();
   bus.addClient(crawler, 'panel');
   burst(bus, 60);
