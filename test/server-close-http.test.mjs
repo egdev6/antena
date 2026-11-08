@@ -337,7 +337,13 @@ test('fixture flushes buffered stdout before process exit', { timeout: 45000 }, 
   assert.ok(c.stdout().endsWith('FLUSH-END\nWILLEXIT:0\n'), 'the final buffered markers must reach stdout');
 });
 
-test('child exit does not complete the wait before inherited stdout closes', { timeout: process.platform === 'win32' ? 45000 : 15000 }, async t => {
+// POSIX only: a grandchild that inherits stdout keeps the pipe open after the child exits. On
+// Windows the native signal controller does not relay a grandchild's output after the child
+// exits, so the scenario this regression pins does not exist there.
+test('child exit does not complete the wait before inherited stdout closes', {
+  timeout: 15000,
+  skip: process.platform === 'win32' && 'POSIX inherited-stdout scenario; the Windows signal controller does not relay grandchild output after exit',
+}, async t => {
   const children = [];
   let accept;
   const connected = new Promise(resolve => { accept = resolve; });
