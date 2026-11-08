@@ -18,23 +18,16 @@ function warnUnknown(event) {
 }
 
 export class Bus {
-  constructor({ historySize = 100, byteBudget = 512 * 1024, backlogGraceMs = 100, backlogMaxMs = 5000, now = () => performance.now() } = {}) {
+  constructor({ historySize = 100, byteBudget = 512 * 1024, backlogGraceMs = 100, backlogStallMs = 1000, backlogMaxMs = 5000, now = () => performance.now() } = {}) {
     this.clients = new Set();
     this.history = [];
     this.historySize = historySize;
     this.seen = new Map(); // id externo -> timestamp
-    // Presupuesto de bytes SIN consumir por cliente (writableLength del socket): lo que el
-    // cliente tiene en cola y no ha leído. La decisión de corte NUNCA se toma dentro de la
-    // ráfaga: una ráfaga de un solo tick parece lenta siempre. Solo se corta un cliente cuyo
-    // backlog sigue por encima del presupuesto en el tick siguiente (setImmediate) sin que
-    // haya drenado; el 'drain' resetea la contrapresión y libera el crédito.
-    // #57: the grace is progress-based. A client over budget whose backlog shrinks between
-    // checks is reading and keeps its connection; one that did not shrink in a whole window is
-    // stalled and is cut; and none stays over budget longer than backlogMaxMs (bounded memory).
+    this.byteBudget = byteBudget;
     this.backlogGraceMs = backlogGraceMs;
+    this.backlogStallMs = backlogStallMs;
     this.backlogMaxMs = backlogMaxMs;
     this.now = now; // monotonic: a wall-clock change must not stretch or shorten backlogMaxMs
-    this.byteBudget = byteBudget;
   }
 
   /** Devuelve true si el id externo ya se ha procesado (EventSub puede reenviar). */
@@ -50,159 +43,193 @@ export class Bus {
   addClient(res, kind) {
     const client = {
       res, kind,
-      closing: false,          // saturado: se cuenta lo perdido y se programa el gap + cierre
-      gapScheduled: false,
-      checkScheduled: false,   // verificación de backlog persistente pendiente (setTimeout)
-      overBudgetSince: null,   // #57: cuándo superó el presupuesto (null = por debajo)
-      bytesWritten: 0,         // #57: bytes escritos por el bus (respaldo si no hay socket)
-      lastFlushed: 0,          // #57: bytes ya entregados al SO en la comprobación anterior
-      throttled: false,        // backlog sobre presupuesto: los snapshots se coalescen
-      atRisk: 0,               // efímeros escritos con backlog sobre presupuesto (en riesgo)
-      droppedEphemeral: 0,     // efímeros no entregados (riesgo al corte + envíos posteriores)
-      lastReplaceable: new Map(), // último valor coalescido por tipo, se envía al drain
+      closing: false,
+      blocked: false,          // write() devolvió false: no escribir de nuevo hasta drain
+      queue: [], queueHead: 0, queueBytes: 0, // efímeros pendientes, en orden
+      lastReplaceable: new Map(), snapshotBytes: 0, // último snapshot y sus bytes por tipo
+      atRisk: 0,               // efímeros escritos con backlog sobre presupuesto
+      droppedEphemeral: 0,     // en riesgo + en cola al corte + envíos posteriores
+      overBudgetSince: null,
+      lastDrainAt: null,       // null: aún no hubo progreso en este episodio
+      crossing: 0,             // invalida timers e inmediatos de cruces anteriores
+      checkTimer: null, checkVersion: 0,
     };
     this.clients.add(client);
     if (typeof res.on === 'function') {
-      // drain = el cliente consumió su cola: se libera el presupuesto, se quita el throttle
-      // y se envían los últimos valores de los snapshots coalescidos durante la contrapresión.
       res.on('drain', () => {
-        client.throttled = false;
-        client.overBudgetSince = null; // drained: a later crossing starts a fresh cap
-        this.#flushReplaceable(client);
+        if (!this.#alive(client)) return;
+        client.blocked = false;
+        this.#noteBacklog(client);
+        if (client.overBudgetSince !== null) {
+          client.lastDrainAt = this.now();
+          this.#scheduleBacklogCheck(client);
+        }
+        this.#flush(client);
       });
-      res.on('error', () => this.clients.delete(client));
+      res.on('error', () => this.#remove(client));
+      res.on('close', () => this.#remove(client));
     }
-    res.on?.('close', () => this.clients.delete(client));
     return client;
   }
 
-  /** #57: bytes already handed to the OS. A real response exposes socket.bytesWritten, which
-   *  also counts writes the server makes outside the bus (the keepalive ping); otherwise it is
-   *  what the bus wrote minus what is still queued. Its growth between checks is progress. */
-  #flushed(client) {
-    const fromSocket = client.res.socket?.bytesWritten;
-    if (Number.isFinite(fromSocket)) return fromSocket;
-    return client.bytesWritten - (client.res.writableLength || 0);
+  #remove(client) {
+    this.clients.delete(client);
+    this.#cancelBacklogCheck(client);
+    client.queue = []; client.queueHead = 0; client.queueBytes = 0;
+    client.lastReplaceable.clear(); client.snapshotBytes = 0;
   }
 
-  /** #57: a write that takes the backlog from under the budget to over it is a fresh
-   *  crossing, so the cap restarts even if an older check is still pending. */
-  #noteCrossing(client, before) {
-    if (before <= this.byteBudget && (client.res.writableLength || 0) > this.byteBudget) client.overBudgetSince = this.now();
-  }
-
-  /** Verificación diferida: el corte solo procede si el backlog SIGUE sobre presupuesto
-   *  cuando la ráfaga ya terminó y ha pasado la gracia (un lector rápido drena su cola;
-   *  una ráfaga de un solo tick nunca es motivo de corte por sí misma). */
-  #scheduleBacklogCheck(client) {
-    if (client.checkScheduled) return;
-    client.checkScheduled = true;
-    if (client.overBudgetSince === null) client.overBudgetSince = this.now();
-    client.lastFlushed = this.#flushed(client);
-    setTimeout(() => {
-      client.checkScheduled = false;
-      this.#checkBacklog(client, true);
-    }, this.backlogGraceMs);
-  }
-
-  #checkBacklog(client, mayYield) {
-    if (client.closing || !this.clients.has(client)) return; // cut or disconnected meanwhile
-    if ((client.res.writableLength || 0) <= this.byteBudget) { client.overBudgetSince = null; return; }
-    if (client.overBudgetSince === null) return this.#scheduleBacklogCheck(client); // drained and re-crossed: fresh window
-    if (this.#flushed(client) <= client.lastFlushed) {
-      // No visible progress. If the event loop was blocked, the socket never had a chance to
-      // flush: give pending I/O one turn before calling the client stalled.
-      if (mayYield) return setImmediate(() => this.#checkBacklog(client, false));
-      return this.#saturate(client, 'stalled');
-    }
-    if (this.now() - client.overBudgetSince >= this.backlogMaxMs) return this.#saturate(client, 'backlog-timeout');
-    this.#scheduleBacklogCheck(client); // progressing: renew the window
-  }
-
-  /** Cliente saturado: gap visible con el recuento de efímeros perdidos y cierre para
-   *  reconectar con snapshot. El gap se envía tras comprobar el backlog persistente y
-   *  con el recuento final de la ráfaga. */
-  #saturate(client, cause) {
-    if (client.gapScheduled) return;
-    client.closing = true;
-    client.throttled = true;
-    client.droppedEphemeral += client.atRisk; // lo escrito con backlog sin consumir se pierde al FIN
-    client.atRisk = 0;
-    client.gapScheduled = true;
-    const gap = `event: gap\ndata: ${JSON.stringify({
-      reason: 'slow-client',
-      kind: client.kind,
-      droppedEphemeral: client.droppedEphemeral,
-      cause, // #57: 'stalled' (no progress in a grace window) | 'backlog-timeout' (over budget too long)
-    })}\n\n`;
-    try { client.res.write(gap); } catch { /* socket ya muerto */ }
-    try { client.res.end(); } catch { /* idem */ }
-  }
-
-  /** Escribe a un cliente respetando su presupuesto de bytes pendientes.
-   *  Devuelve false si el evento no se entregó (coalesced, en riesgo o cliente muerto). */
-  #write(client, msg, event, cls) {
-    const res = client.res;
-    if (client.closing) {
-      // Ya saturado: no se escribe. Los efímeros perdidos se cuentan para el gap; los
-      // snapshots sustituibles no cuentan como pérdida (reconexión/snapshot los sustituye).
-      if (cls === 'ephemeral') client.droppedEphemeral += 1;
+  #alive(client) {
+    if (client.closing || !this.clients.has(client)) return false;
+    if (client.res.writableEnded || client.res.destroyed) {
+      this.#remove(client);
       return false;
-    }
-    if (res.writableEnded || res.destroyed) {
-      this.clients.delete(client);
-      return false;
-    }
-    if (cls === 'replaceable' && client.throttled) {
-      // Coalescing SOLO con throttle activo (la última write() devolvió false y el drain
-      // está pendiente). Un backlog residual bajo highWaterMark (write() devolvió true,
-      // sin 'drain' futuro) NUNCA retiene un snapshot: se escribe inmediatamente, como en
-      // main; de lo contrario el último valor quedaría varado indefinidamente en un
-      // cliente sano.
-      client.lastReplaceable.set(event, msg);
-      return false;
-    }
-    let ok;
-    const before = res.writableLength || 0;
-    try {
-      ok = res.write(msg);
-    } catch {
-      this.clients.delete(client);
-      return false;
-    }
-    client.bytesWritten += Buffer.byteLength(msg);
-    this.#noteCrossing(client, before);
-    if (!ok) client.throttled = true; // contrapresión real: 'drain' liberará el throttle
-    if ((res.writableLength || 0) > this.byteBudget) {
-      // Backlog sobre presupuesto: los efímeros escritos a partir de aquí están en riesgo
-      // (se pierden si el backlog persiste y se corta) y los snapshots pasan a coalescerse.
-      // La decisión de corte es SIEMPRE diferida al siguiente tick.
-      client.throttled = true;
-      if (cls === 'ephemeral') client.atRisk += 1;
-      this.#scheduleBacklogCheck(client);
     }
     return true;
   }
 
-  /** Al hacer drain se envían los últimos valores retenidos de cada tipo sustituible. */
-  #flushReplaceable(client) {
-    if (client.closing || client.lastReplaceable.size === 0) return;
-    const pending = [...client.lastReplaceable.values()];
-    client.lastReplaceable.clear();
-    for (const msg of pending) {
-      const before = client.res.writableLength || 0;
-      try {
-        client.res.write(msg);
-      } catch {
-        this.clients.delete(client);
-        return;
+  #backlog(client) {
+    return client.queueBytes + client.snapshotBytes + (client.res.writableLength || 0);
+  }
+
+  /** #57: the owned FIFO prevents Node coalescing an entire burst into one libuv writev,
+   *  whose partial progress is invisible. Only write again after false on 'drain', so each
+   *  completed write provides observable progress; the budget includes both queues. */
+  #noteBacklog(client) {
+    if (this.#backlog(client) <= this.byteBudget) {
+      if (client.overBudgetSince !== null) {
+        client.overBudgetSince = null;
+        client.lastDrainAt = null;
+        client.crossing++;
+        this.#cancelBacklogCheck(client);
       }
-      client.bytesWritten += Buffer.byteLength(msg);
-      this.#noteCrossing(client, before);
-      if ((client.res.writableLength || 0) > this.byteBudget) {
-        this.#scheduleBacklogCheck(client);
-        return;
+      return;
+    }
+    if (client.overBudgetSince === null) {
+      client.overBudgetSince = this.now();
+      client.lastDrainAt = null;
+      client.crossing++;
+      this.#scheduleBacklogCheck(client);
+    }
+  }
+
+  #cancelBacklogCheck(client) {
+    if (client.checkTimer !== null) clearTimeout(client.checkTimer);
+    client.checkTimer = null;
+    client.checkVersion++;
+  }
+
+  #stallDeadline(client) {
+    // #57: after a drain, large OS send buffers can hide ongoing reads for hundreds of ms.
+    // A fresh crossing has no observed progress and still gets only the initial grace.
+    return client.lastDrainAt === null
+      ? client.overBudgetSince + this.backlogGraceMs
+      : client.lastDrainAt + this.backlogStallMs;
+  }
+
+  #scheduleBacklogCheck(client) {
+    this.#cancelBacklogCheck(client);
+    const crossing = client.crossing, version = client.checkVersion, now = this.now();
+    // Check at the earliest deadline, even when the cap or stall interval is not a whole
+    // number of grace windows. Each drain may move the stall deadline, but never the cap.
+    const delay = Math.max(0, Math.min(this.backlogGraceMs,
+      client.overBudgetSince + this.backlogMaxMs - now, this.#stallDeadline(client) - now));
+    client.checkTimer = setTimeout(() => {
+      if (client.crossing !== crossing || client.checkVersion !== version) return;
+      client.checkTimer = null;
+      this.#checkBacklog(client, crossing, true);
+    }, delay);
+  }
+
+  #checkBacklog(client, crossing, mayYield) {
+    if (!this.#alive(client) || client.crossing !== crossing) return;
+    this.#noteBacklog(client);
+    if (client.crossing !== crossing || client.overBudgetSince === null) return;
+    const now = this.now();
+    if (now - client.overBudgetSince >= this.backlogMaxMs) {
+      return this.#saturate(client, 'backlog-timeout');
+    }
+    if (now < this.#stallDeadline(client)) return this.#scheduleBacklogCheck(client);
+    // A blocked event loop did not give a socket a chance to drain. Yield one I/O turn,
+    // then recheck both progress and the crossing identity before declaring a stall.
+    if (mayYield) return setImmediate(() => this.#checkBacklog(client, crossing, false));
+    this.#saturate(client, 'stalled');
+  }
+
+  /** Cliente saturado: gap visible con el recuento de efímeros perdidos y cierre para
+   *  reconectar con snapshot. El gap es la única escritura terminal, incluso si está bloqueado. */
+  #saturate(client, cause) {
+    if (!this.#alive(client)) return;
+    client.closing = true;
+    this.#cancelBacklogCheck(client);
+    client.droppedEphemeral += client.atRisk + client.queue.length - client.queueHead;
+    client.atRisk = 0;
+    client.queue = []; client.queueHead = 0; client.queueBytes = 0;
+    client.lastReplaceable.clear(); client.snapshotBytes = 0;
+    const gap = `event: gap\ndata: ${JSON.stringify({
+      reason: 'slow-client',
+      kind: client.kind,
+      droppedEphemeral: client.droppedEphemeral,
+      cause,
+    })}\n\n`;
+    try { client.res.write(gap); } catch { /* socket ya muerto */ }
+    if (!client.res.writableEnded && !client.res.destroyed) {
+      try { client.res.end(); } catch { /* idem */ }
+    }
+  }
+
+  /** Una escritura real; before incluye el elemento antes de trasladarlo desde la cola. */
+  #writeSocket(client, msg, cls, before) {
+    let ok;
+    try { ok = client.res.write(msg); }
+    catch { this.#remove(client); return; }
+    client.blocked = !ok;
+    if (cls === 'ephemeral' && (before > this.byteBudget || this.#backlog(client) > this.byteBudget)) client.atRisk++;
+    this.#noteBacklog(client);
+  }
+
+  /** Escribe o encola sin perder efímeros; los snapshots bloqueados se coalescen por tipo. */
+  #write(client, msg, event, cls) {
+    if (client.closing) {
+      if (cls === 'ephemeral') client.droppedEphemeral++;
+      return;
+    }
+    if (!this.#alive(client)) return;
+    this.#noteBacklog(client); // detect a dip before a new write or queue entry
+    if (client.blocked) {
+      if (cls === 'replaceable') {
+        const previous = client.lastReplaceable.get(event);
+        if (previous !== undefined) client.snapshotBytes -= Buffer.byteLength(previous);
+        client.lastReplaceable.set(event, msg);
+        client.snapshotBytes += Buffer.byteLength(msg);
+      } else {
+        client.queue.push(msg);
+        client.queueBytes += Buffer.byteLength(msg);
       }
+      this.#noteBacklog(client);
+      return;
+    }
+    this.#writeSocket(client, msg, cls, this.#backlog(client));
+  }
+
+  /** Drain: primero FIFO de efímeros; después el último snapshot de cada tipo. */
+  #flush(client) {
+    while (this.#alive(client) && !client.blocked && client.queueHead < client.queue.length) {
+      const before = this.#backlog(client);
+      const msg = client.queue[client.queueHead];
+      client.queue[client.queueHead++] = null;
+      client.queueBytes -= Buffer.byteLength(msg);
+      this.#writeSocket(client, msg, 'ephemeral', before);
+    }
+    if (client.queueHead === client.queue.length) {
+      client.queue = []; client.queueHead = 0;
+    }
+    while (this.#alive(client) && !client.blocked && client.lastReplaceable.size) {
+      const before = this.#backlog(client);
+      const [event, msg] = client.lastReplaceable.entries().next().value;
+      client.lastReplaceable.delete(event);
+      client.snapshotBytes -= Buffer.byteLength(msg);
+      this.#writeSocket(client, msg, 'replaceable', before);
     }
   }
 
