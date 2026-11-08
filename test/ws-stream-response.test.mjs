@@ -34,3 +34,34 @@ test('remote end prevents writes even before the socket is destroyed', () => {
   assert.equal(closes, 1); assert.equal(res.destroyed, false);
   assert.equal(res.write('late'), false);
 });
+
+test('invalid UTF-8 text closes with 1007', () => {
+  const socket = new Socket(), res = new WsResponse(socket);
+  res.receive(Buffer.from([0x81, 0x81, 1, 2, 3, 4, 0xfe]));
+  assert.deepEqual(socket.writes[0], Buffer.from([0x88, 2, 3, 0xef]));
+});
+
+test('fragmented invalid UTF-8 closes with 1007', () => {
+  const socket = new Socket(), res = new WsResponse(socket);
+  res.receive(Buffer.from([0x01, 0x81, 1, 2, 3, 4, 0xe3])); // primer byte de una secuencia de tres
+  assert.equal(socket.writes.length, 0);
+  res.receive(Buffer.from([0x80, 0x81, 1, 2, 3, 4, 0x29])); // continuación inválida
+  assert.deepEqual(socket.writes[0], Buffer.from([0x88, 2, 3, 0xef]));
+});
+
+test('valid split UTF-8 and arbitrary binary still allow ping', () => {
+  const socket = new Socket(), res = new WsResponse(socket);
+  res.receive(Buffer.from([0x01, 0x81, 1, 2, 3, 4, 0xe3]));
+  res.receive(Buffer.from([0x80, 0x82, 1, 2, 3, 4, 0x83, 0xae]));
+  res.receive(Buffer.from([0x82, 0x81, 1, 2, 3, 4, 0xfe]));
+  res.receive(Buffer.from([0x89, 0x81, 1, 2, 3, 4, 0x79]));
+  assert.deepEqual(socket.writes, [Buffer.from([0x8a, 1, 0x78])]);
+});
+
+test('end close timeout is cancelled after the socket closes', async () => {
+  const socket = new Socket(), res = new WsResponse(socket);
+  let closes = 0; res.on('close', () => closes++);
+  res.end(); socket.emit('close'); socket.emit('end');
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  assert.equal(socket.destroyed, false); assert.equal(closes, 1);
+});

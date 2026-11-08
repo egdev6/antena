@@ -1026,19 +1026,20 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (closing) return reject(503, CLOSING_MESSAGE);
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { return reject(400, 'Petición no válida'); }
+    // Evita que authorized intente redirigir una página sobre el socket del upgrade.
+    if (url.pathname !== '/api/stream') return reject(404, 'No existe');
     if (!hostTrusted(req)) return reject(403, 'Host no permitido: usa localhost, 127.0.0.1 o la IP del panel.');
-    // WebSocket no tiene la protección CORS del SSE: solo mismo host y puerto, o sin Origin.
+    // WebSocket no tiene CORS: el origen debe coincidir con el host y puerto HTTP reales.
     if (req.headers.origin !== undefined) {
       try {
         const origin = new URL(req.headers.origin);
-        const expected = new URL(`${origin.protocol}//${req.headers.host || ''}`);
-        if (!['http:', 'https:'].includes(origin.protocol) || origin.host !== expected.host || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) throw new Error();
+        const expected = new URL(`http://${req.headers.host || ''}`);
+        if (origin.protocol !== 'http:' || origin.hostname !== expected.hostname || (origin.port || '80') !== (expected.port || '80') || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) throw new Error();
       } catch { return reject(403, 'Origen no permitido'); }
     }
     const headers = {};
     if (!authorized(req, url, { setHeader: (name, value) => { headers[name] = value; } })) return reject(401, 'Acceso desde la red: abre el enlace con la clave que aparece en el panel (General › Acceso desde el móvil).');
     if (req.method !== 'GET') return reject(405, 'Método no permitido');
-    if (url.pathname !== '/api/stream') return reject(404, 'No existe');
     const res = acceptWebSocket(req, socket, head, headers);
     if (!res) return;
     upgraded.add(socket);

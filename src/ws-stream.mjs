@@ -25,6 +25,7 @@ export class WsResponse extends EventEmitter {
     this.closed = false;
     this.fragmented = false;
     this.messageBytes = 0;
+    this.textDecoder = null;
     socket.on('data', chunk => this.receive(chunk));
     socket.on('drain', () => this.emit('drain'));
     socket.on('end', () => { this.close(); if (!socket.writableEnded) socket.end(); });
@@ -49,15 +50,15 @@ export class WsResponse extends EventEmitter {
   finish(payload, destroy = false) {
     if (this.closed || this.writableEnded || this.destroyed) return;
     this.ended = true;
+    // Si el cliente tampoco lee el close, no dejamos el socket retenido por su backlog.
+    const timer = setTimeout(() => this.socket.destroy(), 1000);
+    timer.unref();
+    this.socket.once('close', () => clearTimeout(timer));
     this.socket.end(frame(8, payload), () => { if (destroy) this.socket.destroy(); });
   }
   fail(code) {
     const payload = Buffer.alloc(2); payload.writeUInt16BE(code);
     this.finish(payload, true);
-    // Si el cliente tampoco lee el close, no dejamos el socket retenido por su backlog.
-    const timer = setTimeout(() => this.socket.destroy(), 1000);
-    timer.unref();
-    this.socket.once('close', () => clearTimeout(timer));
   }
 
   receive(chunk) {
@@ -95,6 +96,11 @@ export class WsResponse extends EventEmitter {
       }
       if (opcode === 9) this.socket.write(frame(10, payload));
       if (opcode <= 2) {
+        if (opcode === 1) this.textDecoder = new TextDecoder('utf-8', { fatal: true });
+        if (this.textDecoder) {
+          try { this.textDecoder.decode(payload, { stream: !fin }); } catch { return this.fail(1007); }
+          if (fin) this.textDecoder = null;
+        }
         this.messageBytes = (opcode === 0 ? this.messageBytes : 0) + size;
         this.fragmented = !fin;
         if (fin) this.messageBytes = 0;

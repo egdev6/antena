@@ -147,7 +147,7 @@ test('loopback panel is keyless; origin, host, path and admission gate upgrades'
   const { app, port } = await fixture(t);
   const stream = await sse(port, '/api/stream?client=panel');
   assert.equal(stream.status, 200); assert.equal(await stream.next(), 'retry: 2000\n\n'); assert.match(await stream.next(), /^event: status\n/); stream.close();
-  const ws = await connect(port, { target: '/api/stream?client=panel', headers: { origin: `https://127.0.0.1:${port}` } });
+  const ws = await connect(port, { target: '/api/stream?client=panel', headers: { origin: `http://127.0.0.1:${port}` } });
   assert.equal(ws.status, 101); assert.equal(await text(ws), 'retry: 2000\n\n'); assert.match(await text(ws), /^event: status\n/);
   const count = app.bus.clients.size;
   for (const kind of ['panel', 'widget', 'overlay']) {
@@ -162,7 +162,7 @@ test('loopback panel is keyless; origin, host, path and admission gate upgrades'
   ws.socket.destroy();
 });
 
-test('only an absent or same-host HTTP(S) Origin is accepted', async t => {
+test('only an absent or same-origin HTTP Origin is accepted', async t => {
   const { app, port } = await fixture(t);
   for (const origin of ['', 'null', 'file:///tmp/test', `http://127.0.0.1:${port + 1}`, `http://127.0.0.1:${port}/path`]) {
     const ws = await connect(port, { headers: { origin } });
@@ -301,4 +301,89 @@ test('client close clears the ping so a standalone server exits naturally', { ti
   const result = await Promise.race([exit, new Promise(resolve => { timer = setTimeout(() => resolve(null), 5000); })]); clearTimeout(timer);
   if (!result) { child.kill(); await exit; }
   assert.deepEqual(result, { code: 0, signal: null }, output); assert.match(output, /CLOSED/);
+});
+
+test('default HTTP and HTTPS ports differ', async t => {
+  const { app, port } = await fixture(t);
+  const ws = await connect(port, { headers: { host: 'localhost', origin: 'https://localhost' } });
+  assert.equal(ws.status, 403);
+  assert.equal(app.bus.clients.size, 0);
+});
+
+test('HTTP origins normalize host case and default port, and HTTPS is always rejected', async t => {
+  const { app, port } = await fixture(t);
+  for (const [host, origin] of [['localhost', 'http://LOCALHOST:80'], ['LOCALHOST:80', 'http://localhost']]) {
+    const ws = await connect(port, { headers: { host, origin } });
+    assert.equal(ws.status, 101); assert.equal(await text(ws), 'retry: 2000\n\n');
+    ws.socket.destroy(); await ws.closed; await until(() => app.bus.clients.size === 0);
+  }
+  const ws = await connect(port, { headers: { host: 'localhost:80', origin: 'https://localhost:80' } });
+  assert.equal(ws.status, 403); await ws.closed; assert.equal(app.bus.clients.size, 0);
+});
+
+test('non-reading websocket is cut', async t => {
+  const { app, port, sockets } = await fixture(t);
+  Object.assign(app.bus, { byteBudget: 1024, backlogGraceMs: 20, backlogStallMs: 40, backlogMaxMs: 100 });
+  const ws = await connect(port);
+  assert.equal(ws.status, 101);
+  for (let i = 0; i < 6; i++) await text(ws);
+  const server = [...sockets][0];
+  let closes = 0; server.on('close', () => closes++);
+  ws.socket.pause(); server.cork();
+  for (let i = 0; i < 20; i++) app.bus.send('chat', { i, text: 'x'.repeat(8192) }, ['widget']);
+  await until(() => server.writableEnded);
+  await delay(1500);
+  assert.equal(server.destroyed, true);
+  assert.equal(app.bus.clients.size, 0);
+  assert.equal(closes, 1);
+  ws.socket.destroy();
+});
+
+test('keyed LAN widget upgrades and unkeyed LAN rejection matches HTTP', async t => {
+  const { app, port } = await fixture(t);
+  app.store.config.access.lan = true;
+  app.server.on('connection', s => Object.defineProperty(s, 'remoteAddress', { value: '192.0.2.1' }));
+  const stream = await sse(port); assert.equal(stream.status, 401); stream.close();
+  const denied = await connect(port); assert.equal(denied.status, stream.status);
+  await denied.closed; assert.equal(app.bus.clients.size, 0);
+  const ws = await connect(port, { target: `/api/stream?client=widget&key=${encodeURIComponent(app.store.config.access.key)}` });
+  assert.equal(ws.status, 101); assert.match(ws.headers['set-cookie'], /^egk=.*HttpOnly/);
+  for (const name of ['retry', 'widgets', 'interactive', 'viewers', 'customOverlayVersions', 'theme']) {
+    assert.match(await text(ws), new RegExp(`^${name === 'retry' ? 'retry:' : `event: ${name}\\n`}`));
+  }
+  ws.socket.destroy(); await ws.closed; await until(() => app.bus.clients.size === 0);
+});
+
+test('keyed LAN upgrade outside stream does not crash', async t => {
+  const { app, port } = await fixture(t);
+  app.store.config.access.lan = true;
+  app.server.on('connection', s => Object.defineProperty(s, 'remoteAddress', { value: '192.0.2.1' }));
+  const ws = await connect(port, { target: `/?key=${encodeURIComponent(app.store.config.access.key)}` });
+  assert.equal(ws.status, 404);
+  assert.equal(app.bus.clients.size, 0);
+});
+
+test('other upgrade paths return 404 even with a foreign Origin or Host', async t => {
+  const { app, port } = await fixture(t);
+  for (const headers of [{ origin: 'http://evil.example' }, { host: 'evil.example' }]) {
+    const ws = await connect(port, { target: '/other', headers });
+    assert.equal(ws.status, 404); await ws.closed; assert.equal(app.bus.clients.size, 0);
+  }
+});
+
+test('UTF-8 validation works across frames on a real connection', async t => {
+  const { app, port } = await fixture(t);
+  for (const fragmented of [false, true]) {
+    const ws = await connect(port); assert.equal(ws.status, 101);
+    for (let i = 0; i < 6; i++) await text(ws);
+    const start = clientFrame(1, Buffer.from([0xe2])); start[0] &= 0x7f;
+    ws.socket.write(Buffer.concat([start, clientFrame(9, 'ok'), clientFrame(0, Buffer.from([0x82, 0xac]))]));
+    const pong = await ws.next(); assert.equal(pong.opcode, 10); assert.equal(pong.data.toString(), 'ok');
+    if (fragmented) {
+      const first = clientFrame(1, Buffer.from([0xe2])); first[0] &= 0x7f;
+      ws.socket.write(Buffer.concat([first, clientFrame(0, '(')]));
+    } else ws.socket.write(clientFrame(1, Buffer.from([0xff])));
+    const close = await ws.next(); assert.equal(close.opcode, 8); assert.equal(close.data.readUInt16BE(), 1007);
+    await ws.closed; await until(() => app.bus.clients.size === 0);
+  }
 });
