@@ -26,7 +26,7 @@ test('Chrome opens a usable page and close removes its profile once', { timeout:
   await closeChrome(chrome);
 });
 
-test('close escalates when a process ignores SIGTERM and closes CDP once', { timeout: 15000, skip: process.platform === 'win32' }, async t => {
+test('close escalates when a process ignores SIGTERM and closes CDP once', { timeout: 15000, skip: process.platform === 'win32' && 'POSIX signals: Windows has no SIGTERM a process can ignore; forced termination is covered by the other close tests' }, async t => {
   const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000);"], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
   t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) {
