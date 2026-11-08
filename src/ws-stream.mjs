@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_PAYLOAD = 64 * 1024, OUTBOUND_CHUNK = 64 * 1024;
-const CLOSE_CHECK_MS = 1000, CLOSE_MAX_MS = 30_000; // cierre tras el corte: sin progreso / tope
+const CLOSE_STALL_MS = 5000, CLOSE_MAX_MS = 30_000; // cierre tras el corte: sin progreso / tope
 
 function frame(opcode, payload) {
   const size = payload.length, extra = size < 126 ? 0 : size <= 0xffff ? 2 : 8;
@@ -18,9 +18,11 @@ function frame(opcode, payload) {
 }
 
 export class WsResponse extends EventEmitter {
-  constructor(socket, head = Buffer.alloc(0)) {
+  constructor(socket, head = Buffer.alloc(0), { closeStallMs = CLOSE_STALL_MS, closeMaxMs = CLOSE_MAX_MS } = {}) {
     super();
     this.socket = socket;
+    this.closeStallMs = closeStallMs;
+    this.closeMaxMs = closeMaxMs;
     this.buffer = Buffer.alloc(0);
     this.ended = false;
     this.closed = false;
@@ -28,6 +30,7 @@ export class WsResponse extends EventEmitter {
     this.messageBytes = 0;
     this.textDecoder = null;
     this.outbound = [];
+    this.pendingPong = null;
     this.queuedBytes = 0;
     this.writing = false;
     this.socketBlocked = false;
@@ -51,16 +54,27 @@ export class WsResponse extends EventEmitter {
   get destroyed() { return this.socket.destroyed; }
   close() {
     if (this.closed) return;
-    this.closed = true; this.outbound = []; this.queuedBytes = 0; this.needsDrain = false;
+    this.closed = true; this.outbound = []; this.pendingPong = null; this.queuedBytes = 0; this.needsDrain = false;
     this.emit('close');
   }
   // Cada trama conserva su orden; un solo chunk en vuelo permite observar progreso real.
-  enqueue(bytes) {
+  enqueue(bytes, pong = false) {
     for (let offset = 0; offset < bytes.length; offset += OUTBOUND_CHUNK) {
-      this.outbound.push(bytes.subarray(offset, offset + OUTBOUND_CHUNK));
+      const chunk = bytes.subarray(offset, offset + OUTBOUND_CHUNK);
+      const entry = pong ? { bytes: chunk } : chunk;
+      if (pong) this.pendingPong = entry;
+      this.outbound.push(entry);
     }
     this.queuedBytes += bytes.length;
     this.pump();
+  }
+  // RFC 6455 permite contestar solo al ping más reciente que aún no tiene pong en vuelo.
+  pong(payload) {
+    const bytes = frame(10, payload);
+    if (this.pendingPong) {
+      this.queuedBytes += bytes.length - this.pendingPong.bytes.length;
+      this.pendingPong.bytes = bytes;
+    } else this.enqueue(bytes, true);
   }
   pump() {
     if (this.closed || this.destroyed || this.writing || this.socketBlocked) return;
@@ -72,7 +86,8 @@ export class WsResponse extends EventEmitter {
       }
       return;
     }
-    const chunk = this.outbound.shift();
+    let chunk = this.outbound.shift();
+    if (chunk === this.pendingPong) { this.pendingPong = null; chunk = chunk.bytes; }
     this.queuedBytes -= chunk.length;
     this.writing = true;
     const ok = this.socket.write(chunk, error => {
@@ -96,15 +111,20 @@ export class WsResponse extends EventEmitter {
     this.ended = true;
     this.destroyOnFinish = destroy;
     const started = this.lastProgressAt = performance.now();
-    // Al terminar, conservar el gap mientras los chunks avanzan, pero cortar un bloqueo real.
-    const timer = setInterval(() => {
+    const stallMs = this.closeStallMs, maxMs = this.closeMaxMs;
+    let timer;
+    // El límite total empieza en el corte, no cuando termina de vaciarse la cola.
+    const check = () => {
       const now = performance.now();
       const pending = this.queuedBytes > 0 || this.writing || this.socket.writableLength > 0;
-      if (now - started >= CLOSE_MAX_MS || (pending && now - this.lastProgressAt >= CLOSE_CHECK_MS)) this.socket.destroy();
-    }, CLOSE_CHECK_MS);
-    timer.unref();
-    this.socket.once('close', () => clearInterval(timer));
+      const capLeft = maxMs - (now - started), stallLeft = stallMs - (now - this.lastProgressAt);
+      if (capLeft <= 0 || (pending && stallLeft <= 0)) return this.socket.destroy();
+      timer = setTimeout(check, Math.max(1, Math.ceil(pending ? Math.min(capLeft, stallLeft) : capLeft)));
+      timer.unref();
+    };
+    this.socket.once('close', () => clearTimeout(timer));
     this.enqueue(frame(8, payload));
+    if (!this.closed && !this.destroyed) check();
   }
   fail(code) {
     const payload = Buffer.alloc(2); payload.writeUInt16BE(code);
@@ -144,7 +164,7 @@ export class WsResponse extends EventEmitter {
         }
         return this.finish(payload);
       }
-      if (opcode === 9) this.enqueue(frame(10, payload));
+      if (opcode === 9) this.pong(payload);
       if (opcode <= 2) {
         if (opcode === 1) this.textDecoder = new TextDecoder('utf-8', { fatal: true });
         if (this.textDecoder) {

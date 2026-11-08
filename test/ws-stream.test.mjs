@@ -328,6 +328,7 @@ test('non-reading websocket is cut', async t => {
   assert.equal(ws.status, 101);
   for (let i = 0; i < 6; i++) await text(ws);
   const server = [...sockets][0], response = [...app.bus.clients][0].res;
+  response.closeStallMs = 200; response.closeMaxMs = 2000;
   let closes = 0, gap, gapBytes = 0; server.on('close', () => closes++);
   const write = response.write.bind(response);
   response.write = text => {
@@ -345,7 +346,7 @@ test('non-reading websocket is cut', async t => {
   assert.equal(JSON.parse(gap.split('data: ')[1]).reason, 'slow-client');
   const payloadBytes = Buffer.byteLength(gap);
   assert.equal(gapBytes, payloadBytes + (payloadBytes < 126 ? 2 : 4), 'the framed gap was actually queued');
-  await delay(2500);
+  await until(() => server.destroyed && closes === 1, 2000);
   assert.equal(server.destroyed, true);
   assert.equal(app.bus.clients.size, 0);
   assert.equal(closes, 1);
