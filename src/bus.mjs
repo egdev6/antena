@@ -239,6 +239,10 @@ export class Bus {
     }
     if (client.queueHead === client.queue.length) {
       client.queue = []; client.queueHead = 0;
+    } else if (client.queueHead >= 1024 && client.queueHead * 2 >= client.queue.length) {
+      // #57: with snapshots always pending the queue never empties; release delivered slots.
+      // The index keeps entry references, not positions, so compaction leaves it valid.
+      client.queue = client.queue.slice(client.queueHead); client.queueHead = 0;
     }
   }
 
