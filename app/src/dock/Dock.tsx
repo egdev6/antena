@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { post } from '../lib/api';
 import { IC } from '../lib/icons';
 import { live, useLive, useLiveVersion } from '../lib/live';
+import { groupMeldScenes } from '../lib/meld-scenes';
 import { ConnPill, cx, guard, Icon, mmss, toast, Toaster } from '../lib/ui';
 import { DockQuestions } from './DockQuestions';
 import { DockTierlist } from './DockTierlist';
@@ -61,17 +62,13 @@ function Status() {
 }
 
 // ---------- Escenas (S7) ----------
-const VERTICAL_SUFFIX = ' [Vertical]';
-const isVertical = (name: string) => name.endsWith(VERTICAL_SUFFIX);
-
 function Scenes() {
   const scenes = useLive(s => s.meld?.session?.scenes || []);
   const meldOn = useLive(s => s.status.meld?.state === 'conectado');
   const [busy, setBusy] = useState<string | null>(null);
   if (!meldOn) return <p className="d-muted d-empty">Meld no está conectado. Conéctalo en Meld Studio y sus escenas aparecerán aquí.</p>;
   if (!scenes.length) return <p className="d-muted d-empty">Meld todavía no informa de ninguna escena.</p>;
-  const horizontal = scenes.filter(sc => !isVertical(sc.name));
-  const entries = scenes.filter(sc => !isVertical(sc.name) || !horizontal.some(h => h.name + VERTICAL_SUFFIX === sc.name));
+  const entries = groupMeldScenes(scenes);
   const show = (id: string, verticalId?: string) => guard(async () => {
     setBusy(id);
     try {
@@ -80,11 +77,7 @@ function Scenes() {
       toast(`Escena «${r.scene}»`);
     } finally { setBusy(null); }
   })();
-  return <div className="d-scenes">{entries.map(sc => {
-    const vertical = !isVertical(sc.name) ? scenes.find(v => v.name === sc.name + VERTICAL_SUFFIX) : undefined;
-    const h = !isVertical(sc.name) && !!sc.current;
-    const v = !!(vertical?.current || (isVertical(sc.name) && sc.current));
-    const air = h && v ? 'H + V' : h ? 'H' : v ? 'V' : '';
+  return <div className="d-scenes">{entries.map(({ scene: sc, vertical, air }) => {
     return <button key={sc.id} type="button" className={cx('d-btn d-scene', air && 'on', busy === sc.id && 'busy')}
       aria-pressed={!!air} aria-label={sc.name} title={sc.name} onClick={() => show(sc.id, vertical?.id)}>
       <span className="d-scene-n">{sc.name}</span>{air ? <span className="d-air">AL AIRE · {air}</span> : null}

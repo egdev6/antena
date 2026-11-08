@@ -81,6 +81,9 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   y descartar preguntas; elegir la tier list en pantalla, añadir o quitar elementos y abrir su
   votación; y añadir o quitar participantes y consultar los ganadores del sorteo. Los cambios
   se comparten al momento con el panel y las capas.
+- **Escenas de Meld:** el panel y el dock agrupan cada escena con su pareja ` [Vertical]` e
+  indican cuál está en directo. El panel muestra si cada entrada tiene H, V o ambas; al pulsarla
+  cambia las variantes disponibles. Si falla la segunda, muestra el error y no revierte la primera.
 - **Interfaz React** en `app/src` (panel, prompter, dock); el panel clásico `/legacy` se retiró
   en #115: sin `app/dist`, `/`, `/prompter` y `/dock` responden una página mínima que explica
   cómo compilar la interfaz (`pnpm app:build`).
