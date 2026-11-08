@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { post } from '../../lib/api';
 import { closePanelWindow, isDesktop, listMonitors, onPanelWindowsChange, openDock, openPrompter, openTeleprompter, panelWindows, type Monitor, type PanelWindows } from '../../lib/desktop';
 import { live, useLive } from '../../lib/live';
+import { groupMeldScenes } from '../../lib/meld-scenes';
 import { codeTab, cx, EmptyState, guard, Icon, IconBtn, LazyInput, Panel, Range, Sec, Status, Switch, toast } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { stateClass } from './Conexiones';
@@ -26,6 +27,7 @@ export function Meld({ parts }: { parts: string[] }) {
   const cmd = (command: string, ok?: string) => guard(() => post('/api/meld/command', { command }), ok);
   const evt = (event: string) => guard(() => post('/api/meld/event', { event }));
   const current = ses.scenes.find(x => x.current) || ses.scenes[0];
+  const scenes = groupMeldScenes(ses.scenes);
   const mic = ses.tracks.find(t => /mic/i.test(t.name));
   const connection = <Sec title="Conexión" id="h-con" tour="meld-connection">
     <ol className="steps"><li>En Meld: <b>Ajustes › Avanzado › Allow remote connections</b>.</li><li>Pulsa <b>Conectar</b>. Se reconecta solo si cierras Meld.</li></ol>
@@ -36,7 +38,7 @@ export function Meld({ parts }: { parts: string[] }) {
   </Sec>;
   return <>
     <PageHead tour="meld-head" crumb="Producción" title="Meld Studio" desc="Cambia de escena, muestra capas y lanza efectos desde las alertas, el panel, los atajos o el MCP."
-      tabs={[{ id: 'escenas', label: 'Escenas', count: ses.scenes.length }, { id: 'capas', label: 'Capas' }, { id: 'audio', label: 'Audio', count: ses.tracks.length }, { id: 'conexion', label: 'Conexión', warn: !on }]} tab={on ? tab : 'conexion'} onTab={setTab}
+      tabs={[{ id: 'escenas', label: 'Escenas', count: scenes.length }, { id: 'capas', label: 'Capas' }, { id: 'audio', label: 'Audio', count: ses.tracks.length }, { id: 'conexion', label: 'Conexión', warn: !on }]} tab={on ? tab : 'conexion'} onTab={setTab}
       actions={<>
         {on ? <Status tone="success" icon={IC.check}>Conectado · {m.url || 'ws://127.0.0.1:13376'}</Status> : <Status tone={st.state === 'error' ? 'danger' : 'neutral'} icon={IC.plug}>{st.state || 'Sin conectar'}</Status>}
         <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { await saveAll(); await post('/api/meld/connect', { url: (url || m.url || '').trim() }); }, 'Conectando con Meld…')}>{on ? 'Reconectar' : 'Conectar'}</button>
@@ -53,9 +55,13 @@ export function Meld({ parts }: { parts: string[] }) {
         <span className="hint push">{ses.streaming ? 'Emitiendo' : 'Sin emitir'}{ses.recording ? ' · grabando' : ''}</span>
       </section>
       <Sec flat title="Escenas" id="h-esc" tour="meld-scenes" aside={<span className="hint">Pulsa una escena para ponerla en directo</span>}>
-        <div className="scene-tiles">{ses.scenes.map(sc => <button key={sc.id} type="button" className={cx('eg-tile', sc.current && 'eg-tile--live')} aria-pressed={!!sc.current} onClick={guard(() => post('/api/meld/scene', { scene: sc.id }))}>
-          <span className="eg-tile__thumb"><span className="tile-scene">{sc.name}</span>{sc.current && <span className="eg-tile__badge"><span className="eg-tag eg-tag--solid">En directo</span></span>}</span>
-          <span className="eg-tile__name">{sc.name}</span><span className="eg-tile__meta">{sc.layers.length} {sc.layers.length === 1 ? 'capa' : 'capas'}{sc.layers.some(l => l.url?.includes('/overlay') || l.url?.includes('/widget/')) ? ' · egdev' : ''}</span>
+        <div className="scene-tiles">{scenes.map(({ scene: sc, vertical, format, air }) => <button key={sc.id} type="button" className={cx('eg-tile', air && 'eg-tile--live')} aria-pressed={!!air} onClick={guard(async () => {
+          await post('/api/meld/scene', { scene: sc.id });
+          // Do not roll back the first switch if the second fails: it may already be live.
+          if (vertical) await post('/api/meld/scene', { scene: vertical.id });
+        })}>
+          <span className="eg-tile__thumb"><span className="tile-scene">{sc.name}</span>{air && <span className="eg-tile__badge"><span className="eg-tag eg-tag--solid">En directo · {air}</span></span>}</span>
+          <span className="eg-tile__name">{sc.name}</span><span className="eg-tile__meta">{format} · {sc.layers.length} {sc.layers.length === 1 ? 'capa' : 'capas'}{sc.layers.some(l => l.url?.includes('/overlay') || l.url?.includes('/widget/')) ? ' · egdev' : ''}</span>
         </button>)}</div>
       </Sec></>}
       {tab === 'capas' && <>

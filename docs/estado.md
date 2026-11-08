@@ -65,6 +65,9 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
 - **Atajos personalizados:** pasos encadenados (acciones `/sd/…`, pestaña del prompter y
   acciones de Meld/chat/voz) con dirección `/sd/custom/<id>`, editables en el panel y por MCP.
 - **Dock:** `/dock`, vista estrecha para el panel de chat de Meld o ventana flotante.
+- **Escenas de Meld:** el panel y el dock agrupan cada escena con su pareja ` [Vertical]` e
+  indican cuál está en directo. El panel muestra si cada entrada tiene H, V o ambas; al pulsarla
+  cambia las variantes disponibles. Si falla la segunda, muestra el error y no revierte la primera.
 - **Interfaz React** en `app/src` (panel, prompter, dock); el panel clásico `/legacy` se retiró
   en #115: sin `app/dist`, `/`, `/prompter` y `/dock` responden una página mínima que explica
   cómo compilar la interfaz (`pnpm app:build`).
