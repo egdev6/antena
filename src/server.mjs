@@ -10,6 +10,7 @@ import path from 'node:path';
 import { Store, ROOT, deepMerge } from './store.mjs';
 import { validatePatch, validatePath, warnUnknownKeys } from './config-schema.mjs';
 import { Bus } from './bus.mjs';
+import { acceptWebSocket } from './ws-stream.mjs';
 import { Twitch } from './twitch.mjs';
 import { YouTube } from './youtube.mjs';
 import { RawEventLog } from './raw-events.mjs';
@@ -904,6 +905,32 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const closeAckWindow = () => { ackPhase = 'closed'; ackCapsule = null; ackSealed = true; return ackPhase; };
   const ackWindowPhase = () => ackPhase;
 
+  // Ambos transportes comparten el alta, las instantáneas y la limpieza del ping.
+  const stream = (res, url) => {
+    const c = url.searchParams.get('client');
+    const kind = ['panel', 'preview', 'widget', 'teleprompter'].includes(c) ? c : 'overlay';
+    bus.addClient(res, kind);
+    res.on('close', pushStatus);
+    const ping = setInterval(() => { if (!res.writableEnded && !res.destroyed) res.write(': ping\n\n'); }, 15000);
+    const pingEntry = { res, timer: ping };
+    ssePings.add(pingEntry);
+    res.on('close', () => { clearInterval(ping); ssePings.delete(pingEntry); });
+    if (kind === 'panel') res.write(`event: status\ndata: ${JSON.stringify(status())}\n\n`);
+    if (kind === 'widget') res.write(`event: widgets\ndata: ${JSON.stringify(engine.widgetState())}\n\n`);
+    if (kind === 'widget') res.write(`event: interactive\ndata: ${JSON.stringify(interactive.snapshot())}\n\n`);
+    // Espectadores: solo las cifras públicas, para los widgets y los overlays propios que cargan tarde (S6).
+    if (kind === 'widget') res.write(`event: viewers\ndata: ${JSON.stringify(publicViewers(viewers.snapshot()))}\n\n`);
+    // Versiones de los overlays propios: la shell recarga su iframe al cambiar la suya.
+    if (kind === 'widget') res.write(`event: customOverlayVersions\ndata: ${JSON.stringify(customOverlays.versions())}\n\n`);
+    if (kind === 'teleprompter') res.write(`event: teleprompter\ndata: ${JSON.stringify(teleprompter.snapshot())}\n\n`);
+    if (kind === 'overlay') res.write(`event: pause\ndata: ${JSON.stringify(engine.pauseState())}\n\n`);
+    if (kind !== 'panel') {
+      const d = url.searchParams.has('themeDraft') ? themeRoutes.getDraft() : null;
+      res.write(`event: theme\ndata: ${JSON.stringify(d ? { ...publicTheme(d), draft: true } : publicTheme(store.config.theme))}\n\n`);
+    }
+    pushStatus();
+  };
+
   const server = http.createServer(async (req, res) => {
     if (closing) {
       // La ventana ACK solo deja pasar la ruta exacta POST /api/overlay/shown en open/captured.
@@ -936,28 +963,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (url.pathname === '/api/stream') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         res.write('retry: 2000\n\n');
-        const c = url.searchParams.get('client');
-        const kind = ['panel', 'preview', 'widget', 'teleprompter'].includes(c) ? c : 'overlay';
-        bus.addClient(res, kind);
-        res.on('close', pushStatus);
-        const ping = setInterval(() => { if (!res.writableEnded && !res.destroyed) res.write(': ping\n\n'); }, 15000);
-        const pingEntry = { res, timer: ping };
-        ssePings.add(pingEntry);
-        res.on('close', () => { clearInterval(ping); ssePings.delete(pingEntry); });
-        if (kind === 'panel') res.write(`event: status\ndata: ${JSON.stringify(status())}\n\n`);
-        if (kind === 'widget') res.write(`event: widgets\ndata: ${JSON.stringify(engine.widgetState())}\n\n`);
-        if (kind === 'widget') res.write(`event: interactive\ndata: ${JSON.stringify(interactive.snapshot())}\n\n`);
-        // Espectadores: solo las cifras públicas, para los widgets y los overlays propios que cargan tarde (S6).
-        if (kind === 'widget') res.write(`event: viewers\ndata: ${JSON.stringify(publicViewers(viewers.snapshot()))}\n\n`);
-        // Versiones de los overlays propios: la shell recarga su iframe al cambiar la suya.
-        if (kind === 'widget') res.write(`event: customOverlayVersions\ndata: ${JSON.stringify(customOverlays.versions())}\n\n`);
-        if (kind === 'teleprompter') res.write(`event: teleprompter\ndata: ${JSON.stringify(teleprompter.snapshot())}\n\n`);
-        if (kind === 'overlay') res.write(`event: pause\ndata: ${JSON.stringify(engine.pauseState())}\n\n`);
-        if (kind !== 'panel') {
-          const d = url.searchParams.has('themeDraft') ? themeRoutes.getDraft() : null;
-          res.write(`event: theme\ndata: ${JSON.stringify(d ? { ...publicTheme(d), draft: true } : publicTheme(store.config.theme))}\n\n`);
-        }
-        pushStatus();
+        stream(res, url);
         return;
       }
       if (req.method === 'POST' && url.pathname === '/api/media/upload') return json(res, 200, await upload(req, url));
@@ -1008,8 +1014,38 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
 
   // sockets crudos/idle propios: closeAllConnections no cubre siempre conexiones sin petición
-  const sockets = new Set();
+  const sockets = new Set(), upgraded = new Set();
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+  const closeUpgradedConnections = () => { for (const socket of upgraded) socket.destroy(); };
+  server.on('upgrade', (req, socket, head) => {
+    socket.on('error', () => { /* el cliente puede irse antes de completar el upgrade */ });
+    const reject = (code, message) => {
+      const body = JSON.stringify({ error: message });
+      socket.end(`HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`, () => socket.destroy());
+    };
+    if (closing) return reject(503, CLOSING_MESSAGE);
+    let url;
+    try { url = new URL(req.url, 'http://localhost'); } catch { return reject(400, 'Petición no válida'); }
+    if (!hostTrusted(req)) return reject(403, 'Host no permitido: usa localhost, 127.0.0.1 o la IP del panel.');
+    // WebSocket no tiene la protección CORS del SSE: solo mismo host y puerto, o sin Origin.
+    if (req.headers.origin !== undefined) {
+      try {
+        const origin = new URL(req.headers.origin);
+        const expected = new URL(`${origin.protocol}//${req.headers.host || ''}`);
+        if (!['http:', 'https:'].includes(origin.protocol) || origin.host !== expected.host || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) throw new Error();
+      } catch { return reject(403, 'Origen no permitido'); }
+    }
+    const headers = {};
+    if (!authorized(req, url, { setHeader: (name, value) => { headers[name] = value; } })) return reject(401, 'Acceso desde la red: abre el enlace con la clave que aparece en el panel (General › Acceso desde el móvil).');
+    if (req.method !== 'GET') return reject(405, 'Método no permitido');
+    if (url.pathname !== '/api/stream') return reject(404, 'No existe');
+    const res = acceptWebSocket(req, socket, head, headers);
+    if (!res) return;
+    upgraded.add(socket);
+    socket.once('close', () => upgraded.delete(socket));
+    res.write('retry: 2000\n\n');
+    stream(res, url);
+  });
 
   // ---------- cierre del transporte HTTP ----------
   // Corta la admisión de forma síncrona (igual que stopAdmission), espera a los handlers ya
@@ -1047,7 +1083,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession };
+  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession };
   return app;
 }
 
@@ -1153,6 +1189,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
     const want = app.store.config.access.lan ? '0.0.0.0' : '127.0.0.1';
     if (app.server.address()?.address === want) return;
     app.server.closeAllConnections();
+    app.closeUpgradedConnections();
     app.server.close(() => {
       if (app.isHttpClosing()) return;
       listen().then(h => {

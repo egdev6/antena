@@ -464,6 +464,8 @@ Ejemplos de lo que se le puede pedir a Claude:
 
 El panel y el MCP usan la misma API en `http://127.0.0.1:4500/api/…` (`/api/state`, `/api/alerts/:type`, `/api/alerts/:type/variations`, `/api/commands`, `/api/widgets`, `/api/goals`, `/api/session`, `/api/meld/*`, `/api/chat/*`…). La lista completa está en `src/server.mjs`. Las capas reciben eventos por Server-Sent Events en `/api/stream`; cada conexión tiene un presupuesto de bytes pendientes: si un cliente no consume su cola, el servidor le envía un evento `gap` y la cierra; al reconectar recibe un snapshot actualizado y el panel muestra un aviso visible. Los eventos efímeros perdidos durante el gap no se reproducen; los registros críticos persistidos (p. ej. donaciones) se conservan.
 
+`/api/stream` también acepta conexiones WebSocket con los mismos eventos.
+
 ### Twitch
 
 1. Crea una app en https://dev.twitch.tv/console/apps/create:
