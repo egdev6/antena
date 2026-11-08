@@ -311,6 +311,7 @@ They live in **Widgets** and each one has its browser layer. Their state (questi
 - **Session retention:** by default all archived streams are kept. With `sessions.retention` (in `data/config.json`) set to a number N, after each stream only the N most recent archives remain (each stream's media is never deleted). The panel list is fed by lightweight metadata, without reading each whole file.
 - **Chat:** Twitch and YouTube together and filterable, with each platform's icon. You write to **Twitch, YouTube or both** (the selector next to the text box; it is remembered and also applies to the prompter and the MCP). **Your own messages do not appear in the on-screen chat** (Widgets › On-screen chat › «Hide my messages», on by default) and do not go through the link filter.
 - **History:** the latest alerts, with «Replay».
+- **Raw event log:** every event received from YouTube and Twitch is appended to `data/raw-events.jsonl` (one JSON line: `at`, `platform`, `kind`, `handled`, `raw`). `handled: false` marks what the platform sent and antena ignored, which helps find missing alerts. Above 5 MB the file rotates to `raw-events.1.jsonl`.
 - **Pause:** fixed button in the sidebar. Stops on-screen alerts and scheduled messages (automatic ones and «Send now»). Alerts that arrive are stored and, on resume, they fire or get discarded; each scheduled message restarts its interval. What you type in chat is never paused.
 
 ### Prompter
@@ -529,6 +530,7 @@ src/timers.mjs     scheduled messages
 src/interactive.mjs questions, tier list and giveaway
 src/filters.mjs    word, link and user filter
 src/store.mjs      config and secrets in data/
+src/raw-events.mjs raw platform event log (data/raw-events.jsonl)
 public/            overlay, widgets, design system tokens and the minimal page without app/dist
 app/src/           React interface: panel/, prompter/, dock/, lib/ (live state, API, desktop)
 app/splash/        desktop app splash screen

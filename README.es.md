@@ -311,6 +311,7 @@ Están en **Widgets** y cada uno tiene su capa de navegador. Su estado (pregunta
 - **Retención de sesiones:** por defecto se conservan todos los directos archivados. Con `sessions.retention` (en `data/config.json`) a un número N, tras cada corte solo quedan los N archivados más recientes (el media de cada directo nunca se borra). El listado del panel se alimenta de metadatos ligeros, sin leer cada archivo entero.
 - **Chat:** Twitch y YouTube juntos y filtrados, con el icono de cada plataforma. Escribes en **Twitch, YouTube o los dos** (el selector junto al cuadro de texto; se recuerda y vale también para el prompter y el MCP). **Tus mensajes no salen en el chat en pantalla** del directo (Widgets › Chat en pantalla › «Ocultar mis mensajes», activado de serie) y no pasan por el filtro de enlaces.
 - **Historial:** las últimas alertas, con «Repetir».
+- **Registro de eventos en bruto:** todo evento recibido de YouTube y Twitch se añade a `data/raw-events.jsonl` (una línea JSON: `at`, `platform`, `kind`, `handled`, `raw`). `handled: false` marca lo que la plataforma envió y antena ignoró, útil para encontrar alertas que faltan. Al superar 5 MB el fichero rota a `raw-events.1.jsonl`.
 - **Pausa:** botón fijo en la barra lateral. Detiene las alertas en pantalla y los mensajes programados (los automáticos y «Enviar ahora»). Las alertas que llegan se guardan y, al reanudar, salen o se descartan; cada mensaje programado vuelve a contar su intervalo. Lo que escribes tú en el chat no se pausa.
 
 ### Prompter
@@ -529,6 +530,7 @@ src/timers.mjs     mensajes programados
 src/interactive.mjs preguntas, tier list y sorteo
 src/filters.mjs    filtro de palabras, enlaces y usuarios
 src/store.mjs      config y secretos en data/
+src/raw-events.mjs registro en bruto de eventos de plataforma (data/raw-events.jsonl)
 public/            overlay, widgets, tokens del sistema de diseño y la página mínima sin app/dist
 app/src/           interfaz React: panel/, prompter/, dock/, lib/ (estado en vivo, API, escritorio)
 app/splash/        pantalla de arranque de la app de escritorio

@@ -26,6 +26,7 @@ export class Twitch extends EventEmitter {
     this.keepaliveTimer = null;
     this.keepaliveMs = 40_000;
     this.stopped = true;
+    this.rawLog = null; // RawEventLog opcional (src/raw-events.mjs)
     this.pending = null;
     this.reconnectTimer = null;
     this._terminal = false;
@@ -365,6 +366,7 @@ export class Twitch extends EventEmitter {
 
   emitEvent(messageId, subType, event) {
     const n = normalizeTwitch(subType, event);
+    try { this.rawLog?.record('twitch', subType, !!n, event); } catch {}
     if (n) this.emit('event', { externalId: 'tw:' + messageId, ...n });
   }
 
