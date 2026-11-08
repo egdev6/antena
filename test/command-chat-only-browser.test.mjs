@@ -5,7 +5,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { findChrome, openChromePage, waitDom, clickWhen } from './helpers/react-browser.mjs';
+import { closeChrome, findChrome, openChromePage, waitDom, clickWhen } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const quote = JSON.stringify;
@@ -36,13 +36,7 @@ async function panel(run) {
     await waitDom(c, `!!document.querySelector('.lv-drawer input.mono') && !!(${button('Crear comando')})`, { timeoutMs: 15000 });
     await run({ c, dom, api });
   } finally {
-    if (chrome) {
-      const profile = chrome.child.spawnargs.find(arg => arg.startsWith('--user-data-dir=')).slice('--user-data-dir='.length);
-      const closed = chrome.child.exitCode !== null || chrome.child.signalCode !== null ? Promise.resolve() : new Promise(resolve => chrome.child.once('close', resolve));
-      chrome.cdp.close(); chrome.child.kill();
-      await closed;
-      await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    }
+    if (chrome) await closeChrome(chrome);
     if (app) {
       app.timers.stop(); app.server.closeAllConnections(); await app.closeHttp();
     }

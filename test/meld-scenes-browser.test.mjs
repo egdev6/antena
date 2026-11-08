@@ -1,12 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { fakeMeld } from './helpers/fake-meld.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const items = () => ({
@@ -62,16 +61,7 @@ async function start(t) {
 
 async function open(t, ctx, route) {
   const chrome = await openChromePage(ctx.bin, ctx.base + route);
-  const profile = chrome.child.spawnargs.find(arg => arg.startsWith('--user-data-dir=')).slice('--user-data-dir='.length);
-  t.after(async () => {
-    chrome.cdp.close();
-    const exited = chrome.child.exitCode === null && chrome.child.signalCode === null ? once(chrome.child, 'exit') : Promise.resolve();
-    chrome.child.kill();
-    await exited;
-    // Chrome helpers can still hold profile files after the main process exits (ENOTEMPTY on
-    // Linux, EBUSY on Windows): retry, and never fail the test over temp cleanup.
-    await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => {});
-  });
+  t.after(() => closeChrome(chrome));
   await waitDom(chrome.cdp, route === '/dock' ? `!!document.querySelector('.d-scene')` : `!!document.querySelector('.scene-tiles button')`, { timeoutMs: 20000 });
   return chrome;
 }
