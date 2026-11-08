@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 
-async function start() {
-  const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-int-'));
+async function start({ dataDir, keepData = false } = {}) {
+  dataDir ??= await mkdtemp(path.join(tmpdir(), 'egdev-int-'));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   const sent = [];
   app.twitch.sendChat = async text => { sent.push(text); return { is_sent: true }; };
@@ -17,7 +17,12 @@ async function start() {
     const d = await r.json(); if (!r.ok) throw Object.assign(new Error(d.error), { status: r.status }); return d;
   };
   const chat = (user, text, extra = {}) => call('POST', '/api/chat/simulate', { user, text, ...extra });
-  return { app, sent, call, chat, dataDir, close: () => new Promise(r => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(r); }) };
+  return { app, sent, call, chat, dataDir, close: async () => {
+    app.timers.stop();
+    await app.closeHttp();
+    await app.interactive.flush();
+    if (!keepData) await rm(dataDir, { recursive: true, force: true });
+  } };
 }
 
 test('preguntas: entran por el chat, se ordenan, se muestran y se responden', async () => {
@@ -87,6 +92,73 @@ test('tier list: el chat vota con «S» o «!tier A» y gana el más votado', as
     await call('PUT', `/api/tierlists/${tierlist.id}`, { tiers: tierlist.tiers.slice(0, 2) });
     s = await call('GET', '/api/interactive');
     assert.equal(Object.keys(s.tierlists[0].placements).length, 2);
+  } finally { await close(); }
+});
+
+test('tier vote text: legacy and custom lists survive updates and restart', async () => {
+  const first = await start({ keepData: true });
+  let closed = false, second;
+  try {
+    const legacy = (await first.call('POST', '/api/tierlists', { title: 'Legacy', items: ['One'] })).tierlist;
+    await first.call('POST', `/api/tierlists/${legacy.id}/place`, { item: 'One', tier: 'A' });
+    const created = (await first.call('POST', '/api/tierlists', {
+      title: 'Custom', items: ['Two'], tiers: [
+        { id: 'top', label: 'S', color: '#ff0036', voteText: 'Excellent' },
+        { id: 'good', label: 'A', color: '#ff6a3d', voteText: '' },
+        { id: 'mid', label: 'B', color: '#ffb547' },
+      ],
+    })).tierlist;
+    assert.deepEqual(created.tiers.map(t => t.voteText), ['Excellent', '', undefined]);
+    const updated = (await first.call('PUT', `/api/tierlists/${created.id}`, { tiers: [
+      { ...created.tiers[0], voteText: 'Outstanding' }, created.tiers[1], created.tiers[2],
+    ] })).tierlist;
+    assert.deepEqual(updated.tiers.map(t => t.voteText), ['Outstanding', '', undefined]);
+    await first.call('PUT', `/api/tierlists/${created.id}`, { title: 'Custom renamed' });
+    await first.close(); closed = true;
+    second = await start({ dataDir: first.dataDir });
+    const lists = (await second.call('GET', '/api/interactive')).tierlists;
+    const old = lists.find(l => l.id === legacy.id);
+    const custom = lists.find(l => l.id === created.id);
+    assert.deepEqual(old.tiers, legacy.tiers);
+    assert.equal(old.placements[legacy.items[0].id], legacy.tiers[1].id);
+    assert.equal(custom.title, 'Custom renamed');
+    assert.deepEqual(custom.tiers.map(t => t.voteText), ['Outstanding', '', undefined]);
+    await second.call('POST', `/api/tierlists/${legacy.id}/vote`, { item: 'One' });
+    await second.chat('ana', '!tier S');
+    assert.equal((await second.call('GET', '/api/interactive')).vote.counts[legacy.tiers[0].id], 1);
+  } finally {
+    if (second) await second.close();
+    else { if (!closed) await first.close(); await rm(first.dataDir, { recursive: true, force: true }); }
+  }
+});
+
+test('tier vote text: chat parser still accepts labels and ids, not display text', async () => {
+  const { call, chat, close } = await start();
+  try {
+    const tiers = [
+      { id: 'top', label: 'Superior', color: '#ff0036', voteText: 'Amazing' },
+      { id: 'good', label: 'Bueno', color: '#ff6a3d', voteText: 'Great' },
+    ];
+    const { tierlist } = await call('POST', '/api/tierlists', { title: 'Parser', tiers, items: ['One'] });
+    assert.deepEqual(tierlist.tiers, tiers);
+    await call('POST', `/api/tierlists/${tierlist.id}/vote`, { item: 'One' });
+    await chat('ana', '!tier top');
+    await chat('bea', 'top');
+    await chat('carl', '!tier bueno');
+    await chat('dana', 'SUPERIOR');
+    const before = await call('GET', '/api/interactive');
+    assert.deepEqual(before.vote.counts, { top: 3, good: 1 });
+    assert.equal(before.vote.total, 4);
+    await chat('ana', 'Great');
+    await chat('ed', '!tier Amazing');
+    const after = await call('GET', '/api/interactive');
+    assert.deepEqual(after.vote, before.vote);
+    assert.deepEqual(after.tierlists, before.tierlists);
+    await chat('ana', '!tier good');
+    const changed = (await call('GET', '/api/interactive')).vote;
+    assert.deepEqual(changed.counts, { top: 2, good: 2 });
+    assert.equal(changed.total, 4);
+    assert.equal(changed.winner, 'top');
   } finally { await close(); }
 });
 

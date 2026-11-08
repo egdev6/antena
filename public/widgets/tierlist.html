@@ -69,10 +69,11 @@ function apply(s) {
   clearInterval(tick);
   if (!v) return;
   $('vitem').textContent = v.item?.label || '';
-  const labels = l.tiers.map(t => `<b>${esc(t.label)}</b>`).join(' ');
-  $('how').innerHTML = `Escribe ${cfg.acceptBare !== false ? labels : ''}${cfg.acceptBare !== false ? ' o ' : ''}<b>${esc(cfg.command || '!tier')} S</b> · ${v.total} ${v.total === 1 ? 'voto' : 'votos'}`;
+  const labels = l.tiers.map(t => `<b>${esc(t.label)}</b>${t.voteText ? ` (${esc(t.voteText)})` : ''}`).join(' ');
+  const descriptions = l.tiers.filter(t => t.voteText).map(t => `<b>${esc(t.label)}</b>: ${esc(t.voteText)}`).join(' · ');
+  $('how').innerHTML = `Escribe ${cfg.acceptBare !== false ? labels + ' o ' : ''}<b>${esc(cfg.command || '!tier')} S</b>${cfg.acceptBare === false && descriptions ? ' · ' + descriptions : ''} · ${v.total} ${v.total === 1 ? 'voto' : 'votos'}`;
   const max = Math.max(1, ...Object.values(v.counts));
-  $('bars').innerHTML = l.tiers.map(t => `<div class="bar ${v.winner === t.id ? 'win' : ''}"><span style="color:${esc(t.color)}">${esc(t.label)}</span><i><b style="width:${(v.counts[t.id] || 0) / max * 100}%;background:${esc(t.color)};box-shadow:0 0 12px ${esc(t.color)}"></b></i><span class="n">${v.counts[t.id] || 0}</span></div>`).join('');
+  $('bars').innerHTML = l.tiers.map(t => `<div class="bar ${v.winner === t.id ? 'win' : ''}"><span style="color:${esc(t.color)}">${esc(t.voteText || t.label)}</span><i><b style="width:${(v.counts[t.id] || 0) / max * 100}%;background:${esc(t.color)};box-shadow:0 0 12px ${esc(t.color)}"></b></i><span class="n">${v.counts[t.id] || 0}</span></div>`).join('');
   const upd = () => { if (!v.endsAt) { $('timer').textContent = ''; return; } const left = Math.max(0, Math.ceil((new Date(v.endsAt) - Date.now()) / 1000)); $('timer').textContent = `· ${left}s`; };
   upd(); if (v.endsAt) tick = setInterval(upd, 500);
 }
