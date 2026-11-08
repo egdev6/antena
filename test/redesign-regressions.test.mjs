@@ -242,6 +242,7 @@ async function findChrome() {
 function connectCdp(wsUrl) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl); let id = 0; const waiters = new Map(); const events = [];
+    const deliveredTimelineLabels = new Set();
     const fail = () => {
       const error = new Error('CDP: transporte cerrado');
       for (const waiter of waiters.values()) waiter.reject(error);
@@ -251,6 +252,13 @@ function connectCdp(wsUrl) {
       const m = JSON.parse(ev.data);
       const diagnostic = chromeDiagnosticEvent(m);
       if (diagnostic) { events.push(diagnostic); if (events.length > 6) events.shift(); }
+      if (m.method === 'Network.eventSourceMessageReceived' && m.params.eventName === 'timeline') {
+        try {
+          for (const item of JSON.parse(m.params.data).items || []) {
+            if (item.kind === 'marker' && typeof item.label === 'string') deliveredTimelineLabels.add(item.label);
+          }
+        } catch {}
+      }
       const w = waiters.get(m.id); if (!w) return; waiters.delete(m.id);
       if (m.error) w.reject(Object.assign(new Error('CDP: comando rechazado'), { code: m.error.code }));
       else w.resolve(m.result);
@@ -258,7 +266,7 @@ function connectCdp(wsUrl) {
     ws.onerror = fail; ws.onclose = fail;
     ws.onopen = () => resolve({
       send: (method, params = {}) => new Promise((res, rej) => { const i = ++id; waiters.set(i, { resolve: res, reject: rej }); ws.send(JSON.stringify({ id: i, method, params })); }),
-      diagnostics: () => events.slice(), close: () => ws.close(),
+      diagnostics: () => events.slice(), timelineDelivered: label => deliveredTimelineLabels.has(label), close: () => ws.close(),
     });
   });
 }
@@ -349,9 +357,32 @@ async function openPrompter(bin, url) {
 }
 
 const cdpEval = (c, expression) => evaluateChrome(c, expression);
-const reloadPage = c => cdpEval(c, 'location.reload()').catch(() => {});
+const waitDom = waitChromeDom;
 
-async function waitDom(c, expression, timeout = 9000) { return waitChromeDom(c, expression, { timeoutMs: timeout }); }
+async function reloadPage(c) {
+  // The old page can still have tabs after Page.reload returns; wait for a new document.
+  await cdpEval(c, 'window.__redesignOldDocument = true');
+  await c.send('Page.reload');
+  await waitDom(c, 'window.__redesignOldDocument !== true && !!document.querySelector(".tabs")');
+}
+
+async function waitPanelClient(app, previousClients = new Set()) {
+  const deadline = performance.now() + 9000;
+  while (performance.now() < deadline) {
+    if ([...app.bus.clients].some(client => client.kind === 'panel' && !client.closing && !previousClients.has(client))) return;
+    await sleep(50);
+  }
+  assert.fail('panel SSE did not connect');
+}
+
+async function waitTimelineDelivery(c, label) {
+  const deadline = performance.now() + 9000;
+  while (performance.now() < deadline) {
+    if (c.timelineDelivered(label)) return;
+    await sleep(50);
+  }
+  assert.fail(`timeline SSE did not deliver marker: ${label}`);
+}
 
 async function marker(base, label = '') {
   const r = await fetch(base + '/api/markers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) });
@@ -369,13 +400,20 @@ test('prompter React: guardar una marca libera la cronología (Enter/blur, SSE y
   catch (e) { if (e.code !== 'ENOENT') throw e; return t.skip('sin app/dist/index.html; compila la interfaz con pnpm app:build para ejecutar la regresión React'); }
   const bin = await findChrome();
   if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la regresión de navegador');
-  const { port, close } = await start();
+  const { app, port, close } = await start();
   const base = `http://127.0.0.1:${port}`;
   let chrome;
   // Valor en un input controlado de React: setter nativo + evento input.
   const setReactValue = (selector, value) => `(() => { const el = document.querySelector(${JSON.stringify(selector)}); const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; s.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`;
   const markersInDom = () => `document.querySelectorAll('.ev.k-marker').length`;
+  const markerWithLabel = label => `Array.from(document.querySelectorAll('.ev.k-marker')).find(el => el.textContent.includes(${JSON.stringify(label)}))`;
   const waitMarkerCount = async (c, n) => waitDom(c, `${markersInDom()} >= ${n}`, { timeoutMs: 12000 });
+  const waitMarkerLabel = async (c, label) => waitDom(c, `!!(${markerWithLabel(label)})`, { timeoutMs: 12000 });
+  const reloadPrompter = async c => {
+    const previousClients = new Set(app.bus.clients);
+    await reloadPage(c);
+    await waitPanelClient(app, previousClients);
+  };
   const openEdit = async (c, n) => {
     // Equivalente React de «acciones alcanzables con teclado»: el botón de editar es un
     // <button> real y recibe el foco (alcanzable por tabulación), no un div oculto por CSS.
@@ -386,23 +424,28 @@ test('prompter React: guardar una marca libera la cronología (Enter/blur, SSE y
     chrome = await openPrompter(bin, base + '/prompter');
     const c = chrome.cdp;
     await waitDom(c, '!!document.querySelector(".tabs")');
+    await waitPanelClient(app);
+    let expectedMarkers = 0;
     for (const mode of ['Enter', 'blur']) {
-      await reloadPage(c); await sleep(400);                           // estado y vista limpios en cada caso
-      await waitDom(c, '!!document.querySelector(".tabs")');
+      await reloadPrompter(c);
+      await waitMarkerCount(c, expectedMarkers);
       await marker(base);
-      await waitMarkerCount(c, 1);
+      await waitMarkerCount(c, ++expectedMarkers);
       await openEdit(c, 1);
       const typed = 'Nombre ' + mode;
       await cdpEval(c, setReactValue('.pr-edit', typed));
-      await marker(base, 'SSE ' + mode);                                // la SSE no debe pisar lo que se escribe
-      await waitMarkerCount(c, 2);
-      await sleep(350);
+      const sseLabel = 'SSE ' + mode;
+      await marker(base, sseLabel);
+      await waitTimelineDelivery(c, sseLabel);
+      await waitMarkerLabel(c, sseLabel);
+      await waitMarkerCount(c, ++expectedMarkers);
       assert.equal(await cdpEval(c, 'document.querySelector(".pr-edit").value'), typed, 'la SSE no pisa el nombre en edición');
       await cdpEval(c, mode === 'Enter' ? 'document.querySelector(".pr-edit").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}))' : 'document.querySelector(".pr-edit").blur()');
       await waitDom(c, '!document.querySelector(".pr-edit")');         // el editor desaparece al terminar
       await waitLabel(base, typed);
       await waitDom(c, `document.body.innerText.includes(${JSON.stringify(typed)})`);   // el nombre llega por la SSE real
       const next = await marker(base, 'Posterior ' + mode);
+      expectedMarkers++;
       await waitDom(c, `document.body.innerText.includes(${JSON.stringify(next.label)})`);   // la cronología ya no está congelada
     }
     // Pestañas sin estado obsoleto: cambiar y volver deja la cronología intacta.
@@ -411,23 +454,38 @@ test('prompter React: guardar una marca libera la cronología (Enter/blur, SSE y
     await cdpEval(c, `Array.from(document.querySelectorAll('.pr-side .tabs .tab')).find(b => b.textContent.includes('Eventos')).click()`);
     await waitDom(c, `document.querySelectorAll('.ev.k-marker').length >= 4`);
 
-    // Escape cancela sin guardar y sin dejar el editor montado.
-    await reloadPage(c); await sleep(400);
-    await waitDom(c, '!!document.querySelector(".tabs")');
+    // Escape cancels the edit without saving or leaving the editor mounted.
+    await reloadPrompter(c);
+    await waitMarkerCount(c, expectedMarkers);
     await marker(base, 'Intacta');
-    await waitMarkerCount(c, 1);
-    await cdpEval(c, `document.querySelector('.ev.k-marker').click()`);
+    await waitMarkerLabel(c, 'Intacta');
+    await cdpEval(c, `${markerWithLabel('Intacta')}.click()`);
     await waitDom(c, '!!document.querySelector(".pr-edit")');
     await cdpEval(c, 'document.querySelector(".pr-edit").value = "Descartado"; document.querySelector(".pr-edit").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
     await waitDom(c, '!document.querySelector(".pr-edit")');
     assert.ok((await markerLabels(base)).includes('Intacta'), 'Escape no debe guardar');
-    // Un PUT que falla (id ya borrado) tampoco puede dejar la vista atascada.
+    // Keep the deletion snapshot in transit until the stale editor submits its PUT.
     const mf = await marker(base, 'Fallará');
-    await waitMarkerCount(c, 2);
-    await openEdit(c, 2);
-    await fetch(base + '/api/timeline/' + encodeURIComponent(mf.id), { method: 'DELETE' });
-    await cdpEval(c, 'document.querySelector(".pr-edit").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}))');
-    await waitDom(c, '!document.querySelector(".pr-edit")');
+    await waitTimelineDelivery(c, 'Fallará');
+    await waitMarkerLabel(c, 'Fallará');
+    await openEdit(c, 1);
+    assert.equal(await cdpEval(c, 'document.querySelector(".pr-edit").value'), 'Fallará');
+    const send = app.bus.send;
+    let heldTimeline;
+    app.bus.send = function (event, ...args) {
+      if (event === 'timeline') { heldTimeline = args; return; }
+      return send.call(this, event, ...args);
+    };
+    try {
+      const deleted = await fetch(base + '/api/timeline/' + encodeURIComponent(mf.id), { method: 'DELETE' });
+      assert.equal(deleted.status, 200);
+      await cdpEval(c, 'document.querySelector(".pr-edit").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}))');
+      await waitDom(c, '!document.querySelector(".pr-edit")');
+      await waitDom(c, 'document.querySelector(".toast.on.err")?.textContent.includes("No existe la nota")');
+    } finally {
+      app.bus.send = send;
+      if (heldTimeline) send.call(app.bus, 'timeline', ...heldTimeline);
+    }
     const mok = await marker(base, 'Tras el fallo');
     await waitDom(c, `document.body.innerText.includes(${JSON.stringify(mok.label)})`);
   } finally { chrome?.cdp?.close(); chrome?.child?.kill(); await close(); }
