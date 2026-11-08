@@ -20,7 +20,7 @@ const events = s => s.written.map(chunk => {
 });
 const window = (t, ms = 100) => { t.mock.timers.tick(ms); t.mock.timers.tick(0); };
 
-test('blocked writes resume in FIFO order; latest snapshots follow the queue without being lost', () => {
+test('blocked writes resume in FIFO order with snapshots replaced in place', () => {
   const bus = new Bus({ byteBudget: 1_000_000 }); const sink = new Sink(); bus.addClient(sink, 'panel');
   bus.send('chat', { id: 0 });
   bus.send('status', { n: 1 }); bus.send('pause', { n: 1 });
@@ -32,9 +32,9 @@ test('blocked writes resume in FIFO order; latest snapshots follow the queue wit
     assert.equal(events(sink).length, count, 'stop again as soon as write returns false');
   }
   assert.deepEqual(events(sink), [
-    { event: 'chat', data: { id: 0 } }, { event: 'chat', data: { id: 1 } },
-    { event: 'chat', data: { id: 2 } }, { event: 'status', data: { n: 2 } },
-    { event: 'pause', data: { n: 2 } },
+    { event: 'chat', data: { id: 0 } }, { event: 'status', data: { n: 2 } },
+    { event: 'pause', data: { n: 2 } }, { event: 'chat', data: { id: 1 } },
+    { event: 'chat', data: { id: 2 } },
   ]);
   assert.equal(sink.ended, false);
 });
@@ -59,6 +59,35 @@ test('UTF-8 queued bytes trigger the budget; gap counts at-risk writes and queue
   bus.send('chat', { id: 4 }); sink.drain(); window(t);
   assert.equal(sink.written.length, count);
   assert.equal(sink.ends, 1);
+});
+
+test('gap counts pending ephemerals but not pending snapshots', t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setImmediate', 'Date'], now: 0 });
+  const bus = new Bus({ byteBudget: 100, now: () => Date.now() });
+  const sink = new Sink(); bus.addClient(sink, 'panel');
+  bus.send('chat', { id: 0, text: 'x'.repeat(200) });
+  bus.send('status', { n: 1 }); bus.send('chat', { id: 1 });
+  bus.send('pause', { n: 1 }); bus.send('chat', { id: 2 });
+  window(t);
+  assert.deepEqual(events(sink).at(-1), {
+    event: 'gap', data: { reason: 'slow-client', kind: 'panel', droppedEphemeral: 3, cause: 'stalled' },
+  });
+  assert.equal(sink.ends, 1);
+});
+
+test('close and error remove only the bus response listeners', () => {
+  for (const event of ['close', 'error']) {
+    const bus = new Bus({ byteBudget: 1_000_000 }); const sink = new Sink();
+    const unrelated = () => {};
+    for (const name of ['drain', 'error', 'close']) sink.on(name, unrelated);
+    bus.addClient(sink, 'panel'); bus.send('chat', { id: 0 }); bus.send('chat', { id: 1 });
+    sink.emit(event, new Error('closed'));
+    assert.equal(bus.clients.size, 0);
+    for (const name of ['drain', 'error', 'close']) assert.deepEqual(sink.listeners(name), [unrelated]);
+    const count = sink.written.length;
+    sink.drain(); bus.send('chat', { id: 2 });
+    assert.equal(sink.written.length, count);
+  }
 });
 
 test('a retained UTF-8 snapshot counts toward the backlog and triggers the initial grace', t => {

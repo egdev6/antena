@@ -45,29 +45,33 @@ export class Bus {
       res, kind,
       closing: false,
       blocked: false,          // write() devolvió false: no escribir de nuevo hasta drain
-      queue: [], queueHead: 0, queueBytes: 0, // efímeros pendientes, en orden
-      lastReplaceable: new Map(), snapshotBytes: 0, // último snapshot y sus bytes por tipo
+      queue: [], queueHead: 0, queueBytes: 0, // mensajes pendientes, en orden
+      lastReplaceable: new Map(), // tipo -> entrada pendiente en la cola
       atRisk: 0,               // efímeros escritos con backlog sobre presupuesto
       droppedEphemeral: 0,     // en riesgo + en cola al corte + envíos posteriores
       overBudgetSince: null,
       lastDrainAt: null,       // null: aún no hubo progreso en este episodio
       crossing: 0,             // invalida timers e inmediatos de cruces anteriores
       checkTimer: null, checkVersion: 0,
+      handlers: null,
     };
     this.clients.add(client);
     if (typeof res.on === 'function') {
-      res.on('drain', () => {
-        if (!this.#alive(client)) return;
-        client.blocked = false;
-        this.#noteBacklog(client);
-        if (client.overBudgetSince !== null) {
-          client.lastDrainAt = this.now();
-          this.#scheduleBacklogCheck(client);
-        }
-        this.#flush(client);
-      });
-      res.on('error', () => this.#remove(client));
-      res.on('close', () => this.#remove(client));
+      client.handlers = {
+        drain: () => {
+          if (!this.#alive(client)) return;
+          client.blocked = false;
+          this.#noteBacklog(client);
+          if (client.overBudgetSince !== null) {
+            client.lastDrainAt = this.now();
+            this.#scheduleBacklogCheck(client);
+          }
+          this.#flush(client);
+        },
+        error: () => this.#remove(client),
+        close: () => this.#remove(client),
+      };
+      for (const [event, handler] of Object.entries(client.handlers)) res.on(event, handler);
     }
     return client;
   }
@@ -75,8 +79,13 @@ export class Bus {
   #remove(client) {
     this.clients.delete(client);
     this.#cancelBacklogCheck(client);
+    const off = typeof client.res.off === 'function' ? client.res.off : client.res.removeListener;
+    if (client.handlers && typeof off === 'function') {
+      for (const [event, handler] of Object.entries(client.handlers)) off.call(client.res, event, handler);
+    }
+    client.handlers = null;
     client.queue = []; client.queueHead = 0; client.queueBytes = 0;
-    client.lastReplaceable.clear(); client.snapshotBytes = 0;
+    client.lastReplaceable.clear();
   }
 
   #alive(client) {
@@ -89,14 +98,15 @@ export class Bus {
   }
 
   #backlog(client) {
-    return client.queueBytes + client.snapshotBytes + (client.res.writableLength || 0);
+    return client.queueBytes + (client.res.writableLength || 0);
   }
 
   /** #57: the owned FIFO prevents Node coalescing an entire burst into one libuv writev,
    *  whose partial progress is invisible. Only write again after false on 'drain', so each
-   *  completed write provides observable progress; the budget includes both queues. */
+   *  completed write provides observable progress; the budget includes the queue. */
   #noteBacklog(client) {
     if (this.#backlog(client) <= this.byteBudget) {
+      client.atRisk = 0;
       if (client.overBudgetSince !== null) {
         client.overBudgetSince = null;
         client.lastDrainAt = null;
@@ -162,10 +172,13 @@ export class Bus {
     if (!this.#alive(client)) return;
     client.closing = true;
     this.#cancelBacklogCheck(client);
-    client.droppedEphemeral += client.atRisk + client.queue.length - client.queueHead;
+    client.droppedEphemeral += client.atRisk;
+    for (let i = client.queueHead; i < client.queue.length; i++) {
+      if (client.queue[i].cls === 'ephemeral') client.droppedEphemeral++;
+    }
     client.atRisk = 0;
     client.queue = []; client.queueHead = 0; client.queueBytes = 0;
-    client.lastReplaceable.clear(); client.snapshotBytes = 0;
+    client.lastReplaceable.clear();
     const gap = `event: gap\ndata: ${JSON.stringify({
       reason: 'slow-client',
       kind: client.kind,
@@ -197,14 +210,16 @@ export class Bus {
     if (!this.#alive(client)) return;
     this.#noteBacklog(client); // detect a dip before a new write or queue entry
     if (client.blocked) {
-      if (cls === 'replaceable') {
-        const previous = client.lastReplaceable.get(event);
-        if (previous !== undefined) client.snapshotBytes -= Buffer.byteLength(previous);
-        client.lastReplaceable.set(event, msg);
-        client.snapshotBytes += Buffer.byteLength(msg);
+      const bytes = Buffer.byteLength(msg);
+      const previous = cls === 'replaceable' ? client.lastReplaceable.get(event) : undefined;
+      if (previous !== undefined) {
+        client.queueBytes += bytes - previous.bytes;
+        previous.msg = msg; previous.bytes = bytes;
       } else {
-        client.queue.push(msg);
-        client.queueBytes += Buffer.byteLength(msg);
+        const entry = { msg, cls, event, bytes };
+        client.queue.push(entry);
+        client.queueBytes += bytes;
+        if (cls === 'replaceable') client.lastReplaceable.set(event, entry);
       }
       this.#noteBacklog(client);
       return;
@@ -212,24 +227,18 @@ export class Bus {
     this.#writeSocket(client, msg, cls, this.#backlog(client));
   }
 
-  /** Drain: primero FIFO de efímeros; después el último snapshot de cada tipo. */
+  /** Drain: escribe en orden, con cada snapshot sustituido en su posición original. */
   #flush(client) {
     while (this.#alive(client) && !client.blocked && client.queueHead < client.queue.length) {
       const before = this.#backlog(client);
-      const msg = client.queue[client.queueHead];
+      const entry = client.queue[client.queueHead];
       client.queue[client.queueHead++] = null;
-      client.queueBytes -= Buffer.byteLength(msg);
-      this.#writeSocket(client, msg, 'ephemeral', before);
+      client.queueBytes -= entry.bytes;
+      if (entry.cls === 'replaceable') client.lastReplaceable.delete(entry.event);
+      this.#writeSocket(client, entry.msg, entry.cls, before);
     }
     if (client.queueHead === client.queue.length) {
       client.queue = []; client.queueHead = 0;
-    }
-    while (this.#alive(client) && !client.blocked && client.lastReplaceable.size) {
-      const before = this.#backlog(client);
-      const [event, msg] = client.lastReplaceable.entries().next().value;
-      client.lastReplaceable.delete(event);
-      client.snapshotBytes -= Buffer.byteLength(msg);
-      this.#writeSocket(client, msg, 'replaceable', before);
     }
   }
 
