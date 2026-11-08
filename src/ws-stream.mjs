@@ -4,7 +4,7 @@ import { isUtf8 } from 'node:buffer';
 import { EventEmitter } from 'node:events';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-const MAX_PAYLOAD = 64 * 1024;
+const MAX_PAYLOAD = 64 * 1024, OUTBOUND_CHUNK = 64 * 1024;
 const CLOSE_CHECK_MS = 1000, CLOSE_MAX_MS = 30_000; // cierre tras el corte: sin progreso / tope
 
 function frame(opcode, payload) {
@@ -27,8 +27,15 @@ export class WsResponse extends EventEmitter {
     this.fragmented = false;
     this.messageBytes = 0;
     this.textDecoder = null;
+    this.outbound = [];
+    this.queuedBytes = 0;
+    this.writing = false;
+    this.socketBlocked = false;
+    this.needsDrain = false;
+    this.destroyOnFinish = false;
+    this.lastProgressAt = performance.now();
     socket.on('data', chunk => this.receive(chunk));
-    socket.on('drain', () => this.emit('drain'));
+    socket.on('drain', () => { this.socketBlocked = false; this.pump(); });
     socket.on('end', () => { this.close(); if (!socket.writableEnded) socket.end(); });
     socket.on('close', () => this.close());
     socket.on('error', error => {
@@ -39,31 +46,65 @@ export class WsResponse extends EventEmitter {
     if (head.length) queueMicrotask(() => this.receive(head));
   }
 
-  get writableLength() { return this.socket.writableLength; }
+  get writableLength() { return this.queuedBytes + this.socket.writableLength; }
   get writableEnded() { return this.ended || this.socket.writableEnded; }
   get destroyed() { return this.socket.destroyed; }
-  close() { if (!this.closed) { this.closed = true; this.emit('close'); } }
+  close() {
+    if (this.closed) return;
+    this.closed = true; this.outbound = []; this.queuedBytes = 0; this.needsDrain = false;
+    this.emit('close');
+  }
+  // Cada trama conserva su orden; un solo chunk en vuelo permite observar progreso real.
+  enqueue(bytes) {
+    for (let offset = 0; offset < bytes.length; offset += OUTBOUND_CHUNK) {
+      this.outbound.push(bytes.subarray(offset, offset + OUTBOUND_CHUNK));
+    }
+    this.queuedBytes += bytes.length;
+    this.pump();
+  }
+  pump() {
+    if (this.closed || this.destroyed || this.writing || this.socketBlocked) return;
+    if (!this.outbound.length) {
+      if (this.ended) {
+        if (!this.socket.writableEnded) this.socket.end(() => { if (this.destroyOnFinish) this.socket.destroy(); });
+      } else if (this.needsDrain) {
+        this.needsDrain = false; this.emit('drain');
+      }
+      return;
+    }
+    const chunk = this.outbound.shift();
+    this.queuedBytes -= chunk.length;
+    this.writing = true;
+    const ok = this.socket.write(chunk, error => {
+      this.writing = false;
+      if (error || this.closed || this.destroyed) return;
+      this.lastProgressAt = performance.now();
+      this.pump();
+    });
+    if (!ok) this.socketBlocked = true;
+  }
   write(text) {
     if (this.closed || this.writableEnded || this.destroyed) return false;
-    return this.socket.write(frame(1, Buffer.from(text)));
+    this.enqueue(frame(1, Buffer.from(text)));
+    const blocked = this.queuedBytes > 0 || this.socketBlocked;
+    if (blocked) this.needsDrain = true;
+    return !blocked;
   }
   end() { this.finish(Buffer.from([0x03, 0xe8])); }
   finish(payload, destroy = false) {
     if (this.closed || this.writableEnded || this.destroyed) return;
     this.ended = true;
-    this.socket.end(frame(8, payload), () => { if (destroy) this.socket.destroy(); });
-    // Si el cliente tampoco lee el close, no dejamos el socket retenido por su backlog: se
-    // destruye cuando lo pendiente en el proceso no baja en un segundo. Si ya pasó todo al
-    // kernel (writableLength 0) el lector puede seguir leyendo: se espera su cierre, con tope.
-    let last = this.socket.writableLength, waited = 0;
+    this.destroyOnFinish = destroy;
+    const started = this.lastProgressAt = performance.now();
+    // Al terminar, conservar el gap mientras los chunks avanzan, pero cortar un bloqueo real.
     const timer = setInterval(() => {
-      waited += CLOSE_CHECK_MS;
-      const now = this.socket.writableLength;
-      if (waited >= CLOSE_MAX_MS || (now > 0 && now >= last)) this.socket.destroy();
-      last = now;
+      const now = performance.now();
+      const pending = this.queuedBytes > 0 || this.writing || this.socket.writableLength > 0;
+      if (now - started >= CLOSE_MAX_MS || (pending && now - this.lastProgressAt >= CLOSE_CHECK_MS)) this.socket.destroy();
     }, CLOSE_CHECK_MS);
     timer.unref();
     this.socket.once('close', () => clearInterval(timer));
+    this.enqueue(frame(8, payload));
   }
   fail(code) {
     const payload = Buffer.alloc(2); payload.writeUInt16BE(code);
@@ -103,7 +144,7 @@ export class WsResponse extends EventEmitter {
         }
         return this.finish(payload);
       }
-      if (opcode === 9) this.socket.write(frame(10, payload));
+      if (opcode === 9) this.enqueue(frame(10, payload));
       if (opcode <= 2) {
         if (opcode === 1) this.textDecoder = new TextDecoder('utf-8', { fatal: true });
         if (this.textDecoder) {

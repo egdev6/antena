@@ -269,9 +269,9 @@ test('a slow websocket receives the bus gap before closing', async t => {
   const { app, port, sockets } = await fixture(t);
   app.bus.byteBudget = 1024; app.bus.backlogGraceMs = 20; app.bus.backlogStallMs = 40; app.bus.backlogMaxMs = 100;
   const ws = await connect(port); assert.equal(ws.status, 101); for (let i = 0; i < 6; i++) await text(ws);
-  const serverSocket = [...sockets][0]; ws.socket.pause(); serverSocket.cork();
+  const serverSocket = [...sockets][0], response = [...app.bus.clients][0].res; ws.socket.pause(); serverSocket.cork();
   for (let i = 0; i < 20; i++) app.bus.send('chat', { i, text: 'x'.repeat(8192) }, ['widget']);
-  await until(() => serverSocket.writableEnded); serverSocket.uncork(); ws.socket.resume();
+  await until(() => response.writableEnded); serverSocket.uncork(); ws.socket.resume();
   let gap;
   for (;;) { const frame = await ws.next(); if (frame.opcode === 8) break; if (frame.data.toString().startsWith('event: gap\n')) gap = frame.data.toString(); }
   assert.ok(gap); assert.equal(JSON.parse(gap.split('data: ')[1]).reason, 'slow-client');
@@ -327,16 +327,24 @@ test('non-reading websocket is cut', async t => {
   const ws = await connect(port);
   assert.equal(ws.status, 101);
   for (let i = 0; i < 6; i++) await text(ws);
-  const server = [...sockets][0];
-  let closes = 0; server.on('close', () => closes++);
-  // 8 MB do not fit in the loopback kernel buffers: bytes stay pending in the process and do
-  // not go down, which is what marks a peer that does not read (a smaller backlog that the
-  // kernel absorbs is indistinguishable from a slow reader and waits for the 30 s cap).
+  const server = [...sockets][0], response = [...app.bus.clients][0].res;
+  let closes = 0, gap, gapBytes = 0; server.on('close', () => closes++);
+  const write = response.write.bind(response);
+  response.write = text => {
+    const before = response.writableLength, result = write(text);
+    if (text.startsWith('event: gap\n')) { gap = text; gapBytes = response.writableLength - before; }
+    return result;
+  };
+  // El backlog supera los búferes del kernel; el gap debe añadirse ANTES de cortar al cliente.
   ws.socket.pause();
   app.bus.send('chat', { i: 0, text: 'x'.repeat(8 * 1024 * 1024) }, ['widget']);
   for (let i = 1; i < 4; i++) app.bus.send('chat', { i, text: 'x'.repeat(8192) }, ['widget']);
-  await until(() => server.writableEnded);
-  assert.ok(server.writableLength > 0, 'backlog pending in the process');
+  await until(() => response.writableEnded);
+  assert.ok(response.writableLength > 0, 'backlog pending in the process');
+  assert.ok(gap, 'the bus writes a terminal gap');
+  assert.equal(JSON.parse(gap.split('data: ')[1]).reason, 'slow-client');
+  const payloadBytes = Buffer.byteLength(gap);
+  assert.equal(gapBytes, payloadBytes + (payloadBytes < 126 ? 2 : 4), 'the framed gap was actually queued');
   await delay(2500);
   assert.equal(server.destroyed, true);
   assert.equal(app.bus.clients.size, 0);
