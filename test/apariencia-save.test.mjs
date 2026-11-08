@@ -5,11 +5,11 @@
 // y avisa con un toast de error.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 
 const setNativeValue = `(el, v) => {
   const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
@@ -21,6 +21,7 @@ test('apariencia: el punto de partida gana a un cambio pendiente del autoguardad
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-apariencia-157-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -59,7 +60,7 @@ test('apariencia: el punto de partida gana a un cambio pendiente del autoguardad
     assert.equal(trasPreset.accent, '#00D1FF',
       `el preset «cian» gana al cambio pendiente (guardado ${trasPreset.accent})`);
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
   }
 });
@@ -68,6 +69,7 @@ test('apariencia: si «Guardar» falla, avisa y el borrador sigue; «Descartar»
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-apariencia-157-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -110,7 +112,7 @@ test('apariencia: si «Guardar» falla, avisa y el borrador sigue; «Descartar»
     await ev(`[...document.querySelectorAll('.lv-sfoot button')].find(b => b.textContent.trim() === 'Descartar').click()`);
     await waitDom(c, `document.querySelector('.ap-color input.mono').value === ${JSON.stringify(ultimo)}`, { timeoutMs: 9000 });
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
   }
 });

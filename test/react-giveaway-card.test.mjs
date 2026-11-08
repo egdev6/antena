@@ -3,16 +3,17 @@
 // premio y comando visibles en la cabecera y ganadores como filas.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 
 test('tarjeta del sorteo: filas de participantes, quitar accesible y premio en cabecera', { timeout: 90000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-giveaway-131-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -73,7 +74,7 @@ test('tarjeta del sorteo: filas de participantes, quitar accesible y premio en c
     assert.equal(wins.hay, true, 'sigue la tarjeta de ganadores');
     assert.equal(wins.filas, 1, 'el ganador del sorteo sintético aparece como fila');
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
   }
 });

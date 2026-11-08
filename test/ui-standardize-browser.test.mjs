@@ -2,18 +2,19 @@
 // una pestaña por elemento, al pulsarla cambia el editor, «+ Nuevo…» crea y selecciona el nuevo
 // y al borrar la selección sigue siendo válida.
 import { test } from 'node:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-o3-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -70,7 +71,7 @@ test('v2 tier lists: lista → slide, + Nueva tier list y borrado', { timeout: 9
     await waitDom(chrome.cdp, `location.hash === '#/tierlist' && !document.querySelector('.lv-slide') && ${rowNames} === 'Lista A|Lista B'`, { timeoutMs: 12000 });
     eq(await dom(chrome, `window.__confirms[0]`), '¿Borrar «Lista C»?');
     eq(app.interactive.s.tierlists.map(x => x.title).join('|'), 'Lista A|Lista B');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('v2 teleprompter: pestañas para elegir el activo, guiones en lista → slide y el último no se borra', { timeout: 90000 }, async t => {
@@ -119,7 +120,7 @@ test('v2 teleprompter: pestañas para elegir el activo, guiones en lista → sli
     await dom(chrome, `document.querySelector('main .lv-list .lv-open')?.click(); 'ok'`);
     await waitDom(chrome.cdp, `${slideTitle} === ${JSON.stringify(first.title)} && !!${buttonByText('Borrar guion…')}`, { timeoutMs: 12000 });
     eq(await dom(chrome, `${buttonByText('Borrar guion…')}.disabled`), true);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('atajos (v2): lista en «Mis atajos» con Probar, «+ Nuevo atajo» en la cabecera y cada atajo en su slide', { timeout: 120000 }, async t => {
@@ -190,7 +191,7 @@ test('atajos (v2): lista en «Mis atajos» con Probar, «+ Nuevo atajo» en la c
     await waitDom(chrome.cdp, `!${slide} && ${rows}.length === 2`, { timeoutMs: 9000 });
     eq(await dom(chrome, `window.__confirms[0]`), '¿Borrar «Tres»?');
     eq(app.store.config.shortcuts.map(x => x.name).join('|'), 'Uno|Dos');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('O3.2 EmptyState: las listas vacías usan el mismo estado vacío (eg-post--empty)', { timeout: 90000 }, async t => {
@@ -210,7 +211,7 @@ test('O3.2 EmptyState: las listas vacías usan el mismo estado vacío (eg-post--
     await dom(chrome, `location.hash = '#/sorteo'`);
     await waitDom(chrome.cdp, `${empty}.includes('Aún no se ha sorteado.') && ${empty}.includes('Sin sorteos anteriores.')`, { timeoutMs: 12000 });
     eq(await dom(chrome, `getComputedStyle(document.querySelector('main .empty-state')).cursor`), 'default');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('botones eg-btn en todas las vistas y Comandos y Mensajes como lista → slide (v2)', { timeout: 120000 }, async t => {
@@ -237,7 +238,7 @@ test('botones eg-btn en todas las vistas y Comandos y Mensajes como lista → sl
       await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(hash)} && !!document.querySelector('main h1') && !document.querySelector('main p.hint')?.textContent.startsWith('Cargando')`, { timeoutMs: 12000 });
       eq(await dom(chrome, `${JSON.stringify(hash)} + ':' + document.querySelectorAll('main .btn').length`), `${hash}:0`);
     }
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('O3.2 css-help: cada campo de CSS lista las clases de su widget', { timeout: 90000 }, async t => {
@@ -263,7 +264,7 @@ test('O3.2 css-help: cada campo de CSS lista las clases de su widget', { timeout
     const prHelp = `document.querySelector('main textarea.code')?.closest('label')?.nextElementSibling`;
     await waitDom(chrome.cdp, `${prHelp}?.classList.contains('css-help') === true`, { timeoutMs: 12000 });
     eq(await dom(chrome, `['.pr', '.pr-top', '.pr-main', '.pr-chat', '.eg-timeline__item', '.pr-send', '.pr-side', '.pr-pane', '.ev-pane', '.ev-block', '.ev-item'].every(c => ${prHelp}.textContent.includes(c))`), true);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('#15 la espera de Espectadores es un Status neutro, no un p.hint suelto', async () => {
@@ -301,7 +302,7 @@ test('esqueleto común: la miga empieza por el grupo de la barra lateral, interr
       await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(hash)} && !!document.querySelector('main .view-head h1')`, { timeoutMs: 12000 });
       eq(await dom(chrome, `${JSON.stringify(hash)} + ':' + (document.querySelectorAll('main label.switch').length >= ${n}) + ':' + document.querySelectorAll('main label.check:not(:has(+ label.check)):not(label.check + label.check)').length`), `${hash}:true:0`);
     }
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 // #16: gramática de controles. Tier (4 opciones fijas) y destino del mensaje (3) son Seg;
@@ -352,7 +353,7 @@ test('#16 Tier y destino del mensaje son Seg; el tipo de acción lleva aria-labe
     const step = `${modal}.querySelector('.action')`;
     eq(await dom(chrome, `${radios(seg(step, 'Dónde'))}.map(b => b.textContent.trim()).join('|')`), 'Twitch|YouTube|Ambos');
     eq(await dom(chrome, `${step}.querySelectorAll('select').length`), 1);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 function eq(actual, expected) { if (actual !== expected) throw new Error(`esperaba ${JSON.stringify(expected)}, hubo ${JSON.stringify(actual)}`); }
@@ -392,7 +393,7 @@ test('pestañas y selectores usan el estilo subrayado del editor, nunca el segme
     await dom(chrome, `location.hash = '#/chat'`);
     await waitDom(chrome.cdp, `!!document.querySelector('.send-to')`, { timeoutMs: 12000 });
     eq(await dom(chrome, `[...document.querySelector('.send-to').classList].filter(c => c.startsWith('eg-tabs')).join(' ')`), 'eg-tabs');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 // Apariencia (v2) se divide en pestañas de página, una por sección, con la dirección propia
@@ -417,7 +418,7 @@ test('Apariencia: secciones en pestañas de página y la vista previa fija', { t
     eq(await dom(chrome, `document.querySelector('#ap-sound')?.closest('section')?.querySelector('select')?.closest('label')?.textContent.includes('Sonido de serie')`), true);
     // la vista previa no depende de la pestaña
     eq(await dom(chrome, `!!document.querySelector('.ap-preview .eg-stage iframe') && document.querySelector('.ap-preview').getBoundingClientRect().width > 0`), true);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 // Separación entre tarjetas: en cualquier vista (y en cada una de sus pestañas), dos bloques de
@@ -461,5 +462,5 @@ test('ninguna vista deja tarjetas apiladas sin separación', { timeout: 240000 }
       for (const f of new Set(found)) offenders.push(`${r}: ${f}`);
     }
     eq(offenders.join(' | '), '');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });

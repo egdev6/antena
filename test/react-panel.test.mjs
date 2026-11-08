@@ -4,16 +4,17 @@
 // grande (el logo nuevo es apaisado).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
 
 test('panel React: etiquetas de la cronología, «Probar» con texto y marca más grande', { timeout: 90000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return; // sin app/dist o sin Chrome: omitido con motivo (t.skip)
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-panel-117-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -49,7 +50,7 @@ test('panel React: etiquetas de la cronología, «Probar» con texto y marca má
     const probar = await ev(`Array.from(document.querySelectorAll('button')).filter(b => b.textContent.trim() === 'Probar').length`);
     assert.ok(probar >= 1, 'el botón «Probar» de la variación muestra su texto');
   } finally {
-    chrome?.cdp.close(); chrome?.child.kill();
+    if (chrome) await closeChrome(chrome);
     await new Promise(r => app.server.close(r));
   }
 });

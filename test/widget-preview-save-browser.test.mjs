@@ -4,11 +4,11 @@
 // the PUT goes out when «Guardar» is pressed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -19,6 +19,7 @@ test('widget chat: a field changed from the panel is saved and reaches the previ
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-preview-save-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -41,7 +42,7 @@ test('widget chat: a field changed from the panel is saved and reaches the previ
     assert.equal(app.store.config.widgets?.chat?.fontSize, 40, 'the panel saves the change with PUT /api/widgets');
     await waitDom(c, `${previewFs} === '40px'`, { timeoutMs: 8000 });
   } finally {
-    if (chrome) { chrome.child.kill(); await chrome.cdp.close(); }
+    if (chrome) await closeChrome(chrome);
     app.timers.stop(); app.server.closeAllConnections(); app.server.close();
   }
 });

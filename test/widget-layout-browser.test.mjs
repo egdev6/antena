@@ -3,11 +3,11 @@
 // que se copia) y la vista previa va siempre en la columna derecha.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 12000 });
@@ -43,6 +43,7 @@ test('O3.3 páginas de widgets: fuente de navegador primero a la izquierda y vis
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-o33-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -110,7 +111,7 @@ test('O3.3 páginas de widgets: fuente de navegador primero a la izquierda y vis
     await dom(chrome, `location.hash = ${JSON.stringify('#/widgets/objetivos/' + encodeURIComponent(goal.id))}`);
     await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="goals-editor"] .widget-layout')`, { timeoutMs: 12000 });
   } finally {
-    chrome?.child.kill(); await chrome?.cdp.close();
+    if (chrome) await closeChrome(chrome);
     app.timers.stop(); app.server.closeAllConnections(); app.server.close();
   }
 });

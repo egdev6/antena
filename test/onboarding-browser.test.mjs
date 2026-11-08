@@ -3,11 +3,11 @@
 // guiado con driver.js que navega por las vistas señalando sus zonas ([data-tour]).
 // Terminar o cerrar el tour también lo marca; «General y archivos» lo relanza sin saludo.
 import { test } from 'node:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -16,6 +16,7 @@ async function start(t, { done = false } = {}) {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-onb-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   app.store.config.panel.onboardingDone = done;
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
@@ -27,8 +28,13 @@ async function start(t, { done = false } = {}) {
 // (display: contents) y el tour se salta sus pasos.
 async function openDesktop(bin, url) {
   const chrome = await openChromePage(bin, url);
-  await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
-  return chrome;
+  try {
+    await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    return chrome;
+  } catch (error) {
+    try { await closeChrome(chrome); } catch (cleanupError) { error.cleanupError = cleanupError; }
+    throw error;
+  }
 }
 
 const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 12000 });
@@ -75,13 +81,13 @@ test('onboarding: primera vez sale el saludo y «Ahora no» lo deja visto aunque
     await dom(chrome, `${buttonByText('Ahora no')}.click(); 'ok'`);
     await waitDone(app);
     await waitDom(chrome.cdp, `!${GREET} && !${POPOVER}`, { timeoutMs: 9000 });
-    await chrome.child.kill(); await chrome.cdp.close(); chrome = null;
+    await closeChrome(chrome); chrome = null;
 
     chrome = await openDesktop(bin, `${base}/#/directo`);
     await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="directo-head"]')`, { timeoutMs: 15000 });
     await sleep(500);
     if (await dom(chrome, `!!${GREET} || !!${POPOVER}`)) throw new Error('el saludo o el tour reaparecen al recargar');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('onboarding: el tour señala zonas, cambia de vista, salta anclas que faltan y al terminar queda visto', { timeout: 180000 }, async t => {
@@ -149,7 +155,7 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
     if (seen.includes('meld-scenes')) throw new Error('el paso sin ancla no se saltó');
     if (seen.indexOf('meld-connection') !== seen.indexOf('meld-head') + 1) throw new Error(`orden inesperado: ${seen.join(', ')}`);
     if (seen.at(-1) !== 'general-tour') throw new Error(`el tour no terminó en General: ${seen.join(', ')}`);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('onboarding: «General y archivos» relanza el tour sin saludo; Esc y las flechas funcionan', { timeout: 120000 }, async t => {
@@ -178,7 +184,7 @@ test('onboarding: «General y archivos» relanza el tour sin saludo; Esc y las f
     await key('Escape');
     await waitDom(chrome.cdp, `!${POPOVER} && !document.querySelector('.driver-active-element')`, { timeoutMs: 9000 });
     await waitDone(app);
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('onboarding: red de seguridad, un ancla que no aparece se salta y la numeración se rehace sin huecos', { timeout: 120000 }, async t => {
@@ -208,5 +214,5 @@ test('onboarding: red de seguridad, un ancla que no aparece se salta y la numera
     await waitDom(chrome.cdp, `${ACTIVE} === 'directo-stats' && ${PROGRESS} === '5 de 17'`, { timeoutMs: 1500 });
     const seen = await dom(chrome, `window.__tourSeen`);
     if (seen.includes('directo-alerts')) throw new Error('el ancla invisible se resaltó');
-  } finally { chrome?.child.kill(); await chrome?.cdp.close(); await close(); }
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
