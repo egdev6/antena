@@ -12,6 +12,7 @@ import { render } from './alerts.mjs';
 const id8 = () => randomUUID().slice(0, 8);
 const norm = s => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').trim().toLowerCase();
 const err = (status, message) => Object.assign(new Error(message), { status });
+const tierVoteText = tier => tier.voteText === undefined ? {} : { voteText: String(tier.voteText ?? '') };
 // Etiqueta segura: el error público nunca expone ruta, errno ni valores; el crudo queda en `cause`.
 const INTERACTIVE_SAVE_MESSAGE = 'No se pudieron guardar los interactivos.';
 function interactivePersistenceError(err) {
@@ -286,7 +287,7 @@ export class Interactive extends EventEmitter {
     return l?.tiers.find(t => t.id === label || norm(t.label) === r) || null;
   }
   createTierlist({ title = 'Tier list', tiers, items = [] } = {}) {
-    const l = { id: id8(), title, tiers: structuredClone(tiers?.length ? tiers : DEFAULT_TIERS).map(t => ({ id: t.id || id8(), label: t.label, color: t.color || '#888888' })), items: [], placements: {} };
+    const l = { id: id8(), title, tiers: structuredClone(tiers?.length ? tiers : DEFAULT_TIERS).map(t => ({ id: t.id || id8(), label: t.label, color: t.color || '#888888', ...tierVoteText(t) })), items: [], placements: {} };
     this.s.tierlists.push(l);
     for (const it of items) this.addItem(l.id, typeof it === 'string' ? { label: it } : it);
     if (!this.s.shownTierlist) this.s.shownTierlist = l.id;
@@ -297,7 +298,7 @@ export class Interactive extends EventEmitter {
     const l = this.list(id);
     if (title !== undefined) l.title = String(title);
     if (Array.isArray(tiers)) {
-      l.tiers = tiers.map(t => ({ id: t.id || id8(), label: String(t.label ?? '?'), color: t.color || '#888888' }));
+      l.tiers = tiers.map(t => ({ id: t.id || id8(), label: String(t.label ?? '?'), color: t.color || '#888888', ...tierVoteText(t) }));
       for (const [k, v] of Object.entries(l.placements)) if (!l.tiers.some(t => t.id === v)) delete l.placements[k];
     }
     this.changed('tierlist');

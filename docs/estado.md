@@ -39,6 +39,8 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   de pantalla la abren a pantalla completa (comando `open_teleprompter`, quinta ventana con la
   misma guardia de navegación, sin IPC: no está en la capability); «La principal» resuelve el
   monitor primario del sistema.
+- **Tier list:** cada nivel admite un texto de voto opcional para la capa; si está vacío se muestra
+  el nombre. El texto es solo visual: el chat sigue votando con el nombre o el id del nivel.
 - **Prompter:** vista 1024×600 para el Elgato Prompter con chat, preguntas, tier list,
   sorteo y cronología. La app la abre a pantalla completa en la pantalla de 1024×600.
 - **Panel v2 (jerarquía):** listado → panel a todo el ancho con pestañas en Alertas (y
