@@ -64,7 +64,11 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   `editar_overlay`, `borrar_overlay` y `probar_overlay`.
 - **Atajos personalizados:** pasos encadenados (acciones `/sd/…`, pestaña del prompter y
   acciones de Meld/chat/voz) con dirección `/sd/custom/<id>`, editables en el panel y por MCP.
-- **Dock:** `/dock`, vista estrecha para el panel de chat de Meld o ventana flotante.
+- **Dock:** `/dock`, vista estrecha para el panel de chat de Meld o ventana flotante; en ancho
+  apaisado usa columnas y en estrecho pestañas. En Interactivos permite añadir, ordenar, mostrar
+  y descartar preguntas; elegir la tier list en pantalla, añadir o quitar elementos y abrir su
+  votación; y añadir o quitar participantes y consultar los ganadores del sorteo. Los cambios
+  se comparten al momento con el panel y las capas.
 - **Interfaz React** en `app/src` (panel, prompter, dock); el panel clásico `/legacy` se retiró
   en #115: sin `app/dist`, `/`, `/prompter` y `/dock` responden una página mínima que explica
   cómo compilar la interfaz (`pnpm app:build`).
