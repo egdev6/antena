@@ -329,10 +329,15 @@ test('non-reading websocket is cut', async t => {
   for (let i = 0; i < 6; i++) await text(ws);
   const server = [...sockets][0];
   let closes = 0; server.on('close', () => closes++);
-  ws.socket.pause(); server.cork();
-  for (let i = 0; i < 20; i++) app.bus.send('chat', { i, text: 'x'.repeat(8192) }, ['widget']);
+  // 8 MB do not fit in the loopback kernel buffers: bytes stay pending in the process and do
+  // not go down, which is what marks a peer that does not read (a smaller backlog that the
+  // kernel absorbs is indistinguishable from a slow reader and waits for the 30 s cap).
+  ws.socket.pause();
+  app.bus.send('chat', { i: 0, text: 'x'.repeat(8 * 1024 * 1024) }, ['widget']);
+  for (let i = 1; i < 4; i++) app.bus.send('chat', { i, text: 'x'.repeat(8192) }, ['widget']);
   await until(() => server.writableEnded);
-  await delay(1500);
+  assert.ok(server.writableLength > 0, 'backlog pending in the process');
+  await delay(2500);
   assert.equal(server.destroyed, true);
   assert.equal(app.bus.clients.size, 0);
   assert.equal(closes, 1);

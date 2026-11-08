@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_PAYLOAD = 64 * 1024;
+const CLOSE_CHECK_MS = 1000, CLOSE_MAX_MS = 30_000; // cierre tras el corte: sin progreso / tope
 
 function frame(opcode, payload) {
   const size = payload.length, extra = size < 126 ? 0 : size <= 0xffff ? 2 : 8;
@@ -50,11 +51,19 @@ export class WsResponse extends EventEmitter {
   finish(payload, destroy = false) {
     if (this.closed || this.writableEnded || this.destroyed) return;
     this.ended = true;
-    // Si el cliente tampoco lee el close, no dejamos el socket retenido por su backlog.
-    const timer = setTimeout(() => this.socket.destroy(), 1000);
-    timer.unref();
-    this.socket.once('close', () => clearTimeout(timer));
     this.socket.end(frame(8, payload), () => { if (destroy) this.socket.destroy(); });
+    // Si el cliente tampoco lee el close, no dejamos el socket retenido por su backlog: se
+    // destruye cuando lo pendiente en el proceso no baja en un segundo. Si ya pasó todo al
+    // kernel (writableLength 0) el lector puede seguir leyendo: se espera su cierre, con tope.
+    let last = this.socket.writableLength, waited = 0;
+    const timer = setInterval(() => {
+      waited += CLOSE_CHECK_MS;
+      const now = this.socket.writableLength;
+      if (waited >= CLOSE_MAX_MS || (now > 0 && now >= last)) this.socket.destroy();
+      last = now;
+    }, CLOSE_CHECK_MS);
+    timer.unref();
+    this.socket.once('close', () => clearInterval(timer));
   }
   fail(code) {
     const payload = Buffer.alloc(2); payload.writeUInt16BE(code);
