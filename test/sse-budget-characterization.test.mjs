@@ -140,12 +140,18 @@ test('R3/R4: backlog bajo highWaterMark (write true, sin drain) NO varaa el snap
 
 test('los efímeros no se coalescen: se entregan o se cuentan como perdidos', () => {
   const bus = new Bus({ historySize: 10, byteBudget: 1 << 20 });
-  const slow = fakeSink({ capacity: 32 });
+  const slow = fakeSink({ capacity: 8 });
   bus.addClient(slow, 'panel');
   bus.send('status', { n: 1 });            // contrapresión
-  bus.send('chat', { id: 1 });             // efímero: pasa igualmente
-  bus.send('chat', { id: 2 });             // efímero: pasa igualmente
-  assert.equal(kinds(slow.written).filter(k => k === 'chat').length, 2);
+  bus.send('chat', { id: 1 });             // efímeros en cola, no se coalescen
+  bus.send('chat', { id: 2 });
+  assert.equal(kinds(slow.written).filter(k => k === 'chat').length, 0);
+  slow.drain();
+  slow.drain();
+  const chats = slow.written.filter(c => c.startsWith('event: chat'));
+  assert.equal(chats.length, 2);
+  assert.match(chats[0], /"id":1/);
+  assert.match(chats[1], /"id":2/);
 });
 
 test('clasificación explícita: todo evento emitido por el servidor tiene clase', async () => {
