@@ -226,7 +226,7 @@ export function Sorteo({ parts }: { parts: string[] }) {
         </Sec>
       </div>
       <div className="stack"><Stage eyebrow="En pantalla" src="/widget/giveaway?debug" /></div>
-    </div> : <WidgetLayout source={<BrowserSource url={origin() + '/widget/giveaway'} size="1920×1080" />} preview={<Stage eyebrow="Vista previa" src="/widget/giveaway?debug" />}>
+    </div> : <WidgetLayout source={<BrowserSource url={origin() + '/widget/giveaway'} size="1920×1080" />} preview={<Stage key={g.open ? 'live' : 'demo'} eyebrow="Vista previa" src={g.open ? '/widget/giveaway?debug' : '/widget/giveaway?demo'} aside={<span>{g.open ? 'El sorteo abierto' : 'Datos de ejemplo'}</span>} />}>
         <Sec title="Ajustes" id="h-gaj">
           <div className="row2">
             <IxField k="giveaway.title" label="Título" />
