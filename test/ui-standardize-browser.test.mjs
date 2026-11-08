@@ -281,9 +281,9 @@ test('esqueleto común: la miga empieza por el grupo de la barra lateral, interr
   let chrome;
   try {
     chrome = await openChromePage(bin, `${base}/#/chat`);
-    await waitDom(chrome.cdp, `document.querySelectorAll('#nav a.eg-menu__item').length > 20`, { timeoutMs: 12000 });
+    await waitDom(chrome.cdp, `!!document.querySelector('#nav a[href="#/acerca"]')`, { timeoutMs: 12000 });
     const links = await dom(chrome, `JSON.stringify(Array.from(document.querySelectorAll('#nav .nav-grp')).flatMap(g => Array.from(g.querySelectorAll('a.eg-menu__item')).map(a => [a.getAttribute('href'), g.querySelector('.grp-l').textContent.trim(), a.querySelector('.eg-menu__label').textContent.trim()])))`);
-    eq(JSON.parse(links).length > 20, true);
+    eq(JSON.parse(links).length > 0, true);
     const bad = [];
     for (const [href, group, label] of JSON.parse(links)) {
       if (href === '#/directo') continue;   // el tablero lleva el estado del directo en la miga
@@ -432,8 +432,9 @@ test('ninguna vista deja tarjetas apiladas sin separación', { timeout: 240000 }
     app.store.config.panel = { onboardingDone: true };
     chrome = await openChromePage(bin, `${base}/#/directo`);
     await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-    await waitDom(chrome.cdp, `document.querySelectorAll('#nav a[href^="#/"]').length > 20`, { timeoutMs: 15000 });
-    const routes = [...new Set(await dom(chrome, `[...document.querySelectorAll('#nav a[href^="#/"]')].map(a => a.getAttribute('href'))`))];
+    await waitDom(chrome.cdp, `!!document.querySelector('#nav a[href="#/acerca"]')`, { timeoutMs: 15000 });
+    // Interactive views remain reachable through Widgets, even without sidebar entries.
+    const routes = [...new Set([...(await dom(chrome, `[...document.querySelectorAll('#nav a[href^="#/"]')].map(a => a.getAttribute('href'))`)), '#/preguntas', '#/tierlist', '#/sorteo', '#/teleprompter'])];
     const probe = `(() => {
       const CARD = '.panel, .sec, .eg-stage, .goal-card, .stats, .browser-source, .lv-panel, .lv-card, .lv-box, .lv-kpis, .lv-group';
       const isCard = el => el.matches(CARD) || !!el.querySelector(CARD);
