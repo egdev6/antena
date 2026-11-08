@@ -6,6 +6,7 @@ import { holding } from '../lib/draft';
 import { toast, Toaster } from '../lib/ui';
 import { useHash } from './router';
 import { Onboarding } from './Onboarding';
+import { PlatformWarning } from './PlatformWarning';
 import { Sidebar } from './Sidebar';
 import { Vistas } from './views/index';
 import { platformsText } from './views/Editor';
@@ -76,6 +77,7 @@ export function App() {
     <main id="main">{offline && <div className="offline" role="status">Sin conexión con el servidor. Reintentando…</div>}<View parts={parts} /></main>
     <PersistBar />
     <Onboarding />
+    <PlatformWarning />
     <Toaster />
   </div>;
 }
