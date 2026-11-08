@@ -5,8 +5,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { post } from '../lib/api';
 import { IC } from '../lib/icons';
 import { live, useLive, useLiveVersion } from '../lib/live';
-import { patchIx } from '../lib/patch';
 import { ConnPill, cx, guard, Icon, mmss, toast, Toaster } from '../lib/ui';
+import { DockQuestions } from './DockQuestions';
+import { DockTierlist } from './DockTierlist';
+import { DockGiveaway } from './DockGiveaway';
 import type { MeldTrack, TeleprompterState, TimelineItem } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
@@ -214,7 +216,6 @@ type InteractiveTab = (typeof INTERACTIVE_TABS)[number][0];
 function Interactivos() {
   const I = useLive(s => s.interactive);
   const q = I?.questions, g = I?.giveaway, vote = I?.vote;
-  const qc = (I?.config?.questions || {}) as { enabled?: unknown; command?: unknown };
   const [tab, setTab] = useState<InteractiveTab>(() => {
     const saved = localStorage.getItem(INTERACTIVE_TAB);
     return saved === 'tier' || saved === 'sorteo' ? saved : 'preguntas';
@@ -240,28 +241,13 @@ function Interactivos() {
       </button>)}
     </nav>
     <div className="d-body" role="tabpanel" id="d-ip-preguntas" aria-labelledby="d-i-preguntas" hidden={tab !== 'preguntas'}>
-      {q && <section className="d-card" aria-label="Preguntas">
-        <div className="d-card-h"><button type="button" className="d-sw" role="switch" aria-checked={!!qc.enabled} aria-label="Preguntas del chat"
-          title={qc.enabled ? 'El comando del chat está activo' : 'El comando del chat está desactivado'} onClick={() => patchIx('questions', { enabled: !qc.enabled })} />
-          Preguntas<span className="d-meta">{qc.command ? `${qc.command} · ` : ''}{q.pending || 0} en cola</span></div>
-        {q.current ? <p className="d-q"><b>{q.current.user}</b> {q.current.text}</p> : <p className="d-muted">Ninguna en pantalla</p>}
-        <div className="d-row"><button className="d-btn sm grow" disabled={!q.pending} title={q.pending ? 'Pasa a la siguiente pregunta de la cola' : 'No hay preguntas en cola'}
-          onClick={guard(() => post('/api/questions/next'))}>Siguiente</button>
-          <button className="d-btn sm" disabled={!q.current} title={q.current ? 'Quita la pregunta de la pantalla' : 'No hay ninguna pregunta en pantalla'}
-          onClick={guard(() => post('/api/questions/hide'), 'Pregunta oculta')}>Ocultar</button></div>
-      </section>}
+      <DockQuestions />
     </div>
     <div className="d-body" role="tabpanel" id="d-ip-tier" aria-labelledby="d-i-tier" hidden={tab !== 'tier'}>
-      {vote ? <section className="d-card" aria-label="Tier list"><div className="d-card-h">Tier list<span className="d-meta">{vote.item?.label ? `Votando ${vote.item.label} · ` : ''}{vote.total} votos</span></div>
-        <div className="d-row"><button className="d-btn sm grow" onClick={guard(() => post('/api/vote/close', { apply: true }), 'Votación colocada')}>Cerrar y colocar</button>
-        <button className="d-btn sm" onClick={guard(() => post('/api/vote/cancel'), 'Votación cancelada')}>Cancelar</button></div></section>
-        : <p className="d-muted">Ninguna votación abierta.</p>}
+      <DockTierlist />
     </div>
     <div className="d-body" role="tabpanel" id="d-ip-sorteo" aria-labelledby="d-i-sorteo" hidden={tab !== 'sorteo'}>
-      {g && <section className="d-card" aria-label="Sorteo"><div className="d-card-h">Sorteo<span className="d-meta">{g.open ? 'abierto' : 'cerrado'} · {g.count === 1 ? '1 participante' : `${g.count || 0} participantes`}</span></div>
-        <div className="d-row">{g.open ? <button className="d-btn sm grow" onClick={guard(() => post('/api/giveaway/close'), 'Sorteo cerrado')}>Cerrar</button>
-          : <button className="d-btn sm grow" onClick={guard(() => post('/api/giveaway/open', { reset: true }), 'Sorteo abierto')}>Abrir</button>}
-          <button className="d-btn sm grow pri" disabled={!g.count} title={g.count ? 'Elige un ganador' : 'Todavía no hay participantes'} onClick={guard(() => post('/api/giveaway/draw'), 'Sorteado')}>Sortear</button></div></section>}
+      <DockGiveaway />
     </div>
   </div>;
 }
