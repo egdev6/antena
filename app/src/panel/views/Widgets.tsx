@@ -141,7 +141,7 @@ export function Widgets({ parts }: { parts: string[] }) {
         {fixed('credits', <div className="lv-wcred"><b>GRACIAS</b><i /><i /><i /><i /></div>, [{ t: w.credits?.title || 'Créditos del directo' }, ...css(w.credits?.css)],
           <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>)}
       </CardGroup>
-      <CardGroup title="Se manejan en directo" count={4} note="Su tarjeta lleva a su página de En directo" wide>
+      <CardGroup title="Se manejan en directo" count={4} note="Pulsa una tarjeta para abrir su página" wide>
         <Card href="#/preguntas" label="Ir a Preguntas" title="Preguntas" aside={<Dot tone={pend ? 'ok' : 'off'}>{pend ? `${pend} en cola` : 'Cola vacía'}</Dot>}
           thumb={<div className="lv-wq"><small>Pregunta del chat</small>{I?.questions?.current?.text || '¿Cómo testeáis los hooks?'}</div>}
           foot={<>{url('/widget/question')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: String(I?.config?.questions?.command || '!pregunta') }]} /></Card>
@@ -153,7 +153,7 @@ export function Widgets({ parts }: { parts: string[] }) {
           foot={<>{url('/widget/giveaway')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: String(I?.config?.giveaway?.command || '!sorteo') }]} /></Card>
         <Card href="#/teleprompter" label="Ir a Teleprompter" title="Teleprompter" aside={<span className="lv-tag">Solo lo ves tú</span>}
           thumb={<div className="lv-wchat plain"><i style={{ width: '90%' }} /><i style={{ width: '84%', background: 'rgba(255,255,255,.3)' }} /><i style={{ width: '70%' }} /></div>}
-          foot={<>{url('/widget/teleprompter')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: (tp?.scripts || []).length === 1 ? '1 guion' : `${(tp?.scripts || []).length} guiones` }]} /></Card>
+          foot={<>{url('/widget/teleprompter')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: (tp?.scripts || []).length === 1 ? '1 guion' : `${(tp?.scripts || []).length} guiones` }, ...(tp?.playback?.playing ? [{ t: 'Leyendo', on: true }] : [])]} /></Card>
       </CardGroup>
     </div>
     {open && INFO[open] ? <Widget key={open} name={open} /> : null}

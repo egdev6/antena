@@ -54,6 +54,10 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   teleprompter, Directos anteriores, Archivos y Conexiones; pestañas de página en el resto;
   creación unificada con plantillas y guardado manual (Guardar/Descartar) con aviso al salir.
   El catálogo fijo (alertas, conexiones, widgets) se ve en tarjetas; los objetivos, dentro de la suya.
+  Preguntas, Tier list, Sorteo y Teleprompter se abren desde sus tarjetas de Widgets o por su URL
+  directa; al abrirlos queda marcado «Widgets» en la barra lateral. Sus tarjetas muestran la cola,
+  la votación, el sorteo y la lectura en marcha. La entrada «Widgets» avisa en rojo de una votación
+  o un sorteo abierto (y de ambos a la vez), incluso desde otras vistas.
 - **Fuentes para Meld:** `GET /api/sources` y la vista «Fuentes para Meld» listan cada capa
   con su URL y tamaño (un objetivo por cada uno configurado y un overlay por cada overlay propio),
   más el dock y el prompter.
