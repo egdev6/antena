@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { createApp } from '../src/server.mjs';
 import { serverAdmissionChildProgram } from './helpers/server-admission-child.mjs';
 import { observeChildLifecycle } from './helpers/child-lifecycle.mjs';
@@ -154,7 +154,7 @@ function openPut({ port, fullBody }) {
   return { req, response, finish: () => req.end(fullBody.slice(cut)) };
 }
 
-test('tras stopAdmission toda mutación nueva recibe 503 constante y no toca el disco', { timeout: 20000 }, async t => {
+test('tras stopAdmission toda mutación nueva recibe 503 constante y no toca el disco', { timeout: windowsTimeout(1, 20000) }, async t => {
   const children = []; const root = await makeRoot(t, children);
   const c = await startChild(children, root, 'late-body', 'late');
   await interruptSignalChild(c.child, 'SIGINT');
@@ -168,7 +168,7 @@ test('tras stopAdmission toda mutación nueva recibe 503 constante y no toca el 
   assert.equal(cfg.tts.rate, 1.5, 'la mutación posterior al corte no debe persistirse');
 });
 
-test('tras stopAdmission los caminos sin cuerpo (SD, OAuth, SSE, estáticos) reciben 503', { timeout: 20000 }, async t => {
+test('tras stopAdmission los caminos sin cuerpo (SD, OAuth, SSE, estáticos) reciben 503', { timeout: windowsTimeout(1, 20000) }, async t => {
   const children = []; const root = await makeRoot(t, children);
   const c = await startChild(children, root, 'late-other', 'late');
   await interruptSignalChild(c.child, 'SIGINT');
@@ -183,7 +183,7 @@ test('tras stopAdmission los caminos sin cuerpo (SD, OAuth, SSE, estáticos) rec
   assert.deepEqual(await awaitExit(c), { code: 0, signal: null });
 });
 
-test('una petición admitida antes del corte completa el cuerpo, responde 200 y persiste', { timeout: 20000 }, async t => {
+test('una petición admitida antes del corte completa el cuerpo, responde 200 y persiste', { timeout: windowsTimeout(1, 20000) }, async t => {
   const children = []; const root = await makeRoot(t, children);
   const c = await startChild(children, root, 'admitted-put', 'partial');
   const put = openPut({ port: c.port, fullBody: JSON.stringify({ tts: { rate: 1.75 } }) });
@@ -200,7 +200,7 @@ test('una petición admitida antes del corte completa el cuerpo, responde 200 y 
   assert.equal(cfg.tts.rate, 1.75, 'el cuerpo admitido debe persistirse después del corte');
 });
 
-test('SIGTERM drena el PUT admitido en Unix; en Windows fuerza la salida sin drenarlo', { timeout: 20000 }, async t => {
+test('SIGTERM drena el PUT admitido en Unix; en Windows fuerza la salida sin drenarlo', { timeout: windowsTimeout(1, 20000) }, async t => {
   const children = []; const root = await makeRoot(t, children);
   const c = await startChild(children, root, 'sigterm-partial', 'partial');
   const put = openPut({ port: c.port, fullBody: JSON.stringify({ tts: { rate: 1.75 } }) });
@@ -229,7 +229,7 @@ test('SIGTERM drena el PUT admitido en Unix; en Windows fuerza la salida sin dre
   assert.equal(cfg.tts.rate, process.platform === 'win32' ? 1.5 : 1.75, 'solo el drenaje Unix debe persistir el cuerpo completo');
 });
 
-test('OAuth admitido antes del corte espera a su handler, no hay flush prematuro y persiste una vez', { timeout: 20000 }, async t => {
+test('OAuth admitido antes del corte espera a su handler, no hay flush prematuro y persiste una vez', { timeout: windowsTimeout(1, 20000) }, async t => {
   const children = []; const root = await makeRoot(t, children);
   const c = await startChild(children, root, 'admitted-oauth', 'oauth-gate');
   const admitted = requestStatus({ port: c.port, method: 'GET', path: '/oauth/youtube?code=admitido&state=s', timeoutMs: 8000 });
@@ -250,7 +250,7 @@ test('OAuth admitido antes del corte espera a su handler, no hay flush prematuro
   assert.equal((c.stdout().match(/OAUTH-IN/g) || []).length, 1, 'finishAuth debe llamarse una sola vez');
 });
 
-test('un cuerpo bloqueado agota el deadline y sale 1 sin esperar los 5 s por defecto', { timeout: 15000 }, async t => {
+test('un cuerpo bloqueado agota el deadline y sale 1 sin esperar los 5 s por defecto', { timeout: windowsTimeout(1, 15000) }, async t => {
   const children = []; const root = await makeRoot(t, children);
   const c = await startChild(children, root, 'blocked-body', 'blocked', 100);
   openPut({ port: c.port, fullBody: JSON.stringify({ tts: { rate: 1.75 } }) });
@@ -260,7 +260,7 @@ test('un cuerpo bloqueado agota el deadline y sale 1 sin esperar los 5 s por def
   assert.deepEqual(await awaitExit(c, 2500), { code: 1, signal: null });
 });
 
-test('abortar un cuerpo admitido cierra el idle y sale 0 antes del deadline', { timeout: 15000 }, async t => {
+test('abortar un cuerpo admitido cierra el idle y sale 0 antes del deadline', { timeout: windowsTimeout(1, 15000) }, async t => {
   const children = []; const root = await makeRoot(t, children);
   const c = await startChild(children, root, 'aborted-body', 'abort');
   const put = openPut({ port: c.port, fullBody: JSON.stringify({ tts: { rate: 1.75 } }) });
@@ -271,7 +271,7 @@ test('abortar un cuerpo admitido cierra el idle y sale 0 antes del deadline', { 
   assert.deepEqual(await awaitExit(c, 1500), { code: 0, signal: null });
 });
 
-test('un SSE admitido antes del corte no bloquea la salida sana', { timeout: 15000 }, async t => {
+test('un SSE admitido antes del corte no bloquea la salida sana', { timeout: windowsTimeout(1, 15000) }, async t => {
   const children = []; const root = await makeRoot(t, children);
   const c = await startChild(children, root, 'sse-admitted', 'sse-open');
   let sseStatus = 0;

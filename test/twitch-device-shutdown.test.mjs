@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { launchChildOnFreePort } from './helpers/free-port.mjs';
 import { Twitch } from '../src/twitch.mjs';
 
@@ -258,7 +258,7 @@ async function exited(c, ms = 2000) {
   } finally { clearTimeout(timer); }
 }
 
-test('SIGINT/SIGTERM esperan Device Flow después de EventSub y antes del snapshot; error/deadline salen 1', { timeout: 20000 }, async t => {
+test('SIGINT/SIGTERM esperan Device Flow después de EventSub y antes del snapshot; error/deadline salen 1', { timeout: windowsTimeout(5, 20000) }, async t => {
   for (const signal of ['SIGINT', 'SIGTERM']) {
     // Solo los positivos usan Ctrl+C en Windows; SIGTERM forzado se prueba aparte.
     const actualGracefulSignal = process.platform === 'win32' && signal === 'SIGTERM' ? 'SIGINT' : signal;

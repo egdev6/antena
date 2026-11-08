@@ -13,7 +13,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { TwitchChat } from '../src/chat.mjs';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { withoutHeldRecoveryWarning } from './helpers/held-recovery-warning.mjs';
 
 const SERVER_URL = new URL('../src/server.mjs', import.meta.url).href;
@@ -338,9 +338,9 @@ test('IRC cleanup waits for and stops a late child launch', { timeout: 10000 }, 
   }
 });
 
-// Windows can spend 10 s each on parent identity, native launch and interrupt,
-// plus READY, exit and controller output drain. Keep the original Linux budget.
-test('fixture IRC asigna puerto en el hijo sin reserva previa del padre', { timeout: process.platform === 'win32' ? 60000 : 10000 }, async t => {
+// Include both Windows startup stages and READY, retaining the previous 60 s
+// Windows allowance for interrupt, exit and controller drain; POSIX stays at 10 s.
+test('fixture IRC asigna puerto en el hijo sin reserva previa del padre', { timeout: windowsTimeout(1, process.platform === 'win32' ? 60000 : 10000) }, async t => {
   const started = Date.now();
   let phase = 'setup';
   const phases = { setup: 0 };
@@ -371,7 +371,7 @@ test('fixture IRC asigna puerto en el hijo sin reserva previa del padre', { time
   t.after(() => t.signal.removeEventListener('abort', report));
 });
 
-test('la señal real espera el cierre IRC entre Device Flow y Timers; SIGINT/SIGTERM, repetida, post-corte y persistencia', { timeout: 30000 }, async t => {
+test('la señal real espera el cierre IRC entre Device Flow y Timers; SIGINT/SIGTERM, repetida, post-corte y persistencia', { timeout: windowsTimeout(6, 30000) }, async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'EGDEV-CHATSHUT-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const run = async (scenario, signal) => { const c = await child(t, root, scenario); await graceful(c, signal); return c; };

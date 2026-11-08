@@ -8,7 +8,7 @@ import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { withoutHeldRecoveryWarning } from './helpers/held-recovery-warning.mjs';
 
 const SERVER_MODULE_URL = new URL('../src/server.mjs', import.meta.url).href;
@@ -140,7 +140,7 @@ const count = (text, re) => (text.match(re) || []).length;
 
 for (const scenario of ['engine', 'http']) {
   for (const signal of ['SIGINT', 'SIGTERM']) {
-    test(`S7 ${scenario}/${signal}: refresco y sendChat de YouTube en vuelo persisten el secreto y salen 0 sin trabajo tras salir`, { timeout: 20000 }, async t => {
+    test(`S7 ${scenario}/${signal}: refresco y sendChat de YouTube en vuelo persisten el secreto y salen 0 sin trabajo tras salir`, { timeout: windowsTimeout(1, 20000) }, async t => {
       const c = await startChild(t, scenario, signal);
       await interruptSignalChild(c.child, positiveSignal(signal));
       await interruptSignalChild(c.child, positiveSignal('SIGINT'));

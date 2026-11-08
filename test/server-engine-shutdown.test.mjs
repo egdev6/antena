@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { launchChildOnFreePort } from './helpers/free-port.mjs';
 
 // Puerto libre con reintento: helpers/free-port.mjs (elimina la carrera de freePort, #78).
@@ -348,7 +348,7 @@ async function childRoot(t) {
   return { root, children };
 }
 
-test('el caller real acepta el ACK de cierre y completa la acción aceptada antes de persistir', { timeout: 25000 }, async t => {
+test('el caller real acepta el ACK de cierre y completa la acción aceptada antes de persistir', { timeout: windowsTimeout(2, 25000) }, async t => {
   const { root, children } = await childRoot(t);
   const c = await startChild(children, root, 'ack-gate', 'ack-gate');
   assert.ok(await c.waitFor('ALERT-PENDING'), `sin ACK pendiente: ${c.stdout()}${c.stderr()}`);
@@ -383,7 +383,7 @@ test('el caller real acepta el ACK de cierre y completa la acción aceptada ante
   }
 });
 
-test('ambos drenajes se intentan aunque uno lance; señales repetidas comparten la transición y sale 1', { timeout: 25000 }, async t => {
+test('ambos drenajes se intentan aunque uno lance; señales repetidas comparten la transición y sale 1', { timeout: windowsTimeout(1, 25000) }, async t => {
   const { root, children } = await childRoot(t);
   const c = await startChild(children, root, 'throw-both', 'throw-both');
   await interruptChild(c);
@@ -401,7 +401,7 @@ test('ambos drenajes se intentan aunque uno lance; señales repetidas comparten 
   assert.equal((c.stdout().match(/DRAIN-B/g) || []).length, 1, 'una sola transición de drenaje');
 });
 
-test('con un drenaje fallido, el otro sano termina y no se persiste antes del idle ACK; sale 1', { timeout: 25000 }, async t => {
+test('con un drenaje fallido, el otro sano termina y no se persiste antes del idle ACK; sale 1', { timeout: windowsTimeout(1, 25000) }, async t => {
   const { root, children } = await childRoot(t);
   const c = await startChild(children, root, 'throw-healthy', 'throw-healthy');
   assert.ok(await c.waitFor('ALERT-PENDING'), `sin ACK pendiente: ${c.stdout()}${c.stderr()}`);
@@ -417,7 +417,7 @@ test('con un drenaje fallido, el otro sano termina y no se persiste antes del id
   assert.ok(out.indexOf('CHAIN-SNAPSHOT') < out.indexOf('FLUSH'), 'la captura precede al flush: ' + out);
 });
 
-test('un ACK que nunca llega agota el deadline visible y sale 1 sin esperar el fallback', { timeout: 25000 }, async t => {
+test('un ACK que nunca llega agota el deadline visible y sale 1 sin esperar el fallback', { timeout: windowsTimeout(1, 25000) }, async t => {
   const { root, children } = await childRoot(t);
   const c = await startChild(children, root, 'deadline', 'deadline');
   assert.ok(await c.waitFor('ALERT-PENDING'), `sin ACK pendiente: ${c.stdout()}${c.stderr()}`);

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout, WINDOWS_STARTUP_STAGE_MS } from './helpers/signal-child.mjs';
 
 const windows = process.platform === 'win32';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -29,7 +29,8 @@ const drainingFixture = String.raw`
     label: process.env.SIGNAL_CHILD_TEST_LABEL, cwd: process.cwd() };
   let input = Buffer.alloc(0), pending = null, shuttingDown = false;
   const counts = { SIGINT: 0, SIGTERM: 0 };
-  const watchdog = setTimeout(() => process.exit(91), 20000);
+  // The target can start before the native controller publishes READY.
+  const watchdog = setTimeout(() => process.exit(91), ${windowsTimeout(1, 20000)});
   const finish = () => {
     if (!shuttingDown || pending) return;
     clearInterval(poll);
@@ -192,7 +193,7 @@ async function noMarker(f, signal) {
 }
 
 test('signal child preserves raw pipes and drains after repeated native Ctrl+C/SIGINT and stdin EOF',
-  { timeout: 35000 }, async t => {
+  { timeout: windowsTimeout(1, 35000) }, async t => {
     const f = await setup(t);
     await ready(f);
     const echo = frame(1, 'echo');
@@ -224,7 +225,7 @@ test('signal child preserves raw pipes and drains after repeated native Ctrl+C/S
   });
 
 test('kill(SIGTERM) is forced native termination on Windows, but a real graceful OS signal on Unix',
-  { timeout: 35000 }, async t => {
+  { timeout: windowsTimeout(1, 35000) }, async t => {
     const f = await setup(t);
     await ready(f);
     const work = await pending(f);
@@ -274,7 +275,7 @@ async function assertMismatchedParentRejected(t) {
           timer = setTimeout(() => {
             onTimeout();
             reject(new Error('Owned identity-test controller timed out'));
-          }, 10000);
+          }, WINDOWS_STARTUP_STAGE_MS);
         }),
       ]);
     } finally { clearTimeout(timer); }
@@ -331,10 +332,10 @@ async function assertMismatchedParentRejected(t) {
 }
 
 test('signal child reports normal native exit statuses 0 and 1 without treating stdin EOF as parent loss',
-  { timeout: 35000 }, async t => {
+  { timeout: windowsTimeout(2, 35000) + (windows ? WINDOWS_STARTUP_STAGE_MS : 0) }, async t => {
     for (const code of [0, 1]) {
       const f = await setup(t, String.raw`
-        const watchdog = setTimeout(() => process.exit(91), 20000);
+        const watchdog = setTimeout(() => process.exit(91), ${windowsTimeout(1, 20000)});
         process.stdin.resume();
         process.stdin.on('end', () => {
           clearTimeout(watchdog);

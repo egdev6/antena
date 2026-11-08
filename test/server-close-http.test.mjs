@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import http from 'node:http';
-import { launchSignalChild, interruptSignalChild } from './helpers/signal-child.mjs';
+import { launchSignalChild, interruptSignalChild, windowsTimeout } from './helpers/signal-child.mjs';
 import { launchChildOnFreePort } from './helpers/free-port.mjs';
 import { createApp } from '../src/server.mjs';
 
@@ -319,7 +319,7 @@ async function startChild(children, root, name, scenario, timeoutMs, program = C
   return c;
 }
 
-test('fixture flushes buffered stdout before process exit', { timeout: 45000 }, async t => {
+test('fixture flushes buffered stdout before process exit', { timeout: windowsTimeout(1, 45000) }, async t => {
   const children = []; const root = await makeChildRoot(t, children);
   const c = await startChild(children, root, 'flush-output', 'flush-output');
   c.child.stdout.pause();
@@ -393,7 +393,7 @@ descendant.once('message', () => process.exit(0));
   }
 });
 
-test('tras closeHttp, ni un relisten nuevo ni el callback ya encolado reviven el servidor', { timeout: 20000 }, async t => {
+test('tras closeHttp, ni un relisten nuevo ni el callback ya encolado reviven el servidor', { timeout: windowsTimeout(1, 20000) }, async t => {
   const children = []; const root = await makeChildRoot(t, children);
   const c = await startChild(children, root, 'relisten', 'relisten');
   c.send('go');
@@ -405,7 +405,7 @@ test('tras closeHttp, ni un relisten nuevo ni el callback ya encolado reviven el
   assert.deepEqual(await awaitExit(c, 3000), { code: 0, signal: null });
 });
 
-test('la señal espera la clausura real del transporte; cierre fallido o colgado sale 1', { timeout: 30000 }, async t => {
+test('la señal espera la clausura real del transporte; cierre fallido o colgado sale 1', { timeout: windowsTimeout(3, 30000) }, async t => {
   const children = []; const root = await makeChildRoot(t, children);
   {
     const c = await startChild(children, root, 'signal', 'signal', 5000);
@@ -430,7 +430,7 @@ test('la señal espera la clausura real del transporte; cierre fallido o colgado
   }
 });
 
-test('SSE + closeHttp no deja el ping: el hijo de createApp termina solo', { timeout: 20000 }, async t => {
+test('SSE + closeHttp no deja el ping: el hijo de createApp termina solo', { timeout: windowsTimeout(1, 20000) }, async t => {
   const children = []; const root = await makeChildRoot(t, children);
   const c = await startChild(children, root, 'natural', 'natural', 0, CHILD_CREATE);
   assert.ok(await c.waitFor('CLOSED'), `closeHttp no terminó: ${c.stdout()}${c.stderr()}`);
