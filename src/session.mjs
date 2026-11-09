@@ -77,6 +77,60 @@ const idTimestamp = id => {
 };
 const isPlainObject = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const isValidDate = v => typeof v === 'string' && !Number.isNaN(Date.parse(v));
+
+const VIEWER_SERIES_PLATFORMS = ['twitch', 'youtube'];
+const VIEWER_GAP_REASONS = ['error', 'offline', 'disconnected', 'restart'];
+// La serie nueva se valida antes de mutar un checkpoint, igual que la raíz legacy.
+function isValidViewerSeries(series) {
+  if (!isPlainObject(series) || !Array.isArray(series.samples) || !Array.isArray(series.gaps)) return false;
+  const ordered = (rows, key) => rows.every((row, i) => isPlainObject(row) && isValidDate(row[key])
+    && (!i || Date.parse(rows[i - 1][key]) <= Date.parse(row[key])));
+  return ordered(series.samples, 'at') && series.samples.every(s => Number.isFinite(s.value) && s.value >= 0)
+    && ordered(series.gaps, 'from') && series.gaps.every((g, i) => isValidDate(g.to)
+      && Date.parse(g.to) >= Date.parse(g.from) && VIEWER_GAP_REASONS.includes(g.reason)
+      && (!i || Date.parse(series.gaps[i - 1].to) <= Date.parse(g.from)))
+    && (series.intervals === undefined || (Array.isArray(series.intervals) && ordered(series.intervals, 'from')
+      && series.intervals.every(v => Number.isFinite(v.seconds) && v.seconds > 0)))
+    && (series.openGap === undefined || (typeof series.openGap === 'boolean' && (!series.openGap || series.gaps.length > 0)));
+}
+
+/** Métricas independientes: cada lectura dura como máximo su intervalo, sin cruzar huecos. */
+export function viewerMetrics(data, now = Date.now()) {
+  if (!data.viewers) return undefined;
+  const start = Date.parse(data.startedAt), end = Math.max(start, data.endedAt ? Date.parse(data.endedAt) : Number(now));
+  const liveSeconds = Math.max(0, (end - start) / 1000);
+  const result = {};
+  for (const platform of VIEWER_SERIES_PLATFORMS) {
+    const series = data.viewers[platform];
+    if (!series) continue;
+    const samples = series.samples || [], gaps = series.gaps || [], intervals = series.intervals || [];
+    let weighted = 0, covered = 0, peak = null, gapIndex = 0, intervalIndex = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const sample = samples[i], at = Date.parse(sample.at);
+      peak = peak === null ? sample.value : Math.max(peak, sample.value);
+      while (intervalIndex + 1 < intervals.length && Date.parse(intervals[intervalIndex + 1].from) <= at) intervalIndex++;
+      const seconds = intervals[intervalIndex]?.seconds ?? 60;
+      let cursor = Math.max(start, at);
+      const limit = Math.min(end, Date.parse(samples[i + 1]?.at) || Infinity, at + seconds * 1000);
+      while (gapIndex < gaps.length && Date.parse(gaps[gapIndex].to) <= cursor && !(series.openGap && gapIndex === gaps.length - 1)) gapIndex++;
+      let j = gapIndex;
+      while (j < gaps.length && cursor < limit) {
+        const gap = gaps[j], from = Date.parse(gap.from);
+        const to = series.openGap && j === gaps.length - 1 ? end : Date.parse(gap.to);
+        if (from >= limit) break;
+        const duration = Math.max(0, Math.min(from, limit) - cursor);
+        covered += duration; weighted += duration * sample.value;
+        cursor = Math.max(cursor, to); j++;
+      }
+      const duration = Math.max(0, limit - cursor);
+      covered += duration; weighted += duration * sample.value;
+    }
+    const coveredSeconds = covered / 1000;
+    result[platform] = { average: covered ? weighted / covered : null, peak,
+      coverage: { liveSeconds, coveredSeconds, ratio: liveSeconds ? coveredSeconds / liveSeconds : 0 } };
+  }
+  return result;
+}
 // Validación estructural mínima de la raíz (sin framework): id/startedAt legacy y arrays.
 // events null/entradas null son inválidos; notes/goalOffsets null caen a sus defaults.
 function isValidRoot(d) {
@@ -86,6 +140,8 @@ function isValidRoot(d) {
   if (d.events !== undefined && (!Array.isArray(d.events) || d.events.some(e => !isPlainObject(e)))) return false;
   if (d.notes !== undefined && d.notes !== null && (!Array.isArray(d.notes) || d.notes.some(nd => !isPlainObject(nd)))) return false;
   if (d.goalOffsets !== undefined && d.goalOffsets !== null && !isPlainObject(d.goalOffsets)) return false;
+  if (d.viewers !== undefined && (!isPlainObject(d.viewers)
+    || VIEWER_SERIES_PLATFORMS.some(p => d.viewers[p] !== undefined && !isValidViewerSeries(d.viewers[p])))) return false;
   return true;
 }
 // Rellena solo los defaults legacy ausentes; conserva íntegro todo lo demás (campos desconocidos incluidos).
@@ -145,6 +201,7 @@ export class Session extends EventEmitter {
     this.pendingArchive = null;
     this.replacedIdentity = null; // solo memoria: identidad del directo inmediatamente anterior
     this.identityStartedAt = process.hrtime.bigint(); // monotónico, independiente del reloj de pared
+    this.viewerRestarts = new Set(); // solo memoria: primer sondeo tras cargar un directo abierto
   }
   static fresh(title = '') {
     return { id: `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`, title, startedAt: new Date().toISOString(), events: [], notes: [], goalOffsets: {} };
@@ -222,8 +279,18 @@ export class Session extends EventEmitter {
    *  aquí y arriba: las rutas de ajustes no se sirven sobre un estado sin inicializar. */
   async load() {
     await this.#loadBase();
+    let resumed = false;
+    if (this.data.meldAutoSession && !this.data.endedAt && this.data.viewers) {
+      this.viewerRestarts = new Set(Object.keys(this.data.viewers));
+      const at = new Date().toISOString();
+      for (const platform of VIEWER_SERIES_PLATFORMS) {
+        const series = this.data.viewers[platform];
+        if (series && this._viewerResume(platform, series, at, true)) resumed = true;
+      }
+    }
     const r = splitEventsOffsets(this.data);
     if (r.changed) await this.flush();
+    else if (resumed) this.save();
     return this;
   }
 
@@ -437,12 +504,81 @@ export class Session extends EventEmitter {
     this.transitionChain = run.then(() => {}, () => {});
     return run;
   }
+  // Huecos contiguos del mismo motivo se fusionan; no se inventa una lectura.
+  _viewerGap(series, from, to, reason, open = false) {
+    const last = series.gaps.at(-1);
+    if (last && last.reason === reason && last.to === from) last.to = to;
+    else series.gaps.push({ from, to, reason });
+    series.openGap = open;
+  }
+  _viewerResume(platform, series, at, open = false) {
+    if (!this.viewerRestarts.has(platform)) return false;
+    const lastSample = series.samples.at(-1)?.at, lastGap = series.gaps.at(-1)?.to;
+    const from = [lastSample, lastGap].filter(Boolean).sort().at(-1);
+    if (from && from > at) return false; // el reloj puede haber retrocedido
+    this.viewerRestarts.delete(platform);
+    if (!from) return false;
+    series.openGap = false;
+    this._viewerGap(series, from, at, 'restart', open);
+    return true;
+  }
+  _closeViewerGaps(at) {
+    for (const platform of VIEWER_SERIES_PLATFORMS) {
+      const series = this.data.viewers?.[platform];
+      if (!series) continue;
+      this._viewerResume(platform, series, at);
+      if (series.openGap) {
+        const gap = series.gaps.at(-1);
+        if (gap && at > gap.to) gap.to = at;
+        series.openGap = false;
+      }
+    }
+  }
+  // Una observación comparte la cola de identidad y cortes: no puede escribir en
+  // otra sesión ni aceptar una lectura de un broadcast no admitido por #100.
+  recordViewer(platform, observation, target, admission, enabled = () => true) {
+    const run = this.transitionChain.then(async () => {
+      const requested = typeof target === 'string' ? target : (await target)?.id;
+      const admitted = admission ? (await admission)?.id : null;
+      if (!enabled() || this.data.endedAt || !this.data.meldAutoSession || !VIEWER_SERIES_PLATFORMS.includes(platform)) return;
+      const isSample = observation.reason === undefined;
+      if (isSample && platform === 'twitch') {
+        if (admitted !== this.data.id || this.data.platforms?.twitch?.streamId !== observation.streamId) return;
+      } else if (requested !== this.data.id) return;
+      if (isSample && platform === 'youtube' && (!observation.videoId || this.data.platforms?.youtube?.videoId !== observation.videoId)) return;
+      // El corte puede esperar I/O: la identidad admitida conserva también las
+      // lecturas capturadas durante esa espera, con su hora real de captura.
+      if (!isValidDate(observation.at)) return;
+      const viewers = this.data.viewers ||= {};
+      const series = viewers[platform] ||= { samples: [], gaps: [], intervals: [] };
+      const lastAt = [series.samples.at(-1)?.at, series.gaps.at(-1)?.to].filter(Boolean).sort().at(-1);
+      if (lastAt && observation.at < lastAt) return;
+      this._viewerResume(platform, series, observation.at);
+      if (series.openGap) {
+        const last = series.gaps.at(-1);
+        last.to = observation.at;
+        if (observation.reason === last.reason) { this.save(); return; }
+        series.openGap = false;
+      }
+      if (!isSample) {
+        this._viewerGap(series, observation.at, observation.at, observation.reason, true);
+      } else {
+        const intervals = series.intervals ||= [];
+        if (intervals.at(-1)?.seconds !== observation.intervalSec) intervals.push({ from: observation.at, seconds: observation.intervalSec });
+        series.samples.push({ at: observation.at, value: observation.value });
+      }
+      this.save();
+    });
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
   // Marcar el actual cerrado mantiene su resumen accesible; el siguiente startNew
   // lo archivará por el pipeline habitual sin cambiar la hora real de cierre.
   endCurrent(at = new Date().toISOString()) {
     const run = this.transitionChain.then(async () => {
       if (this.data.endedAt) return;
       await this.flush();
+      this._closeViewerGaps(at);
       this.data.endedAt = at;
       this.emit('change', { ended: true });
       await this.flush();
@@ -473,13 +609,16 @@ export class Session extends EventEmitter {
       }
     } catch (err) { throw sessionPersistenceError(err); }
     if (!alreadyArchived) {
-      const oldSnapshot = { ...structuredClone(this.data), endedAt: this.data.endedAt || new Date().toISOString() };
+      const endedAt = this.data.endedAt || new Date().toISOString();
+      this._closeViewerGaps(endedAt);
+      const oldSnapshot = { ...structuredClone(this.data), endedAt };
       this.pendingArchive = { data: oldSnapshot, file: target, inFlight: null };
     }
     const newData = Session.fresh(title);
     if (meldAuto) newData.meldAutoSession = true;
     this.replacedIdentity = { ...this._identityOf(this.data), currentId: newData.id };
     this.identityStartedAt = process.hrtime.bigint();
+    this.viewerRestarts.clear();
     this.data = newData;
     const saved = this.flush();
     saved.catch(() => {});               // la persistencia arranca ya; el productor la espera abajo
@@ -491,7 +630,8 @@ export class Session extends EventEmitter {
   // #68: metadatos ligeros de un archivado, para listar sin parsear el archivo completo.
   _metaOf(data) {
     return { id: data.id, title: data.title, startedAt: data.startedAt, endedAt: data.endedAt, events: (data.events || []).length,
-      ...(data.platforms !== undefined ? { platforms: data.platforms } : {}) };
+      ...(data.platforms !== undefined ? { platforms: data.platforms } : {}),
+      ...(data.viewers !== undefined ? { viewerMetrics: viewerMetrics(data) } : {}) };
   }
   _metaFile(archiveFile) { return archiveFile.replace(/\.json$/, '.meta.json'); }
   // Retención (#68): tras archivar, deja como máximo las N sesiones más recientes
@@ -523,7 +663,8 @@ export class Session extends EventEmitter {
           try { m = this._metaOf(JSON.parse(await this.io.readFile(path.join(this.dir, f), 'utf8'))); } catch { continue; }
         }
         out.push({ id: m.id, title: m.title, startedAt: m.startedAt, endedAt: m.endedAt, events: m.events ?? 0,
-          ...(m.platforms !== undefined ? { platforms: m.platforms } : {}), ...(this.pendingArchive?.data.id === m.id ? { pending: true } : {}) });
+          ...(m.platforms !== undefined ? { platforms: m.platforms } : {}), ...(m.viewerMetrics !== undefined ? { viewerMetrics: m.viewerMetrics } : {}),
+          ...(this.pendingArchive?.data.id === m.id ? { pending: true } : {}) });
       }
     } catch { /* un fallo de lectura no oculta el pendiente propio */ }
     const entry = this.pendingArchive;
