@@ -94,7 +94,9 @@ export class YouTube extends EventEmitter {
 
   setStatus(patch, identityEpoch = this.identityEpoch?.()) {
     this.status = { ...this.status, ...patch };
-    this.emit('status', this.status, identityEpoch);
+    // Solo el hallazgo del vídeo confirma su identidad; un poll del chat no la renueva.
+    const discovery = typeof patch.videoId === 'string' && !!patch.videoId;
+    this.emit('status', this.status, identityEpoch, discovery);
   }
 
   async api(pathname, params, { auth = false, method = 'GET', body } = {}) {

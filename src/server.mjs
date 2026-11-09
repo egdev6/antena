@@ -312,7 +312,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Una desconexión de Meld no es por sí sola un fin: tras reconectar se contrastan
   // las observaciones de cada plataforma con la sesión abierta.
   let autoLive = false, pendingAutoStart = null, pendingAutoClose = null, reconnectCheck = null, meldConnected = false, identityEpoch = 0;
-  youtube.identityEpoch = viewers.identityEpoch = () => identityEpoch;
+  youtube.identityEpoch = viewers.identityEpoch = () => ({ epoch: identityEpoch, target: pendingAutoStart || session.data.id, requestedAt: process.hrtime.bigint() });
   viewers.identityEnabled = () => !!store.config.meld.autoSession && autoLive && !autoSessionClosed;
   const trackAutoSession = (operation, success, failure) => {
     let resolve, reject;
@@ -343,26 +343,27 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // El checkpoint espera el corte y las identidades aceptadas antes de reconectar.
     reconnectCheck = trackAutoSession(() => session.captureIdentity(), null, '[sesión] No se pudo comprobar la identidad.');
   };
-  const recordIdentity = (platform, data, epoch) => {
-    if (autoSessionClosed || !store.config.meld.autoSession || epoch !== identityEpoch || !data) return;
+  const recordIdentity = (platform, data, observation, discovery = true) => {
+    if (autoSessionClosed || !store.config.meld.autoSession || !observation?.target || !data) return;
     const key = platform === 'youtube' ? 'videoId' : 'streamId';
     if (typeof data[key] !== 'string' || !data[key]) return;
-    const after = pendingAutoStart, reconnect = reconnectCheck, expectedId = after ? null : session.data.id;
+    const target = observation.target, after = typeof target === 'string' ? null : target;
+    const reconnect = reconnectCheck, expectedId = after ? null : target;
     let work;
     const onRollover = () => {
-      // Las peticiones anteriores al nuevo directo no pueden identificarlo.
+      // La sesión decide si cada petición anterior demuestra una identidad nueva.
       identityEpoch++; reconnectCheck = null; pendingAutoStart = work;
       work.then(() => { if (pendingAutoStart === work) pendingAutoStart = null; }, () => {
         if (pendingAutoStart === work) { pendingAutoStart = null; autoLive = false; }
       });
     };
     work = trackAutoSession(() => session.recordPlatform(platform, data, after, {
-      reconnect, expectedId, onRollover, enabled: () => !!store.config.meld.autoSession,
+      reconnect, expectedId, requestedAt: observation.requestedAt, discovery, onRollover, enabled: () => !!store.config.meld.autoSession,
     }), null, '[sesión] No se pudo registrar la identidad de la plataforma.');
   };
-  // Cada resultado lleva la generación capturada antes de iniciar su petición.
-  youtube.on('status', (st, epoch) => { if (st.state === 'escuchando') recordIdentity('youtube', st, epoch); });
-  viewers.on('streamIdentity', (identity, epoch) => recordIdentity('twitch', identity, epoch));
+  // Cada resultado lleva la sesión capturada antes de iniciar su petición.
+  youtube.on('status', (st, observation, discovery) => { if (st.state === 'escuchando') recordIdentity('youtube', st, observation, discovery); });
+  viewers.on('streamIdentity', (identity, observation) => recordIdentity('twitch', identity, observation));
   const closeAutoSession = () => {
     autoLive = false; pendingAutoStart = null; reconnectCheck = null; identityEpoch++;
     const work = trackAutoSession(() => session.endCurrent(), null, '[meld] No se pudo cerrar la sesión automática.');

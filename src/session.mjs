@@ -143,6 +143,8 @@ export class Session extends EventEmitter {
     // Transición serializada + un único archivo pendiente (sin diarios ni colas ocultas).
     this.transitionChain = Promise.resolve();
     this.pendingArchive = null;
+    this.replacedIdentity = null; // solo memoria: identidad del directo inmediatamente anterior
+    this.identityStartedAt = process.hrtime.bigint(); // monotónico, independiente del reloj de pared
   }
   static fresh(title = '') {
     return { id: `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`, title, startedAt: new Date().toISOString(), events: [], notes: [], goalOffsets: {} };
@@ -385,28 +387,35 @@ export class Session extends EventEmitter {
   }
   pendingThanks(data = this.data) { return data.events.filter(e => !e.thanked).length; }
 
+  _identityOf(data) {
+    return { id: data.id, youtube: data.platforms?.youtube?.videoId, twitch: data.platforms?.twitch?.streamId };
+  }
   // La foto de reconexión se toma en la cola, después de identidades ya aceptadas.
   captureIdentity() {
-    const run = this.transitionChain.then(() => ({ id: this.data.id,
-      youtube: this.data.platforms?.youtube?.videoId, twitch: this.data.platforms?.twitch?.streamId }));
+    const run = this.transitionChain.then(() => this._identityOf(this.data));
     this.transitionChain = run.then(() => {}, () => {});
     return run;
   }
   // Las observaciones y los cortes comparten la misma cola: una identidad llegada
   // durante un inicio pertenece al directo nuevo y no se pierde al cerrar enseguida.
-  recordPlatform(platform, value, after, { reconnect, expectedId, onRollover = () => {}, enabled = () => true } = {}) {
+  recordPlatform(platform, value, after, { reconnect, expectedId, requestedAt, discovery = true, onRollover = () => {}, enabled = () => true } = {}) {
     const seenAt = new Date().toISOString();
     const keys = platform === 'youtube' ? ['videoId', 'liveChatId', 'title'] : platform === 'twitch' ? ['streamId', 'startedAt'] : [];
     const fields = Object.fromEntries(keys.filter(k => typeof value?.[k] === 'string' && (k === 'title' || value[k])).map(k => [k, value[k]]));
     const idKey = keys[0];
     if (!idKey || !fields[idKey]) return Promise.resolve();
     const run = this.transitionChain.then(async () => {
-      if (after) {
-        const started = await after;
-        if (!started || this.data.id !== started.id) return;
-      } else if (expectedId && this.data.id !== expectedId) return;
-      if (!enabled() || this.data.endedAt) return;
+      const requestedId = after ? (await after)?.id : expectedId;
+      if (!requestedId || !enabled() || this.data.endedAt) return;
       let old = this.data.platforms?.[platform];
+      const replaced = this.replacedIdentity?.currentId === this.data.id ? this.replacedIdentity : null;
+      const priorId = replaced?.[platform];
+      const requestedHere = requestedId === this.data.id;
+      // De la sesión anterior solo cruza un id que se sabe distinto; el mismo
+      // necesita una búsqueda nueva. Sin id previo no se inventa la relación.
+      if (!requestedHere && (!priorId || priorId === fields[idKey])) return;
+      const confirmed = requestedHere && discovery && (requestedAt === undefined || requestedAt >= this.identityStartedAt);
+      if (priorId && priorId === fields[idKey] && !confirmed && old?.[idKey] !== fields[idKey]) return;
       const previous = reconnect ? await reconnect : null;
       if (previous?.id === this.data.id && previous[platform] && previous[platform] !== fields[idKey]) {
         // El corte usa el mismo pipeline OLD/NEW que un inicio manual.
@@ -469,6 +478,8 @@ export class Session extends EventEmitter {
     }
     const newData = Session.fresh(title);
     if (meldAuto) newData.meldAutoSession = true;
+    this.replacedIdentity = { ...this._identityOf(this.data), currentId: newData.id };
+    this.identityStartedAt = process.hrtime.bigint();
     this.data = newData;
     const saved = this.flush();
     saved.catch(() => {});               // la persistencia arranca ya; el productor la espera abajo

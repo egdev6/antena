@@ -425,3 +425,118 @@ test('100 compact regressions', async t => {
     await poll; await done(); await tick(); assert.equal(a.session.data.platforms?.[k],undefined);
   });
 });
+
+for (const k of ['fresh Twitch', 'old YouTube']) test(`identity rollover: ${k}`, async t => {
+  const {app:a} = await (await setup(t)).start();
+  const done = async () => { await a.session.transitionChain; await tick(); };
+  a.meld.setStatus({state:'conectado',streaming:true}); a.youtube.setStatus(video);
+  stubTwitch(a,stream); await a.viewers.tick(); await done();
+  a.meld.setStatus({state:'reintentando'}); a.meld.setStatus({state:'conectado',streaming:true});
+  if (k === 'fresh Twitch') {
+    let enter, release; const entered = new Promise(r=>enter=r), gate = new Promise(r=>release=r);
+    const result = {ok:true,data:{data:[{...stream,id:'stream-2'}]}};
+    t.after(()=>release(result)); a.twitch.helix=()=>{enter();return gate;};
+    const poll=a.viewers.tick(); await entered;
+    a.youtube.setStatus({...video,videoId:'video-2'}); await done();
+    release(result); await poll; await done();
+    assert.equal(a.session.data.platforms.twitch?.streamId,'stream-2');
+  } else {
+    stubTwitch(a,{...stream,id:'stream-2'}); await a.viewers.tick(); await done();
+    assert.equal(a.session.data.platforms.youtube,undefined);
+    a.youtube.running=true; await a.youtube.pollOnce(); await done(); await a.youtube.stop();
+    assert.equal(a.session.data.platforms.youtube,undefined);
+  }
+});
+
+test('un sondeo del mismo Twitch antes de crear la sesión nueva no cuenta como confirmación', async t => {
+  const { app: a, get } = await (await setup(t)).start();
+  a.meld.setStatus({ state: 'conectado', streaming: true }); a.youtube.setStatus(video);
+  stubTwitch(a, stream); await a.viewers.tick(); await a.session.transitionChain;
+  a.meld.setStatus({ state: 'reintentando' }); a.meld.setStatus({ state: 'conectado', streaming: true });
+  await a.session.transitionChain;
+  const { createJsonWriter } = await import('../src/json-file.mjs');
+  const writer = createJsonWriter(); let enter, release, armed = true;
+  const entered = new Promise(r => { enter = r; }); const gate = new Promise(r => { release = r; });
+  t.after(() => release());
+  a.session.writer = (f, d, o = {}) => writer(f, d, { ...o, after: Promise.resolve(o.after).then(async () => {
+    if (armed && f.endsWith('session-current.backup.json')) { armed = false; enter(); await gate; }
+  }) });
+  a.youtube.setStatus({ ...video, videoId: 'video-2' });
+  await entered;
+  await a.viewers.tick(); // todavía no se ha creado la sesión nueva
+  release(); await a.session.transitionChain;
+  assert.equal((await get('/api/session')).platforms?.twitch, undefined);
+  await a.viewers.tick(); await a.session.transitionChain;
+  assert.equal((await get('/api/session')).platforms.twitch.streamId, stream.id);
+});
+
+test('un Twitch antiguo en vuelo se descarta hasta que otro sondeo confirme el mismo id', async t => {
+  const { app: a, get } = await (await setup(t)).start();
+  a.meld.setStatus({ state: 'conectado', streaming: true }); a.youtube.setStatus(video);
+  stubTwitch(a, stream); await a.viewers.tick(); await a.session.transitionChain;
+  a.meld.setStatus({ state: 'reintentando' }); a.meld.setStatus({ state: 'conectado', streaming: true });
+  let enter, release;
+  const entered = new Promise(r => { enter = r; }); const gate = new Promise(r => { release = r; });
+  const result = { ok: true, data: { data: [stream] } };
+  t.after(() => release(result));
+  a.twitch.helix = () => { enter(); return gate; };
+  const poll = a.viewers.tick(); await entered;
+  a.youtube.setStatus({ ...video, videoId: 'video-2' });
+  await a.session.transitionChain; release(result); await poll; await a.session.transitionChain;
+  assert.equal((await get('/api/session')).platforms?.twitch, undefined);
+  stubTwitch(a, stream); await a.viewers.tick(); await a.session.transitionChain;
+  assert.equal((await get('/api/session')).platforms.twitch.streamId, stream.id);
+});
+
+test('el mismo vídeo YouTube necesita una búsqueda nueva tras el corte', async t => {
+  const { app: a, get } = await (await setup(t)).start();
+  const old = { ...video, videoId: 'abcdefghijk' };
+  a.meld.setStatus({ state: 'conectado', streaming: true }); a.youtube.setStatus(old);
+  stubTwitch(a, stream); await a.viewers.tick(); await a.session.transitionChain;
+  a.meld.setStatus({ state: 'reintentando' }); a.meld.setStatus({ state: 'conectado', streaming: true });
+  stubTwitch(a, { ...stream, id: 'stream-2' }); await a.viewers.tick(); await a.session.transitionChain;
+  t.after(() => a.youtube.stop());
+  a.youtube.running = true; await a.youtube.pollOnce(); await a.session.transitionChain;
+  assert.equal((await get('/api/session')).platforms?.youtube, undefined);
+  a.youtube.cfg.apiKey = 'fake'; a.youtube.poll = () => {};
+  a.youtube.api = async () => ({ items: [{ liveStreamingDetails: { activeLiveChatId: old.liveChatId }, snippet: { title: old.title } }] });
+  await a.youtube.start(old.videoId); await a.session.transitionChain;
+  assert.equal((await get('/api/session')).platforms.youtube.videoId, old.videoId);
+});
+
+test('una búsqueda anterior a dos cortes se acepta si difiere del directo reemplazado', async t => {
+  const { app: a, get } = await (await setup(t)).start();
+  a.meld.setStatus({ state: 'conectado', streaming: true }); a.youtube.setStatus(video);
+  stubTwitch(a, stream); await a.viewers.tick(); await a.session.transitionChain;
+  a.youtube.cfg.apiKey = 'fake'; a.youtube.poll = () => {};
+  let enter, release; const entered = new Promise(r => { enter = r; }); const gate = new Promise(r => { release = r; });
+  t.after(() => { release(); return a.youtube.stop(); });
+  a.youtube.api = async () => { enter(); await gate; return { items: [{ liveStreamingDetails: { activeLiveChatId: 'chat-3' }, snippet: { title: 'Tercero' } }] }; };
+  const pending = a.youtube.start('abcdefghij3'); await entered;
+  a.youtube.api = async () => ({ items: [] });
+  a.meld.setStatus({ state: 'reintentando' }); a.meld.setStatus({ state: 'conectado', streaming: true });
+  a.twitch.helix = async () => ({ ok: true, data: { data: [{ ...stream, id: 'stream-2' }] } });
+  await a.viewers.tick(); await a.session.transitionChain;
+  a.youtube.setStatus({ ...video, videoId: 'video-2' }); await a.session.transitionChain;
+  a.meld.setStatus({ state: 'reintentando' }); a.meld.setStatus({ state: 'conectado', streaming: true });
+  a.twitch.helix = async () => ({ ok: true, data: { data: [{ ...stream, id: 'stream-3' }] } });
+  await a.viewers.tick(); await a.session.transitionChain;
+  release(); await pending; await a.session.transitionChain;
+  assert.equal((await get('/api/session')).platforms.youtube.videoId, 'abcdefghij3');
+});
+
+test('una búsqueda YouTube en vuelo con otro id se conserva al cortar por Twitch', async t => {
+  const { app: a, get } = await (await setup(t)).start();
+  a.meld.setStatus({ state: 'conectado', streaming: true }); a.youtube.setStatus(video);
+  stubTwitch(a, stream); await a.viewers.tick(); await a.session.transitionChain;
+  a.meld.setStatus({ state: 'reintentando' }); a.meld.setStatus({ state: 'conectado', streaming: true });
+  a.youtube.cfg.apiKey = 'fake'; a.youtube.poll = () => {};
+  let enter, release; const entered = new Promise(r => { enter = r; }); const gate = new Promise(r => { release = r; });
+  t.after(() => { release(); return a.youtube.stop(); });
+  a.youtube.api = async () => { enter(); await gate; return { items: [{ liveStreamingDetails: { activeLiveChatId: 'chat-2' }, snippet: { title: 'Nuevo' } }] }; };
+  const pending = a.youtube.start('abcdefghij2'); await entered;
+  a.twitch.helix = async () => ({ ok: true, data: { data: [{ ...stream, id: 'stream-2' }] } });
+  await a.viewers.tick(); await a.session.transitionChain;
+  release(); await pending; await a.session.transitionChain;
+  assert.equal((await get('/api/session')).platforms.youtube.videoId, 'abcdefghij2');
+});
