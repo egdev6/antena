@@ -553,6 +553,8 @@ test/              pnpm test (incluye un Meld simulado)
 
 Lee primero la issue y las PR relacionadas: el estado actual del proyecto, los límites conocidos y la checklist de pruebas reales están en [docs/estado.md](docs/estado.md). Los nuevos bugs/funciones entran en `status:needs-review`; la revisión es manual. Las comprobaciones declaradas son `pnpm test` y `pnpm baseline`. Las reglas completas están en [CONTRIBUTING.md](CONTRIBUTING.md).
 
+El escáner de CI y su modelo de confianza se describen en [Code safety](docs/code-safety.md).
+
 ## Recursos
 
 - [docs/estado.md](docs/estado.md) — estado actual, límites conocidos y checklist de pruebas reales.

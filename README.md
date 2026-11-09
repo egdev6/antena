@@ -553,6 +553,8 @@ test/              pnpm test (includes a simulated Meld)
 
 Read the issue and related PRs first: the current project state, known limits and the real-world test checklist live in [docs/estado.md](docs/estado.md). New bug/feature reports enter `status:needs-review`; review is manual. Declared checks are `pnpm test` and `pnpm baseline`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full rules.
 
+The CI scanner and its trust model are described in [Code safety](docs/code-safety.md).
+
 ## Resources
 
 - [docs/estado.md](docs/estado.md) — current state, known limits and the real-world test checklist.
