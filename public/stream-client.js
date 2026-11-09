@@ -15,7 +15,31 @@ export class AntenaStream extends EventTarget {
     this.source = null;
     this.timer = null;
     this.types = new Set(['message']);
+    this.hidden = false;
+    // bfcache: una página congelada no debe dejar su WebSocket abierto (el servidor la seguiría
+    // contando como capa); al restaurarse vuelve a conectar.
+    if (typeof addEventListener === 'function') {
+      this.onPageHide = () => this.suspend();
+      this.onPageShow = e => { if (e.persisted && this.hidden) this.resume(); };
+      addEventListener('pagehide', this.onPageHide);
+      addEventListener('pageshow', this.onPageShow);
+    }
     this.connect();
+  }
+
+  suspend() {
+    if (this.readyState === 2 || this.source) return;
+    this.hidden = true;
+    clearTimeout(this.timer);
+    const ws = this.socket;
+    this.socket = null;
+    this.readyState = 0;
+    try { ws?.close(1001); } catch { /* ya cerrado */ }
+  }
+
+  resume() {
+    this.hidden = false;
+    if (this.readyState !== 2) this.connect();
   }
 
   addEventListener(type, listener, options) {
@@ -125,6 +149,10 @@ export class AntenaStream extends EventTarget {
     if (this.readyState === 2) return;
     this.readyState = 2;
     clearTimeout(this.timer);
+    if (this.onPageHide && typeof removeEventListener === 'function') {
+      removeEventListener('pagehide', this.onPageHide);
+      removeEventListener('pageshow', this.onPageShow);
+    }
     this.socket?.close();
     this.source?.close();
   }

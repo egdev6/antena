@@ -165,6 +165,10 @@ export class WsResponse extends EventEmitter {
         }
         // RFC 6455 §7.1.1: tras responder al close del cliente, el servidor cierra el TCP. Chrome
         // puede esperar a que lo hagamos; si no, la página que navegó deja el cliente vivo.
+        // Con datos aún en cola el par ya no los leerá: se descartan y se cierra al momento.
+        if (this.queuedBytes > 0 || this.writing || this.socketBlocked) {
+          this.ended = true; this.close(); this.socket.destroy(); return;
+        }
         return this.finish(payload, true);
       }
       if (opcode === 9) this.pong(payload);
