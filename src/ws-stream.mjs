@@ -163,7 +163,9 @@ export class WsResponse extends EventEmitter {
           const code = payload.readUInt16BE();
           if ((code < 1000 || code >= 5000 || [1004, 1005, 1006, 1015].includes(code) || (code >= 1016 && code < 3000)) || !isUtf8(payload.subarray(2))) return this.fail(1002);
         }
-        return this.finish(payload);
+        // RFC 6455 §7.1.1: tras responder al close del cliente, el servidor cierra el TCP. Chrome
+        // puede esperar a que lo hagamos; si no, la página que navegó deja el cliente vivo.
+        return this.finish(payload, true);
       }
       if (opcode === 9) this.pong(payload);
       if (opcode <= 2) {
