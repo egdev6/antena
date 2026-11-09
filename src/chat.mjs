@@ -47,6 +47,8 @@ export function twitchChatMessage(msg) {
   return {
     id: 'tw:' + (t.id || Date.now() + Math.random()),
     platform: 'twitch',
+    ...(t['user-id'] ? { authorId: t['user-id'] } : {}),
+    ...(t['room-id'] ? { roomId: t['room-id'] } : {}),
     user: t['display-name'] || msg.prefix.split('!')[0],
     login: msg.prefix.split('!')[0],
     color: t.color || '',

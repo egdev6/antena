@@ -212,8 +212,6 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // eventos de plataforma → motor
   twitch.on('event', e => engine.handleEvent(e));
   youtube.on('event', e => engine.handleEvent(e));
-  youtube.on('chat', m => engine.handleChat(m));
-  chat.on('message', m => engine.handleChat(m));
   chat.on('delete', ({ id }) => engine.deleteChat(id));
   chat.on('clearUser', ({ login }) => engine.clearChatUser(login));
   session.on('change', () => { engine.pushWidgets(); pushTimeline(); });
@@ -386,6 +384,37 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     trackAutoSession(() => session.recordViewer(platform, sample, observation.target, observation.viewerAdmission,
       () => !!store.config.meld.autoSession), null, '[sesión] No se pudo registrar la muestra de espectadores.');
   });
+  // La contabilidad sigue admitiendo el poll ya aceptado hasta que sus productores
+  // cierren. El corte de identidad de Meld se sella antes y no sirve para ese drenaje.
+  let chatMetricsClosed = false, chatMetricsDrain = null, chatMetricsFailed = false;
+  const chatMetricsWork = new Set();
+  const chatTarget = () => pendingAutoStart || session.captureIdentity();
+  youtube.chatEpoch = () => ({ target: chatTarget() });
+  youtube.on('chat', (m, observation) => engine.handleChat(m, { ...observation, source: 'youtube', at: new Date().toISOString() }));
+  chat.on('message', m => engine.handleChat(m, { source: 'twitch', target: chatTarget(), at: new Date().toISOString() }));
+  const chatMetricError = () => {
+    chatMetricsFailed = true;
+    autoSessionLog('[sesión] No se pudieron registrar las métricas del chat.');
+  };
+  engine.on('chatMetric', (m, observation) => {
+    if (chatMetricsClosed || !store.config.meld.autoSession || !autoLive || observation.source !== m.platform || !observation.target || m.owner) return;
+    if (m.platform === 'twitch' && (!twitch.userId || m.roomId !== twitch.userId || m.authorId === twitch.userId)) return;
+    let work;
+    try {
+      work = session.recordChat(m.platform, { at: observation.at, authorId: m.authorId,
+        videoId: observation.videoId, liveChatId: observation.liveChatId }, observation.target, () => !!store.config.meld.autoSession);
+    } catch { chatMetricError(); return; }
+    chatMetricsWork.add(work);
+    work.then(() => chatMetricsWork.delete(work), () => { chatMetricsWork.delete(work); chatMetricError(); });
+  });
+  const drainChatMetrics = () => {
+    if (chatMetricsDrain) return chatMetricsDrain;
+    chatMetricsClosed = true;
+    chatMetricsDrain = Promise.allSettled([...chatMetricsWork]).then(results => {
+      if (chatMetricsFailed || results.some(r => r.status === 'rejected')) throw new Error('No se pudieron completar las métricas del chat.');
+    });
+    return chatMetricsDrain;
+  };
   const closeAutoSession = () => {
     autoLive = false; pendingAutoStart = null; reconnectCheck = null; identityEpoch++;
     const work = trackAutoSession(() => session.endCurrent(), null, '[meld] No se pudo cerrar la sesión automática.');
@@ -1183,7 +1212,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession };
+  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
   return app;
 }
 
@@ -1455,12 +1484,21 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
                 }
               );
             };
-            const autoSessionCut = failed => {
-              attemptDrain(() => app.drainAutoSession()).then(
+            const chatMetricsCut = failed => {
+              attemptDrain(() => app.drainChatMetrics()).then(
                 () => meldCut(failed),
                 () => {
-                  safeLog('[parada] No se pudo completar el inicio automático de sesión de Meld.');
+                  safeLog('[parada] No se pudieron completar las métricas del chat.');
                   meldCut(true);
+                }
+              );
+            };
+            const autoSessionCut = failed => {
+              attemptDrain(() => app.drainAutoSession()).then(
+                () => chatMetricsCut(failed),
+                () => {
+                  safeLog('[parada] No se pudo completar el inicio automático de sesión de Meld.');
+                  chatMetricsCut(true);
                 }
               );
             };

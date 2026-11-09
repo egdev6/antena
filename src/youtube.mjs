@@ -245,10 +245,12 @@ export class YouTube extends EventEmitter {
   async pollOnce() {
     if (this.pollClosed || !this.running) return;
     const identityEpoch = this.identityEpoch?.(); // la petición puede terminar en otro directo
+    const chatEpoch = this.chatEpoch?.();
+    const videoId = this.status.videoId, liveChatId = this.status.liveChatId;
     let wait = Math.max(5, Number(this.cfg.pollSeconds) || 8) * 1000;
     try {
       const d = await this.api('/liveChat/messages', {
-        liveChatId: this.status.liveChatId,
+        liveChatId,
         part: 'snippet,authorDetails',
         maxResults: 200,
         pageToken: this.pageToken || undefined,
@@ -263,7 +265,7 @@ export class YouTube extends EventEmitter {
           const n = normalizeYouTube(item);
           if (n) this.emit('event', { externalId: 'yt:' + item.id, ...n });
           const c = youtubeChatMessage(item);
-          if (c) this.emit('chat', c);
+          if (c) this.emit('chat', c, { ...chatEpoch, videoId, liveChatId });
           handled = !!(n || c);
         }
         try { this.rawLog?.record('youtube', item?.snippet?.type, handled, item); } catch {}

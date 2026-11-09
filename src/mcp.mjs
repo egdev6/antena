@@ -222,7 +222,7 @@ tool('escribir_chat', 'Escribe un mensaje en tu chat con tu cuenta: Twitch, YouT
   ({ texto, plataforma }) => post('/api/chat/send', { text: texto, to: plataforma }), ['texto']);
 tool('youtube_conectar_cuenta', 'Devuelve el enlace para dar permiso a antena a escribir en tu chat de YouTube (ábrelo en el navegador del PC).', {}, () => post('/api/youtube/auth'));
 tool('youtube_desconectar_cuenta', 'Quita el permiso de tu cuenta de YouTube.', {}, () => post('/api/youtube/logout'));
-tool('simular_chat', 'Simula un mensaje de chat (útil para probar comandos y el widget de chat). Los comandos pueden enviar respuestas al chat real si la plataforma está conectada.', { usuario: S.str('Nombre'), texto: S.str('Mensaje'), plataforma: S.enum('Plataforma', ['twitch', 'youtube']), mod: S.bool('Es moderador') }, ({ usuario, texto, plataforma, mod }) => post('/api/chat/simulate', { user: usuario, text: texto, platform: plataforma, mod }), ['texto']);
+tool('simular_chat', 'Simula un mensaje de chat (útil para probar comandos y el widget de chat); no cuenta en las métricas. Los comandos pueden enviar respuestas al chat real si la plataforma está conectada.', { usuario: S.str('Nombre'), texto: S.str('Mensaje'), plataforma: S.enum('Plataforma', ['twitch', 'youtube']), mod: S.bool('Es moderador') }, ({ usuario, texto, plataforma, mod }) => post('/api/chat/simulate', { user: usuario, text: texto, platform: plataforma, mod }), ['texto']);
 tool('unir_chat', 'Lee el chat de otro canal de Twitch (vacío = el tuyo).', { canal: S.str('Canal de Twitch') }, ({ canal }) => post('/api/chat/join', { channel: canal }));
 
 // widgets
@@ -296,11 +296,11 @@ tool('probar_overlay', 'Manda un evento de ejemplo AHORA a UNA capa abierta (la 
   ({ id, evento, datos }) => post(`/api/custom-overlays/${enc(id)}/test`, { event: evento, data: datos }), ['id', 'evento']);
 
 // directo
-tool('resumen_directo', 'Resumen de un directo: totales, a quién dar las gracias y cronología con el minuto de cada evento. En JSON, viewers contiene muestras y huecos; viewerMetrics muestra media ponderada, pico y cobertura por plataforma, sin sumarlas.', { id: S.str('Id del directo (vacío = el actual)'), formato: S.enum('Formato', ['markdown', 'json']) },
+tool('resumen_directo', 'Resumen de un directo: totales, a quién dar las gracias y cronología con el minuto de cada evento. En JSON, viewers contiene muestras y huecos; viewerMetrics muestra media ponderada, pico y cobertura por plataforma, sin sumarlas. chatMetrics añade chatters únicos, mensajes/minuto y serie por minuto, sin identificadores de autores.', { id: S.str('Id del directo (vacío = el actual)'), formato: S.enum('Formato', ['markdown', 'json']) },
   async ({ id, formato }) => { const r = await get(`/api/session/summary?format=${formato === 'json' ? 'json' : 'md'}${id ? '&id=' + enc(id) : ''}`); return r.markdown ?? r; });
 tool('nuevo_directo', 'Cierra el directo actual (lo archiva) y empieza uno nuevo: totales, objetivos y créditos vuelven a cero.', { titulo: S.str('Título del directo') }, ({ titulo }) => post('/api/session/new', { title: titulo }));
 tool('renombrar_directo', 'Pone título al directo actual.', { titulo: S.str('Título') }, ({ titulo }) => put('/api/session', { title: titulo }), ['titulo']);
-tool('listar_directos', 'Directo actual y anteriores archivados, con platforms e identificadores de YouTube y Twitch cuando se conocen; viewerMetrics aporta media ponderada, pico y cobertura independientes por plataforma, sin muestras ni suma entre ellas.', {}, () => get('/api/sessions'));
+tool('listar_directos', 'Directo actual y anteriores archivados, con platforms e identificadores de YouTube y Twitch cuando se conocen; viewerMetrics aporta media ponderada, pico y cobertura independientes por plataforma, sin muestras ni suma entre ellas; chatMetrics añade chatters únicos y mensajes/minuto, sin la serie ni identificadores.', {}, () => get('/api/sessions'));
 tool('eventos_directo', 'Eventos del directo actual.', { limite: S.num('Cuántos') }, ({ limite }) => get('/api/session/events?limit=' + (limite || 200)));
 // cronología y prompter
 tool('cronologia', 'Cronología del directo actual: alertas (con ✔ si ya diste las gracias) y notas (marcas de short, mensajes destacados por los espectadores, guardados, preguntas mostradas, ganadores), cada una con su segundo desde el inicio (offset).', { tipos: S.str('Filtrar por tipos separados por comas: marker, highlight, saved, question, winner, event o un tipo de alerta (raid, sub…)') },

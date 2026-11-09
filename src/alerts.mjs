@@ -318,6 +318,7 @@ export function youtubeChatMessage(item = {}) {
   const a = item.authorDetails || {};
   return {
     id: 'yt:' + item.id, platform: 'youtube', user: a.displayName, color: '',
+    ...(a.channelId ? { authorId: a.channelId } : {}),
     text: s.textMessageDetails?.messageText ?? s.displayMessage ?? '',
     mod: !!a.isChatModerator, owner: !!a.isChatOwner, member: !!a.isChatSponsor, at: s.publishedAt || new Date().toISOString(),
   };

@@ -131,6 +131,41 @@ export function viewerMetrics(data, now = Date.now()) {
   }
   return result;
 }
+const CHAT_PLATFORMS = ['twitch', 'youtube'];
+
+/** Recuentos observados; los minutos sin mensajes no necesitan una fila almacenada. */
+export function chatMetrics(data, now = Date.now(), includeSeries = true) {
+  if (data.chatStats === undefined) return undefined;
+  const start = Date.parse(data.startedAt);
+  const elapsed = Math.max(0, (data.endedAt ? Date.parse(data.endedAt) : Number(now)) - start) / 60000;
+  const out = {};
+  for (const platform of CHAT_PLATFORMS) {
+    const stats = data.chatStats[platform];
+    if (!stats) continue;
+    const messages = stats.minutes.reduce((sum, minute) => sum + minute.messages, 0);
+    out[platform] = { uniqueChatters: stats.authorIds.length, messages, messagesPerMinute: elapsed > 0 ? messages / elapsed : null,
+      ...(includeSeries ? { minutes: stats.minutes.map(({ at, messages }) => ({ at, messages })) } : {}) };
+  }
+  return out;
+}
+
+/** La raíz persistida conserva identidades privadas; las respuestas solo llevan agregados. */
+export function publicSession(data) {
+  const { chatStats, ...out } = data;
+  return chatStats === undefined ? out : { ...out, chatMetrics: chatMetrics(data) };
+}
+
+function isValidChatStats(stats) {
+  return isPlainObject(stats) && Object.keys(stats).every(platform => {
+    const s = stats[platform];
+    if (!CHAT_PLATFORMS.includes(platform) || !isPlainObject(s) || !Array.isArray(s.authorIds) || !Array.isArray(s.minutes)) return false;
+    if (!s.authorIds.every(id => typeof id === 'string' && id.length > 0) || new Set(s.authorIds).size !== s.authorIds.length) return false;
+    if (!s.minutes.every((m, i) => isPlainObject(m) && isValidDate(m.at) && Number.isSafeInteger(m.messages) && m.messages > 0
+      && (!i || Date.parse(s.minutes[i - 1].at) < Date.parse(m.at)))) return false;
+    return s.authorIds.length <= s.minutes.reduce((sum, m) => sum + m.messages, 0);
+  });
+}
+
 // Validación estructural mínima de la raíz (sin framework): id/startedAt legacy y arrays.
 // events null/entradas null son inválidos; notes/goalOffsets null caen a sus defaults.
 function isValidRoot(d) {
@@ -142,6 +177,7 @@ function isValidRoot(d) {
   if (d.goalOffsets !== undefined && d.goalOffsets !== null && !isPlainObject(d.goalOffsets)) return false;
   if (d.viewers !== undefined && (!isPlainObject(d.viewers)
     || VIEWER_SERIES_PLATFORMS.some(p => d.viewers[p] !== undefined && !isValidViewerSeries(d.viewers[p])))) return false;
+  if (d.chatStats !== undefined && !isValidChatStats(d.chatStats)) return false;
   return true;
 }
 // Rellena solo los defaults legacy ausentes; conserva íntegro todo lo demás (campos desconocidos incluidos).
@@ -202,6 +238,7 @@ export class Session extends EventEmitter {
     this.replacedIdentity = null; // solo memoria: identidad del directo inmediatamente anterior
     this.identityStartedAt = process.hrtime.bigint(); // monotónico, independiente del reloj de pared
     this.viewerRestarts = new Set(); // solo memoria: primer sondeo tras cargar un directo abierto
+    this.chatAuthors = new WeakMap(); // índices de deduplicación; el array validado es la copia durable
   }
   static fresh(title = '') {
     return { id: `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`, title, startedAt: new Date().toISOString(), events: [], notes: [], goalOffsets: {} };
@@ -572,6 +609,36 @@ export class Session extends EventEmitter {
     this.transitionChain = run.then(() => {}, () => {});
     return run;
   }
+  // El contexto se captura al recibir el mensaje, no al terminar una transición.
+  recordChat(platform, observation, target, enabled = () => true) {
+    const run = this.transitionChain.then(async () => {
+      const captured = typeof target === 'string' ? { id: target } : await target;
+      if (!enabled() || !this.data.meldAutoSession || this.data.endedAt || captured?.id !== this.data.id || !CHAT_PLATFORMS.includes(platform)) return;
+      if (platform === 'youtube' && (!observation.videoId || this.data.platforms?.youtube?.videoId !== observation.videoId
+        || !observation.liveChatId || this.data.platforms?.youtube?.liveChatId !== observation.liveChatId)) return;
+      const streamId = captured.twitch || captured.platforms?.twitch?.streamId;
+      if (platform === 'twitch' && streamId && this.data.platforms?.twitch?.streamId && streamId !== this.data.platforms.twitch.streamId) return;
+      if (!isValidDate(observation.at)) return;
+      const start = Date.parse(this.data.startedAt);
+      const at = new Date(start + Math.max(0, Math.floor((Date.parse(observation.at) - start) / 60000)) * 60000).toISOString();
+      const stats = (this.data.chatStats ||= {})[platform] ||= { authorIds: [], minutes: [] };
+      let authors = this.chatAuthors.get(stats);
+      if (!authors) { authors = new Set(stats.authorIds); this.chatAuthors.set(stats, authors); }
+      if (typeof observation.authorId === 'string' && observation.authorId && !authors.has(observation.authorId)) {
+        authors.add(observation.authorId); stats.authorIds.push(observation.authorId);
+      }
+      const last = stats.minutes.at(-1);
+      let minute = last?.at === at ? last : stats.minutes.find(m => m.at === at);
+      if (!minute) {
+        minute = { at, messages: 0 }; stats.minutes.push(minute);
+        stats.minutes.sort((a, b) => a.at.localeCompare(b.at));
+      }
+      minute.messages++;
+      this.save();
+    });
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
   // Marcar el actual cerrado mantiene su resumen accesible; el siguiente startNew
   // lo archivará por el pipeline habitual sin cambiar la hora real de cierre.
   endCurrent(at = new Date().toISOString()) {
@@ -631,7 +698,8 @@ export class Session extends EventEmitter {
   _metaOf(data) {
     return { id: data.id, title: data.title, startedAt: data.startedAt, endedAt: data.endedAt, events: (data.events || []).length,
       ...(data.platforms !== undefined ? { platforms: data.platforms } : {}),
-      ...(data.viewers !== undefined ? { viewerMetrics: viewerMetrics(data) } : {}) };
+      ...(data.viewers !== undefined ? { viewerMetrics: viewerMetrics(data) } : {}),
+      ...(data.chatStats !== undefined ? { chatMetrics: chatMetrics(data, Date.now(), false) } : {}) };
   }
   _metaFile(archiveFile) { return archiveFile.replace(/\.json$/, '.meta.json'); }
   // Retención (#68): tras archivar, deja como máximo las N sesiones más recientes
@@ -664,6 +732,7 @@ export class Session extends EventEmitter {
         }
         out.push({ id: m.id, title: m.title, startedAt: m.startedAt, endedAt: m.endedAt, events: m.events ?? 0,
           ...(m.platforms !== undefined ? { platforms: m.platforms } : {}), ...(m.viewerMetrics !== undefined ? { viewerMetrics: m.viewerMetrics } : {}),
+          ...(m.chatMetrics !== undefined ? { chatMetrics: m.chatMetrics } : {}),
           ...(this.pendingArchive?.data.id === m.id ? { pending: true } : {}) });
       }
     } catch { /* un fallo de lectura no oculta el pendiente propio */ }
