@@ -68,7 +68,7 @@ function removeDir(path) {
 }
 
 function call(execute, args, timeout, maxBuffer) {
-  try { return execute('docker', ['--host', 'unix:///var/run/docker.sock', ...args], { shell: false, encoding: 'utf8', timeout, maxBuffer }) ?? {}; }
+  try { return execute('docker', ['--host', 'unix:///var/run/docker.sock', ...args], { shell: false, encoding: 'utf8', timeout, maxBuffer, killSignal: 'SIGKILL' }) ?? {}; }
   catch { return { error: true }; }
 }
 
