@@ -84,6 +84,7 @@ function mcp(t, base) {
 }
 
 test('Meld abre y guarda los identificadores aunque lleguen durante el corte; REST y MCP los muestran', { timeout: 12000 }, async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() }); // REST y MCP comparan la misma duración del directo.
   const { start } = await setup(t); const ctx = await start();
   const old = (await ctx.get('/api/session')).id;
   stubTwitch(ctx.app, stream);

@@ -16,7 +16,7 @@
 //   fn(vars, body, url, req); sin vars, fn(body, null, url, req).
 // - Se puede probar sin arrancar la app: construyendo un ctx falso y llamando a los
 //   handlers directamente (ver test/routes-sessions.test.mjs).
-import { NOTE_KINDS } from '../session.mjs';
+import { NOTE_KINDS, viewerMetrics } from '../session.mjs';
 import { httpError } from '../http-util.mjs';
 
 // #68: tope de limit para eventos del directo; la respuesta documenta el recorte.
@@ -25,7 +25,8 @@ const EVENTS_MAX_LIMIT = 1000;
 
 export function registerSessionRoutes({ route, session, timelinePayload, addMarker }) {
   // ---------- directo (sesión) ----------
-  route('GET', '/api/session', async () => ({ ...session.data, events: undefined, eventCount: session.data.events.length, totals: session.totals(), latest: session.latest() }));
+  route('GET', '/api/session', async () => ({ ...session.data, events: undefined, eventCount: session.data.events.length, totals: session.totals(), latest: session.latest(),
+    ...(session.data.viewers !== undefined ? { viewerMetrics: viewerMetrics(session.data) } : {}) }));
   route('GET', '/api/session/events', async (_, __, url) => {
     const pedida = Math.floor(Number(url.searchParams.get('limit')));
     const limit = Number.isFinite(pedida) && pedida > 0 ? Math.min(pedida, EVENTS_MAX_LIMIT) : EVENTS_DEFAULT_LIMIT;
@@ -35,13 +36,14 @@ export function registerSessionRoutes({ route, session, timelinePayload, addMark
   route('GET', '/api/session/summary', async (_, __, url) => {
     const d = await session.get(url.searchParams.get('id')).catch(() => { throw httpError(404, 'No existe ese directo'); });
     return url.searchParams.get('format') === 'json'
-      ? { ...d, totals: session.totals(d), credits: session.credits(d) }
+      ? { ...d, totals: session.totals(d), credits: session.credits(d), ...(d.viewers !== undefined ? { viewerMetrics: viewerMetrics(d) } : {}) }
       : { markdown: session.summaryMarkdown(d) };
   });
   route('POST', '/api/session/new', async ({ title = '' } = {}) => ({ session: await session.startNew(title) }));
   route('PUT', '/api/session', async ({ title }) => { session.data.title = String(title || ''); session.save(); return { ok: true }; });
   route('GET', '/api/sessions', async () => ({ current: { id: session.data.id, title: session.data.title, startedAt: session.data.startedAt, events: session.data.events.length,
-    ...(session.data.endedAt !== undefined ? { endedAt: session.data.endedAt } : {}), ...(session.data.platforms !== undefined ? { platforms: session.data.platforms } : {}) }, past: await session.list() }));
+    ...(session.data.endedAt !== undefined ? { endedAt: session.data.endedAt } : {}), ...(session.data.platforms !== undefined ? { platforms: session.data.platforms } : {}),
+    ...(session.data.viewers !== undefined ? { viewerMetrics: viewerMetrics(session.data) } : {}) }, past: await session.list() }));
 
   // ---------- cronología y marcas ----------
   route('GET', '/api/timeline', async (_, __, url) => {

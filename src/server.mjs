@@ -312,7 +312,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Una desconexión de Meld no es por sí sola un fin: tras reconectar se contrastan
   // las observaciones de cada plataforma con la sesión abierta.
   let autoLive = false, pendingAutoStart = null, pendingAutoClose = null, reconnectCheck = null, meldConnected = false, identityEpoch = 0;
-  youtube.identityEpoch = viewers.identityEpoch = () => ({ epoch: identityEpoch, target: pendingAutoStart || session.data.id, requestedAt: process.hrtime.bigint() });
+  youtube.identityEpoch = () => ({ epoch: identityEpoch, target: pendingAutoStart || session.data.id, requestedAt: process.hrtime.bigint() });
+  // YouTube no admite identidad en este sondeo: espera las identidades previas
+  // sin cambiar el contexto original con que Twitch decide su propia admisión.
+  viewers.identityEpoch = platform => {
+    const observation = youtube.identityEpoch();
+    if (platform === 'youtube') observation.target = pendingAutoStart || session.captureIdentity();
+    return observation;
+  };
   viewers.identityEnabled = () => !!store.config.meld.autoSession && autoLive && !autoSessionClosed;
   const trackAutoSession = (operation, success, failure) => {
     let resolve, reject;
@@ -366,10 +373,19 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     work = trackAutoSession(() => session.recordPlatform(platform, data, after, {
       reconnect, expectedId, requestedAt: observation.requestedAt, discovery, onRollover, enabled: () => !!store.config.meld.autoSession,
     }), null, '[sesión] No se pudo registrar la identidad de la plataforma.');
+    return work;
   };
   // Cada resultado lleva la sesión capturada antes de iniciar su petición.
   youtube.on('status', (st, observation, discovery) => { if (st.state === 'escuchando') recordIdentity('youtube', st, observation, discovery); });
-  viewers.on('streamIdentity', (identity, observation) => recordIdentity('twitch', identity, observation));
+  viewers.on('streamIdentity', (identity, observation) => {
+    const admission = recordIdentity('twitch', identity, observation);
+    if (observation) observation.viewerAdmission = admission;
+  });
+  viewers.on('seriesObservation', (platform, sample, observation) => {
+    if (autoSessionClosed || !store.config.meld.autoSession || !autoLive || !observation?.target) return;
+    trackAutoSession(() => session.recordViewer(platform, sample, observation.target, observation.viewerAdmission,
+      () => !!store.config.meld.autoSession), null, '[sesión] No se pudo registrar la muestra de espectadores.');
+  });
   const closeAutoSession = () => {
     autoLive = false; pendingAutoStart = null; reconnectCheck = null; identityEpoch++;
     const work = trackAutoSession(() => session.endCurrent(), null, '[meld] No se pudo cerrar la sesión automática.');

@@ -135,12 +135,22 @@ export class ViewerWatch extends EventEmitter {
       }
       for (const p of VIEWER_PLATFORMS) {
         let r;
-        const epoch = this.identityEpoch?.(); // captura antes de iniciar la petición
+        const epoch = this.identityEpoch?.(p); // captura antes de iniciar la petición
+        const videoId = p === 'youtube' ? this.youtube?.status?.videoId : undefined;
+        const intervalSec = this.handle ? this.every / 1000 : Math.min(600, Math.max(20, n(this.cfg.pollSec, 60)));
         try { r = await this.readers[p](); this.state[p].error = null; }
-        catch (err) { this.state[p].error = err.message; continue; }
+        catch (err) {
+          this.state[p].error = err.message;
+          this.emit('seriesObservation', p, { at: new Date(this.now()).toISOString(), intervalSec, reason: 'error' }, epoch);
+          continue;
+        }
+        const at = new Date(this.now()).toISOString();
         // La fila real también identifica el directo; no se añade al snapshot de espectadores.
         if (p === 'twitch') this.emit('streamIdentity', r.live && r.streamId ? { streamId: r.streamId, startedAt: r.startedAt } : null, epoch);
         const a = this.observe(p, r);
+        this.emit('seriesObservation', p, r.live
+          ? { at, intervalSec, value: this.state[p].current, streamId: r.streamId, videoId }
+          : { at, intervalSec, reason: r.off ? 'disconnected' : 'offline' }, epoch);
         if (a) fired.push(a);
       }
       this.emit('change', this.snapshot());
