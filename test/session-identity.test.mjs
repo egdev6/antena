@@ -540,3 +540,80 @@ test('una búsqueda YouTube en vuelo con otro id se conserva al cortar por Twitc
   release(); await pending; await a.session.transitionChain;
   assert.equal((await get('/api/session')).platforms.youtube.videoId, 'abcdefghij2');
 });
+
+for (const startup of [false, true]) test(`already-listening discovery: ${startup}`, async t => {
+  const { app: a } = await (await setup(t)).start();
+  a.youtube.cfg.apiKey = 'fake'; a.youtube.cfg.video = 'abcdefghijk'; a.youtube.poll = () => {};
+  let discoveries = 0;
+  a.youtube.api = async p => p === '/videos'
+    ? (discoveries++, { items: [{ liveStreamingDetails: { activeLiveChatId: 'chat' }, snippet: { title: 'Live' } }] })
+    : { items: [] };
+  t.after(() => a.youtube.stop());
+  await a.youtube.start(); await a.session.transitionChain;
+  assert.equal(a.session.data.platforms.youtube.videoId, 'abcdefghijk');
+  if (startup) a.meld.setStatus({ state: 'conectado', streaming: true });
+  else { a.meld.setStatus({ state: 'conectado', streaming: false }); a.meld.values.isStreaming = true; a.meld.afterChange(); }
+  await a.session.transitionChain; await a.youtube.pollOnce();
+  await until(() => a.session.data.platforms?.youtube?.videoId === 'abcdefghijk', 'identidad YouTube confirmada');
+  assert.ok(discoveries >= 2, 'un sondeo de chat no confirma la identidad');
+  assert.equal(discoveries, 2, 'un solo /videos adicional por inicio');
+});
+
+test('si YouTube no escucha al comenzar no se hace una confirmación extra', async t => {
+  const { app: a } = await (await setup(t)).start();
+  const paths = [];
+  a.youtube.api = async p => { paths.push(p); return { items: [] }; };
+  a.meld.setStatus({ state: 'conectado', streaming: true });
+  await a.session.transitionChain; await tick();
+  assert.deepEqual(paths, []);
+  assert.equal(a.session.data.platforms?.youtube, undefined);
+});
+
+test('confirmación en vuelo: sin duplicados, búsquedas ni reinicio del chat al reconectar', async t => {
+  const { app: a } = await (await setup(t)).start();
+  a.youtube.cfg.apiKey = 'fake'; a.youtube.cfg.video = 'abcdefghijk';
+  let polls = 0, calls = 0, release;
+  const gate = new Promise(r => { release = r; });
+  const row = { items: [{ liveStreamingDetails: { activeLiveChatId: 'chat' }, snippet: { title: 'Live' } }] };
+  t.after(() => { release(); return a.youtube.stop(); });
+  a.youtube.poll = () => { polls++; };
+  a.youtube.api = async (p, params) => {
+    assert.equal(p, '/videos'); assert.equal(params.id, 'abcdefghijk');
+    if (++calls === 2) await gate;
+    return row;
+  };
+  try {
+    await a.youtube.start(); await a.session.transitionChain;
+    a.meld.setStatus({ state: 'conectado', streaming: true });
+    await until(() => calls === 2, 'consulta en vuelo');
+    a.meld.setStatus({ state: 'conectado', streaming: true });
+    a.meld.setStatus({ state: 'reintentando' });
+    a.meld.setStatus({ state: 'conectado', streaming: true });
+    await tick(); assert.equal(calls, 2); assert.equal(polls, 1);
+    release();
+    await until(() => a.session.data.platforms?.youtube?.videoId === 'abcdefghijk', 'confirmación');
+    assert.equal(calls, 2); assert.equal(polls, 1);
+  } finally { release(); }
+});
+
+for (const failure of ['sin vídeo', 'sin chat activo', 'otro chat', 'error']) test(`confirmación fallida: ${failure}`, async t => {
+  const { app: a } = await (await setup(t)).start();
+  a.youtube.cfg.apiKey = 'fake'; a.youtube.cfg.video = 'abcdefghijk'; a.youtube.poll = () => {};
+  let calls = 0;
+  a.youtube.api = async p => {
+    assert.equal(p, '/videos');
+    if (++calls === 1) return { items: [{ liveStreamingDetails: { activeLiveChatId: 'chat' }, snippet: { title: 'Live' } }] };
+    if (failure === 'error') throw new Error('fallo de prueba');
+    if (failure === 'sin vídeo') return { items: [] };
+    return { items: [{ liveStreamingDetails: failure === 'otro chat' ? { activeLiveChatId: 'otro' } : {}, snippet: { title: 'Live' } }] };
+  };
+  t.after(() => a.youtube.stop());
+  await a.youtube.start(); await a.session.transitionChain;
+  a.meld.setStatus({ state: 'conectado', streaming: true });
+  await until(() => calls === 2, 'consulta de confirmación');
+  await a.session.transitionChain; await tick();
+  assert.equal(a.session.data.platforms?.youtube, undefined);
+  assert.equal(a.youtube.status.videoId, 'abcdefghijk');
+  assert.equal(a.youtube.status.liveChatId, 'chat');
+  assert.equal(calls, 2);
+});

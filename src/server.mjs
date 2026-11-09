@@ -330,6 +330,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return work;
   };
   const startAutoSession = () => {
+    // Si el chat ya se escucha, confirmar solo después de crear la sesión nueva.
+    const listening = youtube.running && youtube.status.state === 'escuchando' && youtube.status.videoId && youtube.status.liveChatId;
     autoLive = true; reconnectCheck = null; identityEpoch++;
     const work = trackAutoSession(() => session.startNew('', { meldAuto: true }),
       '[meld] directo en marcha: nueva sesión', '[meld] No se pudo iniciar la sesión automática.');
@@ -337,6 +339,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     work.then(() => { if (pendingAutoStart === work) pendingAutoStart = null; }, () => {
       if (pendingAutoStart === work) { pendingAutoStart = null; autoLive = false; }
     });
+    if (listening) trackAutoSession(() => work.then(started => {
+      if (!started || session.data.id !== started.id || !store.config.meld.autoSession || !autoLive) return;
+      return youtube.confirmListeningIdentity();
+    }), null, '[youtube] No se pudo confirmar la identidad del directo.');
     return work;
   };
   const checkReconnectedSession = () => {

@@ -27,6 +27,7 @@ export class YouTube extends EventEmitter {
     this.pollClosed = false;
     this.pollWork = new Set();
     this.pollClosePromise = null;
+    this.identityConfirmation = null;
     this.status = { state: 'parado', videoId: null, liveChatId: null, title: null, errors: [], polls: 0, account: store.secrets?.youtube?.channel || null };
     this.pending = new Map(); // state → { verifier, redirect }
     this.rawLog = null; // RawEventLog opcional (src/raw-events.mjs)
@@ -154,6 +155,36 @@ export class YouTube extends EventEmitter {
       if (errors.length) throw new AggregateError(errors, 'No se pudo cerrar el productor YouTube');
     });
     return this.pollClosePromise;
+  }
+
+  // Confirma el vídeo que ya se escucha sin reiniciar el chat ni hacer search.list.
+  confirmListeningIdentity() {
+    const { state, videoId, liveChatId } = this.status;
+    if (this.pollClosed || !this.running || state !== 'escuchando' || !videoId || !liveChatId || (!this.cfg.apiKey && !this.token?.access)) return Promise.resolve();
+    const observation = this.identityEpoch?.();
+    const pending = this.identityConfirmation;
+    if (pending) {
+      if (pending.videoId === videoId && pending.observation?.epoch === observation?.epoch && pending.observation?.target === observation?.target) return pending.work;
+      // Si cambia el directo, esperar la consulta anterior antes de hacer otra.
+      return pending.work.then(() => {
+        const current = this.identityEpoch?.();
+        if (current?.epoch !== observation?.epoch || current?.target !== observation?.target) return;
+        return this.confirmListeningIdentity();
+      });
+    }
+    const work = this.trackPollWork(async () => {
+      if (this.pollClosed) return;
+      let item;
+      try { item = (await this.api('/videos', { part: 'liveStreamingDetails,snippet', id: videoId })).items?.[0]; }
+      catch { return; } // sin confirmación no se inventa identidad
+      if (this.pollClosed || !this.running || this.status.state !== 'escuchando' || this.status.videoId !== videoId || this.status.liveChatId !== liveChatId) return;
+      if (!item || (item.id && item.id !== videoId) || item.liveStreamingDetails?.activeLiveChatId !== liveChatId) return;
+      this.setStatus({ videoId, liveChatId, title: item.snippet?.title }, observation);
+    });
+    const entry = { videoId, observation, work };
+    this.identityConfirmation = entry;
+    work.then(() => { if (this.identityConfirmation === entry) this.identityConfirmation = null; }, () => { if (this.identityConfirmation === entry) this.identityConfirmation = null; });
+    return work;
   }
 
   start(video) {
