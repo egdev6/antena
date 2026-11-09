@@ -385,9 +385,16 @@ export class Session extends EventEmitter {
   }
   pendingThanks(data = this.data) { return data.events.filter(e => !e.thanked).length; }
 
+  // La foto de reconexión se toma en la cola, después de identidades ya aceptadas.
+  captureIdentity() {
+    const run = this.transitionChain.then(() => ({ id: this.data.id,
+      youtube: this.data.platforms?.youtube?.videoId, twitch: this.data.platforms?.twitch?.streamId }));
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
   // Las observaciones y los cortes comparten la misma cola: una identidad llegada
   // durante un inicio pertenece al directo nuevo y no se pierde al cerrar enseguida.
-  recordPlatform(platform, value, after) {
+  recordPlatform(platform, value, after, { reconnect, expectedId, onRollover = () => {}, enabled = () => true } = {}) {
     const seenAt = new Date().toISOString();
     const keys = platform === 'youtube' ? ['videoId', 'liveChatId', 'title'] : platform === 'twitch' ? ['streamId', 'startedAt'] : [];
     const fields = Object.fromEntries(keys.filter(k => typeof value?.[k] === 'string' && (k === 'title' || value[k])).map(k => [k, value[k]]));
@@ -397,16 +404,26 @@ export class Session extends EventEmitter {
       if (after) {
         const started = await after;
         if (!started || this.data.id !== started.id) return;
+      } else if (expectedId && this.data.id !== expectedId) return;
+      if (!enabled() || this.data.endedAt) return;
+      let old = this.data.platforms?.[platform];
+      const previous = reconnect ? await reconnect : null;
+      if (previous?.id === this.data.id && previous[platform] && previous[platform] !== fields[idKey]) {
+        // El corte usa el mismo pipeline OLD/NEW que un inicio manual.
+        onRollover();
+        await this._cutover('', true);
+        if (!enabled()) return;
+        old = this.data.platforms?.[platform];
       }
-      if (this.data.endedAt) return;
-      const old = this.data.platforms?.[platform];
-      if (old && old[idKey] !== fields[idKey]) return; // otro broadcast: conservar el primero
+      if (old && old[idKey] !== fields[idKey]) return; // otro broadcast sin reconexión: conservar el primero
       const next = old ? { ...old } : { ...fields, seenAt };
       if (old) for (const [key, val] of Object.entries(fields)) if (next[key] === undefined) next[key] = val;
-      if (old && isDeepStrictEqual(old, next)) return;
-      (this.data.platforms ||= {})[platform] = next;
-      this.save();
-      this.emit('change', { platform });
+      if (!old || !isDeepStrictEqual(old, next)) {
+        (this.data.platforms ||= {})[platform] = next;
+        this.save();
+        this.emit('change', { platform });
+      }
+      return this.data;
     });
     this.transitionChain = run.then(() => {}, () => {});
     return run;

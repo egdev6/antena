@@ -165,7 +165,7 @@ test('plataforma sin conectar ausente, nunca inventada, incluso en archivo', { t
   assert.deepEqual(Object.keys(past.platforms), ['youtube']);
 });
 
-test('autoSession desactivado no abre ni cierra y registra datos reales en la sesión actual', { timeout: 12000 }, async t => {
+test('autoSession desactivado no abre, cierra ni registra identidades', { timeout: 12000 }, async t => {
   const { start } = await setup(t); const ctx = await start();
   ctx.app.store.config.meld.autoSession = false;
   const before = await ctx.get('/api/session');
@@ -173,13 +173,9 @@ test('autoSession desactivado no abre ni cierra y registra datos reales en la se
   ctx.app.meld.setStatus({ state: 'conectado', streaming: true });
   ctx.app.youtube.setStatus(video);
   stubTwitch(ctx.app, stream); await ctx.app.viewers.tick();
-  const s = await until(async () => { const x = await ctx.get('/api/session'); return x.platforms?.youtube && x.platforms?.twitch && x; }, 'identidad manual');
   ctx.app.meld.emit('streaming', false);
   await tick(); await tick();
-  const after = await ctx.get('/api/session');
-  assert.equal(after.id, before.id); assert.equal(after.endedAt, undefined);
-  assert.equal(after.platforms.youtube.videoId, video.videoId);
-  assert.equal(after.platforms.twitch.streamId, stream.id);
+  assert.deepEqual(await ctx.get('/api/session'), before);
   assert.deepEqual((await ctx.get('/api/sessions')).past, []);
 });
 
@@ -308,5 +304,124 @@ test('stop/start inmediato no copia YouTube anterior, pero acepta un anuncio nue
     assert.equal((await ctx.get('/api/session')).id, next.id);
     const old = await until(async () => (await ctx.get('/api/sessions')).past.find(s => s.id === first.id), 'directo cerrado');
     iso(old.endedAt); assert.equal(old.platforms.youtube.videoId, video.videoId);
+  });
+});
+
+test('con espectadores desactivados se reintenta Twitch sin métricas, récord ni alertas', async t => {
+  const { start } = await setup(t); const ctx = await start();
+  ctx.app.store.config.viewers.enabled = false;
+  ctx.app.store.config.viewers.confirmPolls = 1;
+  ctx.app.store.config.viewers.warmupMin = 0;
+  ctx.app.store.config.viewers.alertFirst = true;
+  const before = await ctx.get('/api/viewers');
+  await live(ctx);
+  stubTwitch(ctx.app, null); await ctx.app.viewers.tick();
+  assert.equal((await ctx.get('/api/session')).platforms, undefined);
+  stubTwitch(ctx.app, { ...stream, viewer_count: 999 }); await ctx.app.viewers.tick();
+  const identity = await until(async () => (await ctx.get('/api/session')).platforms?.twitch, 'identidad sin espectadores');
+  assert.equal(identity.streamId, stream.id); assert.equal(identity.startedAt, stream.started_at);
+  assert.deepEqual(await ctx.get('/api/viewers'), before);
+  assert.equal((await ctx.get('/api/session')).eventCount, 0);
+});
+
+test('una búsqueda YouTube iniciada en el directo anterior no identifica el siguiente', async t => {
+  const { start } = await setup(t); const ctx = await start();
+  await live(ctx);
+  ctx.app.youtube.cfg.apiKey = 'fake'; ctx.app.youtube.cfg.video = 'abcdefghijk';
+  let release, entered;
+  const gate = new Promise(r => { release = r; });
+  const requested = new Promise(r => { entered = r; });
+  t.after(() => { release(); return ctx.app.youtube.stop(); });
+  ctx.app.youtube.api = async p => {
+    if (p === '/videos') { entered(); await gate; return { items: [{ liveStreamingDetails: { activeLiveChatId: 'old-chat' }, snippet: { title: 'Old' } }] }; }
+    return { items: [] };
+  };
+  const pending = ctx.app.youtube.start();
+  await requested;
+  ctx.app.meld.emit('streaming', false); ctx.app.meld.emit('streaming', true);
+  release(); await pending; await ctx.app.session.transitionChain; await tick();
+  assert.equal((await ctx.get('/api/session')).platforms?.youtube, undefined);
+});
+
+test('reconectar mientras se guarda el cierre abre otra sesión para la nueva identidad', { timeout: 12000 }, async t => {
+  const { start } = await setup(t); const ctx = await start();
+  ctx.app.meld.setStatus({ state: 'conectado', streaming: true });
+  ctx.app.youtube.setStatus(video);
+  const first = await until(async () => { const s = await ctx.get('/api/session'); return s.platforms?.youtube && s; }, 'vídeo anterior');
+  const { createJsonWriter } = await import('../src/json-file.mjs');
+  const writer = createJsonWriter();
+  let release, entered, armed = true;
+  const gate = new Promise(r => { release = r; });
+  const started = new Promise(r => { entered = r; });
+  t.after(() => release());
+  ctx.app.session.writer = (f, d, o = {}) => writer(f, d, { ...o, after: Promise.resolve(o.after).then(async () => {
+    if (armed && f.endsWith('session-current.backup.json')) { armed = false; entered(); await gate; }
+  }) });
+  ctx.app.meld.emit('streaming', false);
+  await started;
+  ctx.app.meld.setStatus({ state: 'reintentando' });
+  ctx.app.meld.setStatus({ state: 'conectado', streaming: true });
+  ctx.app.youtube.setStatus({ ...video, videoId: 'video-2', liveChatId: 'chat-2' });
+  release();
+  const next = await until(async () => { const s = await ctx.get('/api/session'); return s.id !== first.id && s.platforms?.youtube?.videoId === 'video-2' && s; }, 'directo tras cierre retenido');
+  assert.equal(next.endedAt, undefined);
+  const old = await until(async () => (await ctx.get('/api/sessions')).past.find(s => s.id === first.id), 'archivo tras cierre retenido');
+  iso(old.endedAt); assert.equal(old.platforms.youtube.videoId, video.videoId);
+});
+
+test('una observación anterior al corte detectado al reconectar no se atribuye al directo nuevo', async t => {
+  const { start } = await setup(t); const ctx = await start();
+  ctx.app.meld.setStatus({ state: 'conectado', streaming: true });
+  ctx.app.youtube.setStatus(video);
+  const first = await until(async () => { const s = await ctx.get('/api/session'); return s.platforms?.youtube && s; }, 'vídeo anterior');
+  ctx.app.meld.setStatus({ state: 'reintentando' });
+  ctx.app.meld.setStatus({ state: 'conectado', streaming: true });
+  ctx.app.youtube.setStatus({ ...video, videoId: 'video-2', liveChatId: 'chat-2' });
+  ctx.app.viewers.emit('streamIdentity', { streamId: stream.id, startedAt: stream.started_at }, ctx.app.viewers.identityEpoch());
+  const next = await until(async () => { const s = await ctx.get('/api/session'); return s.id !== first.id && s.platforms?.youtube?.videoId === 'video-2' && s; }, 'directo nuevo');
+  await ctx.app.session.transitionChain;
+  assert.equal((await ctx.get('/api/session')).platforms?.twitch, undefined);
+  assert.equal(next.platforms.youtube.videoId, 'video-2');
+});
+
+test('100 compact regressions', async t => {
+  for (const k of ['off','youtube','twitch','reconnect','disabled']) await t.test(k, async t => {
+    const {app:a} = await (await setup(t)).start();
+    const done = () => a.session.transitionChain;
+    let release; const gate = new Promise(r => { release = r; });
+    if (k === 'off') {
+      const {readFile} = await import('node:fs/promises');
+      a.store.config.meld.autoSession = false; await a.session.flush();
+      const before = await readFile(a.session.file);
+      a.meld.setStatus({state:'conectado',streaming:true}); a.youtube.setStatus(video);
+      stubTwitch(a,stream); await a.viewers.tick(); a.meld.emit('streaming',false);
+      await done(); await new Promise(r => setTimeout(r,500));
+      assert.deepEqual(await readFile(a.session.file),before); return;
+    }
+    if (k === 'reconnect') {
+      const {createJsonWriter} = await import('../src/json-file.mjs');
+      let enter; const started = new Promise(r => { enter = r; }); const writer = createJsonWriter();
+      a.session.writer = (f,d,o={}) => writer(f,d,{...o,after:Promise.resolve(o.after).then(async () => {
+        if (f.endsWith('.meta.json')) { enter(); await gate; }
+      })});
+      a.meld.setStatus({state:'conectado',streaming:true}); await started;
+      a.youtube.setStatus(video); a.meld.setStatus({state:'reintentando'});
+      a.meld.setStatus({state:'conectado',streaming:true});
+      a.youtube.setStatus({...video,videoId:'video-2'}); release(); await done(); await tick();
+      assert.equal(a.session.data.platforms?.youtube?.videoId,'video-2');
+      assert.ok((await a.session.list()).some(s => s.platforms?.youtube?.videoId === video.videoId)); return;
+    }
+    if (k === 'disabled') { a.store.config.viewers.enabled = false; stubTwitch(a,stream); }
+    a.meld.setStatus({state:'conectado',streaming:true}); await done(); await tick();
+    if (k === 'disabled') {
+      await a.viewers.tick(); await done(); await tick();
+      assert.equal(a.session.data.platforms?.twitch?.streamId,stream.id); return;
+    }
+    a.youtube.setStatus(video); await done(); let poll;
+    if (k === 'youtube') { a.youtube.running=true; a.youtube.api=()=>gate; poll=a.youtube.pollOnce(); release({items:[]}); }
+    else { a.store.secrets.twitch={access:'fake'}; a.twitch.userId='u'; a.twitch.helix=()=>gate; a.youtube.api=async()=>({items:[]}); poll=a.viewers.tick(); }
+    for (const v of [false,true]) { a.meld.values.isStreaming=v; a.meld.afterChange(); }
+    if (k === 'twitch') { await done(); release({ok:true,data:{data:[stream]}}); }
+    await poll; await done(); await tick(); assert.equal(a.session.data.platforms?.[k],undefined);
   });
 });

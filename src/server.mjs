@@ -311,7 +311,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   };
   // Una desconexión de Meld no es por sí sola un fin: tras reconectar se contrastan
   // las observaciones de cada plataforma con la sesión abierta.
-  let autoLive = false, pendingAutoStart = null, reconnectCheck = null, meldConnected = false;
+  let autoLive = false, pendingAutoStart = null, pendingAutoClose = null, reconnectCheck = null, meldConnected = false, identityEpoch = 0;
+  youtube.identityEpoch = viewers.identityEpoch = () => identityEpoch;
+  viewers.identityEnabled = () => !!store.config.meld.autoSession && autoLive && !autoSessionClosed;
   const trackAutoSession = (operation, success, failure) => {
     let resolve, reject;
     const work = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -328,7 +330,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return work;
   };
   const startAutoSession = () => {
-    autoLive = true; reconnectCheck = null;
+    autoLive = true; reconnectCheck = null; identityEpoch++;
     const work = trackAutoSession(() => session.startNew('', { meldAuto: true }),
       '[meld] directo en marcha: nueva sesión', '[meld] No se pudo iniciar la sesión automática.');
     pendingAutoStart = work;
@@ -338,29 +340,39 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return work;
   };
   const checkReconnectedSession = () => {
-    const platforms = session.data.platforms || {};
-    reconnectCheck = { id: session.data.id, youtube: platforms.youtube?.videoId, twitch: platforms.twitch?.streamId };
+    // El checkpoint espera el corte y las identidades aceptadas antes de reconectar.
+    reconnectCheck = trackAutoSession(() => session.captureIdentity(), null, '[sesión] No se pudo comprobar la identidad.');
   };
-  const recordIdentity = (platform, data) => {
-    if (autoSessionClosed || !data) return;
+  const recordIdentity = (platform, data, epoch) => {
+    if (autoSessionClosed || !store.config.meld.autoSession || epoch !== identityEpoch || !data) return;
     const key = platform === 'youtube' ? 'videoId' : 'streamId';
-    const observed = data[key];
-    if (typeof observed !== 'string' || !observed) return;
-    let after = pendingAutoStart;
-    if (store.config.meld.autoSession && reconnectCheck?.id === session.data.id && reconnectCheck[platform]) {
-      const previous = reconnectCheck[platform];
-      if (observed !== previous) after = startAutoSession(); // startNew cierra y archiva la anterior
-    }
-    trackAutoSession(() => session.recordPlatform(platform, data, after), null, '[sesión] No se pudo registrar la identidad de la plataforma.');
+    if (typeof data[key] !== 'string' || !data[key]) return;
+    const after = pendingAutoStart, reconnect = reconnectCheck, expectedId = after ? null : session.data.id;
+    let work;
+    const onRollover = () => {
+      // Las peticiones anteriores al nuevo directo no pueden identificarlo.
+      identityEpoch++; reconnectCheck = null; pendingAutoStart = work;
+      work.then(() => { if (pendingAutoStart === work) pendingAutoStart = null; }, () => {
+        if (pendingAutoStart === work) { pendingAutoStart = null; autoLive = false; }
+      });
+    };
+    work = trackAutoSession(() => session.recordPlatform(platform, data, after, {
+      reconnect, expectedId, onRollover, enabled: () => !!store.config.meld.autoSession,
+    }), null, '[sesión] No se pudo registrar la identidad de la plataforma.');
   };
-  // Solo eventos nuevos: nunca copiar el último status o una fila previa al inicio.
-  youtube.on('status', st => { if (st.state === 'escuchando') recordIdentity('youtube', st); });
-  viewers.on('streamIdentity', identity => recordIdentity('twitch', identity));
+  // Cada resultado lleva la generación capturada antes de iniciar su petición.
+  youtube.on('status', (st, epoch) => { if (st.state === 'escuchando') recordIdentity('youtube', st, epoch); });
+  viewers.on('streamIdentity', (identity, epoch) => recordIdentity('twitch', identity, epoch));
+  const closeAutoSession = () => {
+    autoLive = false; pendingAutoStart = null; reconnectCheck = null; identityEpoch++;
+    const work = trackAutoSession(() => session.endCurrent(), null, '[meld] No se pudo cerrar la sesión automática.');
+    pendingAutoClose = work;
+    work.then(() => { if (pendingAutoClose === work) pendingAutoClose = null; }, () => { if (pendingAutoClose === work) pendingAutoClose = null; });
+  };
   meld.on('streaming', live => {
     if (!store.config.meld.autoSession || autoSessionClosed) return;
     if (live) { startAutoSession(); return; }
-    autoLive = false; pendingAutoStart = null; reconnectCheck = null;
-    trackAutoSession(() => session.endCurrent(), null, '[meld] No se pudo cerrar la sesión automática.');
+    closeAutoSession();
   });
   meld.on('status', st => {
     const connectedNow = st.state === 'conectado';
@@ -369,15 +381,15 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (!connectedNow || !store.config.meld.autoSession || autoSessionClosed) return;
     if (st.streaming) {
       if (autoLive) {
-        if (reconnected && !pendingAutoStart && session.data.meldAutoSession && !session.data.endedAt) checkReconnectedSession();
+        if (reconnected) checkReconnectedSession();
         return;
       }
       autoLive = true;
-      if (!session.data.meldAutoSession || session.data.endedAt) startAutoSession();
-      else checkReconnectedSession();
-    } else if (autoLive || (session.data.meldAutoSession && !session.data.endedAt)) {
-      autoLive = false; pendingAutoStart = null; reconnectCheck = null;
-      trackAutoSession(() => session.endCurrent(), null, '[meld] No se pudo cerrar la sesión automática.');
+      // Si hay un fin aceptado pero aún no durable, el siguiente live va detrás de él.
+      if (pendingAutoClose || !session.data.meldAutoSession || session.data.endedAt) startAutoSession();
+      else { identityEpoch++; checkReconnectedSession(); }
+    } else if (!pendingAutoClose && (autoLive || (session.data.meldAutoSession && !session.data.endedAt))) {
+      closeAutoSession();
     }
   });
   // #73: al empezar el directo se conecta sola la lectura del chat de YouTube, también si

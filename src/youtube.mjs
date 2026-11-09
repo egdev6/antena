@@ -92,9 +92,9 @@ export class YouTube extends EventEmitter {
 
   get cfg() { return this.store.config.youtube; }
 
-  setStatus(patch) {
+  setStatus(patch, identityEpoch = this.identityEpoch?.()) {
     this.status = { ...this.status, ...patch };
-    this.emit('status', this.status);
+    this.emit('status', this.status, identityEpoch);
   }
 
   async api(pathname, params, { auth = false, method = 'GET', body } = {}) {
@@ -154,9 +154,12 @@ export class YouTube extends EventEmitter {
     return this.pollClosePromise;
   }
 
-  start(video) { return this.trackPollWork(() => this.startPoll(video)); }
+  start(video) {
+    const identityEpoch = this.identityEpoch?.();
+    return this.trackPollWork(() => this.startPoll(video, identityEpoch));
+  }
 
-  async startPoll(video) {
+  async startPoll(video, identityEpoch = this.identityEpoch?.()) {
     if (this.pollClosed) return;
     if (!this.cfg.apiKey && !this.token?.access) throw new Error('Falta la API key de YouTube (o conecta tu cuenta).');
     await this.stop();
@@ -173,7 +176,7 @@ export class YouTube extends EventEmitter {
       const item = d.items?.[0];
       const liveChatId = item?.liveStreamingDetails?.activeLiveChatId;
       if (!liveChatId) throw Object.assign(new Error('Ese vídeo no tiene un chat en directo activo.'), { reason: 'noLiveChat' });
-      this.setStatus({ state: 'escuchando', videoId, liveChatId, title: item.snippet?.title });
+      this.setStatus({ state: 'escuchando', videoId, liveChatId, title: item.snippet?.title }, identityEpoch);
       this.pageToken = null;
       this.primed = false;
       this.poll();
@@ -208,6 +211,7 @@ export class YouTube extends EventEmitter {
 
   async pollOnce() {
     if (this.pollClosed || !this.running) return;
+    const identityEpoch = this.identityEpoch?.(); // la petición puede terminar en otro directo
     let wait = Math.max(5, Number(this.cfg.pollSeconds) || 8) * 1000;
     try {
       const d = await this.api('/liveChat/messages', {
@@ -236,7 +240,7 @@ export class YouTube extends EventEmitter {
       this.retries = 0;
       const recovered = this.status.state === 'en espera';
       this.setStatus({ polls: this.status.polls + 1, lastPoll: new Date().toISOString(),
-        ...(recovered ? { state: 'escuchando', notice: null, retryAt: null } : {}) });
+        ...(recovered ? { state: 'escuchando', notice: null, retryAt: null } : {}) }, identityEpoch);
     } catch (err) {
       // El pageToken se conserva (como en main): descartarlo haría que el reintento vuelva
       // a traer los últimos mensajes ya procesados y los reemitiera como alertas y chat.
