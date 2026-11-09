@@ -140,3 +140,17 @@ test('S4: a widget with unavailable WebSocket receives snapshots and broadcasts 
   await waitDom(c, `document.querySelector('.item-twitch .big')?.textContent === '654'`);
   assert.equal(await evaluateChrome(c, `document.querySelector('.item-twitch .big').textContent`), '654');
 }));
+
+test('Chrome pagehide really closes the socket before bfcache resume', { timeout: 60000 }, t => withApp(t, async ({ app, base, c }) => {
+  await c.send('Page.navigate', { url: base + '/widget/viewers?platforms=twitch&total=0' });
+  await waitDom(c, `!!document.querySelector('.item-twitch .big')`);
+  const widgets = () => [...app.bus.clients].filter(x => x.kind === 'widget');
+  assert.equal(widgets().length, 1);
+  const old = widgets()[0];
+  await evaluateChrome(c, `dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })); true`);
+  for (let i = 0; i < 100 && app.bus.clients.has(old); i++) await new Promise(r => setTimeout(r, 10));
+  assert.equal(app.bus.clients.has(old), false, 'pagehide must close the native WebSocket');
+  await evaluateChrome(c, `dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); true`);
+  for (let i = 0; i < 100 && widgets().length !== 1; i++) await new Promise(r => setTimeout(r, 10));
+  assert.equal(widgets().length, 1);
+}));

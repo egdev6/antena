@@ -34,7 +34,8 @@ export class AntenaStream extends EventTarget {
     const ws = this.socket;
     this.socket = null;
     this.readyState = 0;
-    try { ws?.close(1001); } catch { /* ya cerrado */ }
+    // Desde el navegador solo valen 1000 o 3000-4999: close(1001) lanza y dejaría el socket abierto.
+    try { ws?.close(1000); } catch { /* ya cerrado */ }
   }
 
   resume() {

@@ -26,3 +26,20 @@ test('client close with a blocked outbound queue closes promptly', { timeout: 40
   assert.equal(res.ended, true); assert.equal(socket.destroyed, true);
   assert.equal(bus.clients.size, 0); assert.equal(closes, 1);
 });
+
+test('client close after a bus cut drops the in-flight queue drops the in-flight queue', { timeout: 4000 }, async t => {
+  let socket, res, client, closes = 0;
+  const bus = new Bus({ byteBudget: 1024, backlogGraceMs: 30, backlogStallMs: 40, backlogMaxMs: 100 });
+  const server = net.createServer(s => { socket = s; res = new WsResponse(s); client = bus.addClient(res, 'widget'); res.on('close', () => closes++); });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const peer = net.connect(server.address().port, '127.0.0.1'); peer.on('error', () => {});
+  t.after(() => { peer.destroy(); socket?.destroy(); server.close(); });
+  await once(peer, 'connect'); while (!client) await wait(1);
+  peer.pause(); bus.send('chat', { text: 'x'.repeat(8 * 1024 * 1024) }, ['widget']);
+  while (!client.closing) await wait(5);
+  assert.ok(res.queuedBytes > 0); assert.equal(res.ended, true);
+  peer.write(Buffer.from([0x88, 0x82, 1, 2, 3, 4, 2, 234]));
+  for (let i = 0; i < 100 && !socket.destroyed; i++) await wait(10);
+  assert.equal(socket.destroyed, true, 'client close must not wait for the L9 deadline');
+  assert.equal(bus.clients.size, 0); assert.equal(closes, 1);
+});
