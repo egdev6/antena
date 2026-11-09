@@ -417,7 +417,7 @@ async function waitLabel(base, label) {
   throw new Error('la etiqueta no persistió: ' + label);
 }
 
-test('prompter React: guardar una marca libera la cronología (Enter/blur, stream y fallo)', { timeout: 90000 }, async t => {
+test('prompter React: guardar una marca libera la cronología (Enter/blur, SSE y fallo)', { timeout: 90000 }, async t => {
   // La interfaz React requiere app/dist (#115): sin ella no hay página de repliegue.
   try { await stat(new URL('../app/dist/index.html', import.meta.url)); }
   catch (e) { if (e.code !== 'ENOENT') throw e; return t.skip('sin app/dist/index.html; compila la interfaz con pnpm app:build para ejecutar la regresión React'); }

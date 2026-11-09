@@ -128,6 +128,8 @@ export class WsResponse extends EventEmitter {
     if (!this.closed && !this.destroyed) check();
   }
   fail(code) {
+    // Tras nuestro close ya no se envía otro: un error de protocolo cierra al momento.
+    if (this.ended) { this.close(); this.socket.destroy(); return; }
     const payload = Buffer.alloc(2); payload.writeUInt16BE(code);
     this.finish(payload, true);
   }
