@@ -99,11 +99,19 @@ export class Engine extends EventEmitter {
     return this.deliver(a);
   }
 
-  handleChat(msg) {
+  handleChat(msg, context) {
     if (isBlockedUser(msg.user, this.config.filters) || isBlockedUser(msg.login, this.config.filters)) return;
+    // Solo los productores reales pasan este contexto separado del mensaje público.
+    if (['twitch', 'youtube'].includes(context?.source)) {
+      try { this.emit('chatMetric', msg, context); }
+      catch { try { this.log('[chat] No se pudieron registrar las métricas del mensaje.'); } catch {} }
+    }
     // tus propios mensajes (y los programados) no pasan por el filtro de enlaces y palabras
     const text = msg.owner ? String(msg.text ?? '') : cleanText(msg.text, this.config.filters);
     const m = { ...msg, text, parts: text === msg.text ? msg.parts : [{ t: text }], user: cleanText(msg.user, { ...this.config.filters, blockLinks: false, maxMessageLength: 60 }) };
+    // Identidad para contabilidad interna: nunca se publica en chat, widgets ni SSE.
+    delete m.authorId;
+    delete m.roomId;
     m.command = /^[!¡]/.test(text.trim());
     if (m.highlighted) this.session.addNote({ kind: 'highlight', text: m.text, user: m.user, platform: m.platform, msgId: m.id });
     this.timers?.onChat(m);
