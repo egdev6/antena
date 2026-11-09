@@ -1,15 +1,9 @@
-# Code safety workflow asset for github-repository-bootstrap.
-#
-# The renderer replaces the single repository-policy slot below with either the
-# base64 of a caller-reviewed repository policy or an empty string. Empty
-# renders the scanner-only default (Semgrep + zizmor); a policy additionally
-# gates an objective repository-policy check. No policy is ever read from the
-# target repository, the pull request, or a moving reference. This file is inert
-# template data: the renderer is pure and performs no I/O.
-#
-# A pull request can change its own copy of this workflow. Enforced reviews and
-# branch protection are separate repository settings; this asset alone does not
-# certify a repository.
+# Pull requests scan with the vendored controls from their exact base commit;
+# changes to tools/code-safety take effect for scans after they are merged.
+# A PR can change this workflow itself: maintainer PR review and branch protection
+# protect the workflow, independently of the base-checkout scanner boundary.
+# The empty policy slot selects scanner-only operation; no policy is read from
+# the target checkout or the pull request.
 name: Code safety
 on:
   pull_request:
@@ -22,9 +16,8 @@ concurrency:
   group: code-safety-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 env:
-  # Trust anchor: the reviewed egdev6/quorb control commit, never a PR/branch/tag.
-  TRUSTED_BASELINE: 176ae636fdd80ce60d6fffec188ce558c5f6692b
   TARGET_COMMIT: ${{ github.sha }}
+  PR_BASE_COMMIT: ${{ github.event.pull_request.base.sha }}
   # Static slot: base64 of a caller-reviewed policy, or empty for scanner-only.
   REPOSITORY_POLICY_BASE64: ""
 jobs:
@@ -33,19 +26,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Validate immutable baseline and target identifiers
-        shell: bash
-        run: |
-          if [[ ! "$TRUSTED_BASELINE" =~ ^[0-9a-f]{40}$ ]]; then
-            echo 'Invalid trust anchor: expected the reviewed full baseline commit.'
-            exit 2
-          fi
-          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-      - name: Fetch reviewed control tools
+      - name: Fetch pull request base controls
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: egdev6/quorb
-          ref: ${{ env.TRUSTED_BASELINE }}
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Fetch event commit controls
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
           path: trusted
           persist-credentials: false
           submodules: false
@@ -62,10 +56,17 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '24'
-      - name: Verify target identity
+      - name: Verify checkout identities
         shell: bash
         run: |
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           test "$(git -C target rev-parse HEAD)" = "$TARGET_COMMIT"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            [[ "$PR_BASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+            test "$(git -C trusted rev-parse HEAD)" = "$PR_BASE_COMMIT"
+          else
+            test "$(git -C trusted rev-parse HEAD)" = "$TARGET_COMMIT"
+          fi
       - name: Materialize reviewed repository policy
         if: env.REPOSITORY_POLICY_BASE64 != ''
         shell: bash
@@ -75,20 +76,20 @@ jobs:
         if: env.REPOSITORY_POLICY_BASE64 != ''
         shell: bash
         run: |
-          node trusted/scripts/security/check-repository.mjs \
+          node trusted/tools/code-safety/check-repository.mjs \
             --repo "$GITHUB_WORKSPACE/target" \
             --policy "$RUNNER_TEMP/repository-policy.json"
       - name: Provision exact verified wheels and runtime
         shell: bash
         run: |
           mkdir -m 700 "$RUNNER_TEMP/quorb-code-safety"
-          node trusted/scripts/security/code-safety.mjs provision "$RUNNER_TEMP/quorb-code-safety/wheels"
+          node trusted/tools/code-safety/code-safety.mjs provision "$RUNNER_TEMP/quorb-code-safety/wheels"
           docker --host unix:///var/run/docker.sock pull --platform linux/amd64 \
             docker.io/library/python@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
       - name: Analyze inert Git blobs offline
         shell: bash
         run: |
-          node trusted/scripts/security/code-safety.mjs scan \
+          node trusted/tools/code-safety/code-safety.mjs scan \
             "$GITHUB_WORKSPACE/target" "$TARGET_COMMIT" \
             "$RUNNER_TEMP/quorb-code-safety/wheels" "$RUNNER_TEMP/quorb-code-safety"
       - name: Remove temporary downloaded tools
