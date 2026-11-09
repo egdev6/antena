@@ -95,8 +95,14 @@ test('S4: alert overlay still sends its shown ACK; still thumbnails never connec
   await waitDom(c, `document.querySelector('.alert-name')?.textContent === 'Alice' && window.__acks.length === 1`);
   assert.deepEqual(await evaluateChrome(c, 'window.__acks'), [{ id: 'ws-ack', status: 200 }]);
   assert.equal(dispatched.length, 1);
+  const before = new Set(app.bus.clients);
   await c.send('Page.navigate', { url: base + '/overlay?still=follow' });
   await waitDom(c, `document.body.classList.contains('still') && !!document.querySelector('.alert-card')`);
+  // The previous page's socket closes asynchronously on the server; wait for it, then check
+  // that the still thumbnail never opened a connection of its own.
+  for (let i = 0; i < 100 && [...app.bus.clients].some(client => before.has(client)); i++) await new Promise(r => setTimeout(r, 50));
+  await new Promise(r => setTimeout(r, 300));
+  assert.deepEqual([...app.bus.clients].filter(client => !before.has(client)), [], 'the still thumbnail opens no stream');
   assert.equal(app.bus.overlayCount(), 0);
 }));
 
