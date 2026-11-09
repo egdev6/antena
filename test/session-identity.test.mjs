@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/server.mjs';
 
 const video = { state: 'escuchando', videoId: 'video-1', liveChatId: 'chat-1', title: 'Primer directo' };
@@ -58,7 +59,7 @@ async function live(ctx) {
   return until(async () => { const s = await ctx.get('/api/session'); return s.id !== old && s; }, 'nueva sesión');
 }
 function mcp(t, base) {
-  const child = spawn(process.execPath, [new URL('../src/mcp.mjs', import.meta.url).pathname], {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp.mjs', import.meta.url))], {
     env: { ANTENA_URL: base, ANTENA_NO_EMBED: '1', TMPDIR: tmpdir(), PATH: process.env.PATH },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
