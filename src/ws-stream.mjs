@@ -52,6 +52,7 @@ export class WsResponse extends EventEmitter {
   get writableLength() { return this.queuedBytes + this.socket.writableLength; }
   get writableEnded() { return this.ended || this.socket.writableEnded; }
   get destroyed() { return this.socket.destroyed; }
+  destroy(error) { this.socket.destroy(error); return this; }
   close() {
     if (this.closed) return;
     this.closed = true; this.outbound = []; this.pendingPong = null; this.queuedBytes = 0; this.needsDrain = false;
@@ -127,12 +128,15 @@ export class WsResponse extends EventEmitter {
     if (!this.closed && !this.destroyed) check();
   }
   fail(code) {
+    // Tras nuestro close ya no se envía otro: un error de protocolo cierra al momento.
+    if (this.ended) { this.close(); this.socket.destroy(); return; }
     const payload = Buffer.alloc(2); payload.writeUInt16BE(code);
     this.finish(payload, true);
   }
 
   receive(chunk) {
-    if (this.closed || this.writableEnded || this.destroyed) return;
+    // Tras nuestro close (corte del bus) se sigue leyendo: el close del cliente completa el cierre.
+    if (this.closed || this.destroyed) return;
     this.buffer = Buffer.concat([this.buffer, chunk]);
     while (this.buffer.length >= 2) {
       const a = this.buffer[0], b = this.buffer[1], opcode = a & 15, fin = !!(a & 0x80);
@@ -162,9 +166,17 @@ export class WsResponse extends EventEmitter {
           const code = payload.readUInt16BE();
           if ((code < 1000 || code >= 5000 || [1004, 1005, 1006, 1015].includes(code) || (code >= 1016 && code < 3000)) || !isUtf8(payload.subarray(2))) return this.fail(1002);
         }
-        return this.finish(payload);
+        // RFC 6455 §7.1.1: tras responder al close del cliente, el servidor cierra el TCP. Chrome
+        // puede esperar a que lo hagamos; si no, la página que navegó deja el cliente vivo.
+        // Con datos aún en cola el par ya no los leerá: se descartan y se cierra al momento.
+        // Si ya enviamos nuestro close (o hay datos en cola que el par no leerá), el cierre está
+        // completo: se descarta lo pendiente y se cierra al momento.
+        if (this.ended || this.queuedBytes > 0 || this.writing || this.socketBlocked) {
+          this.ended = true; this.close(); this.socket.destroy(); return;
+        }
+        return this.finish(payload, true);
       }
-      if (opcode === 9) this.pong(payload);
+      if (opcode === 9 && !this.ended) this.pong(payload); // nada se envía tras nuestro close
       if (opcode <= 2) {
         if (opcode === 1) this.textDecoder = new TextDecoder('utf-8', { fatal: true });
         if (this.textDecoder) {

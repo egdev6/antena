@@ -232,7 +232,7 @@ test('mutaciones: IPv6 loopback sigue siendo same-origin', async t => {
 
 // Los equivalentes React de las antiguas pruebas de fuente del clásico (descartar respuestas
 // obsoletas de la vista Prompter y alcance de las acciones por teclado) viven ahora dentro de
-// la regresión de navegador del prompter React, más abajo: SSE que no pisa la edición,
+// la regresión de navegador del prompter React, más abajo: stream que no pisa la edición,
 // activación por teclado del botón de editar marca y pestañas que no dejan estado obsoleto.
 // --- Regresión de navegador real (CDP sobre el WebSocket nativo de Node) --------------------------
 // Hermano de los casos de arriba: solo corre con Chrome local; sin Chrome se marca como omitido.
@@ -248,6 +248,14 @@ function connectCdp(wsUrl) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl); let id = 0; const waiters = new Map(); const events = [];
     const deliveredTimelineLabels = new Set();
+    const streamSockets = new Set();
+    const observeTimeline = data => {
+      try {
+        for (const item of JSON.parse(data).items || []) {
+          if (item.kind === 'marker' && typeof item.label === 'string') deliveredTimelineLabels.add(item.label);
+        }
+      } catch {}
+    };
     const fail = () => {
       const error = new Error('CDP: transporte cerrado');
       for (const waiter of waiters.values()) waiter.reject(error);
@@ -257,12 +265,18 @@ function connectCdp(wsUrl) {
       const m = JSON.parse(ev.data);
       const diagnostic = chromeDiagnosticEvent(m);
       if (diagnostic) { events.push(diagnostic); if (events.length > 6) events.shift(); }
-      if (m.method === 'Network.eventSourceMessageReceived' && m.params.eventName === 'timeline') {
+      if (m.method === 'Network.webSocketCreated') {
         try {
-          for (const item of JSON.parse(m.params.data).items || []) {
-            if (item.kind === 'marker' && typeof item.label === 'string') deliveredTimelineLabels.add(item.label);
-          }
+          if (new URL(m.params.url).pathname === '/api/stream') streamSockets.add(m.params.requestId);
         } catch {}
+      } else if (m.method === 'Network.webSocketClosed') {
+        streamSockets.delete(m.params.requestId);
+      } else if (m.method === 'Network.eventSourceMessageReceived' && m.params.eventName === 'timeline') {
+        observeTimeline(m.params.data);
+      } else if (m.method === 'Network.webSocketFrameReceived' && streamSockets.has(m.params.requestId) && m.params.response.opcode === 1) {
+        // Cada mensaje de texto WS es una trama SSE completa, como la escribe el bus.
+        const match = /^event: timeline\ndata: ([\s\S]*)\n\n$/.exec(m.params.response.payloadData);
+        if (match) observeTimeline(match[1]);
       }
       const w = waiters.get(m.id); if (!w) return; waiters.delete(m.id);
       if (m.error) w.reject(Object.assign(new Error('CDP: comando rechazado'), { code: m.error.code }));
@@ -381,7 +395,7 @@ async function waitPanelClient(app, previousClients = new Set()) {
     if ([...app.bus.clients].some(client => client.kind === 'panel' && !client.closing && !previousClients.has(client))) return;
     await sleep(50);
   }
-  assert.fail('panel SSE did not connect');
+  assert.fail('panel stream did not connect');
 }
 
 async function waitTimelineDelivery(c, label) {
@@ -390,7 +404,7 @@ async function waitTimelineDelivery(c, label) {
     if (c.timelineDelivered(label)) return;
     await sleep(50);
   }
-  assert.fail(`timeline SSE did not deliver marker: ${label}`);
+  assert.fail(`timeline stream did not deliver marker: ${label}`);
 }
 
 async function marker(base, label = '') {
@@ -448,11 +462,11 @@ test('prompter React: guardar una marca libera la cronología (Enter/blur, SSE y
       await waitTimelineDelivery(c, sseLabel);
       await waitMarkerLabel(c, sseLabel);
       await waitMarkerCount(c, ++expectedMarkers);
-      assert.equal(await cdpEval(c, 'document.querySelector(".pr-edit").value'), typed, 'la SSE no pisa el nombre en edición');
+      assert.equal(await cdpEval(c, 'document.querySelector(".pr-edit").value'), typed, 'el stream no pisa el nombre en edición');
       await cdpEval(c, mode === 'Enter' ? 'document.querySelector(".pr-edit").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}))' : 'document.querySelector(".pr-edit").blur()');
       await waitDom(c, '!document.querySelector(".pr-edit")');         // el editor desaparece al terminar
       await waitLabel(base, typed);
-      await waitDom(c, `document.body.innerText.includes(${JSON.stringify(typed)})`);   // el nombre llega por la SSE real
+      await waitDom(c, `document.body.innerText.includes(${JSON.stringify(typed)})`);   // el nombre llega por el stream real
       const next = await marker(base, 'Posterior ' + mode);
       expectedMarkers++;
       await waitDom(c, `document.body.innerText.includes(${JSON.stringify(next.label)})`);   // la cronología ya no está congelada
@@ -517,9 +531,9 @@ test('panel React: el aviso de configuración/secretos persiste, no finge guarda
     const c = chrome.cdp;
     // La PersistBar React solo existe con cambios pendientes: el reposo es «sin banner».
     await waitDom(c, '!!document.querySelector("main .view-head")', { timeoutMs: 12000 });
-    // la SSE del panel está conectada antes de tocar nada (además del snapshot inicial por handshake)
+    // el stream del panel está conectado antes de tocar nada (además del snapshot inicial por handshake)
     for (let i = 0; i < 100 && ![...app.bus.clients].some(cl => cl.kind === 'panel'); i++) await sleep(50);
-    assert.ok([...app.bus.clients].some(cl => cl.kind === 'panel'), 'SSE del panel conectada');
+    assert.ok([...app.bus.clients].some(cl => cl.kind === 'panel'), 'stream del panel conectado');
 
     // fallo determinista de config (ENOTDIR) + cola retenida: pending visible y sin fingir guardado
     const blocker = path.join(dataDir, 'blocker');
@@ -564,7 +578,7 @@ test('panel React: el aviso de configuración/secretos persiste, no finge guarda
     await waitDom(c, 'document.querySelector(".persist").dataset.state === "error" && /secretos/i.test(document.querySelector(".persist").textContent) && !/configuraci/i.test(document.querySelector(".persist").textContent)');
     assert.doesNotMatch(await cdpEval(c, 'document.querySelector(".persist").textContent'), /guardado/i);
 
-    // reparar secretos: la SSE limpia el banner sin recargar (equivalente React del estado «saved»)
+    // reparar secretos: el stream limpia el banner sin recargar (equivalente React del estado «saved»)
     app.store.secFile = path.join(dataDir, 'secrets.json');
     await app.store.setSecret('youtube', { access: 'ok' });
     await waitDom(c, '!document.querySelector(".persist")');

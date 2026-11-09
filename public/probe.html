@@ -28,11 +28,12 @@ input{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid #444;backg
 </div>
 <ul id="list"></ul>
 <div class="done" id="done">Listo: ya puedes cerrar o quitar esta URL. Avisa a Claude.</div>
-<script>
+<script type="module">
+import { AntenaStream } from '/stream-client.js';
 const id = new URLSearchParams(location.search).get('id') || (/QtWebEngine/i.test(navigator.userAgent) ? 'meld' : 'navegador');
 const R = { id, url: location.href, userAgent: navigator.userAgent, checks: {} };
 const names = {
-  js: 'JavaScript', fetch: 'Leer la API de antena', sse: 'Avisos en tiempo real (SSE)', storage: 'Recordar ajustes (localStorage)',
+  js: 'JavaScript', fetch: 'Leer la API de antena', sse: 'Avisos en tiempo real', storage: 'Recordar ajustes (localStorage)',
   css: 'CSS moderno (@layer, color-mix, :has)', click: 'Clic con el ratón', hover: 'Hover del ratón', keys: 'Escribir con el teclado', scroll: 'Rueda / scroll',
   size: 'Tamaño de la ventana', focus: 'Recibe foco'
 };
@@ -53,8 +54,8 @@ try { localStorage.setItem('egdev.probe', '1'); set('storage', localStorage.getI
 set('css', CSS.supports('color', 'color-mix(in srgb, red 50%, blue)') && CSS.supports('selector(:has(a))') && 'CSSLayerBlockRule' in window,
   ['color-mix', ':has', '@layer'].filter((_, i) => [CSS.supports('color', 'color-mix(in srgb, red 50%, blue)'), CSS.supports('selector(:has(a))'), 'CSSLayerBlockRule' in window][i]).join(' '));
 fetch('/api/state').then(r => r.ok ? set('fetch', true, r.status) : set('fetch', false, r.status)).catch(e => set('fetch', false, e.message));
-const es = new EventSource('/api/stream?client=widget'); const to = setTimeout(() => set('sse', false, 'sin respuesta en 6 s'), 6000);
-es.addEventListener('widgets', () => { clearTimeout(to); set('sse', true, 'conectado'); es.close(); });
+const es = new AntenaStream('/api/stream?client=widget'); const to = setTimeout(() => set('sse', false, 'sin respuesta en 6 s'), 6000);
+es.addEventListener('widgets', () => { clearTimeout(to); set('sse', true, 'conectado (' + (es.transport === 'sse' ? 'SSE' : 'WebSocket') + ')'); es.close(); });
 let clicks = 0; document.getElementById('btn').onclick = e => { clicks++; e.target.textContent = `1 · Pulsado ${clicks} ✔`; set('click', true, clicks); };
 document.body.addEventListener('mouseover', () => R.checks.hover || set('hover', true), { once: false });
 document.getElementById('txt').addEventListener('input', e => set('keys', e.target.value.length > 0, `${e.target.value.length} car.`));

@@ -248,7 +248,14 @@ export function Editor({ target }: { target: Target }) {
   const lastField = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const cssRef = useRef<HTMLTextAreaElement>(null);
   const gcssRef = useRef<HTMLTextAreaElement>(null);
-  const frameRef = useCallback((el: HTMLIFrameElement | null) => { if (el) el.onload = () => ed.queuePreview(300); }, []);
+  const frameRef = useCallback((el: HTMLIFrameElement | null) => {
+    if (el) el.onload = async () => {
+      const doc = el.contentDocument;
+      const frame = el.contentWindow as (Window & { antenaPreviewReady?: Promise<void> }) | null;
+      await frame?.antenaPreviewReady;
+      if (el.isConnected && el.contentDocument === doc) ed.queuePreview(300);
+    };
+  }, []);
   const item = findTarget(s, target);
   // timers: refresca el estado (cuenta atrás) cada 5 s
   useEffect(() => {
