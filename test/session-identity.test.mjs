@@ -617,3 +617,19 @@ for (const failure of ['sin vídeo', 'sin chat activo', 'otro chat', 'error']) t
   assert.equal(a.youtube.status.liveChatId, 'chat');
   assert.equal(calls, 2);
 });
+
+test('una confirmación fallida no interrumpe el chat', async t => {
+  const { app: a } = await (await setup(t)).start();
+  a.youtube.cfg.apiKey = 'fake'; a.youtube.cfg.video = 'abcdefghijk';
+  let videos = 0, chats = 0;
+  a.youtube.api = async p => p === '/videos'
+    ? (++videos === 1 ? { items: [{ liveStreamingDetails: { activeLiveChatId: 'c' } }] } : Promise.reject(Error('offline')))
+    : (chats++, { items: [] });
+  t.after(() => a.youtube.stop());
+  await a.youtube.start(); await until(() => chats === 1, 'primer chat');
+  a.meld.setStatus({ state: 'conectado', streaming: true });
+  await until(() => videos === 2, 'confirmación'); await tick(); await a.session.transitionChain;
+  assert.equal(a.session.data.platforms?.youtube, undefined);
+  clearTimeout(a.youtube.timer); await a.youtube.poll();
+  assert.equal(chats, 2); assert.equal(videos, 2); assert.equal(a.youtube.running, true);
+});
