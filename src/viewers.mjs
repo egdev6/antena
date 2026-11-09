@@ -77,7 +77,8 @@ export class ViewerWatch extends EventEmitter {
     const r = await t.helix('GET', `/streams?user_id=${encodeURIComponent(t.userId)}`);
     if (!r.ok) throw new Error(`Twitch respondió ${r.status} al leer los espectadores`);
     const row = r.data?.data?.[0];
-    return row ? { live: true, viewers: Number(row.viewer_count) || 0 } : { live: false };
+    return row ? { live: true, viewers: Number(row.viewer_count) || 0,
+      ...(row.id ? { streamId: row.id } : {}), ...(row.started_at ? { startedAt: row.started_at } : {}) } : { live: false };
   }
 
   async readYouTube() {
@@ -121,11 +122,24 @@ export class ViewerWatch extends EventEmitter {
     if (this.busy) return this.busy;
     this.busy = (async () => {
       const fired = [];
-      if (this.cfg.enabled === false) return fired;
+      // Aunque el récord esté desactivado, el directo automático necesita la fila
+      // de Twitch. Se consulta sin actualizar snapshots, récords ni alertas.
+      if (this.cfg.enabled === false) {
+        if (!this.identityEnabled?.()) return fired;
+        const epoch = this.identityEpoch?.();
+        try {
+          const r = await this.readTwitch();
+          this.emit('streamIdentity', r.live && r.streamId ? { streamId: r.streamId, startedAt: r.startedAt } : null, epoch);
+        } catch { /* el siguiente sondeo reintenta sin activar las métricas */ }
+        return fired;
+      }
       for (const p of VIEWER_PLATFORMS) {
         let r;
+        const epoch = this.identityEpoch?.(); // captura antes de iniciar la petición
         try { r = await this.readers[p](); this.state[p].error = null; }
         catch (err) { this.state[p].error = err.message; continue; }
+        // La fila real también identifica el directo; no se añade al snapshot de espectadores.
+        if (p === 'twitch') this.emit('streamIdentity', r.live && r.streamId ? { streamId: r.streamId, startedAt: r.startedAt } : null, epoch);
         const a = this.observe(p, r);
         if (a) fired.push(a);
       }

@@ -143,6 +143,8 @@ export class Session extends EventEmitter {
     // Transición serializada + un único archivo pendiente (sin diarios ni colas ocultas).
     this.transitionChain = Promise.resolve();
     this.pendingArchive = null;
+    this.replacedIdentity = null; // solo memoria: identidad del directo inmediatamente anterior
+    this.identityStartedAt = process.hrtime.bigint(); // monotónico, independiente del reloj de pared
   }
   static fresh(title = '') {
     return { id: `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`, title, startedAt: new Date().toISOString(), events: [], notes: [], goalOffsets: {} };
@@ -385,15 +387,78 @@ export class Session extends EventEmitter {
   }
   pendingThanks(data = this.data) { return data.events.filter(e => !e.thanked).length; }
 
-  // Corte serializado. Cada transición drena el pending previo y el
-  // checkpoint actual antes de tocar el corte; cualquier fallo previo rechaza sin
-  // añadir `endedAt` al directo actual ni sobrescribir un archivo existente.
-  startNew(title = '') {
-    const run = this.transitionChain.then(() => this._cutover(title));
+  _identityOf(data) {
+    return { id: data.id, youtube: data.platforms?.youtube?.videoId, twitch: data.platforms?.twitch?.streamId };
+  }
+  // La foto de reconexión se toma en la cola, después de identidades ya aceptadas.
+  captureIdentity() {
+    const run = this.transitionChain.then(() => this._identityOf(this.data));
     this.transitionChain = run.then(() => {}, () => {});
     return run;
   }
-  async _cutover(title) {
+  // Las observaciones y los cortes comparten la misma cola: una identidad llegada
+  // durante un inicio pertenece al directo nuevo y no se pierde al cerrar enseguida.
+  recordPlatform(platform, value, after, { reconnect, expectedId, requestedAt, discovery = true, onRollover = () => {}, enabled = () => true } = {}) {
+    const seenAt = new Date().toISOString();
+    const keys = platform === 'youtube' ? ['videoId', 'liveChatId', 'title'] : platform === 'twitch' ? ['streamId', 'startedAt'] : [];
+    const fields = Object.fromEntries(keys.filter(k => typeof value?.[k] === 'string' && (k === 'title' || value[k])).map(k => [k, value[k]]));
+    const idKey = keys[0];
+    if (!idKey || !fields[idKey]) return Promise.resolve();
+    const run = this.transitionChain.then(async () => {
+      const requestedId = after ? (await after)?.id : expectedId;
+      if (!requestedId || !enabled() || this.data.endedAt) return;
+      let old = this.data.platforms?.[platform];
+      const replaced = this.replacedIdentity?.currentId === this.data.id ? this.replacedIdentity : null;
+      const priorId = replaced?.[platform];
+      const requestedHere = requestedId === this.data.id;
+      // De la sesión anterior solo cruza un id que se sabe distinto; el mismo
+      // necesita una búsqueda nueva. Sin id previo no se inventa la relación.
+      if (!requestedHere && (!priorId || priorId === fields[idKey])) return;
+      const confirmed = requestedHere && discovery && (requestedAt === undefined || requestedAt >= this.identityStartedAt);
+      if (priorId && priorId === fields[idKey] && !confirmed && old?.[idKey] !== fields[idKey]) return;
+      const previous = reconnect ? await reconnect : null;
+      if (previous?.id === this.data.id && previous[platform] && previous[platform] !== fields[idKey]) {
+        // El corte usa el mismo pipeline OLD/NEW que un inicio manual.
+        onRollover();
+        await this._cutover('', true);
+        if (!enabled()) return;
+        old = this.data.platforms?.[platform];
+      }
+      if (old && old[idKey] !== fields[idKey]) return; // otro broadcast sin reconexión: conservar el primero
+      const next = old ? { ...old } : { ...fields, seenAt };
+      if (old) for (const [key, val] of Object.entries(fields)) if (next[key] === undefined) next[key] = val;
+      if (!old || !isDeepStrictEqual(old, next)) {
+        (this.data.platforms ||= {})[platform] = next;
+        this.save();
+        this.emit('change', { platform });
+      }
+      return this.data;
+    });
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
+  // Marcar el actual cerrado mantiene su resumen accesible; el siguiente startNew
+  // lo archivará por el pipeline habitual sin cambiar la hora real de cierre.
+  endCurrent(at = new Date().toISOString()) {
+    const run = this.transitionChain.then(async () => {
+      if (this.data.endedAt) return;
+      await this.flush();
+      this.data.endedAt = at;
+      this.emit('change', { ended: true });
+      await this.flush();
+    });
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
+  // Corte serializado. Cada transición drena el pending previo y el
+  // checkpoint actual antes de tocar el corte; cualquier fallo previo rechaza sin
+  // añadir `endedAt` al directo actual ni sobrescribir un archivo existente.
+  startNew(title = '', { meldAuto = false } = {}) {
+    const run = this.transitionChain.then(() => this._cutover(title, meldAuto));
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
+  async _cutover(title, meldAuto) {
     await this.flush();
     let target, alreadyArchived = false;
     try {
@@ -408,10 +473,13 @@ export class Session extends EventEmitter {
       }
     } catch (err) { throw sessionPersistenceError(err); }
     if (!alreadyArchived) {
-      const oldSnapshot = { ...structuredClone(this.data), endedAt: new Date().toISOString() };
+      const oldSnapshot = { ...structuredClone(this.data), endedAt: this.data.endedAt || new Date().toISOString() };
       this.pendingArchive = { data: oldSnapshot, file: target, inFlight: null };
     }
     const newData = Session.fresh(title);
+    if (meldAuto) newData.meldAutoSession = true;
+    this.replacedIdentity = { ...this._identityOf(this.data), currentId: newData.id };
+    this.identityStartedAt = process.hrtime.bigint();
     this.data = newData;
     const saved = this.flush();
     saved.catch(() => {});               // la persistencia arranca ya; el productor la espera abajo
@@ -422,7 +490,8 @@ export class Session extends EventEmitter {
 
   // #68: metadatos ligeros de un archivado, para listar sin parsear el archivo completo.
   _metaOf(data) {
-    return { id: data.id, title: data.title, startedAt: data.startedAt, endedAt: data.endedAt, events: (data.events || []).length };
+    return { id: data.id, title: data.title, startedAt: data.startedAt, endedAt: data.endedAt, events: (data.events || []).length,
+      ...(data.platforms !== undefined ? { platforms: data.platforms } : {}) };
   }
   _metaFile(archiveFile) { return archiveFile.replace(/\.json$/, '.meta.json'); }
   // Retención (#68): tras archivar, deja como máximo las N sesiones más recientes
@@ -453,12 +522,13 @@ export class Session extends EventEmitter {
         if (!m || !m.id) {
           try { m = this._metaOf(JSON.parse(await this.io.readFile(path.join(this.dir, f), 'utf8'))); } catch { continue; }
         }
-        out.push({ id: m.id, title: m.title, startedAt: m.startedAt, endedAt: m.endedAt, events: m.events ?? 0, ...(this.pendingArchive?.data.id === m.id ? { pending: true } : {}) });
+        out.push({ id: m.id, title: m.title, startedAt: m.startedAt, endedAt: m.endedAt, events: m.events ?? 0,
+          ...(m.platforms !== undefined ? { platforms: m.platforms } : {}), ...(this.pendingArchive?.data.id === m.id ? { pending: true } : {}) });
       }
     } catch { /* un fallo de lectura no oculta el pendiente propio */ }
     const entry = this.pendingArchive;
     if (entry && !out.some(r => r.id === entry.data.id)) {
-      out.unshift({ id: entry.data.id, title: entry.data.title, startedAt: entry.data.startedAt, endedAt: entry.data.endedAt, events: entry.data.events.length, pending: true });
+      out.unshift({ ...this._metaOf(entry.data), pending: true });
     }
     return out.slice(0, 50);
   }

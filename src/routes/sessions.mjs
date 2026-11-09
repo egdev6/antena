@@ -40,7 +40,8 @@ export function registerSessionRoutes({ route, session, timelinePayload, addMark
   });
   route('POST', '/api/session/new', async ({ title = '' } = {}) => ({ session: await session.startNew(title) }));
   route('PUT', '/api/session', async ({ title }) => { session.data.title = String(title || ''); session.save(); return { ok: true }; });
-  route('GET', '/api/sessions', async () => ({ current: { id: session.data.id, title: session.data.title, startedAt: session.data.startedAt, events: session.data.events.length }, past: await session.list() }));
+  route('GET', '/api/sessions', async () => ({ current: { id: session.data.id, title: session.data.title, startedAt: session.data.startedAt, events: session.data.events.length,
+    ...(session.data.endedAt !== undefined ? { endedAt: session.data.endedAt } : {}), ...(session.data.platforms !== undefined ? { platforms: session.data.platforms } : {}) }, past: await session.list() }));
 
   // ---------- cronología y marcas ----------
   route('GET', '/api/timeline', async (_, __, url) => {

@@ -27,6 +27,7 @@ export class YouTube extends EventEmitter {
     this.pollClosed = false;
     this.pollWork = new Set();
     this.pollClosePromise = null;
+    this.identityConfirmation = null;
     this.status = { state: 'parado', videoId: null, liveChatId: null, title: null, errors: [], polls: 0, account: store.secrets?.youtube?.channel || null };
     this.pending = new Map(); // state → { verifier, redirect }
     this.rawLog = null; // RawEventLog opcional (src/raw-events.mjs)
@@ -92,9 +93,11 @@ export class YouTube extends EventEmitter {
 
   get cfg() { return this.store.config.youtube; }
 
-  setStatus(patch) {
+  setStatus(patch, identityEpoch = this.identityEpoch?.()) {
     this.status = { ...this.status, ...patch };
-    this.emit('status', this.status);
+    // Solo el hallazgo del vídeo confirma su identidad; un poll del chat no la renueva.
+    const discovery = typeof patch.videoId === 'string' && !!patch.videoId;
+    this.emit('status', this.status, identityEpoch, discovery);
   }
 
   async api(pathname, params, { auth = false, method = 'GET', body } = {}) {
@@ -154,9 +157,42 @@ export class YouTube extends EventEmitter {
     return this.pollClosePromise;
   }
 
-  start(video) { return this.trackPollWork(() => this.startPoll(video)); }
+  // Confirma el vídeo que ya se escucha sin reiniciar el chat ni hacer search.list.
+  confirmListeningIdentity() {
+    const { state, videoId, liveChatId } = this.status;
+    if (this.pollClosed || !this.running || state !== 'escuchando' || !videoId || !liveChatId || (!this.cfg.apiKey && !this.token?.access)) return Promise.resolve();
+    const observation = this.identityEpoch?.();
+    const pending = this.identityConfirmation;
+    if (pending) {
+      if (pending.videoId === videoId && pending.observation?.epoch === observation?.epoch && pending.observation?.target === observation?.target) return pending.work;
+      // Si cambia el directo, esperar la consulta anterior antes de hacer otra.
+      return pending.work.then(() => {
+        const current = this.identityEpoch?.();
+        if (current?.epoch !== observation?.epoch || current?.target !== observation?.target) return;
+        return this.confirmListeningIdentity();
+      });
+    }
+    const work = this.trackPollWork(async () => {
+      if (this.pollClosed) return;
+      let item;
+      try { item = (await this.api('/videos', { part: 'liveStreamingDetails,snippet', id: videoId })).items?.[0]; }
+      catch { return; } // sin confirmación no se inventa identidad
+      if (this.pollClosed || !this.running || this.status.state !== 'escuchando' || this.status.videoId !== videoId || this.status.liveChatId !== liveChatId) return;
+      if (!item || (item.id && item.id !== videoId) || item.liveStreamingDetails?.activeLiveChatId !== liveChatId) return;
+      this.setStatus({ videoId, liveChatId, title: item.snippet?.title }, observation);
+    });
+    const entry = { videoId, observation, work };
+    this.identityConfirmation = entry;
+    work.then(() => { if (this.identityConfirmation === entry) this.identityConfirmation = null; }, () => { if (this.identityConfirmation === entry) this.identityConfirmation = null; });
+    return work;
+  }
 
-  async startPoll(video) {
+  start(video) {
+    const identityEpoch = this.identityEpoch?.();
+    return this.trackPollWork(() => this.startPoll(video, identityEpoch));
+  }
+
+  async startPoll(video, identityEpoch = this.identityEpoch?.()) {
     if (this.pollClosed) return;
     if (!this.cfg.apiKey && !this.token?.access) throw new Error('Falta la API key de YouTube (o conecta tu cuenta).');
     await this.stop();
@@ -173,7 +209,7 @@ export class YouTube extends EventEmitter {
       const item = d.items?.[0];
       const liveChatId = item?.liveStreamingDetails?.activeLiveChatId;
       if (!liveChatId) throw Object.assign(new Error('Ese vídeo no tiene un chat en directo activo.'), { reason: 'noLiveChat' });
-      this.setStatus({ state: 'escuchando', videoId, liveChatId, title: item.snippet?.title });
+      this.setStatus({ state: 'escuchando', videoId, liveChatId, title: item.snippet?.title }, identityEpoch);
       this.pageToken = null;
       this.primed = false;
       this.poll();
@@ -208,6 +244,7 @@ export class YouTube extends EventEmitter {
 
   async pollOnce() {
     if (this.pollClosed || !this.running) return;
+    const identityEpoch = this.identityEpoch?.(); // la petición puede terminar en otro directo
     let wait = Math.max(5, Number(this.cfg.pollSeconds) || 8) * 1000;
     try {
       const d = await this.api('/liveChat/messages', {
@@ -236,7 +273,7 @@ export class YouTube extends EventEmitter {
       this.retries = 0;
       const recovered = this.status.state === 'en espera';
       this.setStatus({ polls: this.status.polls + 1, lastPoll: new Date().toISOString(),
-        ...(recovered ? { state: 'escuchando', notice: null, retryAt: null } : {}) });
+        ...(recovered ? { state: 'escuchando', notice: null, retryAt: null } : {}) }, identityEpoch);
     } catch (err) {
       // El pageToken se conserva (como en main): descartarlo haría que el reintento vuelva
       // a traer los últimos mensajes ya procesados y los reemitiera como alertas y chat.

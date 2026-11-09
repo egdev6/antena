@@ -308,6 +308,7 @@ They live in **Widgets** and each one has its browser layer. Their state (questi
 ### Stream, chat and history
 
 - **Stream:** totals, goals, timeline, Markdown recap (copy or download), launch credits and start a new stream (the previous one is archived with its recap).
+- **Session identity:** known YouTube and Twitch IDs appear in `/api/sessions` and `listar_directos`; a different ID on reconnect starts a new session, otherwise the first ID is kept.
 - **Session retention:** by default all archived streams are kept. With `sessions.retention` (in `data/config.json`) set to a number N, after each stream only the N most recent archives remain (each stream's media is never deleted). The panel list is fed by lightweight metadata, without reading each whole file.
 - **Chat:** Twitch and YouTube together and filterable, with each platform's icon. You write to **Twitch, YouTube or both** (the selector next to the text box; it is remembered and also applies to the prompter and the MCP). **Your own messages do not appear in the on-screen chat** (Widgets › On-screen chat › «Hide my messages», on by default) and do not go through the link filter.
 - **History:** the latest alerts, with «Replay».
