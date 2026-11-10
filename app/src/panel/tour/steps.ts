@@ -24,7 +24,7 @@ export type TourStep = {
 export const TOUR_STEPS: TourStep[] = [
   { route: '#/directo', anchor: 'nav', side: 'right', title: 'El menú', text: 'Todo antena está aquí, ordenado por grupos. Pulsa el nombre de un grupo para plegarlo; con Alt dejas abierto solo ese.' },
   { route: '#/directo', anchor: 'nav-directo', when: wideSidebar, side: 'right', title: 'En directo', text: 'Lo que usas mientras emites: el mando del directo, el chat unificado y el historial de sesiones.' },
-  { route: '#/directo', anchor: 'directo-head', viewReady: directoReady, side: 'bottom', title: 'Tu directo', text: 'Pon el título de la sesión, descarga o copia su resumen, lanza los créditos o archiva el directo para empezar de cero.' },
+  { route: '#/directo', anchor: 'directo-head', viewReady: directoReady, side: 'bottom', title: 'Tu directo', text: 'Pon el título, descarga o copia el resumen, lanza los créditos y empieza o termina el directo según su estado. Al empezar el siguiente se archiva el anterior.' },
   { route: '#/directo', anchor: 'directo-status', viewReady: directoReady, side: 'bottom', title: 'Conexiones de un vistazo', text: 'Twitch, YouTube, Meld y los overlays: en verde lo que funciona, en gris o rojo lo que falta por conectar.' },
   { route: '#/directo', anchor: 'directo-stats', viewReady: directoReady, side: 'bottom', title: 'Resumen', text: 'Los totales distintos de cero y los eventos pendientes de agradecer.' },
   { route: '#/directo', anchor: 'directo-alerts', viewReady: directoReady, side: 'right', title: 'Alertas', text: 'Controla la última alerta y la cola: salta, vacía, repite o pausa.' },
