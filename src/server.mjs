@@ -310,7 +310,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   };
   // Una desconexión de Meld no es por sí sola un fin: tras reconectar se contrastan
   // las observaciones de cada plataforma con la sesión abierta.
-  let autoLive = false, pendingAutoStart = null, pendingAutoClose = null, reconnectCheck = null, meldConnected = false, identityEpoch = 0;
+  let autoLive = false, pendingAutoStart = null, pendingAutoStartFrom = null, pendingAutoClose = null, pendingAutoCloseId = null, reconnectCheck = null, meldConnected = false, identityEpoch = 0;
   youtube.identityEpoch = () => ({ epoch: identityEpoch, target: pendingAutoStart || session.data.id, requestedAt: process.hrtime.bigint() });
   // YouTube no admite identidad en este sondeo: espera las identidades previas
   // sin cambiar el contexto original con que Twitch decide su propia admisión.
@@ -339,13 +339,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // Si el chat ya se escucha, confirmar solo después de crear la sesión nueva.
     const { videoId, liveChatId } = youtube.status;
     const listening = youtube.running && youtube.status.state === 'escuchando' && videoId && liveChatId;
+    const fromId = session.data.id;
     autoLive = true; reconnectCheck = null; identityEpoch++;
     const work = trackAutoSession(() => session.startNew('', { meldAuto: true }),
       '[meld] directo en marcha: nueva sesión', '[meld] No se pudo iniciar la sesión automática.');
-    pendingAutoStart = work;
+    pendingAutoStart = work; pendingAutoStartFrom = fromId;
     if (ownTwitchListening()) recordListener('twitch', {}, chatTarget());
-    work.then(() => { if (pendingAutoStart === work) pendingAutoStart = null; }, () => {
-      if (pendingAutoStart === work) { pendingAutoStart = null; autoLive = false; }
+    work.then(() => { if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; } }, () => {
+      if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; autoLive = false; }
     });
     if (listening) trackAutoSession(() => work.then(started => {
       if (!started || session.data.id !== started.id || !store.config.meld.autoSession || !autoLive) return;
@@ -369,10 +370,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     let work;
     const onRollover = () => {
       // La sesión decide si cada petición anterior demuestra una identidad nueva.
-      identityEpoch++; reconnectCheck = null; pendingAutoStart = work;
+      identityEpoch++; reconnectCheck = null; pendingAutoStart = work; pendingAutoStartFrom = session.data.id;
       if (ownTwitchListening()) recordListener('twitch', {}, chatTarget());
-      work.then(() => { if (pendingAutoStart === work) pendingAutoStart = null; }, () => {
-        if (pendingAutoStart === work) { pendingAutoStart = null; autoLive = false; }
+      work.then(() => { if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; } }, () => {
+        if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; autoLive = false; }
       });
     };
     work = trackAutoSession(() => session.recordPlatform(platform, data, after, {
@@ -431,11 +432,35 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     });
     return chatMetricsDrain;
   };
-  const closeAutoSession = () => {
-    autoLive = false; pendingAutoStart = null; reconnectCheck = null; identityEpoch++;
-    const work = trackAutoSession(() => session.endCurrent(), null, '[meld] No se pudo cerrar la sesión automática.');
-    pendingAutoClose = work;
-    work.then(() => { if (pendingAutoClose === work) pendingAutoClose = null; }, () => { if (pendingAutoClose === work) pendingAutoClose = null; });
+  const resetAutoSession = () => { autoLive = false; pendingAutoStart = null; pendingAutoStartFrom = null; reconnectCheck = null; identityEpoch++; };
+  const closeAutoSession = ({ expectedId } = {}) => {
+    const manual = expectedId !== undefined, epoch = identityEpoch;
+    // Meld's own stop keeps its existing immediate cut. A manual request cuts only
+    // after success, so an unsuccessful pre-cut flush cannot discard live metrics.
+    if (!manual) resetAutoSession();
+    const work = trackAutoSession(() => session.endCurrent(undefined, { expectedId }).then(closed => closed || structuredClone(session.data)), null, '[meld] No se pudo cerrar la sesión automática.');
+    pendingAutoClose = work; pendingAutoCloseId = expectedId ?? session.data.id;
+    const settle = () => {
+      // Do not roll back a newer start or a different session. An ended session must
+      // also be cut on a failed final checkpoint so the next Meld live can start.
+      if (manual && identityEpoch === epoch && session.data.id === expectedId && session.data.endedAt) resetAutoSession();
+      if (pendingAutoClose === work) { pendingAutoClose = null; pendingAutoCloseId = null; }
+    };
+    work.then(settle, settle);
+    return work;
+  };
+  const endSession = id => {
+    if (id !== undefined && (typeof id !== 'string' || !id)) throw httpError(400, 'Identificador de sesión no válido.');
+    const expectedId = id ?? session.data.id;
+    if (expectedId !== session.data.id) throw httpError(409, 'La sesión actual ha cambiado. Actualiza antes de terminar el directo.');
+    // Check and enqueue without an await: a live observation cannot slip between them.
+    if (meld.status.state === 'conectado' && meld.status.streaming)
+      throw httpError(409, 'No se puede terminar el directo mientras Meld está emitiendo.');
+    return closeAutoSession({ expectedId }).then(async closed => {
+      // An idempotent retry after a failed checkpoint must be durable before success.
+      if (session.lastSaveError) await session.flush();
+      return closed;
+    });
   };
   meld.on('streaming', live => {
     if (!store.config.meld.autoSession || autoSessionClosed) return;
@@ -448,6 +473,13 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     meldConnected = connectedNow;
     if (!connectedNow || !store.config.meld.autoSession || autoSessionClosed) return;
     if (st.streaming) {
+      // A manual end leaves accounting live until its cut succeeds. A confirmed new
+      // broadcast still queues its start behind that pending end, exactly once.
+      if (pendingAutoClose) {
+        // A pending start for the session being closed is not the next broadcast.
+        if (!pendingAutoStart || pendingAutoStartFrom !== pendingAutoCloseId) startAutoSession();
+        return;
+      }
       if (autoLive) {
         if (reconnected) checkReconnectedSession();
         return;
@@ -843,7 +875,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // del dispatcher son coincidencia exacta, así que reunir aquí las rutas de sesión y
   // cronología (antes separadas por los bloques de Meld y conexiones) no cambia ninguna
   // resolución; el orden relativo del resto se conserva.
-  registerSessionRoutes({ route, session, timelinePayload, addMarker });
+  registerSessionRoutes({ route, session, timelinePayload, addMarker, endSession });
   registerMetricsRoutes({ route, session });
 
   // Meld
