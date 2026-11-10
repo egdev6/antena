@@ -418,7 +418,7 @@ Las listas del menú lateral se pliegan con un clic en su título y el panel rec
 
 ### Servidor MCP
 
-Todo lo que hace el panel se puede hacer por MCP (142 herramientas). Si la app no está arrancada, el MCP la arranca él mismo.
+Todo lo que hace el panel se puede hacer por MCP (143 herramientas). Si la app no está arrancada, el MCP la arranca él mismo.
 
 Claude Desktop (`claude_desktop_config.json`):
 
@@ -442,7 +442,7 @@ Claude Desktop (`claude_desktop_config.json`):
 | Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube o los dos), `simular_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
 | Widgets | `ver_widgets`, `editar_widget`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `sumar_objetivo`, `fijar_objetivo`, `lanzar_creditos`, `parar_creditos` |
 | Overlays propios | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay` (lanza un evento de ejemplo a una capa abierta) |
-| Directo | `resumen_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
+| Directo | `resumen_directo`, `metricas_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
 | Apariencia | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema` |
 | Récord de espectadores | `estado_espectadores`, `configurar_espectadores`, `fijar_record_espectadores` |
 | Cronología y prompter | `cronologia`, `crear_marca`, `nota_cronologia`, `editar_nota_cronologia`, `borrar_nota_cronologia`, `marcar_agradecido`, `prompter_pestana` |
@@ -470,6 +470,20 @@ Ejemplos de lo que se le puede pedir a Claude:
 El panel y el MCP usan la misma API en `http://127.0.0.1:4500/api/…` (`/api/state`, `/api/alerts/:type`, `/api/alerts/:type/variations`, `/api/commands`, `/api/widgets`, `/api/goals`, `/api/session`, `/api/meld/*`, `/api/chat/*`…). La lista completa está en `src/server.mjs`. Las capas reciben eventos en `/api/stream`; cada conexión tiene un presupuesto de bytes pendientes: si un cliente no consume su cola, el servidor le envía un evento `gap` y la cierra; al reconectar recibe un snapshot actualizado y el panel muestra un aviso visible. Los eventos efímeros perdidos durante el gap no se reproducen; los registros críticos persistidos (p. ej. donaciones) se conservan.
 
 Las capas conectan por WebSocket (sin el límite de seis conexiones por host) y recurren a SSE si WebSocket no está disponible.
+
+#### Métricas finales de sesión (Cadencia v1)
+
+Solo lectura, para **sesiones automáticas de Meld terminadas**; no se exportan las manuales ni las que siguen en directo. En el mismo PC se usa el acceso habitual a la API en `127.0.0.1` o `::1`, con las mismas comprobaciones y sin credencial nueva:
+
+- `GET /api/metrics/v1/sessions?limit=50&before=<id>` usa la misma ventana que `/api/sessions`: los 50 archivos más recientes por id de archivo, más la sesión automática actual si ha terminado. Los resultados elegibles se ordenan por inicio e id descendentes. `limit` va de 1 a 50 (50 por defecto). Para la página siguiente usa `next` como `before`; `next: null` indica el final. Los límites o cursores inválidos o repetidos devuelven 400.
+- Como en `/api/sessions`, un archivo ilegible sin metadatos utilizables se omite del listado; su URL de detalle devuelve 500. Si los metadatos listan un archivo cuyo contenido no se puede leer, el listado de métricas también devuelve 500 en vez de inventar valores.
+- `GET /api/metrics/v1/sessions/<id>` devuelve una sesión automática terminada, o 404 si no existe, sigue en directo o es manual. Los datos guardados corruptos devuelven 500. MCP `metricas_directo` acepta un `id` opcional; sin él devuelve el último directo terminado.
+
+Cada documento tiene `schema: "antena.session-metrics"`, `version: 1`, `generatedAt`, `session` y `metrics`; las páginas contienen estos pares de sesión y métricas en `sessions`. La sesión identifica Twitch y YouTube por separado con su id externo conocido (o `null`) y `live`. Diez filas finales cubren ambas plataformas: `viewers_average`, `viewers_peak`, `chat_unique_chatters`, `chat_messages` (unidad `count`) y `chat_messages_per_minute` (unidad `per_minute`). Cada fila lleva `source`, `capturedAt` (el fin de sesión) y `coverage`. Las fuentes son `twitch.helix.streams`, `youtube.videos.liveStreamingDetails`, `twitch.irc` y `youtube.liveChat.messages`. Las fechas son ISO 8601 UTC y las duraciones, segundos enteros.
+
+La cobertura de espectadores `viewer_samples` indica segundos observados y `ratio = coveredSeconds / liveSeconds` sobre esos enteros exportados; `liveSeconds` es la duración redondeada hacia abajo, y menos de un segundo cubierto se informa como no disponible (`value: null`, proporción 0). Los huecos se excluyen de la media ponderada. La cobertura de chat `platform_presence` tiene `coveredSeconds: null`: proporción 1 significa que la plataforma estuvo en directo y el listener conectó, no que se haya medido su tiempo activo. Proporción 0 con `value: null` significa dato no disponible, no cero; un chat conectado y silencioso sí produce ceros reales. La tasa por minuto es `null` con duración cero. Nunca se suman plataformas.
+
+La versión 1 permite añadir campos, métricas y bases de cobertura; quitar o renombrar campos o cambiar definiciones exige una versión nueva en `/api/metrics/v2/…`.
 
 ### Twitch
 

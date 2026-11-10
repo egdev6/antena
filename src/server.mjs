@@ -22,6 +22,7 @@ import { Engine, burstCoalesce, SNAPSHOT_COALESCE_MS, SNAPSHOT_MAX_WAIT_MS } fro
 import { createHeldRecovery } from './held-recovery.mjs';
 import { registerShortcutRoutes, PROMPTER_LEGACY_TABS } from './routes/shortcuts.mjs';
 import { registerSessionRoutes, TIMELINE_MAX } from './routes/sessions.mjs';
+import { registerMetricsRoutes } from './routes/metrics.mjs';
 import { registerMediaRoutes } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
@@ -336,17 +337,22 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   };
   const startAutoSession = () => {
     // Si el chat ya se escucha, confirmar solo después de crear la sesión nueva.
-    const listening = youtube.running && youtube.status.state === 'escuchando' && youtube.status.videoId && youtube.status.liveChatId;
+    const { videoId, liveChatId } = youtube.status;
+    const listening = youtube.running && youtube.status.state === 'escuchando' && videoId && liveChatId;
     autoLive = true; reconnectCheck = null; identityEpoch++;
     const work = trackAutoSession(() => session.startNew('', { meldAuto: true }),
       '[meld] directo en marcha: nueva sesión', '[meld] No se pudo iniciar la sesión automática.');
     pendingAutoStart = work;
+    if (ownTwitchListening()) recordListener('twitch', {}, chatTarget());
     work.then(() => { if (pendingAutoStart === work) pendingAutoStart = null; }, () => {
       if (pendingAutoStart === work) { pendingAutoStart = null; autoLive = false; }
     });
     if (listening) trackAutoSession(() => work.then(started => {
       if (!started || session.data.id !== started.id || !store.config.meld.autoSession || !autoLive) return;
-      return youtube.confirmListeningIdentity();
+      return youtube.confirmListeningIdentity().then(() => {
+        if (youtube.status.polls > 0 && youtube.status.videoId === videoId && youtube.status.liveChatId === liveChatId)
+          recordListener('youtube', { videoId, liveChatId }, started.id);
+      });
     }), null, '[youtube] No se pudo confirmar la identidad del directo.');
     return work;
   };
@@ -364,6 +370,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const onRollover = () => {
       // La sesión decide si cada petición anterior demuestra una identidad nueva.
       identityEpoch++; reconnectCheck = null; pendingAutoStart = work;
+      if (ownTwitchListening()) recordListener('twitch', {}, chatTarget());
       work.then(() => { if (pendingAutoStart === work) pendingAutoStart = null; }, () => {
         if (pendingAutoStart === work) { pendingAutoStart = null; autoLive = false; }
       });
@@ -396,16 +403,25 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     chatMetricsFailed = true;
     autoSessionLog('[sesión] No se pudieron registrar las métricas del chat.');
   };
+  const trackChatMetrics = operation => {
+    let work;
+    try { work = operation(); } catch { chatMetricError(); return; }
+    chatMetricsWork.add(work);
+    work.then(() => chatMetricsWork.delete(work), () => { chatMetricsWork.delete(work); chatMetricError(); });
+  };
+  const ownTwitchListening = () => chat.status.state === 'conectado' && !!chat.channel
+    && chat.channel === String(twitch.status.user || '').toLowerCase();
+  const recordListener = (platform, observation, target) => {
+    if (chatMetricsClosed || !store.config.meld.autoSession || !autoLive || !target) return;
+    trackChatMetrics(() => session.recordChatListener(platform, observation, target, () => !!store.config.meld.autoSession));
+  };
+  chat.on('status', () => { if (ownTwitchListening()) recordListener('twitch', {}, chatTarget()); });
+  youtube.on('chatListening', observation => recordListener('youtube', observation, observation.target));
   engine.on('chatMetric', (m, observation) => {
     if (chatMetricsClosed || !store.config.meld.autoSession || !autoLive || observation.source !== m.platform || !observation.target || m.owner) return;
     if (m.platform === 'twitch' && (!twitch.userId || m.roomId !== twitch.userId || m.authorId === twitch.userId)) return;
-    let work;
-    try {
-      work = session.recordChat(m.platform, { at: observation.at, authorId: m.authorId,
-        videoId: observation.videoId, liveChatId: observation.liveChatId }, observation.target, () => !!store.config.meld.autoSession);
-    } catch { chatMetricError(); return; }
-    chatMetricsWork.add(work);
-    work.then(() => chatMetricsWork.delete(work), () => { chatMetricsWork.delete(work); chatMetricError(); });
+    trackChatMetrics(() => session.recordChat(m.platform, { at: observation.at, authorId: m.authorId,
+      videoId: observation.videoId, liveChatId: observation.liveChatId }, observation.target, () => !!store.config.meld.autoSession));
   });
   const drainChatMetrics = () => {
     if (chatMetricsDrain) return chatMetricsDrain;
@@ -439,7 +455,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       autoLive = true;
       // Si hay un fin aceptado pero aún no durable, el siguiente live va detrás de él.
       if (pendingAutoClose || !session.data.meldAutoSession || session.data.endedAt) startAutoSession();
-      else { identityEpoch++; checkReconnectedSession(); }
+      else {
+        identityEpoch++; checkReconnectedSession();
+        if (ownTwitchListening()) recordListener('twitch', {}, chatTarget());
+      }
     } else if (!pendingAutoClose && (autoLive || (session.data.meldAutoSession && !session.data.endedAt))) {
       closeAutoSession();
     }
@@ -825,6 +844,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // cronología (antes separadas por los bloques de Meld y conexiones) no cambia ninguna
   // resolución; el orden relativo del resto se conserva.
   registerSessionRoutes({ route, session, timelinePayload, addMarker });
+  registerMetricsRoutes({ route, session });
 
   // Meld
   registerMeldRoutes({ route, store, meld, scheduleLayerHide });

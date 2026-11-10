@@ -296,6 +296,12 @@ tool('probar_overlay', 'Manda un evento de ejemplo AHORA a UNA capa abierta (la 
   ({ id, evento, datos }) => post(`/api/custom-overlays/${enc(id)}/test`, { event: evento, data: datos }), ['id', 'evento']);
 
 // directo
+tool('metricas_directo', 'Métricas finales por plataforma de un directo automático de Meld, con cobertura y procedencia (contrato v1). Sin id, devuelve el último directo terminado.', { id: S.str('Id del directo (opcional)') }, async ({ id }) => {
+  if (id !== undefined) return get('/api/metrics/v1/sessions/' + enc(id));
+  const list = await get('/api/metrics/v1/sessions?limit=1');
+  if (!list.sessions.length) throw new Error('No hay directos automáticos terminados.');
+  return { schema: list.schema, version: list.version, generatedAt: list.generatedAt, ...list.sessions[0] };
+});
 tool('resumen_directo', 'Resumen de un directo: totales, a quién dar las gracias y cronología con el minuto de cada evento. En JSON, viewers contiene muestras y huecos; viewerMetrics muestra media ponderada, pico y cobertura por plataforma, sin sumarlas. chatMetrics añade chatters únicos, mensajes/minuto y serie por minuto, sin identificadores de autores.', { id: S.str('Id del directo (vacío = el actual)'), formato: S.enum('Formato', ['markdown', 'json']) },
   async ({ id, formato }) => { const r = await get(`/api/session/summary?format=${formato === 'json' ? 'json' : 'md'}${id ? '&id=' + enc(id) : ''}`); return r.markdown ?? r; });
 tool('nuevo_directo', 'Cierra el directo actual (lo archiva) y empieza uno nuevo: totales, objetivos y créditos vuelven a cero.', { titulo: S.str('Título del directo') }, ({ titulo }) => post('/api/session/new', { title: titulo }));

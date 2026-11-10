@@ -151,7 +151,7 @@ export function chatMetrics(data, now = Date.now(), includeSeries = true) {
 
 /** La raíz persistida conserva identidades privadas; las respuestas solo llevan agregados. */
 export function publicSession(data) {
-  const { chatStats, ...out } = data;
+  const { chatStats, chatListeners, ...out } = data;
   return chatStats === undefined ? out : { ...out, chatMetrics: chatMetrics(data) };
 }
 
@@ -168,7 +168,7 @@ function isValidChatStats(stats) {
 
 // Validación estructural mínima de la raíz (sin framework): id/startedAt legacy y arrays.
 // events null/entradas null son inválidos; notes/goalOffsets null caen a sus defaults.
-function isValidRoot(d) {
+export function isValidRoot(d) {
   if (!isPlainObject(d)) return false;
   if (d.id !== undefined && (typeof d.id !== 'string' || !SAFE_ROOT_ID.test(d.id))) return false;
   if (d.startedAt !== undefined && !isValidDate(d.startedAt)) return false;
@@ -178,6 +178,8 @@ function isValidRoot(d) {
   if (d.viewers !== undefined && (!isPlainObject(d.viewers)
     || VIEWER_SERIES_PLATFORMS.some(p => d.viewers[p] !== undefined && !isValidViewerSeries(d.viewers[p])))) return false;
   if (d.chatStats !== undefined && !isValidChatStats(d.chatStats)) return false;
+  if (d.chatListeners !== undefined && (!isPlainObject(d.chatListeners)
+    || Object.keys(d.chatListeners).some(p => !CHAT_PLATFORMS.includes(p) || d.chatListeners[p] !== true))) return false;
   return true;
 }
 // Rellena solo los defaults legacy ausentes; conserva íntegro todo lo demás (campos desconocidos incluidos).
@@ -609,16 +611,33 @@ export class Session extends EventEmitter {
     this.transitionChain = run.then(() => {}, () => {});
     return run;
   }
+  // Mensajes y listeners comparten exactamente la misma barrera de propiedad.
+  _ownsChat(platform, observation, captured, enabled) {
+    if (!enabled() || !this.data.meldAutoSession || this.data.endedAt || captured?.id !== this.data.id || !CHAT_PLATFORMS.includes(platform)) return false;
+    if (platform === 'youtube' && (!observation.videoId || this.data.platforms?.youtube?.videoId !== observation.videoId
+      || !observation.liveChatId || this.data.platforms?.youtube?.liveChatId !== observation.liveChatId)) return false;
+    const streamId = captured.twitch || captured.platforms?.twitch?.streamId;
+    return !(platform === 'twitch' && streamId && this.data.platforms?.twitch?.streamId && streamId !== this.data.platforms.twitch.streamId);
+  }
+  _markChatListener(platform) {
+    if (this.data.chatListeners?.[platform] === true) return false;
+    (this.data.chatListeners ||= {})[platform] = true;
+    return true;
+  }
+  recordChatListener(platform, observation, target, enabled = () => true) {
+    const run = this.transitionChain.then(async () => {
+      const captured = typeof target === 'string' ? { id: target } : await target;
+      if (this._ownsChat(platform, observation, captured, enabled) && this._markChatListener(platform)) this.save();
+    });
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
   // El contexto se captura al recibir el mensaje, no al terminar una transición.
   recordChat(platform, observation, target, enabled = () => true) {
     const run = this.transitionChain.then(async () => {
       const captured = typeof target === 'string' ? { id: target } : await target;
-      if (!enabled() || !this.data.meldAutoSession || this.data.endedAt || captured?.id !== this.data.id || !CHAT_PLATFORMS.includes(platform)) return;
-      if (platform === 'youtube' && (!observation.videoId || this.data.platforms?.youtube?.videoId !== observation.videoId
-        || !observation.liveChatId || this.data.platforms?.youtube?.liveChatId !== observation.liveChatId)) return;
-      const streamId = captured.twitch || captured.platforms?.twitch?.streamId;
-      if (platform === 'twitch' && streamId && this.data.platforms?.twitch?.streamId && streamId !== this.data.platforms.twitch.streamId) return;
-      if (!isValidDate(observation.at)) return;
+      if (!this._ownsChat(platform, observation, captured, enabled) || !isValidDate(observation.at)) return;
+      this._markChatListener(platform);
       const start = Date.parse(this.data.startedAt);
       const at = new Date(start + Math.max(0, Math.floor((Date.parse(observation.at) - start) / 60000)) * 60000).toISOString();
       const stats = (this.data.chatStats ||= {})[platform] ||= { authorIds: [], minutes: [] };
