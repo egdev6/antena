@@ -1,6 +1,6 @@
 {
   "name": "antena",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Alertas, chat, widgets y control de Meld Studio para los directos de EGDEV: app de escritorio (Tauri + React), fuentes de navegador para Meld, prompter para Elgato y atajos para Stream Deck.",
   "type": "module",
   "private": true,
