@@ -1,6 +1,5 @@
 // #5 · Ajustes responsive del panel y del prompter, verificados con navegador:
-// 1) a 1024 la fila de 6 KPIs del directo se reparte 3×2 (antes partía 5+1 y «Miembros»
-//    quedaba sola) y a 1440 sigue cabiendo en una sola fila;
+// 1) a 1024 y 1440 las tarjetas del pulso comparten fila; en estrecho se apilan sin recortes;
 // 2) la barra lateral corta las etiquetas por palabra (grupo «Alertas de YouTube» e
 //    item «Récord de espectadores»), nunca a mitad de palabra;
 // 3) el placeholder del chat es corto («Escribe en tu chat…») y el aviso «tus mensajes
@@ -30,16 +29,16 @@ const viewport = (cdp, width, height = 800) =>
   cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
 const dom = (cdp, expr) => evaluateChrome(cdp, expr, { timeoutMs: 12000 });
 
-// Reparto en filas de las tarjetas de un grid: «3+3» son dos filas de tres, «6» una fila de seis.
-const ROWS = `(() => {
-  const tops = new Map();
-  for (const el of document.querySelectorAll('.stats .eg-stat')) {
-    const r = el.getBoundingClientRect();
-    if (r.height <= 0 || r.width <= 0) continue;
-    const k = Math.round(r.top / 10) * 10;
-    tops.set(k, (tops.get(k) || 0) + 1);
-  }
-  return [...tops.entries()].sort((a, b) => a[0] - b[0]).map(([, n]) => n).join('+');
+// The replacement for the KPI row must fit at both original viewport widths.
+const MONITOR_LAYOUT = `(() => {
+  const cards = [...document.querySelectorAll('[data-platform-pulse]')];
+  const summary = document.querySelector('[data-tour="directo-stats"]');
+  const fits = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.left >= 0 && r.right <= innerWidth && el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1; };
+  const rects = cards.map(el => el.getBoundingClientRect());
+  const sideBySide = rects.length === 2 && Math.abs(rects[0].top - rects[1].top) <= 1 && rects[0].right <= rects[1].left + 1;
+  const stacked = rects.length === 2 && rects[1].top >= rects[0].bottom - 1;
+  return { count: cards.length, cardsFit: cards.every(fits), summaryFits: !!summary && fits(summary), sideBySide, stacked,
+    summary: summary?.textContent || '', pageFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth };
 })()`;
 
 // Contrato del truncado en la barra lateral: el corte cae en un hueco de palabra (clamp de
@@ -80,16 +79,27 @@ test('a 1024 los 6 KPIs del directo se reparten 3×2 sin huérfanos y a 1440 cab
   let chrome;
   try {
     app.store.config.panel = { onboardingDone: true };
+    app.session.record({ id: 'responsive-follow', type: 'follow', at: new Date().toISOString(), vars: { user: 'Ana' }, text: 'Ana' });
     chrome = await openChromePage(bin, `${base}/#/directo`);
     const c = chrome.cdp;
-    await waitDom(c, `document.querySelectorAll('.stats .eg-stat').length === 6`, { timeoutMs: 15000 });
+    await waitDom(c, `document.querySelectorAll('[data-platform-pulse]').length === 2 && !!document.querySelector('[data-tour="directo-stats"]')`, { timeoutMs: 15000 });
 
-    await viewport(c, 1024);
-    await waitDom(c, `${ROWS} !== ''`, { timeoutMs: 9000 });
-    assert.equal(await dom(c, ROWS), '3+3', 'a 1024 las 6 tarjetas de KPI deben repartirse 3×2, sin fila huérfana');
-
-    await viewport(c, 1440);
-    await waitDom(c, `${ROWS} === '6'`, { timeoutMs: 9000 });
+    for (const width of [1024, 1440, 500]) {
+      await viewport(c, width);
+      const layout = await dom(c, MONITOR_LAYOUT);
+      assert.equal(layout.count, 2, `${width}: dos tarjetas separadas`);
+      assert.equal(layout.cardsFit, true, `${width}: tarjetas sin recortes`);
+      assert.equal(layout.summaryFits, true, `${width}: resumen sin recortes`);
+      assert.equal(layout.pageFits, true, `${width}: sin desborde horizontal`);
+      assert.equal(width === 500 ? layout.stacked : layout.sideBySide, true, `${width}: disposición de las tarjetas`);
+      assert.match(layout.summary, /1\s+seguidor\b/);
+      assert.doesNotMatch(layout.summary, /Suscripciones|Bits|Raids|Miembros/i);
+      // Prove that the geometry assertion rejects the opposite layout.
+      await dom(c, `document.querySelector('.dir-pulse-grid').style.gridTemplateColumns = ${JSON.stringify(width === 500 ? 'repeat(2,minmax(0,1fr))' : 'minmax(0,1fr)')}`);
+      const wrong = await dom(c, MONITOR_LAYOUT);
+      assert.equal(width === 500 ? wrong.stacked : wrong.sideBySide, false, `${width}: detecta la disposición incorrecta`);
+      await dom(c, `document.querySelector('.dir-pulse-grid').style.removeProperty('grid-template-columns')`);
+    }
   } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
