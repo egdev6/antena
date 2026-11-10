@@ -1,0 +1,27 @@
+{
+  "title": "Historial de directos con métricas",
+  "brief": "Rediseñar Directos anteriores para comparar sesiones recientes y comprender un directo por plataforma, con cobertura, huecos de espectadores, actividad del chat y eventos, sin confundir datos ausentes con cero.",
+  "artboards": [
+    {
+      "file": "01-matriz-expandida.html",
+      "title": "Matriz expandida",
+      "tradeoff": "Comparación alineada y análisis en la misma página; la tabla requiere desplazamiento horizontal en ancho estrecho.",
+      "width": 1440,
+      "height": 900
+    },
+    {
+      "file": "02-explorador-lateral.html",
+      "title": "Explorador lateral",
+      "tradeoff": "Mantiene sesiones y detalle visibles a la vez; deja menos espacio horizontal a cada lectura.",
+      "width": 1440,
+      "height": 900
+    },
+    {
+      "file": "03-cuaderno-cronologico.html",
+      "title": "Cuaderno cronológico",
+      "tradeoff": "Conecta el recorrido con los eventos y hace visibles los directos como capítulos; la comparación ocupa más altura al crecer el historial.",
+      "width": 1440,
+      "height": 900
+    }
+  ]
+}

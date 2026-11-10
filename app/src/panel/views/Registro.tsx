@@ -7,63 +7,92 @@ import { Box, Dot, Kpis, ListPanel, NameCell, PageHead, Slide, Tags, useListFilt
 import { go } from '../router';
 import type { AppState, MediaItem } from '../../lib/types';
 import { MediaThumb, UploadBar, useUploader } from './General';
-
-const fmtDate = (d?: string | number) => (d ? new Date(d).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
-const dur = (a?: string | number, b?: string | number) => { if (!a || !b) return ''; const s = Math.max(0, Math.round((+new Date(b) - +new Date(a)) / 1000)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${m} min` : `${m} min`; };
+import { SessionDetail, SessionList, type SummaryState } from './directos/Explorer';
+import { dateTime, duration, plural, type Past, type Summary } from './directos/model';
 
 // ---------- directos anteriores ----------
-type Past = { id: string; title?: string; startedAt?: string | number; endedAt?: string | number; events?: number; pending?: boolean };
-function DirectoSlide({ id, tab }: { id: string; tab: string }) {
+function DirectoSlide({ id, tab, summary, retry }: { id: string; tab: string; summary: SummaryState; retry: () => void }) {
   const s = useLive(x => x);
-  const [d, setD] = useState<any>(null);
-  const [md, setMd] = useState('');
-  useEffect(() => { guard(async () => { setD(await get(`/api/session/summary?id=${enc(id)}&format=json`)); setMd((await get<{ markdown: string }>(`/api/session/summary?id=${enc(id)}`)).markdown); })(); }, [id]);
+  const d = summary.id === id ? summary.data : null;
+  const error = summary.id === id && summary.error;
+  const [markdown, setMarkdown] = useState<{ text: string; error: boolean }>({ text: '', error: false });
+  useEffect(() => {
+    if (!d) return;
+    let active = true;
+    setMarkdown({ text: '', error: false });
+    get<{ markdown: string }>(`/api/session/summary?id=${enc(id)}`).then(result => {
+      if (active) setMarkdown({ text: result.markdown, error: false });
+    }).catch(() => { if (active) setMarkdown({ text: '', error: true }); });
+    return () => { active = false; };
+  }, [id, d]);
+  const md = markdown.text;
   const base = `#/directos/${enc(id)}`;
   const t0 = d?.startedAt ? +new Date(d.startedAt) : 0;
-  const at = (x: string | number) => { const sec = Math.max(0, Math.round((+new Date(x) - t0) / 1000)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60); return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec % 60).padStart(2, '0'); };
-  const markers = (d?.notes || []).filter((n: any) => n.kind === 'marker');
+  const at = (x?: string) => { if (!x) return '—'; const sec = Math.max(0, Math.round((+new Date(x) - t0) / 1000)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60); return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec % 60).padStart(2, '0'); };
+  const markers = (d?.notes || []).filter(n => n.kind === 'marker');
   const events = d?.events || [];
   const tabs = [{ id: 'resumen', label: 'Resumen' }, { id: 'cronologia', label: 'Cronología', count: events.length }, { id: 'marcas', label: 'Marcas', count: markers.length }, { id: 'exportar', label: 'Exportar' }];
-  return <Slide crumb={<><a href="#/directos">Directos anteriores</a> › {fmtDate(d?.startedAt)}</>} title={d ? d.title || 'Sin título' : 'Cargando…'} back="#/directos" wide
+  return <Slide crumb={<><a href="#/directos">Directos anteriores</a> › {dateTime(d?.startedAt)}</>} title={error ? 'No se pudo cargar el resumen' : d ? d.title || 'Sin título' : 'Cargando…'} back="#/directos" wide
     tabs={tabs} tab={tab} onTab={t => go(`${base}/${t}`)}
     foot={<footer className="lv-sfoot sticky"><span className="lv-dirty">Solo lectura: es un directo archivado.</span><span className="sp" /><a className="eg-btn eg-btn--ghost eg-btn--sm" href={`/api/session/summary.md?id=${enc(id)}`} target="_blank" rel="noreferrer">Abrir resumen (.md)</a><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={!md} onClick={() => copy(md)}>Copiar resumen</button></footer>}>
-    {!d ? <p className="hint">Cargando…</p> : tab === 'resumen' ? <div className="lv-cols aside">
+    {error ? <div role="alert">No se pudo cargar el resumen de este directo. <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={retry}>Reintentar</button></div> : !d ? <p className="hint">Cargando…</p> : tab === 'resumen' ? <div className="lv-cols aside">
       <div className="lv-col">
         <Kpis items={Object.entries(s.metrics || {}).filter(([k]) => k !== 'events').slice(0, 4).map(([k, m]) => ({ value: (d.totals?.[k] ?? 0).toLocaleString('es-ES'), label: m.label }))} />
-        <Box title="Gracias a">{(d.credits || []).length ? (d.credits as any[]).map(g => <p key={g.title}><b>{g.title}:</b> {g.names.join(', ')}</p>) : <p className="hint">Nadie apoyó en este directo.</p>}</Box>
+        <Box title="Gracias a">{(d.credits || []).length ? d.credits!.map(g => <p key={g.title}><b>{g.title}:</b> {g.names.join(', ')}</p>) : <p className="hint">Nadie apoyó en este directo.</p>}</Box>
       </div>
-      <aside className="lv-col"><Box title="Datos"><p className="hint">Empezó: {fmtDate(d.startedAt)}<br />{d.endedAt ? <>Duración: {dur(d.startedAt, d.endedAt)}<br /></> : null}{events.length} eventos · {markers.length} marcas</p></Box></aside>
+      <aside className="lv-col"><Box title="Datos"><p className="hint">Empezó: {dateTime(d.startedAt)}<br />{d.endedAt ? <>Duración: {duration(d.startedAt, d.endedAt)}<br /></> : null}{plural(events.length, 'evento', 'eventos')} · {plural(markers.length, 'marca', 'marcas')}</p></Box></aside>
     </div> : tab === 'cronologia' ? <ListPanel title="Eventos" cols={[{ key: 'at', label: 'Minuto' }, { key: 'type', label: 'Tipo' }, { key: 'user', label: 'Quién' }, { key: 'sub', label: 'Detalle', hide: true }]}
-      rows={events.map((e: any) => ({ id: e.id, cells: { at: <span className="lv-mono">{at(e.at || e.ts)}</span>, type: s.types?.[e.type]?.label || e.type, user: <b>{e.user || '—'}</b>, sub: e.sub || '' } }))} empty="Sin eventos." />
+      rows={events.map((e, i) => ({ id: e.id || String(i), cells: { at: <span className="lv-mono">{at(e.at || e.ts)}</span>, type: s.types?.[e.type]?.label || e.type, user: <b>{e.user || '—'}</b>, sub: e.sub || '' } }))} empty="Sin eventos." />
       : tab === 'marcas' ? <ListPanel title="Marcas para shorts" cols={[{ key: 'at', label: 'Minuto' }, { key: 'label', label: 'Marca' }]}
-        rows={markers.map((n: any) => ({ id: n.id, cells: { at: <span className="lv-mono">{at(n.at)}</span>, label: n.label || 'Sin nombre' } }))} empty="No se marcó ningún momento." />
-      : <Box title="Resumen en Markdown"><pre className="lv-pre">{md}</pre></Box>}
+        rows={markers.map((n, i) => ({ id: n.id || String(i), cells: { at: <span className="lv-mono">{at(n.at)}</span>, label: n.label || 'Sin nombre' } }))} empty="No se marcó ningún momento." />
+      : <Box title="Resumen en Markdown">{markdown.error ? <p role="alert">No se pudo cargar el resumen en Markdown.</p> : <pre className="lv-pre">{md}</pre>}</Box>}
   </Slide>;
 }
 export function Directos({ parts }: { parts: string[] }) {
+  const state = useLive(x => x);
   const [past, setPast] = useState<Past[]>([]);
+  const [listState, setListState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [listAttempt, setListAttempt] = useState(0);
+  const [selected, setSelected] = useState<string | null>(parts[1] || null);
+  const [summary, setSummary] = useState<SummaryState>({ id: null, data: null, loading: false, error: false });
+  const [summaryAttempt, setSummaryAttempt] = useState(0);
   const f = useListFilter();
-  useEffect(() => { guard(async () => setPast((await get<{ past?: Past[] }>('/api/sessions')).past || []))(); }, []);
   const open = parts[1];
-  const rows = past.filter(p => f.match(p.title, fmtDate(p.startedAt))).map(p => {
-    const href = `#/directos/${enc(p.id)}`;
-    return { id: p.id, href, open: open === p.id, cells: {
-      name: <NameCell href={href} name={p.title || 'Sin título'} sub={fmtDate(p.startedAt)} />,
-      state: p.pending ? <Dot tone="warn">Archivándose</Dot> : <Dot tone="off">Archivado</Dot>,
-      dur: <span className="lv-mono">{dur(p.startedAt, p.endedAt) || '—'}</span>,
-      events: <span className="lv-mono">{p.events ?? 0} eventos</span>,
-    } };
-  });
-  const total = past.reduce((t, p) => t + (p.events || 0), 0);
+  useEffect(() => { if (open) setSelected(open); }, [open]);
+  useEffect(() => {
+    let active = true;
+    setListState('loading');
+    get<{ current?: Past; past?: Past[] }>('/api/sessions').then(result => {
+      if (!active) return;
+      const current = result.current;
+      const list = (result.past || []).filter(p => p.id !== current?.id);
+      if (current?.endedAt) list.push(current);
+      list.sort((a, b) => (Date.parse(b.startedAt || '') || 0) - (Date.parse(a.startedAt || '') || 0));
+      setPast(list); setSelected(id => id || list[0]?.id || null); setListState('ready');
+    }).catch(() => { if (active) setListState('error'); });
+    return () => { active = false; };
+  }, [listAttempt]);
+  useEffect(() => {
+    if (!selected) return;
+    let active = true;
+    setSummary({ id: selected, data: null, loading: true, error: false });
+    get<Summary>(`/api/session/summary?format=json&id=${enc(selected)}`).then(data => {
+      if (active) setSummary({ id: selected, data, loading: false, error: false });
+    }).catch(() => { if (active) setSummary({ id: selected, data: null, loading: false, error: true }); });
+    return () => { active = false; };
+  }, [selected, summaryAttempt]);
+  const retrySummary = () => setSummaryAttempt(n => n + 1);
   return <>
-    <PageHead crumb={`Registro · ${past.length} ${past.length === 1 ? 'directo' : 'directos'}`} title="Directos anteriores"
-      desc="Cada vez que empiezas un directo nuevo, el anterior se archiva aquí con su cronología, sus marcas y su resumen."
+    <PageHead crumb={`Registro · ${plural(past.length, 'directo', 'directos')}`} title="Directos anteriores"
+      desc="Elige un directo y explora sus métricas sin perder la comparación."
       actions={<a className="eg-btn eg-btn--ghost eg-btn--sm" href="#/general/directos">Cuántos se guardan</a>} />
-    <Kpis items={[{ value: past.length, label: 'directos archivados' }, { value: total.toLocaleString('es-ES'), label: 'eventos en total' }, { value: past[0] ? fmtDate(past[0].startedAt) : '—', label: 'el último' }]} />
-    <ListPanel title="Directos" search={f.q} onSearch={f.setQ} placeholder="Buscar por título o fecha"
-      cols={[{ key: 'name', label: 'Directo' }, { key: 'state', label: 'Estado' }, { key: 'dur', label: 'Duración' }, { key: 'events', label: 'Eventos', hide: true }]}
-      rows={rows} empty={past.length ? 'Ningún directo coincide.' : 'Todavía no hay directos archivados.'} />
-    {open ? <DirectoSlide key={open} id={open} tab={['resumen', 'cronologia', 'marcas', 'exportar'].includes(parts[2]) ? parts[2] : 'resumen'} /> : null}
+    <div className="dx-explorer">
+      <SessionList past={past} filtered={past.filter(p => f.match(p.title, dateTime(p.startedAt)))} query={f.q} onQuery={f.setQ}
+        selected={selected} onSelect={setSelected} loading={listState === 'loading'} error={listState === 'error'} retry={() => setListAttempt(n => n + 1)} />
+      <SessionDetail selected={selected} session={past.find(p => p.id === selected)} summary={summary} retry={retrySummary} types={state.types} />
+    </div>
+    <p className="dx-foot">Cobertura: tiempo con muestras de espectadores sobre la duración. Las plataformas no se suman; un dato ausente no es cero.</p>
+    {open ? <DirectoSlide key={open} id={open} summary={summary} retry={retrySummary} tab={['resumen', 'cronologia', 'marcas', 'exportar'].includes(parts[2]) ? parts[2] : 'resumen'} /> : null}
   </>;
 }
 
