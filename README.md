@@ -471,7 +471,7 @@ The panel and the MCP use the same API at `http://127.0.0.1:4500/api/…` (`/api
 
 Layers connect via WebSocket (not limited to six connections per host), falling back to SSE when WebSocket is unavailable.
 
-#### Final session metrics (Cadencia v1)
+#### Final session metrics (export v1)
 
 Read-only, for **ended automatic Meld sessions**; manual and ongoing sessions are not exported. On the same PC use the existing local API access at `127.0.0.1` or `::1`, with the same admission checks and no new credential:
 

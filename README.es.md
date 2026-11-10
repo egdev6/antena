@@ -471,7 +471,7 @@ El panel y el MCP usan la misma API en `http://127.0.0.1:4500/api/…` (`/api/st
 
 Las capas conectan por WebSocket (sin el límite de seis conexiones por host) y recurren a SSE si WebSocket no está disponible.
 
-#### Métricas finales de sesión (Cadencia v1)
+#### Métricas finales de sesión (export v1)
 
 Solo lectura, para **sesiones automáticas de Meld terminadas**; no se exportan las manuales ni las que siguen en directo. En el mismo PC se usa el acceso habitual a la API en `127.0.0.1` o `::1`, con las mismas comprobaciones y sin credencial nueva:
 
