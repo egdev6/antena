@@ -968,3 +968,37 @@ main:has(> .lv-savebar.is-open),.lv-slide:has(> .lv-savebar.is-open) .lv-sbody{p
   .dx-stats th,.dx-stats td{white-space:normal}
 }
 @media(prefers-reduced-motion:reduce){.dx-explorer *{scroll-behavior:auto;animation:none;transition:none}}
+
+/* Directo monitor: compact health, independent platform pulse and backup controls. */
+.dir-health{overflow:hidden;border:1px solid var(--color-border-default);border-radius:var(--radius-md);background:var(--color-surface-1)}
+.dir-health-line{display:flex;flex-wrap:wrap;gap:var(--space-2);padding:var(--space-2) var(--space-4);background:var(--color-surface-2);border-bottom:1px solid var(--color-border-default);font-size:var(--text-body-default);color:var(--color-fg-secondary)}
+.dir-health-line strong{color:var(--color-status-success)}.dir-health-line.is-warning strong{color:var(--color-status-warning)}
+.dir-connections{padding:var(--space-2) var(--space-4)}
+.dir-pulse{margin-top:var(--space-5)}
+.dir-section-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--space-2);margin-bottom:var(--space-3)}
+.dir-section-head h2{font-size:18px}
+.dir-pulse-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4)}
+.app .dir-pulse-card{padding:var(--space-3) var(--space-4);min-width:0}
+.dir-pulse-head,.dir-pulse-foot,.dir-alert-line,.dir-chat-head,.dir-summary{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:var(--space-2) var(--space-4)}
+.dir-pulse-head h3,.dir-chat-head h3{margin:0;font-size:14px}
+.dir-pulse-empty{margin:var(--space-3) 0 0;color:var(--color-fg-secondary);font-size:var(--text-body-default)}
+.dir-numbers{display:flex;flex-wrap:wrap;align-items:end;gap:var(--space-3) var(--space-6);margin-top:var(--space-3);font-variant-numeric:tabular-nums}
+.dir-number{display:flex;align-items:baseline;gap:var(--space-2);min-width:0;color:var(--color-fg-secondary);font-size:12px}
+.dir-number b{font:800 18px/1 var(--font-display);color:var(--text)}.dir-number.now b{font-size:var(--text-display-stat)}
+.dir-pulse-card .dx-chart{height:92px}
+.dir-pulse-foot{padding-top:var(--space-2);margin-top:var(--space-2);border-top:1px solid var(--color-border-default);font-size:12px;color:var(--color-fg-secondary)}
+.dir-pulse-foot b{color:var(--text)}
+.app .dir-lower{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:var(--space-4);margin-top:var(--space-4)}
+.dir-summary{font-size:12px;color:var(--color-fg-secondary)}.dir-summary strong{color:var(--color-primitive-red-200)}
+.app .dir-timeline .eg-timeline__item{grid-template-columns:max-content minmax(0,auto) minmax(0,1fr)}
+.dir-timeline .eg-timeline__time{white-space:nowrap;font-variant-numeric:tabular-nums}
+.dir-alerts{display:grid;gap:var(--space-2);font-size:12px;color:var(--color-fg-secondary)}.dir-alerts strong{color:var(--text)}
+.dir-alert-actions{align-items:center}
+.dir-chat-box{display:grid;gap:var(--space-2);padding-top:var(--space-3);border-top:1px solid var(--color-border-default);min-width:0}
+.dir-chat{max-height:none;overflow:visible}.dir-chat .eg-timeline__item span:last-child{overflow-wrap:anywhere;min-width:0}
+.dir-send{align-items:center}.dir-send input{min-width:120px}
+.dir-extras{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);align-items:center;gap:var(--space-4);margin-top:var(--space-4)}
+.dir-extras .goals .goal{gap:var(--space-2)}.dir-extras .goal-title{margin:0}.dir-extras .goal-top{margin-bottom:var(--space-1)}
+.dir-past{color:var(--color-fg-secondary);font-size:12px;overflow-wrap:anywhere}.dir-past b{color:var(--text)}.dir-past a{color:var(--text);font-weight:600;text-underline-offset:3px}
+@media(max-width:959px){.app .dir-lower,.dir-extras{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.dir-pulse-grid{grid-template-columns:minmax(0,1fr)}}
