@@ -14,7 +14,8 @@ const TOTAL_LABELS: Record<string, [string, string]> = {
   follows: ['seguidor', 'seguidores'], subs: ['suscripción', 'suscripciones'], bits: ['bit', 'bits'],
   raids: ['raid', 'raids'], superchats: ['super chat (€)', 'super chats (€)'], members: ['miembro', 'miembros'],
 };
-type LiveSession = SessionSummary & Pick<Summary, 'viewers' | 'viewerMetrics' | 'chatMetrics' | 'endedAt'> & {
+type LiveSession = SessionSummary & Pick<Summary, 'viewers' | 'viewerMetrics' | 'chatMetrics' | 'endedAt' | 'meldAutoSession'> & {
+  id: string;
   platforms?: Partial<Record<Platform, { streamId?: string; videoId?: string }>>;
 };
 
@@ -67,7 +68,7 @@ function Connections() {
   </div>;
 }
 
-function Health({ state, session }: { state: AppState; session: LiveSession }) {
+function Health({ state, session, idleSeconds, endSession }: { state: AppState; session: LiveSession; idleSeconds: number | null; endSession: () => void }) {
   const st = state.status, warnings: string[] = [];
   const isLive = (p: Platform) => !!state.viewers?.platforms?.[p]?.live || (p === 'youtube' && st.youtube?.state === 'escuchando') ||
     (!!st.meld?.streaming && !session.endedAt && !!(p === 'twitch' ? session.platforms?.twitch?.streamId : session.platforms?.youtube?.videoId));
@@ -77,9 +78,11 @@ function Health({ state, session }: { state: AppState; session: LiveSession }) {
   if (st.pause?.paused) warnings.push('Alertas pausadas');
   if (st.pause?.held) warnings.push(`${st.pause.held} ${st.pause.held === 1 ? 'alerta retenida' : 'alertas retenidas'}`);
   if (!st.overlays) warnings.push('0 overlays conectados');
+  const count = warnings.length + (idleSeconds !== null ? 1 : 0);
   return <section className="dir-health" aria-label="Salud y conexiones del directo">
-    <div className={cx('dir-health-line', warnings.length > 0 && 'is-warning')} role="status">
-      {warnings.length ? <><strong>{warnings.length} {warnings.length === 1 ? 'aviso' : 'avisos'}</strong><span>{warnings.join(' · ')}</span></> : <strong>Todo en orden</strong>}
+    <div className={cx('dir-health-line', count > 0 && 'is-warning')} role="status">
+      {count ? <><strong>{count} {count === 1 ? 'aviso' : 'avisos'}</strong>{warnings.length > 0 && <span>{warnings.join(' · ')}</span>}
+        {idleSeconds !== null && <span>Sesión abierta sin emisión · empezó hace {mmss(idleSeconds)} · <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={endSession}>Cerrarla</button></span>}</> : <strong>Todo en orden</strong>}
     </div>
     <Connections />
   </section>;
@@ -180,10 +183,13 @@ function ChatBox() {
 export function Directo() {
   const s = useLive(x => x), tl = live.timeline;
   const [ses, setSes] = useState<LiveSession | null>(null);
+  const [endRetryId, setEndRetryId] = useState<string | null>(null);
   const [past, setPast] = useState<SessionList['past']>([]);
   const [now, setNow] = useState(Date.now());
   const sequence = useRef(0), goalsKey = JSON.stringify(s.widgets?.goals || []);
-  const streaming = !!s.status?.meld?.streaming;
+  // Only measure the time without a signal that this view has actually observed.
+  const idleSince = useRef<{ id: string; at: number } | null>(null);
+  const streaming = s.status?.meld?.state === 'conectado' && !!s.status.meld.streaming;
   const monitoring = streaming || platforms.some(p => !!s.viewers?.platforms?.[p]?.live) || s.status?.youtube?.state === 'escuchando';
   const load = guard(async () => {
     const generation = ++sequence.current;
@@ -194,6 +200,13 @@ export function Directo() {
   useEffect(() => { if (!monitoring) return; const h = setInterval(load, 30000); return () => clearInterval(h); }, [monitoring]);
   useEffect(() => { const h = setInterval(() => setNow(Date.now()), 1000); return () => { clearInterval(h); sequence.current++; }; }, []);
   if (!ses) return null;
+  const open = !!ses.startedAt && !ses.endedAt;
+  const idle = open && !monitoring;
+  if (!idle) idleSince.current = null;
+  else if (idleSince.current?.id !== ses.id) idleSince.current = { id: ses.id, at: now };
+  // We cannot know when broadcasting stopped, so the warning reports the session age.
+  const startedMs = Date.parse(String(ses.startedAt ?? ''));
+  const idleSeconds = idle && idleSince.current ? (now - (Number.isFinite(startedMs) ? startedMs : idleSince.current.at)) / 1000 : null;
   const started = ses.startedAt ? +new Date(ses.startedAt) : 0;
   const start = started ? new Date(started).toISOString() : '';
   const end = ses.endedAt || new Date(now).toISOString();
@@ -201,6 +214,15 @@ export function Directo() {
   // The archive list is ordered by id; the footer needs the most recent start.
   const last = [...(past || [])].sort((x, y) => (Date.parse(String(y?.startedAt ?? '')) || 0) - (Date.parse(String(x?.startedAt ?? '')) || 0))[0];
   const mark = guard(async () => { const { marker } = await post<{ marker: { twitchError?: string } }>('/api/markers', {}); toast(marker?.twitchError ? `Marca guardada (Twitch: ${marker.twitchError})` : 'Momento marcado'); });
+  const endSession = guard(async () => {
+    if (!confirm('¿Terminar el directo? Se marcará la hora de fin; el archivado y la puesta a cero ocurrirán al empezar el siguiente.')) return;
+    try { await post('/api/session/end', { id: ses.id }); setEndRetryId(null); await load(); }
+    catch (error) { setEndRetryId(ses.id); await load(); throw error; }
+  });
+  const startSession = guard(async () => {
+    if (!confirm('Se archiva el directo actual y todo vuelve a cero (objetivos, créditos, últimos). ¿Seguir?')) return;
+    await post('/api/session/new', { title: '' }); await load();
+  });
   return <>
     <header className="view-head" data-tour="directo-head" data-tour-view-ready="directo"><div>
       <span className={cx('crumb', streaming && 'onair')}>{streaming ? <span className="eg-live-dot is-active" aria-hidden="true" /> : null}{streaming ? 'En directo' : 'Sesión'} · desde las {fmtTime(started)}{started ? ` · ${mmss((now - started) / 1000)}` : ''}</span>
@@ -209,9 +231,11 @@ export function Directo() {
         <a className="eg-btn eg-btn--ghost eg-btn--sm" href="/api/session/summary.md" target="_blank">Resumen (.md)</a>
         <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => copy((await get<{ markdown: string }>('/api/session/summary')).markdown))}>Copiar resumen</button>
         <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>
-        <button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(async () => { if (!confirm('Se archiva el directo actual y todo vuelve a cero (objetivos, créditos, últimos). ¿Seguir?')) return; await post('/api/session/new', { title: '' }); await load(); })}>Nuevo directo</button>
+        {!open && (endRetryId !== ses.id || streaming) ? <button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={startSession}>Empezar directo</button>
+          : streaming ? <Status tone="success">{ses.meldAutoSession ? 'En directo · automático con Meld' : 'En directo · Meld emitiendo'}</Status>
+          : <button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={endSession}>Terminar directo</button>}
       </div></header>
-    <Health state={s} session={ses} />
+    <Health state={s} session={ses} idleSeconds={idleSeconds} endSession={endSession} />
     <section className="dir-pulse" aria-labelledby="dir-pulse-title"><div className="dir-section-head"><h2 id="dir-pulse-title">Pulso del directo</h2><span className="hint">Desde el inicio · plataformas separadas · escala independiente</span></div>
       <div className="dir-pulse-grid">{platforms.map(p => <PulseCard key={p} platform={p} start={start} end={end} now={now} series={ses.viewers?.[p]} viewers={ses.viewerMetrics?.[p]} chat={ses.chatMetrics?.[p]} watcher={s.viewers?.platforms?.[p]} settings={s.viewers?.settings}
         disconnected={p === 'twitch' ? s.status.twitch?.state === 'desconectado' && s.status.chat?.state !== 'conectado' : ['desconectado', 'parado'].includes(s.status.youtube?.state || '')} />)}</div>

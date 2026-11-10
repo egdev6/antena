@@ -23,7 +23,7 @@ import { httpError } from '../http-util.mjs';
 const EVENTS_DEFAULT_LIMIT = 500;
 const EVENTS_MAX_LIMIT = 1000;
 
-export function registerSessionRoutes({ route, session, timelinePayload, addMarker }) {
+export function registerSessionRoutes({ route, session, timelinePayload, addMarker, endSession }) {
   // ---------- directo (sesión) ----------
   route('GET', '/api/session', async () => ({ ...publicSession(session.data), events: undefined, eventCount: session.data.events.length, totals: session.totals(), latest: session.latest(),
     ...(session.data.viewers !== undefined ? { viewerMetrics: viewerMetrics(session.data) } : {}) }));
@@ -40,6 +40,7 @@ export function registerSessionRoutes({ route, session, timelinePayload, addMark
       : { markdown: session.summaryMarkdown(d) };
   });
   route('POST', '/api/session/new', async ({ title = '' } = {}) => ({ session: publicSession(await session.startNew(title)) }));
+  route('POST', '/api/session/end', async body => ({ session: publicSession(await endSession(body?.id)) }));
   route('PUT', '/api/session', async ({ title }) => { session.data.title = String(title || ''); session.save(); return { ok: true }; });
   route('GET', '/api/sessions', async () => ({ current: { id: session.data.id, title: session.data.title, startedAt: session.data.startedAt, events: session.data.events.length,
     ...(session.data.endedAt !== undefined ? { endedAt: session.data.endedAt } : {}), ...(session.data.platforms !== undefined ? { platforms: session.data.platforms } : {}),

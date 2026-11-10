@@ -467,6 +467,8 @@ Examples of what you can ask Claude to do:
 
 ### REST API
 
+`POST /api/session/end` ends the current session and returns `{ session }`. An optional body `{ "id": "<session-id>" }` protects against ending a different session; an invalid id returns 400, and a changed current session returns 409. It is idempotent for an already ended session, closes viewer gaps and preserves the data; archiving and resetting still happen on the next `POST /api/session/new`. It returns 409 while Meld is connected and confirms it is streaming. Normal mutating-route origin checks apply.
+
 The panel and the MCP use the same API at `http://127.0.0.1:4500/api/…` (`/api/state`, `/api/alerts/:type`, `/api/alerts/:type/variations`, `/api/commands`, `/api/widgets`, `/api/goals`, `/api/session`, `/api/meld/*`, `/api/chat/*`…). The full list is in `src/server.mjs`. The layers receive events at `/api/stream`; each connection has a budget of pending bytes: if a client does not consume its queue, the server sends it a `gap` event and closes it; on reconnect it receives an updated snapshot and the panel shows a visible warning. Ephemeral events lost during the gap are not replayed; persisted critical records (e.g. donations) are kept.
 
 Layers connect via WebSocket (not limited to six connections per host), falling back to SSE when WebSocket is unavailable.

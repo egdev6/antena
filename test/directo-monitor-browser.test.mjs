@@ -344,6 +344,8 @@ test('#116: actualiza el pulso con plataforma en directo aunque Meld no emita', 
 test('#116: controles de respaldo y chat reducido usan las acciones existentes', { timeout: 90000 }, async t => {
   const f = await fixture(t); if (!f) return;
   for (let i = 0; i < 7; i++) await api(f.base, 'POST', '/api/chat/simulate', { user: `usuario${i}`, text: `mensaje${i}`, platform: 'twitch' });
+  // A finished session offers the equivalent start action; cancellation must still preserve it.
+  await f.app.session.endCurrent();
   const c = await f.open();
   await wait(c, `!!${buttonByText('Saltar')} && !!document.querySelector('#dir-say')`);
   assert.equal(await dom(c, `document.querySelectorAll('.dir-chat li').length`), 5);
@@ -356,7 +358,7 @@ test('#116: controles de respaldo y chat reducido usan las acciones existentes',
     return original(...args).then(response => { if (entry) entry.status = response.status; return response; });
   }; window.confirm = message => { window.__newConfirm = message; return false; }; return true; })()`);
   assert.equal(await dom(c, `document.querySelector('a[href="/api/session/summary.md"]').textContent.trim()`), 'Resumen (.md)');
-  await dom(c, `${buttonByText('Nuevo directo')}.click()`);
+  await dom(c, `${buttonByText('Empezar directo')}.click()`);
   assert.match(await dom(c, `window.__newConfirm`), /Se archiva el directo actual/);
   assert.equal(await dom(c, `window.__monitorCalls.some(x => x.path === '/api/session/new')`), false);
   assert.equal((await api(f.base, 'GET', '/api/session')).title, 'Directo de prueba');
@@ -375,4 +377,82 @@ test('#116: controles de respaldo y chat reducido usan las acciones existentes',
   assert.deepEqual(JSON.parse(calls.find(x => x.path === '/api/chat/send').body), { text: 'hola sintético', to: 'youtube' });
   assert.ok((await api(f.base, 'GET', '/api/timeline')).items.some(item => item.kind === 'marker'));
   await wait(c, `!!${buttonByText('Pausar alertas')}`);
+});
+
+// #118 S3/S5: a failed durable close remains retryable even after the ended SSE update.
+test('#118: un error al guardar el cierre conserva la acción para reintentar', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { withoutSeries: true }); if (!f) return;
+  f.app.meld.status = { ...f.app.meld.status, state: 'reintentando', streaming: false };
+  f.app.youtube.status = { ...f.app.youtube.status, state: 'parado', liveChatId: null };
+  for (const p of ['twitch', 'youtube']) f.app.viewers.observe(p, { live: false, off: true });
+  const c = await f.open();
+  const writer = f.app.session.writer; let fail = false, failures = 0;
+  f.app.session.on('change', change => { if (change.ended) fail = true; });
+  f.app.session.writer = (...args) => fail && failures++ < 2 ? Promise.reject(new Error('fallo sintético')) : writer(...args);
+  t.after(() => { fail = false; });
+  await dom(c, `(() => { window.confirm = () => true; const original = window.fetch; window.__endedLoaded = false; window.__endBodies = [];
+    window.fetch = (...args) => { const path = new URL(String(args[0]), location.href).pathname;
+      if (path === '/api/session/end') window.__endBodies.push(JSON.parse(args[1].body));
+      return original(...args).then(r => { if (path === '/api/session' && (!args[1]?.method || args[1].method === 'GET'))
+        r.clone().json().then(data => { if (data.endedAt) window.__endedLoaded = true; }); return r; }); }; })()`);
+  await dom(c, `${buttonByText('Terminar directo')}.click()`);
+  await wait(c, `window.__endedLoaded && document.body.textContent.includes('No se pudo guardar la sesión')`);
+  fail = false;
+  assert.ok(await dom(c, `!!${buttonByText('Terminar directo')}`));
+  assert.equal(await dom(c, `!!${buttonByText('Empezar directo')}`), false);
+  await dom(c, `${buttonByText('Terminar directo')}.click()`);
+  await wait(c, `!!${buttonByText('Empezar directo')}`);
+  const ended = await api(f.base, 'GET', '/api/session'); assert.ok(ended.endedAt);
+  assert.deepEqual(await dom(c, `window.__endBodies`), [{ id: ended.id }, { id: ended.id }]);
+  const disk = JSON.parse(await import('node:fs/promises').then(fs => fs.readFile(path.join(f.app.store.dir, 'session-current.json'), 'utf8')));
+  assert.equal(disk.endedAt, ended.endedAt);
+});
+
+// #118 S2/S6: never offer a close action while Meld confirms streaming, even for a manual session.
+test('#118: emisión confirmada por Meld no ofrece cierre', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { gap: false }); if (!f) return;
+  const c = await f.open();
+  assert.match(await dom(c, `document.querySelector('.view-head').textContent`), /En directo · automático con Meld/);
+  assert.equal(await dom(c, `!!${buttonByText('Terminar directo')} || !!${buttonByText('Cerrarla')}`), false);
+  const manual = await fixture(t, { withoutSeries: true }); if (!manual) return;
+  const d = await manual.open();
+  assert.equal(await dom(d, `!!${buttonByText('Terminar directo')} || !!${buttonByText('Cerrarla')}`), false);
+});
+
+// #118 S1/S3/S4/S6: stale Meld state is not a signal, platform live suppresses the warning,
+// and both end controls share confirmation; history and archive/reset remain separate.
+test('#118: aviso sin emisión, cierre confirmado, historial e inicio manual', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { withoutSeries: true }); if (!f) return;
+  f.app.meld.status = { ...f.app.meld.status, state: 'reintentando', streaming: true };
+  f.app.youtube.status = { ...f.app.youtube.status, state: 'parado', liveChatId: null };
+  for (const p of ['twitch', 'youtube']) f.app.viewers.observe(p, { live: false, off: true });
+  const c = await f.open();
+  assert.ok(await dom(c, `!!${buttonByText('Terminar directo')}`));
+  assert.match(await dom(c, `${health}.textContent`), /Sesión abierta sin emisión · empezó hace \d+:\d{2}/);
+  assert.ok(await dom(c, `!!${buttonByText('Cerrarla')}`));
+  f.app.viewers.observe('twitch', { live: true, viewers: 10 }); f.app.viewers.emit('change', f.app.viewers.snapshot());
+  await wait(c, `!/Sesión abierta sin emisión/.test(${health}.textContent)`);
+  assert.ok(await dom(c, `!!${buttonByText('Terminar directo')}`));
+  f.app.viewers.observe('twitch', { live: false, off: true }); f.app.viewers.emit('change', f.app.viewers.snapshot());
+  await wait(c, `/Sesión abierta sin emisión/.test(${health}.textContent)`);
+  await dom(c, `window.__confirms = []; window.confirm = message => { window.__confirms.push(message); return false; }`);
+  await dom(c, `${buttonByText('Terminar directo')}.click(); ${buttonByText('Cerrarla')}.click()`);
+  const confirms = await dom(c, `window.__confirms`);
+  assert.equal(confirms.length, 2); assert.equal(confirms[0], confirms[1]); assert.match(confirms[0], /terminar/i);
+  assert.equal((await api(f.base, 'GET', '/api/session')).endedAt, undefined);
+  await dom(c, `window.confirm = () => true; ${buttonByText('Cerrarla')}.click()`);
+  await wait(c, `!!${buttonByText('Empezar directo')}`);
+  const ended = await api(f.base, 'GET', '/api/session'); assert.ok(ended.endedAt);
+  assert.doesNotMatch(await dom(c, `${health}.textContent`), /Sesión abierta sin emisión/);
+  await dom(c, `location.hash = '#/directos'`);
+  await wait(c, `document.body.textContent.includes('Directo de prueba')`);
+  await dom(c, `location.hash = '#/directo'`);
+  await wait(c, `!!${buttonByText('Empezar directo')}`);
+  await dom(c, `window.__startConfirm = ''; window.confirm = message => { window.__startConfirm = message; return false; }; ${buttonByText('Empezar directo')}.click()`);
+  assert.match(await dom(c, `window.__startConfirm`), /archiva.*cero/i);
+  assert.equal((await api(f.base, 'GET', '/api/session')).id, ended.id);
+  await dom(c, `window.confirm = () => true; ${buttonByText('Empezar directo')}.click()`);
+  await wait(c, `!!${buttonByText('Terminar directo')}`);
+  const next = await api(f.base, 'GET', '/api/session'); assert.notEqual(next.id, ended.id);
+  assert.ok((await api(f.base, 'GET', '/api/sessions')).past.some(x => x.id === ended.id));
 });

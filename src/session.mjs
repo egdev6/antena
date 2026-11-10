@@ -660,14 +660,20 @@ export class Session extends EventEmitter {
   }
   // Marcar el actual cerrado mantiene su resumen accesible; el siguiente startNew
   // lo archivará por el pipeline habitual sin cambiar la hora real de cierre.
-  endCurrent(at = new Date().toISOString()) {
+  endCurrent(at = new Date().toISOString(), { expectedId } = {}) {
     const run = this.transitionChain.then(async () => {
-      if (this.data.endedAt) return;
+      // The HTTP request may have waited behind another start or identity rollover.
+      if (expectedId !== undefined && this.data.id !== expectedId)
+        throw Object.assign(new Error('La sesión actual ha cambiado. Actualiza antes de terminar el directo.'), { status: 409 });
+      if (this.data.endedAt) return expectedId !== undefined ? structuredClone(this.data) : undefined;
       await this.flush();
-      this._closeViewerGaps(at);
-      this.data.endedAt = at;
+      const endedAt = Date.parse(at) < Date.parse(this.data.startedAt) ? this.data.startedAt : at;
+      this._closeViewerGaps(endedAt);
+      this.data.endedAt = endedAt;
       this.emit('change', { ended: true });
       await this.flush();
+      // Capture before any later transition can replace the targeted session.
+      if (expectedId !== undefined) return structuredClone(this.data);
     });
     this.transitionChain = run.then(() => {}, () => {});
     return run;
