@@ -418,7 +418,7 @@ The sidebar lists collapse with a click on their title and the panel remembers w
 
 ### MCP server
 
-Everything the panel does can be done via MCP (142 tools). If the app is not running, the MCP starts it itself.
+Everything the panel does can be done via MCP (143 tools). If the app is not running, the MCP starts it itself.
 
 Claude Desktop (`claude_desktop_config.json`):
 
@@ -442,7 +442,7 @@ Claude Desktop (`claude_desktop_config.json`):
 | Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube or both), `simular_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
 | Widgets | `ver_widgets`, `editar_widget`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `sumar_objetivo`, `fijar_objetivo`, `lanzar_creditos`, `parar_creditos` |
 | Custom overlays | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay` (fires a sample event at one open layer) |
-| Stream | `resumen_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
+| Stream | `resumen_directo`, `metricas_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
 | Appearance | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema` |
 | Viewers record | `estado_espectadores`, `configurar_espectadores`, `fijar_record_espectadores` |
 | Timeline and prompter | `cronologia`, `crear_marca`, `nota_cronologia`, `editar_nota_cronologia`, `borrar_nota_cronologia`, `marcar_agradecido`, `prompter_pestana` |
@@ -470,6 +470,20 @@ Examples of what you can ask Claude to do:
 The panel and the MCP use the same API at `http://127.0.0.1:4500/api/…` (`/api/state`, `/api/alerts/:type`, `/api/alerts/:type/variations`, `/api/commands`, `/api/widgets`, `/api/goals`, `/api/session`, `/api/meld/*`, `/api/chat/*`…). The full list is in `src/server.mjs`. The layers receive events at `/api/stream`; each connection has a budget of pending bytes: if a client does not consume its queue, the server sends it a `gap` event and closes it; on reconnect it receives an updated snapshot and the panel shows a visible warning. Ephemeral events lost during the gap are not replayed; persisted critical records (e.g. donations) are kept.
 
 Layers connect via WebSocket (not limited to six connections per host), falling back to SSE when WebSocket is unavailable.
+
+#### Final session metrics (Cadencia v1)
+
+Read-only, for **ended automatic Meld sessions**; manual and ongoing sessions are not exported. On the same PC use the existing local API access at `127.0.0.1` or `::1`, with the same admission checks and no new credential:
+
+- `GET /api/metrics/v1/sessions?limit=50&before=<id>` uses the same window as `/api/sessions`: the 50 most recent archives by archive id, plus the ended automatic current session. Eligible results are sorted by start time then id descending. `limit` is 1–50 (default 50). Use `next` as `before` for the next page; `next: null` ends pagination. Invalid or repeated limits or cursors return 400.
+- As in `/api/sessions`, an unreadable archive without usable metadata is skipped by the list; its detail URL returns 500. If metadata lists an archive whose contents cannot be read, the metrics list also returns 500 rather than inventing values.
+- `GET /api/metrics/v1/sessions/<id>` returns one ended automatic session, or 404 for an unknown, ongoing or manual session. Corrupt stored data returns 500. MCP `metricas_directo` accepts an optional `id`; without it, it returns the most recent ended session.
+
+Each document has `schema: "antena.session-metrics"`, `version: 1`, `generatedAt`, `session` and `metrics`; list pages contain these session/metrics pairs in `sessions`. The session identifies Twitch and YouTube separately with the known external id (or `null`) and `live`. Ten final rows cover both platforms: `viewers_average`, `viewers_peak`, `chat_unique_chatters`, `chat_messages` (unit `count`) and `chat_messages_per_minute` (unit `per_minute`). Every row has `source`, `capturedAt` (session end), and `coverage`. Sources are `twitch.helix.streams`, `youtube.videos.liveStreamingDetails`, `twitch.irc`, and `youtube.liveChat.messages`. Times are UTC ISO 8601 and durations are integer seconds.
+
+Viewer `viewer_samples` coverage reports observed seconds and `ratio = coveredSeconds / liveSeconds` over those exported integers; `liveSeconds` is the session duration rounded down, and less than one covered second is reported as unavailable (`value: null`, ratio 0). Gaps are excluded from the weighted average. Chat `platform_presence` coverage has `coveredSeconds: null`: ratio 1 means the platform was live and its chat listener connected, not that its uptime was measured. Ratio 0 with `value: null` means unavailable, not zero; a connected silent chat produces real zeros. The per-minute rate is `null` at zero duration. Platforms are never summed.
+
+Version 1 allows additive fields, metrics and coverage bases; removing or renaming fields or changing definitions requires a new version and `/api/metrics/v2/…`.
 
 ### Twitch
 

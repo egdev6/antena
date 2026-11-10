@@ -255,6 +255,7 @@ export class YouTube extends EventEmitter {
         maxResults: 200,
         pageToken: this.pageToken || undefined,
       });
+      this.emit('chatListening', { ...chatEpoch, videoId, liveChatId });
       this.pageToken = d.nextPageToken;
       wait = Math.max(wait, d.pollingIntervalMillis || 0);
       // La primera lectura trae mensajes antiguos: no se alertan, pero sí se registran
