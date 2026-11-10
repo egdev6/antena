@@ -1,0 +1,13 @@
+{
+  "title": "Directo · Pulso y respaldo",
+  "brief": "Una vista de apoyo y resumen para seguir la salud, la audiencia y la historia del directo sin repetir el dock.",
+  "artboards": [
+    {
+      "file": "01-pulso-y-respaldo.html",
+      "title": "Pulso y respaldo",
+      "tradeoff": "Prioriza una lectura conjunta y controles de emergencia compactos; el chat y la cronología muestran menos detalle que sus vistas completas.",
+      "width": 1440,
+      "height": 900
+    }
+  ]
+}
