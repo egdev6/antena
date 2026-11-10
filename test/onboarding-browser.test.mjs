@@ -3,6 +3,7 @@
 // guiado con driver.js que navega por las vistas señalando sus zonas ([data-tour]).
 // Terminar o cerrar el tour también lo marca; «General y archivos» lo relanza sin saludo.
 import { test } from 'node:test';
+import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -46,6 +47,42 @@ const ACTIVE = `document.querySelector('.driver-active-element')?.getAttribute('
 // different from the previous one, or a click lands on the new step and the test overshoots it.
 const NEXT = `document.querySelector('.driver-popover-next-btn')`;
 const PROGRESS = `document.querySelector('.driver-popover-progress-text')?.textContent`;
+
+// El ancla puede cambiar antes que el popover: comprobar y pulsar el actual en una
+// sola evaluación evita que «Anterior» caiga en el popover todavía visible del paso anterior.
+async function tourButtonAt(chrome, direction, anchor, progress) {
+  await waitDom(chrome.cdp, `(() => {
+    const pop = ${POPOVER};
+    const button = pop?.querySelector(${JSON.stringify('.driver-popover-' + direction + '-btn')});
+    if (${ACTIVE} !== ${JSON.stringify(anchor)} || pop?.querySelector('.driver-popover-progress-text')?.textContent !== ${JSON.stringify(progress)} ||
+        !button || button.disabled || !pop.getClientRects().length || !button.getClientRects().length ||
+        getComputedStyle(pop).visibility !== 'visible' || getComputedStyle(pop).display === 'none') return false;
+    button.click(); return true;
+  })()`, { timeoutMs: 9000 });
+}
+const previousAt = (chrome, anchor, progress) => tourButtonAt(chrome, 'prev', anchor, progress);
+
+// Retiene respuestas HTTP reales solamente después de haber llegado a Chat.
+async function gateSessions(chrome) {
+  await dom(chrome, `(() => {
+    const fetch0 = window.fetch;
+    const gate = window.__sessionGate = { seen: [], release: null };
+    const blocked = new Promise(resolve => { gate.release = resolve; });
+    window.fetch = async (...args) => {
+      const response = await fetch0(...args);
+      const path = new URL(String(args[0]), location.href).pathname;
+      if (path === '/api/session' || path === '/api/sessions') { gate.seen.push(path); await blocked; }
+      return response;
+    };
+    return true;
+  })()`);
+}
+
+async function tourError(chrome, error) {
+  const state = chrome ? await dom(chrome, `JSON.stringify({ hash: location.hash, active: ${ACTIVE} ?? null, progress: ${PROGRESS} ?? null, seen: window.__tourSeen ?? [] })`).catch(() => 'sin estado') : 'sin navegador';
+  return new Error(`${error.message}; estado del tour: ${state}`, { cause: error });
+}
+
 // Pulsa «Siguiente» y espera en la página a que se resalte otra ancla; devuelve los ms.
 const nextTimed = (chrome, anchor) => dom(chrome, `new Promise(resolve => {
   const t0 = performance.now();
@@ -116,8 +153,8 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
       await waitDom(chrome.cdp, `!!${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
     }
     await waitDom(chrome.cdp, `location.hash === '#/chat' && ${ACTIVE} === 'chat-log' && !!document.querySelector('.chatlog[data-tour="chat-log"]')`, { timeoutMs: 9000 });
-    // Anterior vuelve a la vista de antes.
-    await dom(chrome, `document.querySelector('.driver-popover-prev-btn').click(); 'ok'`);
+    // Anterior vuelve a la vista de antes, desde el popover actual de Chat.
+    await previousAt(chrome, 'chat-log', '8 de 18');
     await waitDom(chrome.cdp, `location.hash === '#/directo' && ${ACTIVE} === 'directo-timeline'`, { timeoutMs: 9000 });
 
     // Meld sin conectar: el paso de escenas no cuenta y se salta al instante, sin huecos.
@@ -155,7 +192,61 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
     if (seen.includes('meld-scenes')) throw new Error('el paso sin ancla no se saltó');
     if (seen.indexOf('meld-connection') !== seen.indexOf('meld-head') + 1) throw new Error(`orden inesperado: ${seen.join(', ')}`);
     if (seen.at(-1) !== 'general-tour') throw new Error(`el tour no terminó en General: ${seen.join(', ')}`);
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } catch (error) { throw await tourError(chrome, error); }
+  finally { if (chrome) await closeChrome(chrome); await close(); }
+});
+
+test('onboarding: Anterior espera a Directo cuando las respuestas de sesión tardan', { timeout: 120000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, base, close } = ctx;
+  let chrome;
+  try {
+    chrome = await openDesktop(bin, `${base}/#/directo`);
+    await waitDom(chrome.cdp, `!!${GREET}`, { timeoutMs: 15000 });
+    await dom(chrome, RECORD);
+    await dom(chrome, `${buttonByText('Empezar el tour')}.click(); 'ok'`);
+    await waitDom(chrome.cdp, `${ACTIVE} === 'nav' && ${PROGRESS} === '1 de 18'`, { timeoutMs: 9000 });
+    for (let i = 0; i < 12 && await dom(chrome, `location.hash`) !== '#/chat'; i++) {
+      const before = await dom(chrome, ACTIVE);
+      await dom(chrome, `${NEXT}.click(); 'ok'`);
+      await waitDom(chrome.cdp, `!!${ACTIVE} && ${ACTIVE} !== ${JSON.stringify(before)}`, { timeoutMs: 9000 });
+    }
+    await waitDom(chrome.cdp, `location.hash === '#/chat' && ${ACTIVE} === 'chat-log'`, { timeoutMs: 9000 });
+    // Ambas respuestas deben estar pendientes antes de contar más de los 2 s
+    // del plazo de ancla anterior.
+    await gateSessions(chrome);
+    await previousAt(chrome, 'chat-log', '8 de 18');
+    await waitDom(chrome.cdp, `location.hash === '#/directo' && ['/api/session', '/api/sessions'].every(p => window.__sessionGate.seen.includes(p))`, { timeoutMs: 9000 });
+    await sleep(2300);
+    assert.equal(await dom(chrome, `!!document.querySelector('[data-tour="directo-timeline"]')`), false, 'Directo sigue cargando con las dos respuestas retenidas');
+    await dom(chrome, `window.__sessionGate.release(); true`);
+    await waitDom(chrome.cdp, `location.hash === '#/directo' && ${ACTIVE} === 'directo-timeline' && ${PROGRESS} === '7 de 18'`, { timeoutMs: 9000 });
+
+    // Si la vista nunca termina de cargar, su espera también está acotada. Avanzar
+    // el reloj solo después de retener ambas respuestas hace determinista ese límite.
+    await tourButtonAt(chrome, 'next', 'directo-timeline', '7 de 18');
+    await waitDom(chrome.cdp, `location.hash === '#/chat' && ${ACTIVE} === 'chat-log'`, { timeoutMs: 9000 });
+    await gateSessions(chrome);
+    await previousAt(chrome, 'chat-log', '8 de 18');
+    await waitDom(chrome.cdp, `location.hash === '#/directo' && ['/api/session', '/api/sessions'].every(p => window.__sessionGate.seen.includes(p))`, { timeoutMs: 9000 });
+    await dom(chrome, `(() => {
+      const now = Date.now, query = document.querySelector;
+      const clock = window.__viewClock = { checks: 0 };
+      document.querySelector = function(selector) {
+        if (selector === '[data-tour-view-ready="directo"]') clock.checks++;
+        return query.call(this, selector);
+      };
+      Date.now = () => now() + 11000;
+      clock.restore = () => { Date.now = now; document.querySelector = query; };
+      return true;
+    })()`);
+    // Dos consultas prueban que agotó el plazo del paso anterior y pasó al siguiente.
+    await waitDom(chrome.cdp, `window.__viewClock.checks >= 2`, { timeoutMs: 9000 });
+    await dom(chrome, `window.__viewClock.restore(); window.__sessionGate.release(); true`);
+    await waitDom(chrome.cdp, `location.hash === '#/directo' && ${ACTIVE} === 'directo-alerts' && ${PROGRESS} === '6 de 17'`, { timeoutMs: 9000 });
+  } catch (error) { throw await tourError(chrome, error); }
+  finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('onboarding: «General y archivos» relanza el tour sin saludo; Esc y las flechas funcionan', { timeout: 120000 }, async t => {

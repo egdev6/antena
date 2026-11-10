@@ -1,18 +1,28 @@
 // Motor del tour guiado sobre driver.js. Al empezar se quedan solo los pasos cuya condición
 // (`when`) se cumple, así que «n de N» cuenta lo que se va a ver. Cada paso navega a su vista
-// (location.hash), espera un tiempo acotado a su ancla [data-tour] y la resalta. Si un ancla
-// no aparece pese a todo (red de seguridad), ese paso se descarta y la numeración se rehace:
+// (location.hash), espera la disponibilidad de la vista si hace falta y luego espera un tiempo
+// acotado a su ancla [data-tour]. Si un ancla no aparece pese a todo (red de seguridad), se descarta y la numeración se rehace:
 // el siguiente toma su número y el total baja en uno, sin huecos.
 import { driver, type Driver } from 'driver.js';
 import { TOUR_STEPS, type TourStep } from './steps';
 
 const WAIT_MS = 2000;
+const VIEW_WAIT_MS = 10000;
 const selector = (s: TourStep) => `[data-tour="${s.anchor}"]`;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** Abre la vista del paso y espera a su ancla visible; null si no aparece a tiempo. */
 async function reach(step: TourStep): Promise<Element | null> {
   if (location.hash !== step.route) location.hash = step.route;
+  // Una vista que aún carga no permite distinguir un ancla ausente de una pendiente.
+  // Su límite es independiente del plazo corto de la red de seguridad para anclas.
+  if (step.viewReady) {
+    const viewEnd = Date.now() + VIEW_WAIT_MS;
+    while (!document.querySelector(step.viewReady)) {
+      if (Date.now() >= viewEnd) return null;
+      await sleep(50);
+    }
+  }
   const end = Date.now() + WAIT_MS;
   for (;;) {
     const el = document.querySelector(selector(step));

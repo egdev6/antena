@@ -1,7 +1,7 @@
 // POSIX real SIGINT + fault injection. Windows native ACL/bootstrap remain uncredited.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, writeFile, stat } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -112,6 +112,31 @@ process.once('exit', code => mark('exit', { code, sends, held: app.engine.held.l
 mark('ready');
 `;
 
+async function readEvents(file, { strict = false } = {}) {
+  try {
+    const lines = (await readFile(file, 'utf8')).split('\n');
+    const fragment = lines.pop();
+    if (strict && fragment) throw new SyntaxError('Unterminated events.jsonl record');
+    return lines.map(JSON.parse);
+  } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+}
+
+test('events: polling ignores a trailing fragment but final reads and complete lines remain strict', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'held-events-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'events.jsonl');
+  assert.deepEqual(await readEvents(file), []);
+  await writeFile(file, '{"event":"ready"}\n{"event":"cap');
+  assert.deepEqual(await readEvents(file), [{ event: 'ready' }]);
+  await assert.rejects(readEvents(file, { strict: true }), SyntaxError);
+  await appendFile(file, 'ture"}\n');
+  assert.deepEqual(await readEvents(file), [{ event: 'ready' }, { event: 'capture' }]);
+  assert.deepEqual(await readEvents(file, { strict: true }), [{ event: 'ready' }, { event: 'capture' }]);
+  await appendFile(file, '{bad}\n{"event":"part');
+  await assert.rejects(readEvents(file), SyntaxError);
+  await assert.rejects(readEvents(file, { strict: true }), SyntaxError);
+});
+
 async function launch(t, scenario) {
   const root = await mkdtemp(path.join(tmpdir(), 'held-close-'));
   const dir = path.join(root, 'data'); await mkdir(dir, { mode: 0o700 });
@@ -122,10 +147,7 @@ async function launch(t, scenario) {
   child.stdout.on('data', d => { out += d; }); child.stderr.on('data', d => { err += d; });
   child.stdin.on('error', () => {});
   const ending = new Promise(resolve => child.once('close', (code, signal) => { result = { code, signal }; resolve(result); }));
-  const events = async () => {
-    try { return (await readFile(path.join(dir, 'events.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse); }
-    catch (e) { if (e.code === 'ENOENT') return []; throw e; }
-  };
+  const events = () => readEvents(path.join(dir, 'events.jsonl'), { strict: !!result });
   const until = async predicate => {
     const end = Date.now() + 8500;
     while (!await predicate()) {
@@ -135,10 +157,13 @@ async function launch(t, scenario) {
   };
   const wait = event => until(async () => (await events()).some(e => e.event === event));
   t.after(async () => {
-    if (!result) child.kill('SIGKILL');
-    await ending;
-    const evidence = process.env.HELD_CLOSE_EVIDENCE || root;
-    await writeFile(path.join(evidence, scenario + '.json'), JSON.stringify({ root, result, events: await events(), out, err }, null, 2), { mode: 0o600 });
+    try {
+      if (!result) child.kill('SIGKILL');
+      await ending;
+      const finalEvents = await readEvents(path.join(dir, 'events.jsonl'), { strict: true });
+      const evidence = process.env.HELD_CLOSE_EVIDENCE;
+      if (evidence) await writeFile(path.join(evidence, scenario + '.json'), JSON.stringify({ root, result, events: finalEvents, out, err }, null, 2), { mode: 0o600 });
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
   await wait('ready');
   const exit = async () => { await until(() => !!result); return ending; };

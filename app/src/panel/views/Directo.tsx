@@ -138,7 +138,7 @@ export function Directo() {
     return pf.size === 1 ? (pf.has('youtube') ? 'YouTube' : 'Twitch') : 'Twitch y YouTube';
   };
   return <>
-    <header className="view-head" data-tour="directo-head"><div>
+    <header className="view-head" data-tour="directo-head" data-tour-view-ready="directo"><div>
       <span className={cx('crumb', streaming && 'onair')}>{streaming ? <span className="eg-live-dot is-active" aria-hidden="true" /> : null}{streaming ? 'En directo' : 'Sesión'} · desde las {fmtTime(started)}{started ? ` · ${mmss((now - started) / 1000)}` : ''}</span>
       <LazyInput className="title-input" value={ses.title ?? ''} placeholder="Título del directo" aria-label="Título del directo" onCommit={guard((v: string) => put('/api/session', { title: v }))} /></div>
       <div className="actions">

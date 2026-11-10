@@ -145,7 +145,7 @@ async function responseGate(chrome, urlPattern, method, cleanups) {
   return gate;
 }
 
-async function withPanel(run) {
+async function withPanel(run, { navigationReply = reply => reply } = {}) {
   // Missing prerequisites are failures, not a skipped/green regression harness.
   await stat(new URL('../app/dist/index.html', import.meta.url));
   const bin = await findChrome();
@@ -173,11 +173,12 @@ async function withPanel(run) {
     // Independent registrations isolate observer exceptions from the media probe.
     await c.send('Page.addScriptToEvaluateOnNewDocument', { source: observer + ';' });
     await c.send('Page.addScriptToEvaluateOnNewDocument', { source: mediaProbe + ';' });
-    const navigate = async route => {
-      await c.send('Page.navigate', { url: base + '/' + route });
-      await waitDom(c, 'window.__previewRace?.loads >= 2 && !!document.querySelector(".lv-card")', { timeoutMs: 20000 });
-      await rendered(c);
-    };
+    const navigate = route => within((async () => {
+      const result = await navigationReply(chrome.cdp.send('Page.navigate', { url: base + '/' + route }));
+      if (result.errorText) throw new Error(`CDP Page.navigate failed: ${result.errorText}`);
+      await waitDom(chrome.cdp, 'window.__previewRace?.loads >= 2 && !!document.querySelector(".lv-card")', { timeoutMs: 30000 });
+      await rendered(chrome.cdp);
+    })(), 'CDP navigation and panel readiness did not complete', 30000);
     await run({ c, chrome, api, base, navigate, gate: (url, method) => responseGate(chrome, url, method, cleanups) });
   } catch (error) {
     primaryError = error;
@@ -214,6 +215,19 @@ async function click(c, expression) {
 async function variationIds(c) {
   return evaluateChrome(c, `[...document.querySelectorAll('#tp-vars tbody .lv-name a')].map(a => a.getAttribute('href').split('/').pop())`);
 }
+
+test('preview races: navigation waits for a delayed CDP reply and panel readiness', options, () => withPanel(async ({ c, navigate }) => {
+  await navigate('#/alertas');
+  assert.ok(await evaluateChrome(c, 'window.__previewRace?.loads >= 2 && !!document.querySelector(".lv-card")'));
+}, { navigationReply: async reply => {
+  const result = await reply;
+  await new Promise(resolve => setTimeout(resolve, 6700));
+  return result;
+} }));
+
+test('preview races: navigation reports CDP navigation errors', options, () => withPanel(async ({ navigate }) => {
+  await assert.rejects(navigate('#/alertas'), /net::ERR_TEST_FAILED/);
+}, { navigationReply: async reply => ({ ...await reply, errorText: 'net::ERR_TEST_FAILED' }) }));
 
 test('preview races: variation creation is unique for SSE-first and response-first delivery', options, () => withPanel(async ({ c, api, navigate, gate }) => {
   await navigate('#/alertas');
