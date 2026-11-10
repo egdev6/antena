@@ -61,10 +61,29 @@ net.Server.prototype.listen = function (port, host, callback) {
 };
 
 const scenario = process.argv[1];
-// Reloj del hijo desde este punto; no es el origen del padre ni el inicio de beginClose.
-const childOrigin = scenario === 'chat-deadline' ? performance.now() : null;
+// Solo el deadline usa reloj virtual. El sufijo fraccionario mantiene el orden estricto
+// de eventos síncronos en el mismo instante sin avanzar el temporizador.
+let clockMs = 0, clockSequence = 0, deadlineTimer;
+const deadlineTimers = {
+  setTimeout(callback, ms) {
+    const timer = { callback, due: clockMs + ms };
+    deadlineTimer = timer;
+    console.log('CLOCK:SCHEDULED:' + timer.due);
+    return timer;
+  },
+  clearTimeout(timer) { if (deadlineTimer === timer) deadlineTimer = undefined; },
+};
+const advanceClock = ms => {
+  if (ms < clockMs) throw new Error('El reloj no puede retroceder');
+  clockMs = ms;
+  if (deadlineTimer && deadlineTimer.due <= clockMs) {
+    const timer = deadlineTimer; deadlineTimer = undefined; timer.callback();
+  }
+  console.log('CLOCK:' + ms); // ack solo tras procesar cualquier deadline vencido
+};
+const childOrigin = scenario === 'chat-deadline' ? 0 : null;
 const childTrace = event => {
-  if (childOrigin !== null) console.log('SHUTDOWN_CHILD:' + JSON.stringify({ clock: 'child:' + process.pid, event, ms: performance.now() - childOrigin }));
+  if (childOrigin !== null) console.log('SHUTDOWN_CHILD:' + JSON.stringify({ clock: 'child-virtual:' + process.pid, event, ms: clockMs + (++clockSequence / 1000000) }));
 };
 // Observador acotado: console/exit pueden perder bytes por flush al terminar.
 if (childOrigin !== null) process.once('exit', code => childTrace('exit-hook:' + code));
@@ -74,6 +93,11 @@ const opts = { quiet: true, log: m => {
   if (scenario === 'meld-log-throw' && String(m).includes('No se pudo cerrar Meld.')) throw new Error('PRIVATE_LOG_FAILURE');
 } };
 if (scenario === 'close-deadline' || scenario === 'deadline' || scenario === 'draw-deadline' || scenario === 'auth-deadline' || scenario === 'yt-deadline' || scenario === 'layer-deadline' || scenario === 'auto-deadline' || scenario === 'meld-deadline' || scenario === 'meld-close-deadline' || scenario === 'chat-deadline') opts.shutdownTimeoutMs = Number(process.env.CHILD_SHUTDOWN_TIMEOUT_MS || 100);
+if (scenario === 'chat-deadline') opts.shutdownDeadlineTimers = deadlineTimers;
+if (scenario === 'close-cancel-deadline') opts.shutdownDeadlineTimers = {
+  setTimeout(callback, ms) { console.log('CLOCK:REAL-SCHEDULED'); return setTimeout(callback, ms); },
+  clearTimeout(timer) { clearTimeout(timer); console.log('CLOCK:REAL-CLEARED'); },
+};
 
 const realExit = process.exit.bind(process);
 process.exit = code => { console.log('WILLEXIT:' + code); realExit(code); };
@@ -83,8 +107,17 @@ const gate = new Promise(r => { release = r; });
 let onLate = () => {};
 if (scenario.startsWith('vote-') || scenario.startsWith('close-') || scenario.startsWith('chat-') || scenario === 'gate' || scenario === 'repeat' || scenario === 'auth-gate' || scenario === 'yt-gate' || scenario.startsWith('layer-') || scenario.startsWith('auto-') || scenario.startsWith('meld-')) {
   process.stdin.setEncoding('utf8');
+  let input = '';
   process.stdin.on('data', d => {
-    if (childOrigin !== null) childTrace('stdin-data-observed');
+    if (scenario === 'chat-deadline') {
+      input += d;
+      while (input.includes('\\n')) {
+        const end = input.indexOf('\\n'), command = input.slice(0, end); input = input.slice(end + 1);
+        if (command.startsWith('clock:')) advanceClock(Number(command.slice(6)));
+        if (command === 'release') { childTrace('stdin-data-observed'); release(); }
+      }
+      return;
+    }
     if (String(d).includes('release')) release(); if (String(d).includes('late')) onLate(); if (String(d).includes('probe')) console.log('CHAT:PROBE');
   });
   process.stdin.resume();
@@ -428,6 +461,7 @@ async function launchChild({ dataDir, scenario, shutdownTimeoutMs, backend, onTr
     return true;
   };
   return { child, exitInfo, closeInfo, waitFor, trace, reportTrace, release: () => { try { child.stdin.write('release\n'); } catch { /* el hijo pudo morir antes */ } },
+    advanceClock: ms => child.stdin.write('clock:' + ms + '\n'),
     late: () => { try { child.stdin.write('late\n'); } catch { /* el hijo pudo morir antes */ } }, stdout: () => out, stderr: () => err };
 }
 
@@ -523,6 +557,17 @@ test('app.close comparte promesa reentrante y espera Store, persistencia y HTTP 
   assert.equal(interactive.questions.length, 1);
   const config = JSON.parse(await readFile(path.join(c.dataDir, 'config.json'), 'utf8'));
   assert.equal(config.tts.rate, 1.75);
+  assert.equal(c.stderr(), '');
+});
+
+test('app.close cancela el temporizador real del deadline al completar sin salir', { timeout: 15000 }, async t => {
+  const root = await tempRoot(); const children = []; ownChildren(t, root, children);
+  const c = await startChild(children, root, 'cancel', 'close-cancel-deadline', undefined, { backend: 'raw' });
+  c.late();
+  assert.ok(await c.waitFor('CLOSE:CACHED:true', 1500), c.stdout() + c.stderr());
+  assert.match(c.stdout(), /CLOCK:REAL-SCHEDULED[\s\S]*CLOCK:REAL-CLEARED[\s\S]*CLOSE:RESULT:0/);
+  assert.equal(c.child.exitCode, null);
+  assert.doesNotMatch(c.stdout(), /WILLEXIT|drenado agotado/);
   assert.equal(c.stderr(), '');
 });
 
@@ -878,13 +923,23 @@ test('chat-deadline: el deadline total corta un envío colgado tras las esperas 
       timing.drawWaitMs = Date.now() - started;
       c.reportTrace('draw-wait-check');
       assert.ok(drawWait, c.stdout());
-      await delay(300); c.release(); // consume plazo previo; la sincronización usa marcadores/gate
+      assert.ok(c.stdout().includes('CLOCK:SCHEDULED:500'), c.stdout());
+      // Reproduce la espera previa más un ack tardío (>500 ms reales), sin gastar reloj virtual.
+      await delay(550);
+      c.advanceClock(300);
+      assert.ok(await c.waitFor('CLOCK:300', 1500), c.stdout() + c.stderr());
+      c.release();
       c.trace.mark('release-request');
       timing.releaseMs = Date.now() - started;
       const chatCut = await c.waitFor('CHAT:CUT', 1500);
       timing.chatCutMs = Date.now() - started;
       c.reportTrace('chat-cut-check');
       assert.ok(chatCut, c.stdout() + c.stderr());
+      c.advanceClock(499);
+      assert.ok(await c.waitFor('CLOCK:499', 1500), c.stdout() + c.stderr());
+      assert.equal(c.child.exitCode, null, c.stdout() + c.stderr());
+      assert.doesNotMatch(c.stdout(), /drenado agotado|WILLEXIT/);
+      c.advanceClock(500);
       // Se espera close, no solo exit: en Windows las últimas líneas de stdout (entre ellas el
       // evento deadline-callback-log-observed, que el hijo escribe justo antes de salir) pueden
       // llegar después de exit (#83). El plazo se mide en el reloj del hijo, no aquí.
@@ -902,6 +957,9 @@ test('chat-deadline: el deadline total corta un envío colgado tras las esperas 
         .map(line => JSON.parse(line.slice(15)));
       timing.childExitHook = childEvents.find(e => e.event.startsWith('exit-hook:'))?.event ?? 'absent';
       timing.childDeadlineMs = assertChildDeadline(childEvents, { timing });
+      for (const [name, ms] of [['draw-wait', 0], ['stdin-data-observed', 300], ['chat-cut', 300], ['deadline-callback-log-observed', 500]]) {
+        assert.equal(Math.floor(childEvents.find(e => e.event === name).ms), ms, name);
+      }
       assert.equal(c.stderr(), '');
       assert.ok(c.stdout().split('\n').includes('LOG:[parada] drenado agotado'));
       assert.doesNotMatch(c.stdout(), /CHAT:AUTH|CHAT:FLUSH|WILLEXIT:0/);
@@ -1176,4 +1234,30 @@ test('auto-deadline: el deadline global corta un inicio automático colgado con 
     assert.ok(c.stdout().split('\n').includes('LOG:[parada] drenado agotado'));
     assert.doesNotMatch(c.stdout(), /WILLEXIT:0|PRIVATE_/);
   }
+});
+
+// The virtual clock above proves the deadline semantics; this pins that production
+// arms the real timer with exactly the configured budget.
+test('shutdown: el temporizador real recibe exactamente el deadline configurado', async t => {
+  const root = await tempRoot();
+  const before = { data: process.env.ANTENA_DATA, media: process.env.ANTENA_MEDIA };
+  t.after(async () => {
+    for (const [key, value] of [['ANTENA_DATA', before.data], ['ANTENA_MEDIA', before.media]]) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await rm(root, { recursive: true, force: true });
+  });
+  process.env.ANTENA_DATA = path.join(root, 'data');
+  process.env.ANTENA_MEDIA = path.join(root, 'media');
+  const listen = net.Server.prototype.listen;
+  t.mock.method(net.Server.prototype, 'listen', function (_port, host, cb) { return listen.call(this, 0, host, cb); });
+  const realSetTimeout = globalThis.setTimeout, delays = [];
+  t.mock.method(globalThis, 'setTimeout', (fn, ms, ...args) => {
+    if (String(fn).includes('[parada] drenado agotado')) delays.push(ms);
+    return realSetTimeout(fn, ms, ...args);
+  });
+  const { startServer } = await import('../src/server.mjs');
+  const app = await startServer({ quiet: true, handleSignals: false, shutdownTimeoutMs: 500, log: () => {} });
+  assert.equal(await app.close(), 0);
+  assert.deepEqual(delays, [500]);
 });

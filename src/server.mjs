@@ -1299,7 +1299,9 @@ function readBody(req) {
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 /** Arranca el servidor (lo usan `pnpm start` y el MCP cuando no hay ninguno en marcha). */
-export async function startServer({ log = console.log, quiet = false, shutdownTimeoutMs = 5000, handleSignals = true, heldRecoveryWindows, heldRecoveryIO } = {}) {
+export async function startServer({ log = console.log, quiet = false, shutdownTimeoutMs = 5000, handleSignals = true, heldRecoveryWindows, heldRecoveryIO,
+  // Test seam for the one global shutdown deadline; all other timers remain real.
+  shutdownDeadlineTimers = { setTimeout, clearTimeout } } = {}) {
   const app = await createApp({ log, heldRecoveryWindows, heldRecoveryIO });
   // Precedencia del puerto (documentada aquí, es el sitio de referencia):
   // - Servidor (aquí): PORT del entorno, luego "port" de data/config.json, luego 4500.
@@ -1411,12 +1413,12 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
   const beginClose = () => {
     let deadline;
     const finish = code => {
-      clearTimeout(deadline);
+      shutdownDeadlineTimers.clearTimeout(deadline);
       process.removeListener('unhandledRejection', onUnhandledRejection);
       resolveClose(code);
     };
     try {
-      deadline = setTimeout(() => { safeLog('[parada] drenado agotado'); process.exit(1); }, shutdownTimeoutMs);
+      deadline = shutdownDeadlineTimers.setTimeout(() => { safeLog('[parada] drenado agotado'); process.exit(1); }, shutdownTimeoutMs);
       // Timers fallido no debe saltar el corte de Engine ni la persistencia independiente.
       let timersFailed = false;
       let youtubeFailed = false;
