@@ -8,6 +8,7 @@ import { readdir, stat, mkdir, unlink, rename, readFile, writeFile } from 'node:
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { Store, ROOT, deepMerge } from './store.mjs';
+import { instanceId } from './instance-id.mjs';
 import { validatePatch, validatePath, warnUnknownKeys } from './config-schema.mjs';
 import { Bus } from './bus.mjs';
 import { acceptWebSocket } from './ws-stream.mjs';
@@ -122,6 +123,7 @@ function sdRequestAllowed(req) {
 
 export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist } = {}) {
   const store = await new Store(dataDir).load();
+  const id = await instanceId(store.dir);
   // la interfaz React si está compilada; si no, la página mínima de las páginas de app
   // (appDist inyectable solo para pruebas: un directorio vacío simula «sin compilar»)
   const dist = appDist || APP_DIST;
@@ -623,7 +625,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     customOverlays: customOverlays.list().map(publicOverlay),
     theme: publicTheme(store.config.theme), alertPreviews: alertPreviews(),
   }));
-  route('GET', '/api/status', async () => status());
+  route('GET', '/api/status', async () => ({ ...status(), instance: { app: 'antena', id } }));
 
   // config completa
   route('GET', '/api/config', async (_, __, url) => {

@@ -3,7 +3,7 @@
 // constante y clave enmascarada en la configuración pública (HTTP y MCP ver_config).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -23,7 +23,7 @@ async function fixture(t) {
   await writeFile(path.join(dataDir, 'config.json'), JSON.stringify(config), { flag: 'wx' });
   const { createApp } = await import('../src/server.mjs');
   const app = await createApp({ dataDir, mediaDir, log: () => {} });
-  t.after(async () => { await app.closeHttp(); });
+  t.after(async () => { await app.closeHttp(); await rm(root, { recursive: true, force: true }); });
   await new Promise((resolve, reject) => {
     app.server.once('error', reject);
     app.server.listen(0, '127.0.0.1', resolve);
@@ -61,6 +61,20 @@ test('canje de ?key=: cookie HttpOnly y redirección a la URL sin la clave', asy
     const sinCookie = await lanRequest(app, '/api/status');
     assert.equal(sinCookie.statusCode, 401);
   });
+});
+
+test('status identity is still protected by LAN admission', async t => {
+  const { app } = await fixture(t);
+  const denied = await lanRequest(app, '/api/status');
+  assert.equal(denied.statusCode, 401);
+  assert.equal(denied.headers['set-cookie'], undefined);
+  const deniedBody = await new Promise(resolve => { let body = ''; denied.on('data', c => { body += c; }); denied.on('end', () => resolve(body)); });
+  assert.deepEqual(JSON.parse(deniedBody), { error: 'Acceso desde la red: abre el enlace con la clave que aparece en el panel (General › Acceso desde el móvil).' });
+  const allowed = await lanRequest(app, '/api/status', { headers: { 'x-egdev-key': KEY } });
+  assert.equal(allowed.statusCode, 200);
+  const body = await new Promise(resolve => { let text = ''; allowed.on('data', c => { text += c; }); allowed.on('end', () => resolve(JSON.parse(text))); });
+  const record = JSON.parse(await readFile(path.join(app.store.dir, 'instance.json'), 'utf8'));
+  assert.deepEqual(body.instance, { app: 'antena', id: record.id });
 });
 
 test('clave incorrecta o vacía: 401 sin cookie ni efectos', async t => {

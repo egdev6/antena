@@ -91,7 +91,10 @@ async function start() {
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
-  return { app, base, dataDir, close: () => new Promise(r => { app.server.closeAllConnections(); app.server.close(r); }) };
+  return { app, base, dataDir, close: async () => {
+    await new Promise(r => { app.server.closeAllConnections(); app.server.close(r); });
+    await rm(dataDir, { recursive: true, force: true });
+  } };
 }
 
 test('el overlay recibe por SSE las alertas de prueba y los eventos reales', async () => {
@@ -331,6 +334,40 @@ test('win32: se tolera solo el aviso constante de recuperación, exactamente una
   // Ausente, duplicado, con otro prefijo o con texto alterado: falla en win32.
   for (const bad of ['READY\n', out + out, `${HELD_RECOVERY_BLOCKED}\nREADY\n`, `LOG:${HELD_RECOVERY_BLOCKED} extra\n`]) {
     assert.throws(() => withoutHeldRecoveryWarning(bad, { prefix: 'LOG:', platform: 'win32' }), { code: 'ERR_ASSERTION' }, bad);
+  }
+});
+
+test('status adds identity only to the route, preserving state and panel SSE status', async () => {
+  const { base, dataDir, close } = await start();
+  const ctrl = new AbortController();
+  try {
+    const stream = await fetch(base + '/api/stream?client=panel', { signal: ctrl.signal });
+    assert.equal(stream.status, 200);
+    const reader = stream.body.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    while (!/event: status\ndata: (.*)\n/.test(text)) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error('stream closed before status');
+      text += decoder.decode(value, { stream: true });
+    }
+    const sseStatus = JSON.parse(text.match(/event: status\ndata: (.*)\n/)[1]);
+    const response = await fetch(base + '/api/status');
+    assert.equal(response.status, 200);
+    const raw = await response.text();
+    const { instance, ...status } = JSON.parse(raw);
+    const record = JSON.parse(await readFile(path.join(dataDir, 'instance.json'), 'utf8'));
+    assert.deepEqual(instance, { app: 'antena', id: record.id });
+    assert.ok(!raw.includes(dataDir));
+    assert.deepEqual(status, sseStatus);
+    const state = await (await fetch(base + '/api/state')).json();
+    assert.deepEqual(state.status, status);
+    assert.equal(Object.hasOwn(state.status, 'instance'), false);
+    assert.equal(Object.hasOwn(sseStatus, 'instance'), false);
+  } finally {
+    ctrl.abort();
+    await close();
+    await rm(dataDir, { recursive: true, force: true });
   }
 });
 
