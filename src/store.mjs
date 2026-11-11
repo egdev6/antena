@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeJson } from './json-file.mjs';
-import { sanitizeConfig, schemaAt, PROTO_KEYS } from './config-schema.mjs';
+import { sanitizeConfig, schemaAt, PROTO_KEYS, validateChatVariantsTransition } from './config-schema.mjs';
 import { convertLegacyGoals } from './goals.mjs';
 import { DEFAULT_ALERTS } from './alerts.mjs';
 import { DEFAULT_FILTERS } from './filters.mjs';
@@ -42,7 +42,8 @@ export const DEFAULT_CONFIG = {
   theme: DEFAULT_THEME,               // Apariencia: tema de overlay y widgets (src/theme.mjs)
   prompter: { fontSize: 22, mirror: false, hideCommands: true, autoSwitch: true, chatLines: 60, micTrack: '', css: '' },  // micTrack: pista de Meld del micro (vacío = la primera que se llame «mic…»)
   widgets: {
-    chat: { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide', css: '' },  // hideOwner: tus mensajes no salen en pantalla; animIn/animOut #130
+    chat: { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide', layout: 'vertical', css: '' },  // hideOwner: tus mensajes no salen en pantalla; animIn/animOut #130
+    chatVariants: [],
     goals: [{ id: 'principal', title: 'Objetivo de seguidores', visible: true, showMetric: true, css: '', bars: [{ id: 'principal-1', platform: 'twitch', metric: 'follows', target: 20, visible: true }] }],
     latest: { items: ['follow', 'sub', 'cheer', 'superchat'], css: '' },
     ticker: { label: 'Gracias a', count: 15, speed: 70, css: '' },
@@ -189,17 +190,29 @@ export class Store extends EventEmitter {
     if (!keys.length) throw new Error('Ruta vacía');
     // defensa en profundidad (validatePath ya lo rechaza): nunca se escribe en el prototipo
     if (keys.some(k => PROTO_KEYS.has(k))) throw new Error(`Ruta no válida: ${dotted}`);
+    // Simular solo las rutas que tocan variantes sobre una copia, usando exactamente la
+    // misma lógica de setPath; así se valida el resultado antes de mutar o emitir nada.
+    const checkVariants = keys[0] === 'widgets' && (keys[1] === 'chatVariants' ||
+      (keys.length === 1 && value && typeof value === 'object' && Object.hasOwn(value, 'chatVariants')));
+    const arrayIndex = /^(0|[1-9]\d*)$/;
+    if (keys[0] === 'widgets' && keys[1] === 'chatVariants' && keys.length > 2 && !arrayIndex.test(keys[2])) {
+      throw Object.assign(new Error(`${dotted}: la lista de variantes solo admite índices numéricos`), { status: 400 });
+    }
+    const target = checkVariants ? structuredClone(this.config) : this.config;
     // validar TODOS los índices de lista antes de tocar nada: un índice mayor que la longitud
     // (en el último tramo o en uno intermedio) dejaría agujeros null (#158); solo valen índices
     // existentes o el primero libre (igual a la longitud, para añadir al final).
-    let prueba = this.config;
+    let prueba = target;
     for (const k of keys) {
+      if (checkVariants && Array.isArray(prueba) && !arrayIndex.test(k)) {
+        throw Object.assign(new Error(`${dotted}: la lista solo admite índices numéricos`), { status: 400 });
+      }
       if (Array.isArray(prueba) && /^\d+$/.test(k) && Number(k) > prueba.length) {
         throw Object.assign(new Error(`${dotted}: el índice ${k} se sale de la lista (${prueba.length} elemento${prueba.length === 1 ? '' : 's'}); usa un índice entre 0 y ${prueba.length}`), { status: 400 });
       }
       prueba = prueba == null ? undefined : prueba[k];
     }
-    let obj = this.config;
+    let obj = target;
     for (const k of keys.slice(0, -1)) {
       // tramo intermedio numérico: mismo límite que el final, antes de crear o mutar nada (#158)
       if (Array.isArray(obj) && /^\d+$/.test(k) && Number(k) > obj.length) {
@@ -209,6 +222,7 @@ export class Store extends EventEmitter {
       obj = obj[k];
     }
     const last = keys.at(-1);
+    let fuera = 0;
     if (value === undefined) {
       if (Array.isArray(obj)) {
         if (/^\d+$/.test(last) && Number(last) >= obj.length) {
@@ -228,12 +242,16 @@ export class Store extends EventEmitter {
     }
     // el valor tampoco trae claves del prototipo (JSON.parse las crea como propias); igual que deepMerge
     else {
-      let fuera = 0;
       obj[last] = typeof value === 'object' && value !== null
         ? JSON.parse(JSON.stringify(value), (k, v) => (PROTO_KEYS.has(k) ? (fuera++, undefined) : v))
         : value;
-      if (fuera) console.warn(`${dotted}: se ignoran ${fuera} clave(s) del prototipo (__proto__, constructor, prototype)`);
     }
+    if (checkVariants) {
+      const [error] = validateChatVariantsTransition(this.config.widgets?.chatVariants, target.widgets?.chatVariants, this.config.widgets?.chat);
+      if (error) throw Object.assign(new Error(error.message), { status: 400 });
+      this.config = target;
+    }
+    if (fuera) console.warn(`${dotted}: se ignoran ${fuera} clave(s) del prototipo (__proto__, constructor, prototype)`);
     await this.write(this.cfgFile, this.config);
     this.emit('change', { [keys[0]]: true });
     return this.config;

@@ -143,6 +143,8 @@ En el panel, **Meld y Stream Deck › Fuentes para Meld** lista todas con su tam
 | Sorteo | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
 | Espectadores | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
 
+**Variantes del chat (API del servidor).** `POST /api/widgets/chat/variants` con `{ "name": "Directo" }` crea una copia con nombre de todos los ajustes actuales del chat predeterminado. Los cambios posteriores del predeterminado no se propagan. Los campos explícitos al crear deben coincidir con la copia predeterminada; si son distintos se rechazan. `GET` en esa ruta lista las variantes; `PUT` o `DELETE` en `/:id` editan o borran una. Se validan nombres y ajustes, cambiar el id al renombrar se rechaza y el predeterminado no se puede borrar. La validación se aplica cuando se incluye o se apunta explícitamente a `chatVariants`; las demás escrituras conservan su comportamiento de fusión, reemplazo y `null`. El servidor lista `/widget/chat?variant=<id>` en fuentes y MCP; `/widget/chat` sigue siendo la URL predeterminada. Cada configuración tiene `layout: "vertical" | "horizontal"` (por defecto `vertical`). **La selección por URL en el widget, la visualización horizontal y los controles del panel están pendientes.**
+
 Parámetros del overlay: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Créditos: `?transparent`, `?autoplay`, `?loop`. Últimos: `?layout=column`, `?items=follow,sub`. Espectadores: `?platforms=twitch`, `?layout=column`, `?total=0`, `?peak=1`.
 
 Los **overlays propios** salen en esa misma lista como «Overlay · nombre», con su URL `/custom/<id>` y su tamaño.

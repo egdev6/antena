@@ -226,12 +226,13 @@ tool('simular_chat', 'Simula un mensaje de chat (útil para probar comandos y el
 tool('unir_chat', 'Lee el chat de otro canal de Twitch (vacío = el tuyo).', { canal: S.str('Canal de Twitch') }, ({ canal }) => post('/api/chat/join', { channel: canal }));
 
 // widgets
-tool('ver_widgets', 'Configuración y datos de los widgets (chat, objetivos, últimos, ticker, créditos, espectadores) y sus URLs.', {}, async () => {
+tool('ver_widgets', 'Configuración y datos de los widgets (chat y sus variantes, objetivos, últimos, ticker, créditos, espectadores) y sus URLs.', {}, async () => {
   const [w, st] = await Promise.all([get('/api/widgets'), get('/api/config?path=port')]);
   const b = `http://127.0.0.1:${st.value || 4500}`;
-  return { urls: { chat: b + '/widget/chat', objetivo: b + '/widget/goal?id=<id>', ultimos: b + '/widget/latest', ticker: b + '/widget/ticker', creditos: b + '/widget/credits', espectadores: b + '/widget/viewers' }, config: w.widgets, objetivos: w.goals, totales: w.totals, ultimos: w.latest };
+  const chatVariantes = (w.widgets.chatVariants || []).map(v => ({ id: v.id, nombre: v.name, url: b + '/widget/chat?variant=' + enc(v.id) }));
+  return { urls: { chat: b + '/widget/chat', objetivo: b + '/widget/goal?id=<id>', ultimos: b + '/widget/latest', ticker: b + '/widget/ticker', creditos: b + '/widget/credits', espectadores: b + '/widget/viewers', chatVariantes }, config: w.widgets, objetivos: w.goals, totales: w.totals, ultimos: w.latest };
 });
-tool('editar_widget', 'Edita un widget. chat: platforms, maxMessages, fadeAfterSec, fontSize, hideCommands, showPlatform, css · latest: items (follow, sub, cheer, raid, superchat, member, any), css · ticker: label, count, speed, css · credits: title, subtitle, speed, css · viewers: platforms (twitch, youtube), showTotal, showPeak, css.',
+tool('editar_widget', 'Edita un widget. chat: platforms, maxMessages, fadeAfterSec, fontSize, hideCommands, hideOwner, showPlatform, reverse, animIn, animOut, layout (vertical|horizontal), css · latest: items (follow, sub, cheer, raid, superchat, member, any), css · ticker: label, count, speed, css · credits: title, subtitle, speed, css · viewers: platforms (twitch, youtube), showTotal, showPeak, css.',
   { widget: S.enum('Widget', ['chat', 'latest', 'ticker', 'credits', 'viewers']), cambios: S.obj('Campos a cambiar') }, ({ widget, cambios }) => put('/api/widgets', { [widget]: cambios }), ['widget', 'cambios']);
 const METRIC = S.enum('Qué cuenta', ['follows', 'subs', 'bits', 'raids', 'superchats', 'members', 'events']);
 const PLATAFORMA = S.enum('Plataforma', ['twitch', 'youtube']);

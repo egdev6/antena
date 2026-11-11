@@ -14,6 +14,7 @@
 // (src/timers.mjs:158), así que el mínimo 1 es su contrato. Los topes de los sliders de la UI
 // no son contrato: fontSize, mediaSize, textWidth, minLength, maxPerUser, memberLuck o
 // rollSeconds aceptan cualquier valor por encima del mínimo.
+import { isDeepStrictEqual } from 'node:util';
 import { TIMER_DESTINATIONS, ANNOUNCE_COLORS, DEFAULT_TIMER } from './timers.mjs';
 import { DEFAULT_ALERTS, DEFAULT_COMMAND } from './alerts.mjs';
 import { PLATFORM_METRICS } from './goals.mjs';
@@ -56,6 +57,27 @@ const GOAL_BOX = {
   label: str, showLabel: bool, showTitle: bool,   // cabecera (O1.3): ausentes = «Objetivo» y ambos visibles
   bars: list(GOAL_BAR),
 };
+// Chat predeterminado y variantes comparten exactamente las mismas reglas por campo.
+const CHAT_FIELDS = {
+  platforms: arrStr(['twitch', 'youtube']),
+  maxMessages: num({ int: true, min: 1, max: 200 }),
+  fadeAfterSec: num({ min: 0, max: 600 }),
+  fontSize: num({ min: 8, max: 80 }),
+  hideCommands: bool, hideOwner: bool, showPlatform: bool, reverse: bool,
+  animIn: en(CHAT_ANIMS), animOut: en(CHAT_ANIMS),
+  layout: en(['vertical', 'horizontal']), css: str,
+};
+const CHAT_VARIANTS = list({ id: str, name: str, ...CHAT_FIELDS });
+
+/** Mismo slug y reserva para CRUD y escrituras genéricas. */
+export function chatVariantId(name, variants) {
+  const slug = name.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'variante';
+  const used = new Set(['default', ...variants.map(v => v?.id)]);
+  let id = slug;
+  for (let n = 2; used.has(id); n++) id = `${slug}-${n}`;
+  return id;
+}
 
 // ---------- enums compartidos (fuentes citadas arriba) ----------
 const PERMISOS = ['everyone', 'members', 'vips', 'mods', 'broadcaster'];   // canUse (src/commands.mjs:16)
@@ -226,17 +248,8 @@ export const CONFIG_SCHEMA = {
     micTrack: str, css: str,
   },
   widgets: {
-    chat: {
-      platforms: arrStr(['twitch', 'youtube']),
-      maxMessages: num({ int: true, min: 1, max: 200 }),
-      fadeAfterSec: num({ min: 0, max: 600 }),          // 0 = sin desvanecer
-      fontSize: num({ min: 8, max: 80 }),
-      hideCommands: bool, hideOwner: bool, showPlatform: bool,
-      reverse: bool,                                   // #130: chat invertido (nuevos arriba)
-      animIn: en(CHAT_ANIMS),   // #130: animación de entrada de los mensajes
-      animOut: en(CHAT_ANIMS),  // #130: animación de salida (las mismas que de entrada)
-      css: str,
-    },
+    chat: CHAT_FIELDS,
+    chatVariants: CHAT_VARIANTS,
     goals: list(GOAL_BOX),
     latest: { items: arrStr(['follow', 'sub', 'cheer', 'superchat']), css: str },
     ticker: { label: str, count: num({ int: true, min: 1, max: 100 }), speed: num({ int: true, min: 10, max: 500 }), css: str },
@@ -249,6 +262,35 @@ export const CONFIG_SCHEMA = {
 const TIPO = { num: 'un número', str: 'un texto', bool: 'true o false', enum: 'uno de los valores permitidos', arrStr: 'una lista de textos' };
 
 function checkNode(node, value, path, errors) {
+  // Solo la lista nueva exige elementos completos y no acepta null. Los demás nodos
+  // conservan su política histórica de parches parciales y valores ausentes.
+  if (node === CHAT_VARIANTS && value !== undefined) {
+    if (!Array.isArray(value)) {
+      errors.push({ path, message: `${path}: se esperaba una lista de variantes` });
+      return;
+    }
+    const ids = new Set();
+    for (const [i, item] of value.entries()) {
+      const itemPath = `${path}.${i}`;
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        errors.push({ path: itemPath, message: `${itemPath}: se esperaba un objeto de variante` });
+        continue;
+      }
+      for (const field of Object.keys(CHAT_VARIANTS.item)) {
+        if (item[field] == null) errors.push({ path: `${itemPath}.${field}`, message: `${itemPath}.${field}: campo obligatorio de la variante` });
+      }
+      if (typeof item.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.id) || item.id === 'default') {
+        errors.push({ path: `${itemPath}.id`, message: `${itemPath}.id: id de variante no válido o reservado (default)` });
+      } else if (ids.has(item.id)) {
+        errors.push({ path: `${itemPath}.id`, message: `${itemPath}.id: id de variante repetido` });
+      } else ids.add(item.id);
+      if (typeof item.name !== 'string' || !item.name.trim() || item.name !== item.name.trim() || item.name.length > 60) {
+        errors.push({ path: `${itemPath}.name`, message: `${itemPath}.name: nombre obligatorio, sin espacios exteriores y de hasta 60 caracteres` });
+      }
+      checkObject(CHAT_VARIANTS.item, item, itemPath, errors);
+    }
+    return;
+  }
   if (value === undefined || value === null) return;   // ausente no es inválido: queda el default
   // objeto anidado sin kind (sección con esquema propio)
   if (node && node.kind === undefined && typeof node === 'object') {
@@ -323,6 +365,29 @@ export function validatePatch(patch) {
   const errors = [];
   checkObject(CONFIG_SCHEMA, patch || {}, 'config', errors);
   return errors.map(e => ({ path: e.path.replace(/^config\./, ''), message: e.message.replace(/^config\./, '') }));
+}
+
+/** La lista completa mantiene ids estables; una adición copia el chat y usa el slug del CRUD. */
+export function validateChatVariantsTransition(previous, next, defaultChat) {
+  const errors = validatePatch({ widgets: { chatVariants: next } });
+  if (errors.length || !Array.isArray(next)) return errors;
+  const existing = Array.isArray(previous) ? [...previous] : [];
+  const before = new Set(existing.map(v => v?.id));
+  const after = new Set(next.map(v => v.id));
+  if ([...before].some(id => !after.has(id)) && [...after].some(id => !before.has(id))) {
+    errors.push({ path: 'widgets.chatVariants', message: 'widgets.chatVariants: no se puede cambiar el id de una variante; crea o borra por separado' });
+    return errors;
+  }
+  const { id: _id, name: _name, ...chat } = defaultChat || {};
+  for (const [i, variant] of next.entries()) {
+    if (before.has(variant.id)) continue;
+    const expectedId = chatVariantId(variant.name, existing);
+    const { id, name, ...fields } = variant;
+    if (id !== expectedId) errors.push({ path: `widgets.chatVariants.${i}.id`, message: `widgets.chatVariants.${i}.id: el id debe ser el slug único del nombre (${expectedId})` });
+    if (!isDeepStrictEqual(fields, chat)) errors.push({ path: `widgets.chatVariants.${i}`, message: `widgets.chatVariants.${i}: una variante nueva debe copiar el chat predeterminado completo` });
+    existing.push(variant);
+  }
+  return errors;
 }
 
 /** Tramos de ruta que llegarían al prototipo de los objetos: nunca se leen ni se escriben. */

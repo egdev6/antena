@@ -143,6 +143,8 @@ In the panel, **Meld and Stream Deck › Sources for Meld** lists all of them wi
 | Giveaway | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
 | Viewers | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
 
+**Chat variants (server API).** `POST /api/widgets/chat/variants` with `{ "name": "Live" }` creates a named copy of every current default-chat setting. Later default changes do not propagate. Explicit creation fields must match the copied defaults; a conflicting value is rejected. `GET` on that path lists variants; `PUT` or `DELETE` on `/:id` edits or removes one. Names and settings are validated, a changed id is rejected on rename, and the default cannot be deleted. Validation applies when `chatVariants` is supplied or addressed explicitly; other config writes retain their existing merge, replacement and `null` semantics. The server lists `/widget/chat?variant=<id>` in sources and MCP; `/widget/chat` remains the default URL. Each configuration has `layout: "vertical" | "horizontal"` (default `vertical`). **Widget URL selection, horizontal rendering and panel controls are still pending.**
+
 Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Credits: `?transparent`, `?autoplay`, `?loop`. Latest: `?layout=column`, `?items=follow,sub`. Viewers: `?platforms=twitch`, `?layout=column`, `?total=0`, `?peak=1`.
 
 **Custom overlays** show up in that same list as «Overlay · name», with their `/custom/<id>` URL and their size.
