@@ -10,6 +10,7 @@ import { go } from '../router';
 import { useState, type ReactNode } from 'react';
 import type { GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
 import { CHAT_ANIMS, type ChatAnim } from '../../../../public/widgets/chat-anims.js';
+import { ChatWidget } from './ChatWidget';
 
 export const origin = () => location.origin;
 const INFO: Record<string, { title: string; path: string; size: string; w: number; h: number; desc: string }> = {
@@ -37,32 +38,12 @@ function ListChecks({ w, f, items }: { w: string; f: string; items: [string, str
 const CHAT_ANIM_LABELS: Record<ChatAnim, string> = { slide: 'Deslizante', fade: 'Desvanecida', pop: 'Pop', bounce: 'Rebote', zoom: 'Zoom', flip: 'Giro', blur: 'Desenfoque', drop: 'Caída', none: 'Sin animación' };
 const CHAT_ANIM_OPTIONS: [string, string][] = CHAT_ANIMS.map(a => [a, CHAT_ANIM_LABELS[a]]);
 
-/** Select de opciones de chat (#130): helper estable a nivel módulo, exclusivo del bloque chat. */
-function ChatSelect({ f, label, options }: { f: string; label: string; options: [string, string][] }) {
-  const val = useLive(s => String(((s.config.widgets as WidgetSection | undefined)?.chat as WidgetSection | undefined)?.[f] ?? ''));
-  return <label>{label}<select value={val} onChange={e => patchWidgets({ chat: { [f]: e.target.value } })}>{options.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>;
-}
-
 export function Widget({ name }: { name: string }) {
   useManualSave();
   const info = INFO[name];
   if (!info) return <p className="hint">Widget desconocido.</p>;
+  if (name === 'chat') return <ChatWidget info={info} anims={CHAT_ANIM_OPTIONS} />;
   let form: ReactNode = null;
-  if (name === 'chat') form = <>
-    <div className="row2">
-      <WField w="chat" f="maxMessages" label="Mensajes en pantalla" type="number" min={1} max={50} />
-      <WField w="chat" f="fontSize" label="Tamaño de letra (px)" type="number" min={12} max={60} />
-      <WField w="chat" f="fadeAfterSec" label="Desaparecen tras (s, 0 = nunca)" type="number" min={0} />
-      <div className="lbl">Plataformas<div className="row field-ctl"><ListChecks w="chat" f="platforms" items={[['twitch', 'Twitch'], ['youtube', 'YouTube']]} /></div></div>
-      <WField w="chat" f="hideCommands" label="Ocultar los comandos (!…)" type="switch" />
-      <WField w="chat" f="hideOwner" label="Ocultar mis mensajes (lo que escribo desde antena, el móvil o el prompter)" type="switch" />
-      <WField w="chat" f="showPlatform" label="Mostrar el icono de la plataforma" type="switch" />
-      <WField w="chat" f="reverse" label="Chat invertido (los mensajes nuevos aparecen arriba)" type="switch" />
-      <ChatSelect f="animIn" label="Animación de entrada" options={CHAT_ANIM_OPTIONS} />
-      <ChatSelect f="animOut" label="Animación al desaparecer" options={CHAT_ANIM_OPTIONS} />
-    </div>
-    <WField w="chat" f="css" label="CSS personalizado" type="css" placeholder=".msg { border-left-color: #fff; }" />
-    <p className="css-help">Clases: <code>.msg</code> <code>.msg.mod</code> <code>.who</code> <code>.text</code> <code>.pf</code></p></>;
   if (name === 'latest') form = <>
     <h3 className="sub-h">Últimos</h3>
     <div className="row lead"><ListChecks w="latest" f="items" items={[['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['member', 'Miembro'], ['any', 'Cualquier evento']]} /></div>

@@ -34,12 +34,17 @@ test('widget chat: a field changed from the panel is saved and reaches the previ
     await c.send('Input.insertText', { text: '40' });
     assert.equal(await evaluateChrome(c, `${fontInput}.value`), '40');
 
-    // manual save (v2): the change stays as a draft until «Guardar»
+    // manual save (v2): observe the public widget API, not the store's internal data.
+    const fontSize = async () => {
+      const response = await fetch(`${base}/api/widgets`);
+      assert.equal(response.status, 200);
+      return (await response.json()).widgets.chat.fontSize;
+    };
     await sleep(600);
-    assert.notEqual(app.store.config.widgets?.chat?.fontSize, 40, 'nothing is stored before «Guardar»');
+    assert.notEqual(await fontSize(), 40, 'nothing is stored before «Guardar»');
     await evaluateChrome(c, `document.querySelector('.lv-sfoot .eg-btn--secondary').click()`);
-    for (let i = 0; i < 50 && app.store.config.widgets?.chat?.fontSize !== 40; i++) await sleep(100);
-    assert.equal(app.store.config.widgets?.chat?.fontSize, 40, 'the panel saves the change with PUT /api/widgets');
+    for (let i = 0; i < 50 && await fontSize() !== 40; i++) await sleep(100);
+    assert.equal(await fontSize(), 40, 'the panel saves the change with PUT /api/widgets');
     await waitDom(c, `${previewFs} === '40px'`, { timeoutMs: 8000 });
   } finally {
     if (chrome) await closeChrome(chrome);

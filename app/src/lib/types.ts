@@ -166,9 +166,11 @@ export interface GoalConfig { id: string; title: string; visible?: boolean; show
 export interface GoalValue extends GoalConfig { bars: (GoalBar & { value?: number })[] }
 /** Sección de ajustes de un widget (chat, latest, ticker, credits): campos dinámicos. */
 export type WidgetSection = Record<string, unknown>;
+export interface ChatVariant extends WidgetSection { id: string; name: string }
 export interface WidgetsConfig {
   goals?: GoalConfig[];
   chat?: WidgetSection;
+  chatVariants?: ChatVariant[];
   latest?: WidgetSection;
   ticker?: WidgetSection;
   credits?: WidgetSection;
@@ -177,6 +179,7 @@ export interface WidgetsConfig {
 /** Estado que consumen los widgets (engine.widgetState()). */
 export interface WidgetState {
   chat: ChatMessage[];
+  widgets?: WidgetsConfig;
   goals: GoalValue[];
   totals: Record<string, number>;
   [k: string]: unknown;
