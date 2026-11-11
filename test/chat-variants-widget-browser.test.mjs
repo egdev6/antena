@@ -246,6 +246,9 @@ test('chat horizontal: matrices direccionales, efectos neutros y movimiento redu
   await f.update(id, { layout: 'horizontal', maxMessages: 1, fadeAfterSec: 0 });
   const c = await f.page(`?variant=${id}`);
   await resize(c, 1000, 300);
+  await c.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  assert.equal(await dom(c, `matchMedia('(prefers-reduced-motion: no-preference)').matches`), true);
+  assert.equal(await dom(c, `matchMedia('(prefers-reduced-motion: reduce)').matches`), false);
   const sample = async (selector, end) => dom(c, `(() => {
     const el = document.querySelector(${q(selector)}), a = el.getAnimations().find(x => x.effect?.target === el);
     if (!a) return {name:getComputedStyle(el).animationName};
@@ -289,6 +292,8 @@ test('chat horizontal: matrices direccionales, efectos neutros y movimiento redu
     }
   }
   await c.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  assert.equal(await dom(c, `matchMedia('(prefers-reduced-motion: reduce)').matches`), true);
+  assert.equal(await dom(c, `matchMedia('(prefers-reduced-motion: no-preference)').matches`), false);
   await f.update(id, { animIn: 'slide', animOut: 'slide' });
   await wait(c, `document.querySelector('#root').dataset.animIn === 'slide'`);
   await f.send('sin movimiento');

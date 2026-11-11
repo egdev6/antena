@@ -2,11 +2,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createApp } from '../src/server.mjs';
 
 const ROUTE = '/api/widgets/chat/variants';
@@ -520,25 +520,70 @@ async function watchRejections(t, f) {
   };
 }
 
-async function mcpClient(t, base) {
-  const child = spawn(process.execPath, [new URL('../src/mcp.mjs', import.meta.url).pathname], {
-    env: { PATH: process.env.PATH || '', ANTENA_URL: base, ANTENA_NO_EMBED: '1' }, stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  let stderr = '', id = 0;
-  child.stderr.on('data', chunk => { stderr += chunk; });
-  const exited = once(child, 'exit');
+function mcpProtocol(child) {
   const lines = createInterface({ input: child.stdout });
-  t.after(async () => {
-    child.stdin.end();
-    const [code, signal] = await exited;
-    assert.equal(code, 0); assert.equal(signal, null); assert.equal(stderr, '');
+  let stderr = '', id = 0, ended = null, childError = null, stdinError = null;
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  child.on('error', error => { childError = error; });
+  child.stdin.on('error', error => { stdinError = error; });
+  // close llega después de drenar stderr, incluso cuando spawn falla.
+  const closed = new Promise(resolve => child.once('close', (code, signal) => {
+    ended = { code, signal };
+    resolve({ code, signal, stderr, childError, stdinError });
+  }));
+  const failure = () => new Error(`MCP se cerró antes de responder: code=${ended.code}, signal=${ended.signal}, error=${childError?.message || 'none'}, stdin=${stdinError?.message || 'none'}, stderr=${stderr}`);
+  const nextLine = () => new Promise((resolve, reject) => {
+    if (ended) return reject(failure());
+    const cleanup = () => { lines.removeListener('line', onLine); child.removeListener('close', onClose); };
+    const onLine = line => { cleanup(); resolve(line); };
+    const onClose = () => { cleanup(); reject(failure()); };
+    lines.once('line', onLine);
+    child.once('close', onClose);
   });
-  return async (name, args) => {
-    const response = once(lines, 'line');
-    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: ++id, method: 'tools/call', params: { name, arguments: args } }) + '\n');
-    return JSON.parse((await response)[0]).result;
+  return {
+    closed,
+    async call(name, args) {
+      if (ended) throw failure();
+      const response = nextLine();
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: ++id, method: 'tools/call', params: { name, arguments: args } }) + '\n');
+      return JSON.parse(await response).result;
+    },
   };
 }
+
+async function mcpClient(t, base, entry = new URL('../src/mcp.mjs', import.meta.url)) {
+  const child = spawn(process.execPath, [fileURLToPath(entry)], {
+    env: { PATH: process.env.PATH || '', ANTENA_URL: base, ANTENA_NO_EMBED: '1' }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const rpc = mcpProtocol(child);
+  t.after(async () => {
+    child.stdin.end();
+    const { code, signal, stderr, childError, stdinError } = await rpc.closed;
+    assert.equal(code, 0, stderr); assert.equal(signal, null); assert.equal(stderr, '');
+    assert.equal(childError, null); assert.equal(stdinError, null);
+  });
+  return rpc.call;
+}
+
+test('MCP fixture informa al cerrar o fallar el hijo antes de responder', async t => {
+  for (const [command, args, expected] of [
+    [process.execPath, [fileURLToPath(new URL('./mcp-fixture-entrada-inexistente.mjs', import.meta.url))], /MODULE_NOT_FOUND/],
+    [process.execPath + '.mcp-fixture-inexistente', [], /ENOENT/],
+  ]) {
+    const child = spawn(command, args, { env: { PATH: process.env.PATH || '' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const rpc = mcpProtocol(child);
+    t.after(async () => { child.stdin.end(); await rpc.closed; });
+    const reply = rpc.call('ver_widgets', {}).then(() => null, error => error);
+    // No depende de un timeout: al siguiente turno tras close ya debe haber fallado.
+    const failure = await Promise.race([reply, rpc.closed.then(() => new Promise(resolve => setImmediate(() => resolve(null))))]);
+    assert.ok(failure instanceof Error, 'el cierre debe rechazar la respuesta pendiente');
+    assert.match(failure.message, /code=.*signal=null/);
+    assert.match(failure.message, /stderr=/);
+    assert.match(failure.message, expected);
+    await assert.rejects(rpc.call('ver_widgets', {}), expected, 'también falla si el hijo ya se cerró');
+  }
+});
 
 test('B1: PUT widgets rechaza layout predeterminado inválido sin guardar ni emitir', async t => {
   const f = await fixture(t);
@@ -634,21 +679,23 @@ test('MCP ver_widgets conserva las URLs anteriores y expone las de cada variante
   await f.ok('POST', '/api/config/set', { path: 'port', value: f.port });
   const variants = [];
   for (const name of ['Vertical', 'Horizontal']) variants.push((await f.ok('POST', ROUTE, { name })).variant);
-  const child = spawn(process.execPath, [new URL('../src/mcp.mjs', import.meta.url).pathname], {
-    env: { ...process.env, ANTENA_URL: f.base, ANTENA_NO_EMBED: '1' }, stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  const exited = once(child, 'exit');
-  t.after(async () => { child.stdin.end(); await exited; });
-  const lines = createInterface({ input: child.stdout });
-  const reply = once(lines, 'line');
-  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ver_widgets', arguments: {} } }) + '\n');
-  const [line] = await reply;
-  const result = JSON.parse(line).result;
-  assert.equal(result.isError, undefined);
-  const data = JSON.parse(result.content[0].text);
-  assert.deepEqual({ ...data.urls, chatVariantes: undefined }, {
-    chat: `${f.base}/widget/chat`, objetivo: `${f.base}/widget/goal?id=<id>`, ultimos: `${f.base}/widget/latest`,
-    ticker: `${f.base}/widget/ticker`, creditos: `${f.base}/widget/credits`, espectadores: `${f.base}/widget/viewers`, chatVariantes: undefined,
-  });
-  assert.deepEqual(data.urls.chatVariantes, variants.map(v => ({ id: v.id, nombre: v.name, url: `${f.base}/widget/chat?variant=${v.id}` })));
+  // El mismo MCP real desde una ruta URI con espacios y caracteres no ASCII.
+  const dir = await mkdtemp(path.join(tmpdir(), 'antena-mcp á espacio-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(path.join(dir, 'src'));
+  await Promise.all([
+    copyFile(new URL('../package.json', import.meta.url), path.join(dir, 'package.json')),
+    ...['mcp.mjs', 'custom-overlays.mjs', 'http-util.mjs', 'meld.mjs'].map(file => copyFile(new URL(`../src/${file}`, import.meta.url), path.join(dir, 'src', file))),
+  ]);
+  for (const entry of [undefined, pathToFileURL(path.join(dir, 'src', 'mcp.mjs'))]) {
+    const rpc = await mcpClient(t, f.base, entry);
+    const result = await rpc('ver_widgets', {});
+    assert.equal(result.isError, undefined);
+    const data = JSON.parse(result.content[0].text);
+    assert.deepEqual({ ...data.urls, chatVariantes: undefined }, {
+      chat: `${f.base}/widget/chat`, objetivo: `${f.base}/widget/goal?id=<id>`, ultimos: `${f.base}/widget/latest`,
+      ticker: `${f.base}/widget/ticker`, creditos: `${f.base}/widget/credits`, espectadores: `${f.base}/widget/viewers`, chatVariantes: undefined,
+    });
+    assert.deepEqual(data.urls.chatVariantes, variants.map(v => ({ id: v.id, nombre: v.name, url: `${f.base}/widget/chat?variant=${v.id}` })));
+  }
 });
