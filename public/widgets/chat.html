@@ -65,18 +65,78 @@
 .who .b{color:var(--pink);font-size:.8em}
 .text{font-weight:500;color:var(--white);overflow-wrap:anywhere}
 .text img{height:1.3em;vertical-align:-.3em;margin:0 .05em}
+
+/* La fila solo afecta al layout horizontal; los tokens y el CSS propio siguen mandando. */
+.root.horizontal{flex-direction:row;justify-content:flex-end;align-items:center;overflow:hidden;
+  /* Por debajo de 160px se reducen los espacios; a 160px se conservan las medidas originales. */
+  --h-root-pad:min(18px,11.25vh);--h-card-top:min(12px,7.5vh);--h-card-bottom:min(13px,8.125vh);
+  --h-who-gap:min(5px,3.125vh);--h-pf-top:min(3px,1.875vh);--h-pf-bottom:min(2px,1.25vh);
+  --h-inner:calc(100vh - 2 * var(--h-root-pad));
+  /* Reservas para autor y dos líneas; el icono puede ser más alto que el nombre. */
+  --h-text-space:calc(var(--h-card-top) + var(--h-card-bottom) + var(--h-who-gap) + 6px);
+  --h-icon-space:calc(var(--h-card-top) + var(--h-card-bottom) + var(--h-who-gap) + var(--h-pf-top) + var(--h-pf-bottom) + 5px);
+  --horizontal-fs:min(var(--fs),max(0px,calc((var(--h-inner) - var(--h-text-space)) / 3.38)),max(0px,calc((var(--h-inner) - var(--h-icon-space)) / 3.132)));
+  padding-top:var(--h-root-pad);padding-bottom:var(--h-root-pad);
+  mask-image:linear-gradient(to right,transparent,#000 min(140px,20%),#000 100%)}
+.root.horizontal.reverse{flex-direction:row-reverse;
+  mask-image:linear-gradient(to left,transparent,#000 min(140px,20%),#000 100%)}
+.horizontal .msg{flex:0 0 min(380px,100%);min-width:0;font-size:var(--horizontal-fs);
+  height:max(min(104px,65vh),calc(var(--horizontal-fs) * 3.38 + var(--h-text-space)),calc(var(--horizontal-fs) * 3.132 + var(--h-icon-space)));
+  padding-top:var(--h-card-top);padding-bottom:var(--h-card-bottom);
+  border-color:var(--surface-border,color-mix(in srgb,var(--red-2) 55%,transparent));
+  box-shadow:0 0 12px color-mix(in srgb,var(--red) calc(35% * var(--glow,1)),transparent),inset 0 0 18px color-mix(in srgb,var(--red) calc(10% * var(--glow,1)),transparent),inset 0 1px 0 rgba(255,255,255,.08),0 10px 26px rgba(0,0,0,.45)}
+.horizontal .body{height:100%;overflow:hidden}
+.horizontal .who{white-space:nowrap;overflow:hidden;margin-bottom:var(--h-who-gap)}
+.horizontal .who .pf{padding-top:var(--h-pf-top);padding-bottom:var(--h-pf-bottom)}
+.horizontal .text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+
+/* Las clases e ids son los mismos: solo se orientan los efectos con dirección. */
+.horizontal .msg.a-slide:not(.out){animation-name:inH}
+.horizontal .msg.a-bounce:not(.out){animation-name:inBH}
+.horizontal .msg.a-drop:not(.out){animation-name:inDH}
+.horizontal .msg.a-flip:not(.out){animation-name:inFlH;transform-origin:right center}
+.horizontal .msg.out.o-slide{animation-name:outH}
+.horizontal .msg.out.o-bounce{animation-name:outBH}
+.horizontal .msg.out.o-drop{animation-name:outDH}
+.horizontal .msg.out.o-flip{animation-name:outFlH;transform-origin:left center}
+.horizontal.reverse .msg.a-slide:not(.out){animation-name:inHR}
+.horizontal.reverse .msg.a-bounce:not(.out){animation-name:inBHR}
+.horizontal.reverse .msg.a-drop:not(.out){animation-name:inDHR}
+.horizontal.reverse .msg.a-flip:not(.out){animation-name:inFlHR;transform-origin:left center}
+.horizontal.reverse .msg.out.o-slide{animation-name:outHR}
+.horizontal.reverse .msg.out.o-bounce{animation-name:outBHR}
+.horizontal.reverse .msg.out.o-drop{animation-name:outDHR}
+.horizontal.reverse .msg.out.o-flip{animation-name:outFlHR;transform-origin:right center}
+@keyframes inH{from{opacity:0;transform:translateX(24px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes outH{to{opacity:0;transform:translateX(-24px)}}
+@keyframes inHR{from{opacity:0;transform:translateX(-24px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes outHR{to{opacity:0;transform:translateX(24px)}}
+@keyframes inBH{0%{opacity:0;transform:translateX(60px)}55%{opacity:1;transform:translateX(-10px)}75%{transform:translateX(4px)}100%{opacity:1;transform:none}}
+@keyframes inBHR{0%{opacity:0;transform:translateX(-60px)}55%{opacity:1;transform:translateX(10px)}75%{transform:translateX(-4px)}100%{opacity:1;transform:none}}
+@keyframes outBH{25%{transform:translateX(10px)}to{opacity:0;transform:translateX(-60px)}}
+@keyframes outBHR{25%{transform:translateX(-10px)}to{opacity:0;transform:translateX(60px)}}
+@keyframes inDH{from{opacity:0;transform:translateX(80px) rotate(4deg)}to{opacity:1;transform:none}}
+@keyframes inDHR{from{opacity:0;transform:translateX(-80px) rotate(-4deg)}to{opacity:1;transform:none}}
+@keyframes outDH{to{opacity:0;transform:translateX(-80px) rotate(-4deg)}}
+@keyframes outDHR{to{opacity:0;transform:translateX(80px) rotate(4deg)}}
+@keyframes inFlH{from{opacity:0;transform:perspective(600px) rotateY(80deg)}to{opacity:1;transform:none}}
+@keyframes inFlHR{from{opacity:0;transform:perspective(600px) rotateY(-80deg)}to{opacity:1;transform:none}}
+@keyframes outFlH{to{opacity:0;transform:perspective(600px) rotateY(-80deg)}}
+@keyframes outFlHR{to{opacity:0;transform:perspective(600px) rotateY(80deg)}}
+@media (prefers-reduced-motion:reduce){.root.horizontal .msg{animation:none!important}}
 }
 </style></head>
 <body><div class="root" id="root"></div>
 <script type="module">
 import { LOGOS, platformSvg } from '/platform-icons.js';
-import { connect, DEMO, demoChat, setCss } from '/widgets/widget.js';
+import { connect, DEMO, demoChat, setCss, qs } from '/widgets/widget.js';
 import { CHAT_ANIMS } from '/widgets/chat-anims.js';
 const root = document.getElementById('root');
-let cfg = { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide' };
-// Las mismas animaciones para entrar y para salir. Las que tienen dirección siguen al orden: los
-// nuevos entran por un borde y los viejos salen por el otro (se invierte con «Chat invertido»);
-// la caída es gravedad y siempre cae hacia abajo.
+const variantId = qs.get('variant');
+const DEFAULT_CHAT = { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide', layout: 'vertical', css: '' };
+let cfg = { ...DEFAULT_CHAT };
+// Las mismas animaciones para entrar y salir: las direccionales siguen al orden y al layout.
+// En vertical se conserva la caída por gravedad; en horizontal sigue el eje de la fila.
 const ANIM_IN = Object.fromEntries(CHAT_ANIMS.map(a => [a, 'a-' + a]));
 const ANIM_OUT = Object.fromEntries(CHAT_ANIMS.map(a => [a, 'o-' + a]));
 let demoN = 0;
@@ -104,8 +164,29 @@ function setPlatform(el) {
 // Los que ya están saliendo no cuentan para el tope.
 function trim() {
   const max = Number(cfg.maxMessages) || 12;
-  const live = [...root.children].filter(el => !el.classList.contains('out'));
+  let live = [...root.children].filter(el => !el.classList.contains('out'));
   for (const el of live.slice(0, Math.max(0, live.length - max))) expire(el);
+  if (cfg.layout !== 'horizontal') return;
+
+  // El ancho permite una tarjeta parcialmente visible en el borde de salida. Se mide el
+  // layout sin transformar (también con ?scale), no la posición durante la animación.
+  const style = getComputedStyle(root);
+  const width = Math.max(0, root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+  const gap = parseFloat(style.columnGap) || 0;
+  live = [...root.children].filter(el => !el.classList.contains('out'));
+  let used = 0, kept = 0;
+  for (const el of live.reverse()) {
+    // Incluso si el padding ocupa todo el ancho, se conserva solo el mensaje más reciente.
+    if (kept && used >= width) expire(el);
+    else { used += el.offsetWidth + gap; kept++; }
+  }
+  // Una salida ya totalmente fuera no puede verse ni animarse en la capa. Retirarla evita
+  // acumular nodos durante ráfagas, pero las salidas visibles terminan normalmente.
+  for (const el of root.querySelectorAll('.msg.out')) {
+    if (el.offsetLeft + el.offsetWidth <= 0 || el.offsetLeft >= root.clientWidth) {
+      clearTimeout(el._out); clearTimeout(el._fade); el.remove();
+    }
+  }
 }
 
 // Se quita del DOM al terminar su animación de salida (o al momento si no tiene), con un
@@ -161,9 +242,11 @@ function render(m) {
 // En la vista previa (demo) un cambio de efecto se enseña al momento con una muestra.
 function apply(w) {
   const prev = cfg;
-  cfg = { ...cfg, ...(w?.chat || {}) };
+  const selected = variantId && Array.isArray(w?.chatVariants) && w.chatVariants.find(v => v?.id === variantId);
+  cfg = { ...DEFAULT_CHAT, ...(selected || w?.chat || {}) };
   root.style.setProperty('--fs', (Number(cfg.fontSize) || 26) + 'px');
   root.classList.toggle('reverse', !!cfg.reverse);
+  root.classList.toggle('horizontal', cfg.layout === 'horizontal');
   // Config aplicada, observable desde fuera (las pruebas esperan a esto en vez de a un tiempo fijo).
   root.dataset.animIn = cfg.animIn; root.dataset.animOut = cfg.animOut; root.dataset.fade = String(Number(cfg.fadeAfterSec) || 0);
   setCss(cfg.css);
@@ -178,6 +261,8 @@ function apply(w) {
   if (DEMO && cfg.animIn !== prev.animIn) render(demoChat(demoN++));
 }
 
+// Al cambiar el tamaño de la capa se vuelve a limitar el DOM, sin suscripción adicional.
+new ResizeObserver(() => { if (cfg.layout === 'horizontal') trim(); }).observe(root);
 let first = true;
 connect({
   widgets: s => { apply(s.widgets); if (first && !DEMO) (s.chat || []).slice(-(Number(cfg.maxMessages) || 12)).forEach(render); first = false; },

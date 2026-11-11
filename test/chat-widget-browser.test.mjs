@@ -5,7 +5,7 @@
 // - Iconos de plataforma con showPlatform (SVG de public/platform-icons.js).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
@@ -193,15 +193,22 @@ test('chat overlay: mismas animaciones de entrada y salida, orientadas al orden'
   const byN = n => `Array.from(document.querySelectorAll('.msg')).find(m => m.textContent.includes('Sintético ${n}'))`;
   let chrome;
   try {
-    // el panel ofrece la misma lista en los dos selects
-    chrome = await openChromePage(ctx.bin, `${base}/#/widget/chat`);
-    const opts = label => `Array.from(document.querySelectorAll('main label')).find(l => l.textContent.startsWith(${JSON.stringify(label)}))?.querySelectorAll('option')`;
-    await waitDom(chrome.cdp, `(${opts('Animación de entrada')})?.length > 0`, { timeoutMs: 12000 });
-    const values = label => dom(chrome.cdp, `Array.from(${opts(label)}).map(o => o.value).join(',')`);
-    assert.equal(await values('Animación de entrada'), ANIMS.join(','));
-    assert.equal(await values('Animación al desaparecer'), ANIMS.join(','));
-    await closeChrome(chrome); chrome = null;
-
+    // Si existe la interfaz compilada se comprueban ambos selects reales; sin app/dist se
+    // conserva una comprobación estructural y se prueba el widget directo igualmente.
+    const panelBuilt = await access(new URL('../app/dist/index.html', import.meta.url)).then(() => true, e => { if (e.code === 'ENOENT') return false; throw e; });
+    if (panelBuilt) {
+      chrome = await openChromePage(ctx.bin, `${base}/#/widget/chat`);
+      const opts = label => `Array.from(document.querySelectorAll('main label')).find(l => l.textContent.startsWith(${JSON.stringify(label)}))?.querySelectorAll('option')`;
+      await waitDom(chrome.cdp, `(${opts('Animación de entrada')})?.length > 0`, { timeoutMs: 12000 });
+      const values = label => dom(chrome.cdp, `Array.from(${opts(label)}).map(o => o.value).join(',')`);
+      assert.equal(await values('Animación de entrada'), ANIMS.join(','));
+      assert.equal(await values('Animación al desaparecer'), ANIMS.join(','));
+      await closeChrome(chrome); chrome = null;
+    } else {
+      const panel = await readFile(new URL('../app/src/panel/views/Widgets.tsx', import.meta.url), 'utf8');
+      assert.match(panel, /CHAT_ANIM_OPTIONS[^=]*= CHAT_ANIMS\.map/);
+      for (const field of ['animIn', 'animOut']) assert.match(panel, new RegExp(`<ChatSelect f="${field}"[^>]*options=\\{CHAT_ANIM_OPTIONS\\}`));
+    }
     chrome = await openChromePage(ctx.bin, `${base}/widget/chat`);
     const c = chrome.cdp;
     let n = 600;
