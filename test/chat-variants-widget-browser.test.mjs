@@ -239,6 +239,58 @@ test('chat horizontal: capas bajas conservan tarjetas y contenido dentro de la f
     return [r.flexDirection, r.paddingTop, r.paddingBottom, m.fontSize, m.paddingTop, m.paddingBottom]; })()`), ['column', '18px', '18px', '26px', '12px', '13px'], 'geometría vertical predeterminada sin cambios');
 });
 
+// Las familias son sufijos reales de public/fonts.css; el CSS de la variante fuerza el fallback
+// también cuando Barlow está instalado. Se comprueban las cajas que realmente recortan texto.
+test('chat horizontal: líneas contenidas con las familias fallback declaradas', { timeout: 180000 }, async t => {
+  const f = await fixture(t);
+  const id = await f.create('Fuentes de reserva');
+  await f.update(id, { layout: 'horizontal', fontSize: 20, animIn: 'none', animOut: 'none' });
+  const c = await f.page(`?variant=${id}`);
+  await resize(c, 1832, 120);
+  for (let n = 0; n < 3; n++) await f.send(`reserva ${n}: ` + 'muchas palabras visibles '.repeat(10), { user: `Ana ${n}` });
+  await wait(c, has('reserva 2'));
+
+  const geometry = () => dom(c, `(() => {
+    const root = document.querySelector('#root'), rs = getComputedStyle(root);
+    const box = e => { const b=e.getBoundingClientRect(); return {left:b.left, right:b.right, top:b.top, bottom:b.bottom, width:b.width, height:b.height}; };
+    const lines = node => { const range=document.createRange(); range.selectNodeContents(node); return [...range.getClientRects()].filter(b => b.width && b.height).map(b => ({left:b.left, right:b.right, top:b.top, bottom:b.bottom})); };
+    return {root:box(root), paddingTop:parseFloat(rs.paddingTop), paddingBottom:parseFloat(rs.paddingBottom), direction:rs.flexDirection,
+      cards:[...root.querySelectorAll('.msg')].map(e => { const body=e.querySelector('.body'), who=e.querySelector('.who'), text=e.querySelector('.text');
+        return {card:box(e), body:box(body), who:box(who), author:who.firstChild.textContent, authorLines:lines(who.firstChild), icon:box(who.querySelector('.pf')),
+          text:box(text), textLines:lines(text), message:text.textContent, clamp:getComputedStyle(text).webkitLineClamp,
+          lineHeight:parseFloat(getComputedStyle(text).lineHeight), fontSize:parseFloat(getComputedStyle(e).fontSize)}; })};
+  })()`);
+  const within = (inner, outer) => inner.top >= outer.top - 1 && inner.bottom <= outer.bottom + 1 && inner.left >= outer.left - 1 && inner.right <= outer.right + 1;
+  for (const cond of ["'Arial Narrow',sans-serif", "'DejaVu Sans Condensed',sans-serif", 'sans-serif']) {
+    for (const body of ["'Segoe UI',system-ui,sans-serif", 'system-ui,sans-serif', 'sans-serif']) {
+      await f.update(id, { css: `:root{--f-cond:${cond};--f-body:${body}}` });
+      await wait(c, `getComputedStyle(document.querySelector('#root')).getPropertyValue('--f-cond').trim() === ${q(cond)} && getComputedStyle(document.querySelector('#root')).getPropertyValue('--f-body').trim() === ${q(body)}`);
+      for (const [height, fontSize] of [[100, 20], [100, 80], [120, 20], [120, 80], [160, 20], [160, 80], [360, 80]]) {
+        await resize(c, 1832, height);
+        await f.update(id, { fontSize });
+        await wait(c, `innerHeight === ${height} && getComputedStyle(document.querySelector('#root')).getPropertyValue('--fs').trim() === '${fontSize}px'`);
+        const g = await geometry(), label = `${cond} / ${body} / ${height}px / fontSize ${fontSize}: ${JSON.stringify(g)}`;
+        assert.equal(g.direction, 'row', label);
+        assert.equal(g.cards.length, 3, label);
+        assert.ok(g.cards.every((v, i) => v.author === `Ana ${i}` && v.message.startsWith(`reserva ${i}:`) && (!i || v.card.left > g.cards[i - 1].card.left)), label);
+        assert.ok(g.cards.every(v => v.card.width <= 380.5 && Math.abs(v.card.height - g.cards[0].card.height) < 1 && Math.abs(v.card.top - g.cards[0].card.top) < 1), label);
+        assert.ok(g.cards.every(v => within(v.card, { ...g.root, top:g.root.top + g.paddingTop, bottom:g.root.bottom - g.paddingBottom })), label);
+        for (const v of g.cards) {
+          assert.ok(within(v.body, v.card) && within(v.who, v.body) && within(v.icon, v.who), label);
+          assert.ok(v.authorLines.length && v.authorLines.every(line => within(line, v.who) && within(line, v.body)), `nombre sin recorte: ${label}`);
+          assert.equal(v.clamp, '2', label);
+          assert.ok(v.text.height >= v.lineHeight * 2 - 1 && v.text.height <= v.lineHeight * 2 + 1, label);
+          assert.ok(within(v.text, v.body) && v.textLines.length >= 2 && v.textLines.slice(0, 2).every(line => within(line, v.text) && within(line, v.body)), `dos líneas sin recorte: ${label}`);
+          if (height === 160 && fontSize === 20) assert.ok(Math.abs(v.card.height - 104) < 1 && v.fontSize === 20, label);
+          if (height === 360) assert.equal(v.fontSize, 80, label);
+          if (fontSize === 80 && height <= 160) assert.ok(v.fontSize < 80, label);
+        }
+      }
+      assert.equal((await f.request('GET', ROUTE)).find(v => v.id === id).fontSize, 80, 'el ajuste guardado no cambia al adaptar la fuente');
+    }
+  }
+});
+
 // Muestrea matrices de las animaciones reales del navegador, no nombres internos de keyframes.
 test('chat horizontal: matrices direccionales, efectos neutros y movimiento reducido', { timeout: 180000 }, async t => {
   const f = await fixture(t);

@@ -68,27 +68,30 @@
 
 /* La fila solo afecta al layout horizontal; los tokens y el CSS propio siguen mandando. */
 .root.horizontal{flex-direction:row;justify-content:flex-end;align-items:center;overflow:hidden;
-  /* Por debajo de 160px se reducen los espacios; a 160px se conservan las medidas originales. */
-  --h-root-pad:min(18px,11.25vh);--h-card-top:min(12px,7.5vh);--h-card-bottom:min(13px,8.125vh);
-  --h-who-gap:min(5px,3.125vh);--h-pf-top:min(3px,1.875vh);--h-pf-bottom:min(2px,1.25vh);
+  /* Menos padding deja espacio para líneas más holgadas sin cambiar la tarjeta de 104px. */
+  --h-card-top:min(7px,4.375vh);--h-card-bottom:min(7px,4.375vh);
+  --h-who-gap:min(3px,1.875vh);--h-pf-top:min(3px,1.875vh);--h-pf-bottom:min(2px,1.25vh);
+  /* 3.931 = .78 * 1.45 + 2 * 1.4; 3.332 = .78 * .62 * 1.1 + 2 * 1.4.
+     Se suman los bordes, los píxeles extra de interlineado y medio píxel de reserva. */
+  --h-text-space:calc(var(--h-card-top) + var(--h-card-bottom) + var(--h-who-gap) + 5.5px);
+  --h-icon-space:calc(var(--h-card-top) + var(--h-card-bottom) + var(--h-who-gap) + var(--h-pf-top) + var(--h-pf-bottom) + 6.5px);
+  /* Cede parte del margen de la fila antes de reducir una fuente grande. */
+  --h-root-pad:min(18px,11.25vh,max(10px,min(calc((100vh - 3.931 * var(--fs) - var(--h-text-space)) / 2),calc((100vh - 3.332 * var(--fs) - var(--h-icon-space)) / 2))));
   --h-inner:calc(100vh - 2 * var(--h-root-pad));
-  /* Reservas para autor y dos líneas; el icono puede ser más alto que el nombre. */
-  --h-text-space:calc(var(--h-card-top) + var(--h-card-bottom) + var(--h-who-gap) + 6px);
-  --h-icon-space:calc(var(--h-card-top) + var(--h-card-bottom) + var(--h-who-gap) + var(--h-pf-top) + var(--h-pf-bottom) + 5px);
-  --horizontal-fs:min(var(--fs),max(0px,calc((var(--h-inner) - var(--h-text-space)) / 3.38)),max(0px,calc((var(--h-inner) - var(--h-icon-space)) / 3.132)));
+  --horizontal-fs:min(var(--fs),max(0px,calc((var(--h-inner) - var(--h-text-space)) / 3.931)),max(0px,calc((var(--h-inner) - var(--h-icon-space)) / 3.332)));
   padding-top:var(--h-root-pad);padding-bottom:var(--h-root-pad);
   mask-image:linear-gradient(to right,transparent,#000 min(140px,20%),#000 100%)}
 .root.horizontal.reverse{flex-direction:row-reverse;
   mask-image:linear-gradient(to left,transparent,#000 min(140px,20%),#000 100%)}
 .horizontal .msg{flex:0 0 min(380px,100%);min-width:0;font-size:var(--horizontal-fs);
-  height:max(min(104px,65vh),calc(var(--horizontal-fs) * 3.38 + var(--h-text-space)),calc(var(--horizontal-fs) * 3.132 + var(--h-icon-space)));
+  height:max(min(104px,65vh),calc(var(--horizontal-fs) * 3.931 + var(--h-text-space)),calc(var(--horizontal-fs) * 3.332 + var(--h-icon-space)));
   padding-top:var(--h-card-top);padding-bottom:var(--h-card-bottom);
   border-color:var(--surface-border,color-mix(in srgb,var(--red-2) 55%,transparent));
   box-shadow:0 0 12px color-mix(in srgb,var(--red) calc(35% * var(--glow,1)),transparent),inset 0 0 18px color-mix(in srgb,var(--red) calc(10% * var(--glow,1)),transparent),inset 0 1px 0 rgba(255,255,255,.08),0 10px 26px rgba(0,0,0,.45)}
 .horizontal .body{height:100%;overflow:hidden}
-.horizontal .who{white-space:nowrap;overflow:hidden;margin-bottom:var(--h-who-gap)}
+.horizontal .who{white-space:nowrap;overflow:hidden;margin-bottom:var(--h-who-gap);line-height:calc(1.45em + 1px)}
 .horizontal .who .pf{padding-top:var(--h-pf-top);padding-bottom:var(--h-pf-bottom)}
-.horizontal .text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.horizontal .text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:calc(1.4em + 1px)}
 
 /* Las clases e ids son los mismos: solo se orientan los efectos con dirección. */
 .horizontal .msg.a-slide:not(.out){animation-name:inH}
