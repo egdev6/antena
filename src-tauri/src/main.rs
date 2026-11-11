@@ -3,9 +3,11 @@
 // - El servidor es el mismo de siempre (src/server.mjs): la app solo lo arranca, espera a que responda
 //   y carga http://127.0.0.1:<puerto>/ en la ventana. Las fuentes de Meld y el Stream Deck siguen
 //   hablando con ese mismo puerto, así que la app tiene que estar abierta (vale minimizada en la bandeja).
-// - Si ya hay un antena escuchando en el puerto (por ejemplo `pnpm start`), se usa ese y no se arranca otro.
+// - An existing server is reused only when its data directory identity matches.
 // - Al salir se pide un apagado ordenado (POST /api/shutdown) para que guarde todo; si no, se mata.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod server_identity;
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -15,6 +17,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use server_identity::{connection_failure, decide, expected_id, framed_match, Decision, MAX_RESPONSE_BYTES};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::webview::NewWindowResponse;
@@ -39,30 +42,110 @@ struct Server {
     /// true si el servidor lo ha arrancado esta app (y por tanto lo apaga al salir)
     managed: Mutex<bool>,
     child: Mutex<Option<ServerChild>>,
+    startup: Mutex<StartupState>,
     /// carpetas de datos y media que recibe el servidor (ver server_dirs)
     data: PathBuf,
     media: PathBuf,
 }
 
-// ---------- HTTP mínimo contra el servidor local ----------
-fn http(port: u16, method: &str, path: &str, timeout: Duration) -> Option<String> {
+#[derive(Default)]
+struct StartupState {
+    ready: bool,
+    conflict: bool,
+    error: Option<String>,
+    waiters: Vec<tauri::async_runtime::Sender<Result<(), String>>>,
+}
+
+impl StartupState {
+    fn wait(&mut self) -> Result<Option<tauri::async_runtime::Receiver<Result<(), String>>>, String> {
+        if self.can_open() { return Ok(None); }
+        if let Some(error) = &self.error { return Err(error.clone()); }
+        let (sender, receiver) = tauri::async_runtime::channel(1);
+        self.waiters.push(sender);
+        Ok(Some(receiver))
+    }
+    fn signal(&mut self, result: Result<(), String>) {
+        for sender in self.waiters.drain(..) { let _ = sender.try_send(result.clone()); }
+    }
+    fn signal_ready(&mut self) { self.ready = true; self.signal(Ok(())); }
+    fn can_open(&self) -> bool { self.ready && !self.conflict }
+    fn conflict(&mut self, port: u16) {
+        self.ready = false;
+        self.conflict = true;
+        let message = conflict_message(port);
+        self.error = Some(message.clone());
+        self.signal(Err(message));
+    }
+}
+
+// ---------- bounded HTTP probe against the local server ----------
+fn status_probe(port: u16, data: &Path, keep_open: bool) -> (Decision, Option<TcpStream>) {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let mut s = TcpStream::connect_timeout(&addr, timeout).ok()?;
-    s.set_read_timeout(Some(timeout)).ok()?;
-    s.set_write_timeout(Some(timeout)).ok()?;
-    let body = if method == "POST" { "{}" } else { "" };
-    let req = format!(
-        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    s.write_all(req.as_bytes()).ok()?;
-    let mut out = String::new();
-    let _ = s.read_to_string(&mut out);
-    Some(out)
+    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
+        Ok(stream) => stream,
+        Err(err) => return (connection_failure(err.kind()), None),
+    };
+    let timeout = Duration::from_millis(600);
+    if stream.set_write_timeout(Some(timeout)).is_err() { return (Decision::Conflict, None); }
+    let connection = if keep_open { "keep-alive" } else { "close" };
+    let request = format!("GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: {connection}\r\n\r\n");
+    if stream.write_all(request.as_bytes()).is_err() { return (Decision::Conflict, None); }
+    let deadline = Instant::now() + timeout;
+    let mut response = Vec::new();
+    let mut buf = [0u8; 4096];
+    loop {
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else { return (Decision::Conflict, None) };
+        if remaining.is_zero() || stream.set_read_timeout(Some(remaining)).is_err() { return (Decision::Conflict, None); }
+        match stream.read(&mut buf) {
+            Ok(0) => return (decide(true, Some(&response), expected_id(data).as_deref()), None),
+            Ok(n) => {
+                if response.len() + n > MAX_RESPONSE_BYTES { return (Decision::Conflict, None); }
+                response.extend_from_slice(&buf[..n]);
+                if framed_match(&response, expected_id(data).as_deref()) {
+                    return (Decision::Reuse, if keep_open { Some(stream) } else { None });
+                }
+            }
+            Err(_) => return (Decision::Conflict, None),
+        }
+    }
 }
-fn server_alive(port: u16) -> bool {
-    http(port, "GET", "/api/status", Duration::from_millis(600)).is_some_and(|r| r.starts_with("HTTP/1.1 200"))
+
+fn retry_verification<T>(mut attempt: impl FnMut() -> Option<T>, mut again: impl FnMut() -> bool) -> Option<T> {
+    loop {
+        if let Some(value) = attempt() { return Some(value); }
+        if !again() { return None; }
+    }
 }
+
+// Verify and send on the same connection, so a replacement listener cannot receive shutdown.
+fn shutdown_if_matching(port: u16, data: &Path) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let Some(mut stream) = retry_verification(
+        || match status_probe(port, data, true) { (Decision::Reuse, Some(stream)) => Some(stream), _ => None },
+        || {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else { return false };
+            if remaining.is_zero() { return false; }
+            std::thread::sleep(remaining.min(Duration::from_millis(100)));
+            Instant::now() < deadline
+        },
+    ) else { return false };
+    if stream.set_write_timeout(Some(Duration::from_secs(2))).is_err() { return false; }
+    let request = format!("POST /api/shutdown HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}");
+    if stream.write_all(request.as_bytes()).is_err() { return false; }
+    // Drain the response before closing, as the previous graceful shutdown request did.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut received = 0;
+    let mut buf = [0u8; 4096];
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        if remaining.is_zero() || stream.set_read_timeout(Some(remaining)).is_err() { break; }
+        match stream.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => { received += n; if received > MAX_RESPONSE_BYTES { break; } }
+        }
+    }
+    true
+}
+
 fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], port)), Duration::from_millis(300)).is_ok()
 }
@@ -173,24 +256,92 @@ fn open_in_browser(app: &AppHandle, url: &Url) {
     }
 }
 
+fn conflict_message(port: u16) -> String {
+    format!("Otro servidor ocupa el puerto {port} y no usa tus datos de antena. Ciérralo y vuelve a abrir antena.")
+}
+
 fn splash_error(app: &AppHandle, msg: &str) {
+    let st = app.state::<Server>();
+    let message = {
+        let mut startup = st.startup.lock().unwrap();
+        let message = if startup.conflict { conflict_message(st.port) } else { msg.to_owned() };
+        startup.error = Some(message.clone());
+        startup.signal(Err(message.clone()));
+        message
+    };
     if let Some(w) = app.get_webview_window("main") {
-        let js = format!("window.egdevError && window.egdevError({})", serde_json::to_string(msg).unwrap_or_default());
+        let js = format!("window.egdevError && window.egdevError({})", serde_json::to_string(&message).unwrap_or_default());
         let _ = w.eval(&js);
         let _ = w.show();
     }
+}
+
+fn show_conflict(app: &AppHandle) {
+    let st = app.state::<Server>();
+    {
+        st.startup.lock().unwrap().conflict(st.port);
+    }
+    splash_error(app, &conflict_message(st.port));
+}
+
+// Port-opening actions are unavailable until the identity check has succeeded.
+fn server_ready(app: &AppHandle) -> bool {
+    let st = app.state::<Server>();
+    let (can_open, conflict) = {
+        let startup = st.startup.lock().unwrap();
+        (startup.can_open(), startup.conflict)
+    };
+    if can_open { return true; }
+    if conflict { splash_error(app, &conflict_message(st.port)); }
+    show_main(app);
+    false
+}
+
+// Shows the splash while the start is pending and, on a conflict, shows it again with the
+// warning (it may have been hidden), so a tray action never fails silently.
+fn wait_and_surface<S: FnMut(), W: FnMut(&str)>(
+    startup: &Mutex<StartupState>,
+    mut show: S,
+    mut warn: W,
+) -> Result<Option<tauri::async_runtime::Receiver<Result<(), String>>>, String> {
+    let waited = startup.lock().unwrap().wait();
+    match waited {
+        Ok(receiver) => {
+            if receiver.is_some() { show(); }
+            Ok(receiver)
+        }
+        Err(error) => {
+            warn(&error);
+            show();
+            Err(error)
+        }
+    }
+}
+
+fn wait_for_server(app: &AppHandle) -> Result<Option<tauri::async_runtime::Receiver<Result<(), String>>>, String> {
+    let st = app.state::<Server>();
+    wait_and_surface(&st.startup, || show_main(app), |error| splash_error(app, error))
+}
+
+async fn run_when_ready<F: std::future::Future<Output = Result<(), String>>>(receiver: Option<tauri::async_runtime::Receiver<Result<(), String>>>, action: F) -> Result<(), String> {
+    if let Some(mut receiver) = receiver { receiver.recv().await.unwrap_or_else(|| Err("No se pudo abrir la ventana.".into()))?; }
+    action.await
 }
 
 // ---------- arranque del servidor ----------
 fn start_server(app: &AppHandle) -> Result<(), String> {
     let st = app.state::<Server>();
     let port = st.port;
-    if server_alive(port) {
-        println!("[antena] ya hay un servidor en el puerto {port}: se usa ese");
-        return Ok(());
-    }
-    if port_open(port) {
-        return Err(format!("El puerto {port} está ocupado por otro programa. Ciérralo o cambia el puerto (ANTENA_PORT)."));
+    match status_probe(port, &st.data, false).0 {
+        Decision::Reuse => {
+            println!("[antena] ya hay un servidor con los mismos datos en el puerto {port}: se usa ese");
+            return Ok(());
+        }
+        Decision::Conflict => {
+            show_conflict(app);
+            return Err(conflict_message(port));
+        }
+        Decision::Launch => {}
     }
     let (data, media) = (&st.data, &st.media);
     let _ = std::fs::create_dir_all(data);
@@ -260,14 +411,24 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
 }
 
 fn wait_and_open(app: AppHandle) {
-    let port = app.state::<Server>().port;
+    let st = app.state::<Server>();
+    let port = st.port;
     let t0 = Instant::now();
     while t0.elapsed() < Duration::from_secs(30) {
-        if server_alive(port) {
-            if let (Some(w), Ok(url)) = (app.get_webview_window("main"), Url::parse(&format!("{}/", base_url(port)))) {
-                let _ = w.navigate(url);
+        match status_probe(port, &st.data, false).0 {
+            Decision::Reuse => {
+                {
+                    let mut startup = st.startup.lock().unwrap();
+                    if startup.conflict { return; }
+                    startup.signal_ready();
+                }
+                if let (Some(w), Ok(url)) = (app.get_webview_window("main"), Url::parse(&format!("{}/", base_url(port)))) {
+                    let _ = w.navigate(url);
+                }
+                return;
             }
-            return;
+            Decision::Conflict => { show_conflict(&app); return; }
+            Decision::Launch => {}
         }
         std::thread::sleep(Duration::from_millis(250));
     }
@@ -281,11 +442,12 @@ fn stop_server(app: &AppHandle) {
     }
     *st.managed.lock().unwrap() = false;
     let port = st.port;
-    // apagado ordenado: guarda configuración, sesión y alertas retenidas
-    let _ = http(port, "POST", "/api/shutdown", Duration::from_secs(2));
-    let t0 = Instant::now();
-    while port_open(port) && t0.elapsed() < Duration::from_secs(6) {
-        std::thread::sleep(Duration::from_millis(150));
+    // Only the same verified connection may receive the graceful shutdown request.
+    if shutdown_if_matching(port, &st.data) {
+        let t0 = Instant::now();
+        while port_open(port) && t0.elapsed() < Duration::from_secs(6) {
+            std::thread::sleep(Duration::from_millis(150));
+        }
     }
     match st.child.lock().unwrap().take() {
         Some(ServerChild::Sidecar(c)) => {
@@ -449,6 +611,7 @@ fn close_panel_window(app: AppHandle, label: String) -> Result<(), String> {
 /// Abre el prompter. Si hay una pantalla de 1024×600 (el Elgato) o se elige una, va a pantalla completa en ella.
 #[tauri::command]
 async fn open_prompter(app: AppHandle, monitor: Option<String>, fullscreen: Option<bool>) -> Result<(), String> {
+    run_when_ready(wait_for_server(&app)?, async {
     let list = monitor_list(&app);
     let target = match monitor.as_deref().filter(|m| !m.is_empty()) {
         Some(name) => list.iter().find(|(i, _)| i.name == name),
@@ -476,6 +639,7 @@ async fn open_prompter(app: AppHandle, monitor: Option<String>, fullscreen: Opti
     focus(&w);
     notify_panel_windows(&app);
     Ok(())
+    }).await
 }
 
 /// Teleprompter: el guion a pantalla completa en el monitor de la cámara. Sin pantalla
@@ -483,6 +647,7 @@ async fn open_prompter(app: AppHandle, monitor: Option<String>, fullscreen: Opti
 /// La página no usa IPC: su ventana no está en la capability `default`.
 #[tauri::command]
 async fn open_teleprompter(app: AppHandle, monitor: Option<String>, fullscreen: Option<bool>) -> Result<(), String> {
+    run_when_ready(wait_for_server(&app)?, async {
     let list = monitor_list(&app);
     let target = match monitor.as_deref().filter(|m| !m.is_empty()) {
         Some(name) => list.iter().find(|(i, _)| i.name == name),
@@ -510,11 +675,13 @@ async fn open_teleprompter(app: AppHandle, monitor: Option<String>, fullscreen: 
     focus(&w);
     notify_panel_windows(&app);
     Ok(())
+    }).await
 }
 
 /// Dock flotante: la misma vista que el panel de chat de Meld, en una ventana pequeña siempre encima.
 #[tauri::command]
 async fn open_dock(app: AppHandle, always_on_top: Option<bool>) -> Result<(), String> {
+    run_when_ready(wait_for_server(&app)?, async {
     let w = match app.get_webview_window("dock") {
         Some(w) => w,
         None => window_builder(&app, "dock", WebviewUrl::External(page_url(&app, "/dock")?))
@@ -528,6 +695,7 @@ async fn open_dock(app: AppHandle, always_on_top: Option<bool>) -> Result<(), St
     focus(&w);
     notify_panel_windows(&app);
     Ok(())
+    }).await
 }
 
 #[derive(Serialize)]
@@ -541,12 +709,18 @@ struct DesktopInfo {
 
 #[tauri::command]
 fn desktop_info(app: AppHandle, state: State<'_, Server>) -> DesktopInfo {
+    let managed = *state.managed.lock().unwrap();
     DesktopInfo {
         port: state.port,
-        managed: *state.managed.lock().unwrap(),
+        managed,
         data_dir: plain(&state.data),
         version: app.package_info().version.to_string(),
     }
+}
+
+#[tauri::command]
+fn startup_state(state: State<'_, Server>) -> Option<String> {
+    state.startup.lock().unwrap().error.clone()
 }
 
 // ---------- actualizaciones ----------
@@ -641,6 +815,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             tauri::async_runtime::spawn(async move { let _ = open_dock(a, Some(true)).await; });
         }
         "browser" => {
+            if !server_ready(app) { return; }
             let url = format!("{}/", base_url(app.state::<Server>().port));
             #[allow(deprecated)]
             let _ = app.shell().open(url, None);
@@ -673,7 +848,7 @@ fn main() {
             let (data, media) = server_dirs(&app_data, dev_root().as_deref(), env_dir("ANTENA_DATA"), env_dir("ANTENA_MEDIA"));
             // el puerto se lee del config.json de la carpeta que va a usar el servidor
             let port = read_port(&data);
-            app.manage(Server { port, managed: Mutex::new(false), child: Mutex::new(None), data, media });
+            app.manage(Server { port, managed: Mutex::new(false), child: Mutex::new(None), startup: Mutex::new(StartupState::default()), data, media });
             // la ventana principal se crea aquí (y no en tauri.conf.json) para poder limitar
             // su navegación al servidor local: window_builder pone la guardia a las tres ventanas
             window_builder(app.handle(), "main", WebviewUrl::App("index.html".into()))
@@ -691,11 +866,8 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("[antena] {e}");
-                    // la ventana aún está cargando la pantalla de inicio: se avisa en cuanto pueda
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(800));
-                        splash_error(&handle, &e);
-                    });
+                    // The splash also polls stored state if its handler is not loaded yet.
+                    splash_error(&handle, &e);
                 }
             }
             Ok(())
@@ -712,7 +884,7 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![monitors, open_prompter, open_teleprompter, open_dock, panel_windows, close_panel_window, desktop_info, update_check, update_install])
+        .invoke_handler(tauri::generate_handler![monitors, open_prompter, open_teleprompter, open_dock, panel_windows, close_panel_window, desktop_info, startup_state, update_check, update_install])
         .build(tauri::generate_context!())
         .expect("no se pudo iniciar antena");
 
@@ -729,6 +901,124 @@ mod tests {
 
     fn p(s: &str) -> PathBuf {
         PathBuf::from(s)
+    }
+
+    #[test]
+    fn deferred_open_requests_execute_with_original_args_or_fail_on_conflict() {
+        tauri::async_runtime::block_on(async {
+            for request in [("prompter", Some("camera"), Some(false)), ("teleprompter", Some("screen"), Some(true)), ("dock", None, Some(false))] {
+                let mut state = StartupState::default();
+                let mut receiver = state.wait().unwrap().expect("pending commands must wait");
+                assert!(receiver.try_recv().is_err());
+                let mut executed = None;
+                let action = async { executed = Some(request); Ok(()) };
+                state.signal_ready();
+                run_when_ready(Some(receiver), action).await.unwrap();
+                assert_eq!(executed, Some(request));
+                assert!(state.wait().unwrap().is_none());
+            }
+            let mut conflict = StartupState::default();
+            let receiver = conflict.wait().unwrap().expect("pending command must wait");
+            let mut executed = false;
+            let action = async { executed = true; Ok(()) };
+            conflict.conflict(4500);
+            assert_eq!(run_when_ready(Some(receiver), action).await, Err(conflict_message(4500)));
+            assert!(!executed);
+        });
+    }
+
+    #[test]
+    fn shutdown_verification_retries_before_sending() {
+        let mut attempts = [None, None, Some("shutdown")].into_iter();
+        let mut count = 0;
+        assert_eq!(retry_verification(|| { count += 1; attempts.next().unwrap() }, || true), Some("shutdown"));
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn port_actions_wait_for_readiness_and_remain_blocked_in_conflict() {
+        let mut state = StartupState::default();
+        assert!(!state.can_open());
+        state.ready = true;
+        assert!(state.can_open());
+        state.conflict(4500);
+        assert!(!state.can_open());
+        assert_eq!(state.error.as_deref(), Some("Otro servidor ocupa el puerto 4500 y no usa tus datos de antena. Ciérralo y vuelve a abrir antena."));
+        state.ready = true;
+        assert!(!state.can_open());
+    }
+
+    #[test]
+    fn tray_actions_resurface_the_conflict_warning() {
+        let state = std::sync::Mutex::new(StartupState::default());
+        state.lock().unwrap().conflict(4500);
+        let (mut shown, mut warned) = (0, Vec::new());
+        let result = wait_and_surface(&state, || shown += 1, |error: &str| warned.push(error.to_string()));
+        assert!(result.is_err());
+        assert_eq!(shown, 1, "a hidden splash must be shown again");
+        assert_eq!(warned, vec!["Otro servidor ocupa el puerto 4500 y no usa tus datos de antena. Ciérralo y vuelve a abrir antena.".to_string()]);
+
+        let pending = std::sync::Mutex::new(StartupState::default());
+        let (mut shown, mut warned) = (0, 0);
+        assert!(wait_and_surface(&pending, || shown += 1, |_: &str| warned += 1).unwrap().is_some());
+        assert_eq!((shown, warned), (1, 0), "a pending start shows the splash without a warning");
+    }
+
+    #[test]
+    fn desktop_info_preserves_its_existing_fields() {
+        let info = DesktopInfo { port: 4500, managed: true, data_dir: "data".into(), version: "1.2.3".into() };
+        let value = serde_json::to_value(info).unwrap();
+        assert_eq!(value["port"], 4500);
+        assert_eq!(value["managed"], true);
+        assert_eq!(value["dataDir"], "data");
+        assert_eq!(value["version"], "1.2.3");
+        assert_eq!(value.as_object().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn shutdown_is_sent_only_on_the_verified_connection() {
+        use std::net::TcpListener;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        struct Temp(PathBuf);
+        impl Drop for Temp { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+        let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = Temp(std::env::temp_dir().join(format!("antena-identity-{}-{suffix}", std::process::id())));
+        std::fs::create_dir_all(&dir.0).unwrap();
+        let id = "0123456789abcdef0123456789abcdef";
+        let record = serde_json::json!({ "id": id, "createdAt": "2026-01-02T03:04:05.000Z", "directory": std::fs::canonicalize(&dir.0).unwrap() });
+        std::fs::write(dir.0.join("instance.json"), serde_json::to_string(&record).unwrap()).unwrap();
+
+        for (remote_id, expected) in [(id, true), ("fedcba9876543210fedcba9876543210", false)] {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                let mut request = Vec::new();
+                let mut byte = [0];
+                while !request.ends_with(b"\r\n\r\n") {
+                    socket.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                }
+                assert!(request.starts_with(b"GET /api/status HTTP/1.1\r\n"));
+                let body = format!(r#"{{"instance":{{"app":"antena","id":"{remote_id}"}}}}"#);
+                let reply = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+                socket.write_all(reply.as_bytes()).unwrap();
+                let mut followup = Vec::new();
+                while !followup.windows(4).any(|part| part == b"\r\n\r\n") {
+                    match socket.read(&mut byte) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => followup.push(byte[0]),
+                    }
+                }
+                String::from_utf8_lossy(&followup).into_owned()
+            });
+            assert_eq!(shutdown_if_matching(port, &dir.0), expected);
+            let followup = server.join().unwrap();
+            if expected { assert!(followup.starts_with("POST /api/shutdown HTTP/1.1\r\n")); }
+            else { assert_eq!(followup, ""); }
+        }
     }
 
     #[test]
