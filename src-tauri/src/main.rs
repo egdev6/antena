@@ -297,11 +297,30 @@ fn server_ready(app: &AppHandle) -> bool {
     false
 }
 
+// Shows the splash while the start is pending and, on a conflict, shows it again with the
+// warning (it may have been hidden), so a tray action never fails silently.
+fn wait_and_surface<S: FnMut(), W: FnMut(&str)>(
+    startup: &Mutex<StartupState>,
+    mut show: S,
+    mut warn: W,
+) -> Result<Option<tauri::async_runtime::Receiver<Result<(), String>>>, String> {
+    let waited = startup.lock().unwrap().wait();
+    match waited {
+        Ok(receiver) => {
+            if receiver.is_some() { show(); }
+            Ok(receiver)
+        }
+        Err(error) => {
+            warn(&error);
+            show();
+            Err(error)
+        }
+    }
+}
+
 fn wait_for_server(app: &AppHandle) -> Result<Option<tauri::async_runtime::Receiver<Result<(), String>>>, String> {
     let st = app.state::<Server>();
-    let receiver = st.startup.lock().unwrap().wait()?;
-    if receiver.is_some() { show_main(app); }
-    Ok(receiver)
+    wait_and_surface(&st.startup, || show_main(app), |error| splash_error(app, error))
 }
 
 async fn run_when_ready<F: std::future::Future<Output = Result<(), String>>>(receiver: Option<tauri::async_runtime::Receiver<Result<(), String>>>, action: F) -> Result<(), String> {
@@ -927,6 +946,22 @@ mod tests {
         assert_eq!(state.error.as_deref(), Some("Otro servidor ocupa el puerto 4500 y no usa tus datos de antena. Ciérralo y vuelve a abrir antena."));
         state.ready = true;
         assert!(!state.can_open());
+    }
+
+    #[test]
+    fn tray_actions_resurface_the_conflict_warning() {
+        let state = std::sync::Mutex::new(StartupState::default());
+        state.lock().unwrap().conflict(4500);
+        let (mut shown, mut warned) = (0, Vec::new());
+        let result = wait_and_surface(&state, || shown += 1, |error: &str| warned.push(error.to_string()));
+        assert!(result.is_err());
+        assert_eq!(shown, 1, "a hidden splash must be shown again");
+        assert_eq!(warned, vec!["Otro servidor ocupa el puerto 4500 y no usa tus datos de antena. Ciérralo y vuelve a abrir antena.".to_string()]);
+
+        let pending = std::sync::Mutex::new(StartupState::default());
+        let (mut shown, mut warned) = (0, 0);
+        assert!(wait_and_surface(&pending, || shown += 1, |_: &str| warned += 1).unwrap().is_some());
+        assert_eq!((shown, warned), (1, 0), "a pending start shows the splash without a warning");
     }
 
     #[test]
