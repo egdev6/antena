@@ -264,7 +264,17 @@ test('default horizontal preview changes size only after saving and keeps the de
   await save(c);
   assert.equal((await f.ok('GET', '/api/widgets')).widgets.chat.layout, 'horizontal');
   assert.equal(await dom(c, `${frame}.getAttribute('src')`), '/widget/chat?demo');
-  await waitDom(c, `document.querySelector('main .browser-source .overlay-url .hint')?.textContent === '1832×160'`, { timeoutMs: 8000 });
+  try {
+    await waitDom(c, `document.querySelector('main .browser-source .overlay-url .hint')?.textContent === '1832×160'`, { timeoutMs: 8000 });
+  } catch (error) {
+    // Keep the original timeout and error, but capture the actual preview when it fails in CI.
+    const actual = await evaluateChrome(c, `(() => { const f = ${frame}; return {
+      hint: document.querySelector('main .browser-source .overlay-url .hint')?.textContent ?? null,
+      src: f?.getAttribute('src') ?? null, width: f?.style.width ?? null, height: f?.style.height ?? null,
+    }; })()`, { timeoutMs: 1000 }).catch(() => null);
+    error.message += `; actual preview: ${JSON.stringify(actual)}`;
+    throw error;
+  }
   assert.deepEqual(await dom(c, `[${frame}.style.width, ${frame}.style.height]`), ['1832px', '160px']);
 });
 

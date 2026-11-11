@@ -16,9 +16,59 @@ const button = text => `Array.from(document.querySelectorAll('main button')).fin
 const select = field('Variante de chat');
 const font = field('Tamaño de letra');
 const bar = `document.querySelector('.lv-savebar')`;
+const frame = `document.querySelector('main .preview-col iframe')`;
+const previewState = `(() => { const f = ${frame}; return {
+  variant: ${select}?.value ?? null, layout: ${field('Disposición')}?.value ?? null,
+  bar: ${bar}?.querySelector('.lv-dirty')?.textContent ?? null,
+  source: document.querySelector('main .browser-source code')?.textContent ?? null,
+  hint: document.querySelector('main .browser-source .overlay-url .hint')?.textContent ?? null,
+  src: f?.getAttribute('src') ?? null, width: f?.style.width ?? null, height: f?.style.height ?? null,
+}; })()`;
 const dom = (c, expr) => evaluateChrome(c, expr, { timeoutMs: 12000 });
 const wait = (c, expr) => waitDom(c, expr, { timeoutMs: 12000 });
 const sha = async file => createHash('sha256').update(await readFile(file)).digest('hex');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Installed before navigation via toString(), so these regexes are not cooked by a template.
+// It observes real traffic and holds the original response, without changing its payload.
+function observeReconnect() {
+  if (window.top !== window) return;
+  const p = window.__stateProbe = { sockets: [], frames: [], requests: [], opens: 0, gate: null };
+  const fetchReal = window.fetch.bind(window);
+  window.fetch = async (input, options = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+    const method = String(options.method || 'GET').toUpperCase();
+    const tracked = ['/api/state', '/api/widgets', '/api/timeline', '/api/prompter'].includes(url.pathname);
+    const entry = tracked ? { method, path: url.pathname, opens: p.opens, status: null, body: options.body || null } : null;
+    if (entry) p.requests.push(entry);
+    const gate = method === 'GET' && url.pathname === '/api/state' ? p.gate : null;
+    const response = await fetchReal(input, options);
+    if (entry) entry.status = response.status;
+    if (gate && !gate.hit) {
+      gate.status = response.status;
+      gate.body = await response.clone().json();
+      gate.hit = true;
+      await new Promise(resolve => { gate.release = resolve; });
+      gate.delivered = true;
+    }
+    return response;
+  };
+  const NativeWebSocket = window.WebSocket;
+  window.WebSocket = class extends NativeWebSocket {
+    constructor(url, protocols) {
+      if (protocols === undefined) super(url); else super(url, protocols);
+      const u = new URL(String(url), location.href);
+      if (u.pathname !== '/api/stream' || u.searchParams.get('client') !== 'panel') return;
+      p.sockets.push(this);
+      this.addEventListener('open', () => { p.opens++; });
+      this.addEventListener('message', e => {
+        if (typeof e.data !== 'string' || !/^event: widgets\r?$/m.test(e.data)) return;
+        const raw = /^data: (.*)\r?$/m.exec(e.data)?.[1];
+        if (raw) p.frames.push(JSON.parse(raw));
+      });
+    }
+  };
+}
 
 async function fixture(t) {
   const bin = await findChrome();
@@ -49,12 +99,18 @@ async function fixture(t) {
     assert.equal(r.status, 200, `${method} ${url}: ${JSON.stringify(r.body)}`);
     return r.body;
   };
-  const open = async () => {
+  const open = async ({ hash = '#/widgets/chat', ready = `!!(${font}) && !!(${select}) && !(${select}).disabled`, observe = false } = {}) => {
     await ok('PUT', '/api/config', { panel: { onboardingDone: true } });
-    chrome = await openChromePage(bin, `${base}/#/widgets/chat`);
+    chrome = await openChromePage(bin, observe ? 'about:blank' : `${base}/${hash}`);
     const c = chrome.cdp;
-    await wait(c, `!!(${font}) && !!(${select}) && !(${select}).disabled`);
+    if (observe) {
+      await c.send('Page.addScriptToEvaluateOnNewDocument', { source: `(${observeReconnect.toString()})()` });
+      const navigation = await c.send('Page.navigate', { url: `${base}/${hash}` });
+      assert.ok(!navigation.errorText, `navigation: ${navigation.errorText}`);
+    }
+    await wait(c, ready);
     assert.ok(await dom(c, `performance.getEntriesByType('resource').some(x => /\\/assets\\/panel-[A-Za-z0-9_-]+\\.js$/.test(x.name))`), 'actual compiled panel bundle was loaded');
+    if (observe) await wait(c, `window.__stateProbe.opens >= 1 && window.__stateProbe.requests.some(r => r.path === '/api/state' && r.opens >= 1 && r.status === 200) && window.__stateProbe.requests.some(r => r.path === '/api/prompter' && r.status === 200)`);
     // Gate a single matching real fetch only AFTER its real HTTP response has arrived.
     await dom(c, `(() => {
       window.__probe = { events: [], gate: null };
@@ -105,6 +161,81 @@ async function seeded(f) {
   const initial = (await f.ok('GET', '/api/widgets')).widgets.chat;
   return { a, b, initial };
 }
+
+test('S6/S9: reconnect snapshot cannot undo a newer saved default preview', { timeout: 90000 }, async t => {
+  const f = await fixture(t); const c = await f.open({ observe: true });
+  const expected = { variant: 'default', layout: 'horizontal', bar: 'Todo guardado',
+    source: `${f.base}/widget/chat`, hint: '1832×160', src: '/widget/chat?demo', width: '1832px', height: '160px' };
+  const initial = await dom(c, previewState);
+  assert.deepEqual(initial, { ...expected, layout: 'vertical', hint: '600×900', width: '600px', height: '900px' });
+  assert.equal((await f.ok('GET', '/api/widgets')).widgets.chat.layout, 'vertical');
+
+  // Disconnect the actual panel transport; its real reconnect starts a fresh /api/state.
+  await dom(c, `(() => { const p = window.__stateProbe; const s = p.sockets.findLast(x => x.readyState === 1);
+    if (!s) throw Error('no open panel socket'); p.gate = { hit: false }; s.close(1000); return true; })()`);
+  await wait(c, `window.__stateProbe.opens >= 2 && window.__stateProbe.gate?.hit && typeof window.__stateProbe.gate.release === 'function'`);
+  assert.equal(await dom(c, `window.__stateProbe.gate.status`), 200);
+  assert.equal(await dom(c, `window.__stateProbe.gate.body.widgets.widgets.chat.layout`), 'vertical', 'actual reconnect snapshot is old');
+
+  await setValue(c, 'Disposición', 'horizontal');
+  await sleep(600); // the existing automatic-save debounce is 400 ms
+  assert.equal((await f.ok('GET', '/api/widgets')).widgets.chat.layout, 'vertical', 'no autosave');
+  assert.equal(await dom(c, `window.__stateProbe.requests.filter(r => r.method === 'PUT' && r.path === '/api/widgets').length`), 0);
+  assert.deepEqual(await dom(c, previewState), { ...initial, layout: 'horizontal', bar: 'Cambios sin guardar' });
+
+  await click(c, 'Guardar');
+  await wait(c, `${bar}?.textContent.includes('Todo guardado') && window.__stateProbe.frames.some(w => w.widgets?.chat?.layout === 'horizontal')`);
+  await wait(c, `(${previewState}).hint === '1832×160' && (${previewState}).width === '1832px' && (${previewState}).height === '160px'`);
+  assert.deepEqual(await dom(c, previewState), expected);
+  assert.equal((await f.ok('GET', '/api/widgets')).widgets.chat.layout, 'horizontal');
+  let writes = await dom(c, `window.__stateProbe.requests.filter(r => r.method === 'PUT' && r.path === '/api/widgets')`);
+  assert.equal(writes.length, 1); assert.equal(writes[0].status, 200);
+  assert.deepEqual(JSON.parse(writes[0].body), { chat: { layout: 'horizontal' } });
+
+  // Observe every DOM mutation for the full original 8 s bound, including transient reversions.
+  // The new timeline request also proves load() continued beyond applying the held snapshot.
+  await dom(c, `(() => {
+    const p = window.__stateProbe, expected = ${q(expected)};
+    p.timelineBefore = p.requests.filter(r => r.path === '/api/timeline').length;
+    p.violations = [];
+    const check = () => { const actual = ${previewState};
+      if (Object.keys(expected).some(k => actual[k] !== expected[k])) p.violations.push(actual); };
+    const observer = new MutationObserver(check);
+    observer.observe(document.querySelector('main'), { subtree: true, childList: true, characterData: true, attributes: true });
+    check(); p.gate.release();
+    setTimeout(() => { check(); observer.disconnect(); p.guardDone = true; }, 8000);
+    return true;
+  })()`);
+  await wait(c, `window.__stateProbe.guardDone && window.__stateProbe.gate.delivered && window.__stateProbe.requests.filter(r => r.path === '/api/timeline').length > window.__stateProbe.timelineBefore`);
+  assert.deepEqual(await dom(c, `window.__stateProbe.violations`), [], 'preview must remain saved throughout the guard');
+  assert.deepEqual(await dom(c, previewState), expected);
+  assert.equal((await f.ok('GET', '/api/widgets')).widgets.chat.layout, 'horizontal');
+  writes = await dom(c, `window.__stateProbe.requests.filter(r => r.method === 'PUT' && r.path === '/api/widgets')`);
+  assert.equal(writes.length, 1); assert.equal(writes[0].status, 200);
+});
+
+test('a reconnect without a newer widgets frame loads a missed goal value and still accepts later updates', { timeout: 90000 }, async t => {
+  const f = await fixture(t);
+  const goal = (await f.ok('POST', '/api/goals', { id: 'preserve', title: 'Meta', platform: 'twitch', metric: 'follows', target: 10 })).goal;
+  const endpoint = `/api/goals/${goal.id}/bars/${goal.bars[0].id}/set`;
+  const c = await f.open({ observe: true, hash: `#/widgets/objetivos/${goal.id}`, ready: `!!document.querySelector('.goal-card .gval')` });
+  assert.equal(await dom(c, `document.querySelector('.goal-card .gval').textContent`), '0', 'initial snapshot');
+  await dom(c, `(() => { const p = window.__stateProbe; const s = p.sockets.findLast(x => x.readyState === 1);
+    if (!s) throw Error('no open panel socket'); p.gate = { hit: false }; p.framesBefore = p.frames.length; s.close(1000); return true; })()`);
+  await wait(c, `window.__stateProbe.sockets[0].readyState === 3`);
+  assert.equal((await f.ok('POST', endpoint, { value: 7 })).value, 7);
+  await wait(c, `window.__stateProbe.opens >= 2 && window.__stateProbe.gate?.hit && typeof window.__stateProbe.gate.release === 'function'`);
+  assert.equal(await dom(c, `window.__stateProbe.gate.status`), 200);
+  assert.equal(await dom(c, `window.__stateProbe.gate.body.widgets.goals.find(g => g.id === 'preserve').bars[0].value`), 7);
+  assert.equal(await dom(c, `window.__stateProbe.frames.length`), await dom(c, `window.__stateProbe.framesBefore`), 'no newer widgets frame');
+  assert.equal(await dom(c, `document.querySelector('.goal-card .gval').textContent`), '0');
+  await dom(c, `window.__stateProbe.gate.release(); true`);
+  await wait(c, `document.querySelector('.goal-card .gval')?.textContent === '7'`);
+  assert.equal(await dom(c, `window.__stateProbe.frames.length`), await dom(c, `window.__stateProbe.framesBefore`));
+  assert.equal((await f.ok('POST', endpoint, { value: 9 })).value, 9);
+  await wait(c, `window.__stateProbe.frames.some(w => w.goals?.some(g => g.id === 'preserve' && g.bars[0].value === 9)) && document.querySelector('.goal-card .gval')?.textContent === '9'`);
+  assert.equal((await f.ok('GET', '/api/widgets')).goals.find(g => g.id === goal.id).bars[0].value, 9);
+});
 
 test('S2/S3/S6/S9: delayed save stays on its id, preserves newer edit and external sibling', { timeout: 90000 }, async t => {
   const f = await fixture(t); const { a, b, initial } = await seeded(f); const c = await f.open();

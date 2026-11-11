@@ -52,6 +52,9 @@ class Live {
    *  añadir una barra a un objetivo en el panel) es más nueva que cualquier snapshot de
    *  /api/state pedido antes, así que ese snapshot no debe revertirla al aplicarse. */
   private cfgTouch = 0;
+  /** The widgets event replaces every widget field except the panel's separate chat window.
+   *  Only that full event advances this epoch; chat-only updates must not hide a fresh snapshot. */
+  private widgetsTouch = 0;
   /** Same epoch for the slices that arrive whole (POST replies and SSE events): a script
    *  picked in the teleprompter while the SSE 'open' snapshot is in flight is newer than
    *  that snapshot, which must not bring the previous script back. */
@@ -119,6 +122,7 @@ class Live {
     // esta carga (ediciones optimistas o un evento 'config' más nuevo), el snapshot llegó
     // a ser viejo y no debe pisarla.
     const cfgAtStart = this.cfgTouch;
+    const widgetsAtStart = this.widgetsTouch;
     const touchedAtStart = { ...this.touched };
     const statusAtStart = { ...this.statusTouched };
     // ids que llegan por SSE mientras ESTA petición está en curso: cada carga concurrente
@@ -143,13 +147,16 @@ class Live {
       // intermitente de goals-browser en CI: el bloque Goals volvía a 2 barras).
       const config = this.cfgTouch === cfgAtStart ? snap.config : (this.state?.config ?? snap.config);
       const prev = this.state;
+      // A full widgets event received during this load is newer than its HTTP snapshot.
+      // Keep that event's non-chat fields; the panel chat is still merged separately below.
+      const widgets = prev && this.widgetsTouch !== widgetsAtStart ? prev.widgets : snap.widgets;
       const kept: Partial<AppState> = prev ? Object.fromEntries(WHOLE.filter(k => this.touched[k] !== touchedAtStart[k]).map(k => [k, prev[k]])) : {};
       // meld: only the session arrives by SSE; the rest (commands, events) comes from the snapshot.
       if (prev && this.touched.meld !== touchedAtStart.meld) kept.meld = { ...snap.meld, session: prev.meld?.session };
       // status: keep only the fields received during the flight; the rest comes from the snapshot.
       const newer = Object.keys(this.statusTouched).filter(k => this.statusTouched[k] !== statusAtStart[k]);
       if (prev?.status && newer.length) kept.status = { ...snap.status, ...Object.fromEntries(newer.map(k => [k, prev.status[k as keyof AppState['status']]])) };
-      this.state = protectDrafts({ ...snap, ...kept, config, widgets: { ...snap.widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } });
+      this.state = protectDrafts({ ...snap, ...kept, config, widgets: { ...widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } });
     } finally { this.inflightChat.delete(inFlight); this.inflightRemoved.delete(removed); }
     try {
       const tl = await api<Timeline>('GET', '/api/timeline');
@@ -234,7 +241,10 @@ class Live {
     // El evento 'widgets' trae la ventana corta del overlay (50): el panel conserva SU
     // lista de chat (tope 200, #48) y del evento solo toma lo demás. Los borrados y las
     // limpiezas llegan por chatDelete/chatClear y el snapshot de load() manda al reconectar.
-    on('widgets', w => this.update(s => ({ widgets: { ...w, chat: s.widgets?.chat ?? w.chat } })));
+    on('widgets', w => {
+      this.widgetsTouch++;
+      this.update(s => ({ widgets: { ...w, chat: s.widgets?.chat ?? w.chat } }));
+    });
     on('chat', m => {
       for (const ids of this.inflightChat) ids.add(m.id);
       this.update(s => ({ widgets: { ...s.widgets, chat: s.widgets?.chat?.some(x => x.id === m.id) ? s.widgets.chat : [...(s.widgets?.chat || []), m].slice(-200) } }));
