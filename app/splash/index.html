@@ -27,12 +27,20 @@
   <div class="bar" aria-hidden="true"><i></i></div>
   <div id="err" role="alert"></div>
 <script>
-  // La app llama a esto si el servidor no arranca.
   window.egdevError = (msg) => {
     document.body.dataset.error = '1';
     document.getElementById('msg').textContent = 'No se ha podido arrancar el servidor.';
     document.getElementById('err').textContent = msg;
   };
+  // The state survives a delayed splash load; retry until IPC and the startup result exist.
+  async function checkStartup() {
+    try {
+      const error = await window.__TAURI__.core.invoke('startup_state');
+      if (error) { window.egdevError(error); return; }
+    } catch { /* IPC may not be ready yet. */ }
+    setTimeout(checkStartup, 250);
+  }
+  checkStartup();
 </script>
 </body>
 </html>

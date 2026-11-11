@@ -35,7 +35,7 @@ commands.allow = ["close_panel_window"]
 [[permission]]
 identifier = "allow-desktop-info"
 description = "Permite a la interfaz leer el puerto, la carpeta de datos y la versión de la app."
-commands.allow = ["desktop_info"]
+commands.allow = ["desktop_info", "startup_state"]
 
 [[permission]]
 identifier = "allow-update-check"

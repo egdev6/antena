@@ -95,7 +95,7 @@ pnpm desktop:build   # instalador en src-tauri/target/release/bundle/nsis
 La app arranca el servidor en `http://127.0.0.1:4500`, abre el panel y deja un icono en la bandeja. **Cerrar la ventana la deja en la bandeja**: las fuentes de Meld y el Stream Deck siguen funcionando. Para apagarlo todo, «Salir» en el menú de la bandeja (guarda y cierra el servidor con orden).
 
 - Los datos de la app instalada van en `%APPDATA%\es.egdev.antena\data` y `…\media`. Para seguir usando los de la carpeta del proyecto, copia `data/` y `media/` allí, o arranca con `ANTENA_DATA` y `ANTENA_MEDIA` apuntando a ellas. En `desktop:dev` se usan los del proyecto.
-- Si ya hay un antena escuchando en el puerto (por ejemplo, con `pnpm start`), la app usa ese y no arranca otro.
+- Si ya hay un antena escuchando en el puerto con la misma carpeta de datos, la app lo reutiliza. En otro caso no se conecta y te pide que cierres el servidor que ocupa el puerto. Cada carpeta de datos tiene una identidad aleatoria ligada a su ruta real en `instance.json`; una copia recibe otra identidad y la API de estado no expone la ruta.
 - Otro puerto: `"port"` en el `config.json` de la carpeta de datos que se use, o la variable `ANTENA_PORT`.
 
 ### Solo el servidor (sin app)
