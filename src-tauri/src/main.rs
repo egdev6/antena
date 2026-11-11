@@ -53,14 +53,28 @@ struct StartupState {
     ready: bool,
     conflict: bool,
     error: Option<String>,
+    waiters: Vec<tauri::async_runtime::Sender<Result<(), String>>>,
 }
 
 impl StartupState {
+    fn wait(&mut self) -> Result<Option<tauri::async_runtime::Receiver<Result<(), String>>>, String> {
+        if self.can_open() { return Ok(None); }
+        if let Some(error) = &self.error { return Err(error.clone()); }
+        let (sender, receiver) = tauri::async_runtime::channel(1);
+        self.waiters.push(sender);
+        Ok(Some(receiver))
+    }
+    fn signal(&mut self, result: Result<(), String>) {
+        for sender in self.waiters.drain(..) { let _ = sender.try_send(result.clone()); }
+    }
+    fn signal_ready(&mut self) { self.ready = true; self.signal(Ok(())); }
     fn can_open(&self) -> bool { self.ready && !self.conflict }
     fn conflict(&mut self, port: u16) {
         self.ready = false;
         self.conflict = true;
-        self.error = Some(conflict_message(port));
+        let message = conflict_message(port);
+        self.error = Some(message.clone());
+        self.signal(Err(message));
     }
 }
 
@@ -96,9 +110,25 @@ fn status_probe(port: u16, data: &Path, keep_open: bool) -> (Decision, Option<Tc
     }
 }
 
+fn retry_verification<T>(mut attempt: impl FnMut() -> Option<T>, mut again: impl FnMut() -> bool) -> Option<T> {
+    loop {
+        if let Some(value) = attempt() { return Some(value); }
+        if !again() { return None; }
+    }
+}
+
 // Verify and send on the same connection, so a replacement listener cannot receive shutdown.
 fn shutdown_if_matching(port: u16, data: &Path) -> bool {
-    let (Decision::Reuse, Some(mut stream)) = status_probe(port, data, true) else { return false };
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let Some(mut stream) = retry_verification(
+        || match status_probe(port, data, true) { (Decision::Reuse, Some(stream)) => Some(stream), _ => None },
+        || {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else { return false };
+            if remaining.is_zero() { return false; }
+            std::thread::sleep(remaining.min(Duration::from_millis(100)));
+            Instant::now() < deadline
+        },
+    ) else { return false };
     if stream.set_write_timeout(Some(Duration::from_secs(2))).is_err() { return false; }
     let request = format!("POST /api/shutdown HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}");
     if stream.write_all(request.as_bytes()).is_err() { return false; }
@@ -236,6 +266,7 @@ fn splash_error(app: &AppHandle, msg: &str) {
         let mut startup = st.startup.lock().unwrap();
         let message = if startup.conflict { conflict_message(st.port) } else { msg.to_owned() };
         startup.error = Some(message.clone());
+        startup.signal(Err(message.clone()));
         message
     };
     if let Some(w) = app.get_webview_window("main") {
@@ -264,6 +295,18 @@ fn server_ready(app: &AppHandle) -> bool {
     if conflict { splash_error(app, &conflict_message(st.port)); }
     show_main(app);
     false
+}
+
+fn wait_for_server(app: &AppHandle) -> Result<Option<tauri::async_runtime::Receiver<Result<(), String>>>, String> {
+    let st = app.state::<Server>();
+    let receiver = st.startup.lock().unwrap().wait()?;
+    if receiver.is_some() { show_main(app); }
+    Ok(receiver)
+}
+
+async fn run_when_ready<F: std::future::Future<Output = Result<(), String>>>(receiver: Option<tauri::async_runtime::Receiver<Result<(), String>>>, action: F) -> Result<(), String> {
+    if let Some(mut receiver) = receiver { receiver.recv().await.unwrap_or_else(|| Err("No se pudo abrir la ventana.".into()))?; }
+    action.await
 }
 
 // ---------- arranque del servidor ----------
@@ -358,7 +401,7 @@ fn wait_and_open(app: AppHandle) {
                 {
                     let mut startup = st.startup.lock().unwrap();
                     if startup.conflict { return; }
-                    startup.ready = true;
+                    startup.signal_ready();
                 }
                 if let (Some(w), Ok(url)) = (app.get_webview_window("main"), Url::parse(&format!("{}/", base_url(port)))) {
                     let _ = w.navigate(url);
@@ -549,7 +592,7 @@ fn close_panel_window(app: AppHandle, label: String) -> Result<(), String> {
 /// Abre el prompter. Si hay una pantalla de 1024×600 (el Elgato) o se elige una, va a pantalla completa en ella.
 #[tauri::command]
 async fn open_prompter(app: AppHandle, monitor: Option<String>, fullscreen: Option<bool>) -> Result<(), String> {
-    if !server_ready(&app) { return Ok(()); }
+    run_when_ready(wait_for_server(&app)?, async {
     let list = monitor_list(&app);
     let target = match monitor.as_deref().filter(|m| !m.is_empty()) {
         Some(name) => list.iter().find(|(i, _)| i.name == name),
@@ -577,6 +620,7 @@ async fn open_prompter(app: AppHandle, monitor: Option<String>, fullscreen: Opti
     focus(&w);
     notify_panel_windows(&app);
     Ok(())
+    }).await
 }
 
 /// Teleprompter: el guion a pantalla completa en el monitor de la cámara. Sin pantalla
@@ -584,7 +628,7 @@ async fn open_prompter(app: AppHandle, monitor: Option<String>, fullscreen: Opti
 /// La página no usa IPC: su ventana no está en la capability `default`.
 #[tauri::command]
 async fn open_teleprompter(app: AppHandle, monitor: Option<String>, fullscreen: Option<bool>) -> Result<(), String> {
-    if !server_ready(&app) { return Ok(()); }
+    run_when_ready(wait_for_server(&app)?, async {
     let list = monitor_list(&app);
     let target = match monitor.as_deref().filter(|m| !m.is_empty()) {
         Some(name) => list.iter().find(|(i, _)| i.name == name),
@@ -612,12 +656,13 @@ async fn open_teleprompter(app: AppHandle, monitor: Option<String>, fullscreen: 
     focus(&w);
     notify_panel_windows(&app);
     Ok(())
+    }).await
 }
 
 /// Dock flotante: la misma vista que el panel de chat de Meld, en una ventana pequeña siempre encima.
 #[tauri::command]
 async fn open_dock(app: AppHandle, always_on_top: Option<bool>) -> Result<(), String> {
-    if !server_ready(&app) { return Ok(()); }
+    run_when_ready(wait_for_server(&app)?, async {
     let w = match app.get_webview_window("dock") {
         Some(w) => w,
         None => window_builder(&app, "dock", WebviewUrl::External(page_url(&app, "/dock")?))
@@ -631,6 +676,7 @@ async fn open_dock(app: AppHandle, always_on_top: Option<bool>) -> Result<(), St
     focus(&w);
     notify_panel_windows(&app);
     Ok(())
+    }).await
 }
 
 #[derive(Serialize)]
@@ -836,6 +882,38 @@ mod tests {
 
     fn p(s: &str) -> PathBuf {
         PathBuf::from(s)
+    }
+
+    #[test]
+    fn deferred_open_requests_execute_with_original_args_or_fail_on_conflict() {
+        tauri::async_runtime::block_on(async {
+            for request in [("prompter", Some("camera"), Some(false)), ("teleprompter", Some("screen"), Some(true)), ("dock", None, Some(false))] {
+                let mut state = StartupState::default();
+                let mut receiver = state.wait().unwrap().expect("pending commands must wait");
+                assert!(receiver.try_recv().is_err());
+                let mut executed = None;
+                let action = async { executed = Some(request); Ok(()) };
+                state.signal_ready();
+                run_when_ready(Some(receiver), action).await.unwrap();
+                assert_eq!(executed, Some(request));
+                assert!(state.wait().unwrap().is_none());
+            }
+            let mut conflict = StartupState::default();
+            let receiver = conflict.wait().unwrap().expect("pending command must wait");
+            let mut executed = false;
+            let action = async { executed = true; Ok(()) };
+            conflict.conflict(4500);
+            assert_eq!(run_when_ready(Some(receiver), action).await, Err(conflict_message(4500)));
+            assert!(!executed);
+        });
+    }
+
+    #[test]
+    fn shutdown_verification_retries_before_sending() {
+        let mut attempts = [None, None, Some("shutdown")].into_iter();
+        let mut count = 0;
+        assert_eq!(retry_verification(|| { count += 1; attempts.next().unwrap() }, || true), Some("shutdown"));
+        assert_eq!(count, 3);
     }
 
     #[test]

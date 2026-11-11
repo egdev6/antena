@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 
 async function fixture(t, initial) {
   const root = await mkdtemp(path.join(tmpdir(), 'antena-instance-'));
@@ -131,6 +132,38 @@ test('concurrent processes agree on one complete identity', { timeout: 30000 }, 
         }
         await Promise.allSettled(children.map(({ done }) => done));
       }
+    });
+  }
+});
+
+test('unsupported hard links still publish one identity across processes', { timeout: 60000 }, async t => {
+  for (const code of ['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV', 'ENOSYS']) {
+    await t.test(code, async t => {
+      const { dataDir, file } = await fixture(t);
+      const moduleUrl = new URL('../src/instance-id.mjs', import.meta.url).href;
+      const program = `
+        import fs from 'node:fs';
+        import { syncBuiltinESMExports } from 'node:module';
+        let calls = 0;
+        fs.promises.link = async () => { calls++; throw Object.assign(new Error('unsupported'), { code: process.argv[2] }); };
+        syncBuiltinESMExports();
+        const { instanceId } = await import(${JSON.stringify(moduleUrl)});
+        const id = await instanceId(process.argv[1]);
+        console.log(JSON.stringify({ id, calls }));
+      `;
+      const run = async () => {
+        const child = spawn(process.execPath, ['--input-type=module', '-e', program, dataDir, code], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+        let stdout = '', stderr = '';
+        child.stdout.on('data', d => { stdout += d; }); child.stderr.on('data', d => { stderr += d; });
+        const [exit, signal] = await once(child, 'close');
+        assert.equal(exit, 0, stderr); assert.equal(signal, null); assert.equal(stderr, '');
+        return JSON.parse(stdout);
+      };
+      const results = await Promise.allSettled(Array.from({ length: 4 }, run));
+      const ids = results.map(result => { if (result.status === 'rejected') throw result.reason; return result.value.id; });
+      assert.ok(results.some(result => result.status === 'fulfilled' && result.value.calls > 0));
+      const record = JSON.parse(await readFile(file, 'utf8')); validRecord(record, dataDir);
+      assert.deepEqual([...new Set(ids)], [record.id]);
     });
   }
 });

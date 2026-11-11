@@ -31,7 +31,21 @@ async function publishExclusive(file, record) {
   try {
     await writeJson(candidate, record);
     try { await link(candidate, file); return true; }
-    catch (err) { if (err.code === 'EEXIST') return false; throw err; }
+    catch (err) {
+      if (err.code === 'EEXIST') return false;
+      if (!['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV', 'ENOSYS'].includes(err.code)) throw err;
+      if (file.endsWith('.repair.lock')) {
+        try { fs.mkdirSync(file); } catch (e) { if (e.code === 'EEXIST') return false; throw e; }
+        try { fs.writeFileSync(path.join(file, 'owner.json'), JSON.stringify(record), { flag: 'wx', mode: 0o600 }); }
+        catch (e) { fs.rmdirSync(file); throw e; }
+        return true;
+      }
+      return await withRepairLock(file, async (lock, token) => {
+        if (!(await readRecord(file, record.directory)).missing || !ownsLock(lock, token)) return false;
+        fs.renameSync(candidate, file);
+        return true;
+      });
+    }
   } finally {
     await unlink(candidate).catch(err => { if (err.code !== 'ENOENT') throw err; });
   }
@@ -52,18 +66,31 @@ function staleLock(text) {
   } catch { return true; }
 }
 
+function lockFile(lock) { return fs.lstatSync(lock).isDirectory() ? path.join(lock, 'owner.json') : lock; }
+function unlinkLock(lock, file) { fs.unlinkSync(file); if (file !== lock) fs.rmdirSync(lock); }
+
 // Re-read the token and the document immediately before the synchronous file operation.
 function ownsLock(lock, token) {
   try {
-    const text = fs.readFileSync(lock, 'utf8');
+    const text = fs.readFileSync(lockFile(lock), 'utf8');
     return JSON.parse(text).token === token && !staleLock(text);
   } catch (err) { if (err.code === 'ENOENT' || err instanceof SyntaxError) return false; throw err; }
 }
 
 function removeStaleLock(lock) {
   try {
-    const first = fs.readFileSync(lock, 'utf8');
-    if (staleLock(first) && fs.readFileSync(lock, 'utf8') === first) fs.unlinkSync(lock);
+    const file = lockFile(lock);
+    let first;
+    try { first = fs.readFileSync(file, 'utf8'); }
+    catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+      if (file !== lock && Date.now() - fs.statSync(lock).mtimeMs >= LOCK_MAX_AGE_MS) fs.rmdirSync(lock);
+      return;
+    }
+    if (file !== lock) {
+      try { JSON.parse(first); } catch { if (Date.now() - fs.statSync(lock).mtimeMs < LOCK_MAX_AGE_MS) return; }
+    }
+    if (staleLock(first) && fs.readFileSync(file, 'utf8') === first) unlinkLock(lock, file);
   } catch (err) { if (err.code !== 'ENOENT') throw err; }
 }
 
@@ -72,15 +99,22 @@ function removeStaleLock(lock) {
 // reclaimed and move a newly valid identity aside. The file stays valid and consistent, but a
 // server that already reported the previous id no longer matches it, so the desktop app shows a
 // (false) conflict until that server restarts. No data is lost.
-async function quarantineInvalid(file, directory) {
+async function withRepairLock(file, action) {
   const lock = `${file}.repair.lock`;
   const token = randomBytes(16).toString('hex');
-  const record = { pid: process.pid, createdAt: Date.now(), token };
-  if (!(await publishExclusive(lock, record))) {
+  if (!(await publishExclusive(lock, { pid: process.pid, createdAt: Date.now(), token }))) {
     removeStaleLock(lock);
     return false;
   }
-  try {
+  try { return await action(lock, token); }
+  finally {
+    try { if (ownsLock(lock, token)) unlinkLock(lock, lockFile(lock)); }
+    catch (err) { if (err.code !== 'ENOENT') throw err; }
+  }
+}
+
+async function quarantineInvalid(file, directory) {
+  return withRepairLock(file, async (lock, token) => {
     const observed = await readRecord(file, directory);
     if (!observed.invalid || !ownsLock(lock, token)) return true;
     try {
@@ -90,11 +124,8 @@ async function quarantineInvalid(file, directory) {
         fs.renameSync(file, target);
       }
     } catch (err) { if (err.code !== 'ENOENT') throw err; }
-  } finally {
-    try { if (ownsLock(lock, token)) fs.unlinkSync(lock); }
-    catch (err) { if (err.code !== 'ENOENT') throw err; }
-  }
-  return true;
+    return true;
+  });
 }
 
 async function load(dir) {
