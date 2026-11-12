@@ -4,7 +4,7 @@
 // until the next poll replaces it. The last known total and the corrections live in
 // data/channel-totals.json, so a restart or an unreachable platform keeps the last value.
 import { EventEmitter } from 'node:events';
-import { readFile } from 'node:fs/promises';
+import { copyFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { writeJson } from './json-file.mjs';
 
@@ -54,11 +54,25 @@ export class ChannelTotals extends EventEmitter {
     this.errors = {};    // key -> message (memory only)
     this.handle = null; this.initialHandle = null; this.busy = null; this.halted = false;
     this.writing = Promise.resolve();
+    this.lastWriteError = null;
+    this.seen = new Set();
   }
 
   async load() {
-    let raw = null;
-    try { raw = JSON.parse(await readFile(this.file, 'utf8')); } catch { /* first run or unreadable: start empty */ }
+    let raw = null, text = null;
+    try { text = await readFile(this.file, 'utf8'); } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;   // unreadable file: never start empty over it
+    }
+    if (text !== null) {
+      try { raw = JSON.parse(text); } catch { raw = null; }
+      if (!raw || typeof raw !== 'object') {
+        // Corrupt file: keep a copy before any later write replaces it (corrections are not rebuildable)
+        const backup = `${this.file}.corrupt-${new Date(this.now()).toISOString().replace(/[:.]/g, '-')}`;
+        await copyFile(this.file, backup);
+        this.log(`[totales] ${TOTAL_FILE} no es JSON válido; copia guardada en ${path.basename(backup)}`);
+        raw = null;
+      }
+    }
     for (const key of TOTAL_KEYS) {
       const t = raw?.totals?.[key];
       if (t && finite(t.value)) this.totals[key] = { value: t.value, at: t.at || null, live: finite(t.live) ? t.live : 0 };
@@ -73,14 +87,15 @@ export class ChannelTotals extends EventEmitter {
     if (!t?.userId || !t.token) return null;
     const r = await t.helix('GET', `${endpoint}?broadcaster_id=${encodeURIComponent(t.userId)}&first=1`);
     if (!r.ok) throw new Error(`Twitch respondió ${r.status} al leer ${endpoint === '/subscriptions' ? 'las suscripciones' : 'los seguidores'}`);
-    const total = Number(r.data?.total);
-    if (!Number.isFinite(total)) throw new Error('Twitch no devolvió el total');
+    const total = r.data?.total;
+    if (typeof total !== 'number' || !Number.isFinite(total) || total < 0) throw new Error('Twitch no devolvió el total');
     return total;
   }
 
   async readYouTube() {
     const y = this.youtube;
     const channelId = y?.cfg?.channelId;
+    if (!y?.cfg?.apiKey && !y?.token?.access) return null;   // no credentials: not an error
     let d;
     if (channelId) d = await y.api('/channels', { part: 'statistics', id: channelId });
     else if (y?.token?.access) d = await y.api('/channels', { part: 'statistics', mine: 'true' }, { auth: true });
@@ -88,7 +103,8 @@ export class ChannelTotals extends EventEmitter {
     const st = d?.items?.[0]?.statistics;
     if (!st) throw new Error('YouTube no encontró el canal');
     if (st.hiddenSubscriberCount) throw new Error('El canal tiene oculto el número de suscriptores');
-    const total = Number(st.subscriberCount);
+    const raw = st.subscriberCount;
+    const total = (typeof raw === 'string' && /^\d+$/.test(raw)) || (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) ? Number(raw) : NaN;
     if (!Number.isFinite(total)) throw new Error('YouTube no devolvió el número de suscriptores');
     return total;
   }
@@ -113,7 +129,14 @@ export class ChannelTotals extends EventEmitter {
     this.changed();
   }
 
+  /** Live platform event ({externalId?, type, vars}); redeliveries with the same externalId count once. */
   onEvent(alert) {
+    const id = alert?.externalId;
+    if (id) {
+      if (this.seen.has(id)) return;
+      this.seen.add(id);
+      if (this.seen.size > 1000) this.seen.delete(this.seen.values().next().value);
+    }
     let touched = false;
     for (const key of TOTAL_KEYS) {
       const d = liveDelta(key, alert);
@@ -133,24 +156,30 @@ export class ChannelTotals extends EventEmitter {
   poll(keys = TOTAL_KEYS) {
     if (this.halted) return Promise.resolve();
     const run = async () => {
-      let dirty = false;
+      if (this.halted) return;   // queued before halt: never reads after shutdown began
+      let dirty = false, errorsChanged = false;
       await Promise.all(keys.map(async key => {
         const reader = this.readers[key];
         if (!reader) return;
+        // live events that arrive while this read is in flight are kept on top of its result
+        const liveAtStart = this.totals[key]?.live || 0;
         let total, error = null;
         try { total = await reader(); } catch (err) { error = err?.message || String(err); }
         if (this.halted) return;
         if (error) {
-          if (this.errors[key] !== error) { this.errors[key] = error; dirty = true; this.log(`[totales] ${key}: ${error}`); }
+          if (this.errors[key] !== error) { this.errors[key] = error; errorsChanged = true; this.log(`[totales] ${key}: ${error}`); }
           return;
         }
-        if (this.errors[key]) { delete this.errors[key]; dirty = true; }
+        if (this.errors[key]) { delete this.errors[key]; errorsChanged = true; }
         if (total === null || total === undefined) return;   // no credentials: keep the last value
         const prev = this.totals[key];
-        if (!prev || prev.value !== total || prev.live !== 0) dirty = true;
-        this.totals[key] = { value: total, at: new Date(this.now()).toISOString(), live: 0 };
+        const live = Math.max(0, (prev?.live || 0) - liveAtStart);
+        if (!prev || prev.value !== total || prev.live !== live) dirty = true;
+        this.totals[key] = { value: total, at: new Date(this.now()).toISOString(), live };
       }));
+      // errors live in memory only: they refresh the panel but never rewrite the file
       if (dirty) this.changed();
+      else if (errorsChanged) this.emit('change', this.snapshot());
     };
     // one poll at a time; a request during a poll runs right after it
     const next = (this.busy || Promise.resolve()).then(run, run);
@@ -182,10 +211,14 @@ export class ChannelTotals extends EventEmitter {
   // ---------- persistence ----------
   changed() {
     const data = { version: 1, totals: this.totals, offsets: this.offsets };
-    this.writing = this.writing.then(() => writeJson(this.file, data)).catch(err => this.log(`[totales] no se pudo guardar: ${err.message}`));
+    this.writing = this.writing.then(() => writeJson(this.file, data)).then(
+      () => { this.lastWriteError = null; },
+      err => { this.lastWriteError = err; this.log(`[totales] no se pudo guardar: ${err.message}`); });
     this.emit('change', this.snapshot());
   }
 
   /** Waits for pending writes (tests and shutdown). */
-  flush() { return this.writing; }
+  flush() {
+    return this.writing.then(() => { if (this.lastWriteError) throw this.lastWriteError; });
+  }
 }

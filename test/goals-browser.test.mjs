@@ -59,7 +59,8 @@ test('overlay goal.html: caja con dos barras, progreso, visibilidad de caja/barr
     }];
     for (const ev of [{ type: 'follow', vars: {} }, { type: 'follow', vars: {} }, { type: 'follow', vars: {} }, { type: 'follow', vars: {} },
       { type: 'superchat', vars: { amount: 4 } }]) {
-      app.engine.handleEvent({ externalId: 'sim:' + Math.random(), type: ev.type, vars: { ...ev.vars, user: 'Sintético' } });
+      // real platform path (#132: channel totals move only with real platform events)
+      (ev.type === 'superchat' ? app.youtube : app.twitch).emit('event', { externalId: 'sim:' + Math.random(), type: ev.type, vars: { ...ev.vars, user: 'Sintético' } });
     }
     await sleep(50);   // los eventos llegan al widget por SSE
 

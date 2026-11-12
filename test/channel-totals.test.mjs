@@ -244,3 +244,16 @@ test('S8: goal set route on a total bar returns 409 before the first read, then 
   assert.deepEqual(await call('POST', '/api/goals/g/bars/g-1/add', { amount: -1 }), { id: 'g', barId: 'g-1', value: 588, target: 1000 });
   assert.deepEqual(await call('POST', '/api/goals/g/bars/g-1/set', { value: 600 }), { id: 'g', barId: 'g-1', value: 600, target: 1000 });
 });
+
+test('S1/S7: a corrupt totals file is copied aside before anything can replace it', async () => {
+  const dir = await tmp();
+  const body = '{"version":1,"offsets":{"subs@twitch":-1';
+  await writeFile(path.join(dir, TOTAL_FILE), body);
+  const t = await make(dir, { 'subs@twitch': 5 });
+  const { readdir } = await import('node:fs/promises');
+  const copies = (await readdir(dir)).filter(f => f.startsWith(`${TOTAL_FILE}.corrupt-`));
+  assert.equal(copies.length, 1);
+  assert.equal(await readFile(path.join(dir, copies[0]), 'utf8'), body);
+  await t.poll(); await t.flush();
+  assert.equal(t.value('subs@twitch'), 5);
+});

@@ -219,14 +219,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   for (const src of [twitch, youtube, chat, meld]) src.on('status', pushStatus);
 
   // eventos de plataforma → motor
+  // #132: el total del canal se complementa con el evento real de la plataforma, aunque su
+  // alerta esté desactivada o el usuario filtrado (es el número real del canal)
+  twitch.on('event', e => channelTotals.onEvent(e));
   twitch.on('event', e => engine.handleEvent(e));
   youtube.on('event', e => engine.handleEvent(e));
   chat.on('delete', ({ id }) => engine.deleteChat(id));
   chat.on('clearUser', ({ login }) => engine.clearChatUser(login));
-  session.on('change', change => {
-    if (change?.event) channelTotals.onEvent(change.event);   // complementa el total entre lecturas
-    engine.pushWidgets(); pushTimeline();
-  });
+  session.on('change', () => { engine.pushWidgets(); pushTimeline(); });
   channelTotals.on('change', () => { engine.pushWidgets(); pushStatus(); });
   // #132: se relee el total al (re)conectar cada plataforma, no en cada cambio de estado
   let twitchState = twitch.status.state, youtubeState = youtube.status.state, youtubeAccount = youtube.status.account;
@@ -1529,8 +1529,9 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
         try { queued = app.store.chain; } catch { queued = Promise.reject(new Error('Store unavailable')); }
         const sessionFlush = () => Promise.resolve().then(() => app.session.flush());
         const interactiveFlush = () => Promise.resolve().then(() => app.interactive.flush());
+        const totalsFlush = () => Promise.resolve().then(() => app.channelTotals.flush());   // #132: correcciones y último total
         // Start all independent attempts NOW: a failed/hung journal never gates either flush.
-        Promise.allSettled([journal, queued, sessionFlush(), interactiveFlush()]).then(results => {
+        Promise.allSettled([journal, queued, sessionFlush(), interactiveFlush(), totalsFlush()]).then(results => {
           let code = engineFailed || heldFailed || results.some(r => r.status === 'rejected') || unsaved() ? 1 : 0;
           // La persistencia ya está decidida; ahora sí, con el deadline todavía ACTIVO, se cierra el
           // transporte HTTP real. Un cierre HTTP fallido o colgado también sale 1.
