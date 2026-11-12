@@ -33,7 +33,8 @@ test('alertas: la miniatura es el overlay real y sigue a Apariencia y a la confi
     chrome = await openChromePage(bin, `${base}/#/alertas`);
     const c = chrome.cdp;
     await c.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-    await waitDom(c, `document.querySelectorAll('.lv-card .lv-still iframe').length === 14`, { timeoutMs: 15000 });
+    await waitDom(c, `document.querySelectorAll('.lv-card .lv-still iframe').length === 15`, { timeoutMs: 15000 });
+    await waitDom(c, inFrame('ytsub', `!!d.querySelector('.alert.on .alert-name')?.textContent`), { timeoutMs: 15000 });
     await waitDom(c, inFrame('follow', `!!d.querySelector('.alert.on .alert-name')?.textContent`), { timeoutMs: 15000 });
     // quieta: sin conexión en directo ni sonido; la tarjeta se queda
     assert.equal(await evaluateChrome(c, inFrame('follow', `d.body.classList.contains('still')`)), true);

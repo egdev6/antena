@@ -9,6 +9,7 @@ export const ALERT_TYPES = {
   cheer:       { platform: 'twitch',  icon: 'gem',     label: 'Bits' },
   raid:        { platform: 'twitch',  icon: 'rocket',  label: 'Raid' },
   redemption:  { platform: 'twitch',  icon: 'spark',   label: 'Recompensa' },
+  ytsub:       { platform: 'youtube', icon: 'heart',   label: 'Nuevo suscriptor' },
   superchat:   { platform: 'youtube', icon: 'coin',    label: 'Super Chat' },
   supersticker:{ platform: 'youtube', icon: 'coin',    label: 'Super Sticker' },
   member:      { platform: 'youtube', icon: 'badge',   label: 'Nuevo miembro' },
@@ -22,6 +23,18 @@ export const ALERT_TYPES = {
 
 /** ¿Es una alerta del propio directo (récords…) y no de una persona? */
 export const isSystemType = type => !!ALERT_TYPES[type]?.system;
+
+/** Only Google YouTube image CDN URLs may leave the subscriber reader as avatars. */
+export function youtubeAvatarUrl(value) {
+  if (typeof value !== 'string' || !/^https:\/\//i.test(value) || /[\u0000-\u0020\u007f]/.test(value)) return null;
+  const authority = value.slice(8).split(/[/?#]/, 1)[0];
+  if (authority.includes('@') || authority.includes('\\')) return null;
+  try {
+    const url = new URL(value), host = url.hostname.toLowerCase();
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+    return ['ggpht.com', 'googleusercontent.com'].some(domain => host === domain || host.endsWith('.' + domain)) ? value : null;
+  } catch { return null; }
+}
 
 export const COMMAND_META = { platform: 'chat', icon: 'spark', label: 'Comando de chat' };
 
@@ -77,6 +90,7 @@ export const DEFAULT_ALERTS = {
   cheer:       { ...base, title: 'Bits',                text: '{user}', sub: '{amount} bits · {message}', minAmount: 1, ttsTemplate: '{user} dice: {message}' },
   raid:        { ...base, title: 'Raid',                text: '{user}', sub: 'llega con {amount} personas', durationMs: 8000 },
   redemption:  { ...base, title: 'Recompensa',          text: '{user}', sub: '{reward} · {input}', ttsTemplate: '{user}: {input}' },
+  ytsub:       { ...base, title: 'Nuevo suscriptor',   text: '{user}', sub: 'se suscribe al canal' },
   superchat:   { ...base, title: 'Super Chat',          text: '{user}', sub: '{amountText} · {message}', durationMs: 8000 },
   supersticker:{ ...base, title: 'Super Sticker',       text: '{user}', sub: '{amountText}' },
   member:      { ...base, title: 'Nuevo miembro',       text: '{user}', sub: 'se une como {level}' },
@@ -103,6 +117,7 @@ export const SAMPLES = {
   cheer:       { user: 'reactivo', amount: 500, message: 'eso del stream de anoche me ha volado la cabeza' },
   raid:        { user: 'midudev', amount: 120 },
   redemption:  { user: 'lucia_codes', reward: 'Revisa mi repo', input: 'github.com/lucia/portfolio' },
+  ytsub:       { user: 'María Dev' },
   superchat:   { user: 'Carlos Ruiz', amount: 5, amountText: '5,00 €', message: '¡Gracias por los directos!' },
   supersticker:{ user: 'Marta G.', amount: 2, amountText: '2,00 €' },
   member:      { user: 'Javi Dev', level: 'Miembro EGDEV' },
@@ -172,6 +187,11 @@ export function alertConfig(type, config, variation = null) {
 export function buildAlert(type, vars, config, { test = false, variationId = null, rnd } = {}) {
   const meta = ALERT_TYPES[type];
   if (!meta) return null;
+  // All ytsub entry points, including preview and simulation, share this boundary.
+  if (type === 'ytsub' && 'avatar' in vars && !youtubeAvatarUrl(vars.avatar)) {
+    const { avatar: _avatar, ...safeVars } = vars;
+    vars = safeVars;
+  }
   const baseCfg = alertConfig(type, config);
   if (!baseCfg.enabled && !test) return null;
   const amount = Number(vars.amount ?? 0);

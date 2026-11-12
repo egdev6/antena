@@ -170,6 +170,7 @@ export const CONFIG_SCHEMA = {
   youtube: {
     apiKey: str, channelId: str, video: str,
     pollSeconds: num({ int: true, min: 5, max: 60 }),   // la UI ya acota 5–60
+    subscriberPollSeconds: num({ int: true, min: 0 }),  // 0 disables; positive values clamp to 60 s
     clientId: str, clientSecret: str, apiKeySet: bool, clientSecretSet: bool,
   },
   chat: { twitchChannel: str, sendTo: en(['twitch', 'youtube', 'both']) },
@@ -190,7 +191,7 @@ export const CONFIG_SCHEMA = {
   panel: { onboardingDone: bool },   // bienvenida del panel vista (relanzable desde General)
   access: { lan: bool, key: str },
   sessions: { retention: num({ int: true, min: 0, max: 1000 }) },
-  alerts: Object.fromEntries(Object.keys(DEFAULT_ALERTS).map(k => [k, alertaItem])),   // #118: las 12 alertas conocidas; claves nuevas se aceptan con aviso
+  alerts: Object.fromEntries(Object.keys(DEFAULT_ALERTS).map(k => [k, alertaItem])),   // #118: known alerts; new keys are accepted with a warning
   commands: list(COMANDO_ITEM),
   timers: list(TIMER_ITEM),
   interactive: {

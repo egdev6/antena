@@ -80,6 +80,7 @@ body.debug{background:#1b1d22 url('data:image/svg+xml;utf8,<svg xmlns="http://ww
 .tile .emoji{font-size:calc(var(--icon-size) * .9);line-height:1;filter:drop-shadow(0 4px 10px rgba(0,0,0,.5))}
 .tile img.pic{width:calc(var(--icon-size) * 1.2);height:calc(var(--icon-size) * 1.2);object-fit:contain}
 .tile svg.logo{stroke:none;width:calc(var(--icon-size) * 1.15);height:calc(var(--icon-size) * 1.15);filter:drop-shadow(0 4px 10px rgba(0,0,0,.55))}
+.ytsub-avatar{display:block;flex:none;width:96px;height:96px;border-radius:50%;object-fit:cover}
 
 .txt{flex:1;min-width:0}
 .alert-card .alert-title{display:flex;align-items:center;gap:12px;font:700 var(--title-size)/1 var(--font-title);letter-spacing:.2em;
@@ -115,6 +116,8 @@ body.debug{background:#1b1d22 url('data:image/svg+xml;utf8,<svg xmlns="http://ww
   text-shadow:0 0 .3em color-mix(in srgb,var(--accent) calc(60% * var(--glow,1)),transparent),0 .05em .08em rgba(0,0,0,.6)}
 .alert-media-layout .alert-sub{font:600 .44em/1.25 var(--f-body);margin-top:.25em;-webkit-text-stroke:.07em #000}
 .alert-media-layout .alert-sub b{color:var(--ink);text-shadow:0 0 .4em color-mix(in srgb,var(--accent) calc(80% * var(--glow,1)),transparent)}
+.alert-media-layout .ytsub-avatar{display:inline-block;width:1.2em;height:1.2em;margin-bottom:.15em}
+.ytsub-avatar[hidden]{display:none}
 .alert-media-layout .alert-text.show{animation:textin .55s cubic-bezier(.2,1.35,.4,1) forwards}
 @keyframes textin{from{opacity:0;transform:translate(-50%,calc(-50% + .35em)) scale(.92)}to{opacity:1;transform:translate(-50%,-50%)}}
 
@@ -260,6 +263,31 @@ function fit(el) {
   while (el.scrollWidth > el.clientWidth && size > 40) { size -= 3; el.style.setProperty('--name-fit', size + 'px'); }
 }
 
+// Keep this guard in step with youtubeAvatarUrl in src/alerts.mjs. Preview and
+// retained alerts can reach the overlay without passing through the reader.
+function youtubeAvatarUrl(value) {
+  if (typeof value !== 'string' || !/^https:\/\//i.test(value) || /[\u0000-\u0020\u007f]/.test(value)) return null;
+  const authority = value.slice(8).split(/[/?#]/, 1)[0];
+  if (authority.includes('@') || authority.includes('\\')) return null;
+  try {
+    const url = new URL(value), host = url.hostname.toLowerCase();
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+    return ['ggpht.com', 'googleusercontent.com'].some(domain => host === domain || host.endsWith('.' + domain)) ? value : null;
+  } catch { return null; }
+}
+
+function addSubscriberAvatar(container, a, before) {
+  if (a.type !== 'ytsub') return;
+  const url = youtubeAvatarUrl(a.vars?.avatar);
+  if (!url) return;
+  const image = document.createElement('img');
+  image.className = 'ytsub-avatar'; image.alt = ''; image.referrerPolicy = 'no-referrer'; image.hidden = true;
+  image.onload = () => { if (image.naturalWidth) image.hidden = false; else image.remove(); };
+  image.onerror = () => image.remove();
+  container.insertBefore(image, before);
+  image.src = url;
+}
+
 function fillText(node, a) {
   const t = node.querySelector('.alert-title .t') || node.querySelector('.alert-title');
   t.textContent = a.title;
@@ -276,6 +304,7 @@ function renderCard(a, delayMs = 0) {
   // icono: el del tema para este tipo, o el de serie
   const ico = tileIcon(a);
   if (ico) node.querySelector('.tile').replaceChildren(ico); else node.querySelector('.tile').remove();
+  addSubscriberAvatar(node.querySelector('.card'), a, node.querySelector('.txt'));
   // etiqueta de plataforma: texto, logo o nada (Apariencia)
   const pf = { twitch: 'Twitch', youtube: 'YouTube', chat: 'Chat' }[a.platform];
   const badge = node.querySelector('.pf');
@@ -307,6 +336,7 @@ function renderMedia(a) {
   const text = node.querySelector('.alert-text');
   node.style.setProperty('--text-x', L.textX + '%'); node.style.setProperty('--text-y', L.textY + '%');
   node.style.setProperty('--text-w', L.textWidth + '%'); node.style.setProperty('--text-align', L.textAlign);
+  addSubscriberAvatar(text, a, text.firstChild);
   fillText(node, a);
 
   const src = '/media/' + encodeURIComponent(L.media);

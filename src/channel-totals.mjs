@@ -25,7 +25,8 @@ function liveDelta(key, alert) {
     if (type === 'sub') return 1;
     if (type === 'giftsub') return Number(alert.vars?.amount) || 1;
   }
-  return 0;   // resub does not change the total; YouTube sends no subscription event
+  if (key === 'subscribers@youtube') return type === 'ytsub' ? 1 : 0;
+  return 0;   // resub does not change the total
 }
 
 const finite = v => typeof v === 'number' && Number.isFinite(v);

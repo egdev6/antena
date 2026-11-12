@@ -216,6 +216,7 @@ export interface YoutubeConfig {
   channelId?: string;
   video?: string;
   pollSeconds?: number;
+  subscriberPollSeconds?: number;
   clientId?: string;
   clientSecret?: string;
   [k: string]: unknown;
@@ -271,6 +272,7 @@ export interface Status {
   pause?: PauseState;
   persistence?: PersistenceState;
   channelTotals?: Record<string, { value: number | null; at: string | null; error: string | null }>;
+  followers?: Record<string, { status: string; error: string | null; lastSync: string | null; pending: number }>;
   sessionRecovery?: unknown;
   sessionArchive?: unknown;
   heldRecovery?: unknown;

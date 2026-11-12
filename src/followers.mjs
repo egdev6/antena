@@ -1,11 +1,13 @@
-// Persistent offline/live follower registry. Platform reads never dispatch alerts.
+// Persistent offline/live follower registry; YouTube reads can emit live discoveries.
 import { EventEmitter } from 'node:events';
 import { copyFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { writeJson } from './json-file.mjs';
+import { youtubeAvatarUrl } from './alerts.mjs';
 
 export const FOLLOWERS_FILE = 'followers.json';
 const PLATFORMS = ['twitch', 'youtube'];
+const MAX_TIMER_MS = 2_147_483_647;
 const blank = () => ({ lastSync: null, total: null, totalSource: null, knownIds: [], entries: [], anonymous: [] });
 const validTotal = n => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const lower = name => String(name || '').toLowerCase();
@@ -30,7 +32,7 @@ export class FollowerRegistry extends EventEmitter {
     this.states = Object.fromEntries(PLATFORMS.map(p => [p, { status: 'idle', error: null }]));
     this.readOnly = false; this.loadError = null; this.lastWriteError = null;
     this.writeGen = 0; this.dirty = false; this.writing = Promise.resolve();
-    this.busy = {}; this.halted = false;
+    this.busy = {}; this.halted = false; this.youtubePeriod = null; this.youtubeGeneration = 0;
   }
 
   async load() {
@@ -113,7 +115,8 @@ export class FollowerRegistry extends EventEmitter {
         if (!snippet?.channelId || !snippet?.title || (publishedAt !== null
           && (typeof publishedAt !== 'string' || !Number.isFinite(Date.parse(publishedAt)))))
           throw new Error('YouTube devolvió un suscriptor no válido');
-        items.push({ id: String(snippet.channelId), name: snippet.title, followedAt: publishedAt });
+        const avatar = ['default', 'medium', 'high'].map(size => youtubeAvatarUrl(snippet.thumbnails?.[size]?.url)).find(Boolean);
+        items.push({ id: String(snippet.channelId), name: snippet.title, followedAt: publishedAt, ...(avatar ? { avatar } : {}) });
       }
       cursor = response.nextPageToken;
       if (!cursor) break;
@@ -121,16 +124,20 @@ export class FollowerRegistry extends EventEmitter {
     }
     // The subscriber list belongs to the OAuth account, which may differ from the configured
     // channel used by ChannelTotals. Missing, hidden or invalid statistics cannot imply growth.
-    let total = null;
+    let total = null, ownerChannelId = null;
     try {
       const response = await y.api('/channels', { part: 'statistics', mine: 'true' }, { auth: true });
-      const stats = response?.items?.[0]?.statistics, raw = stats?.subscriberCount;
+      const channel = response?.items?.[0], stats = channel?.statistics, raw = stats?.subscriberCount;
+      if (typeof channel?.id === 'string' && channel.id.trim()) ownerChannelId = channel.id;
       if (!stats?.hiddenSubscriberCount && typeof raw === 'string' && /^\d+$/.test(raw)) {
         const value = Number(raw);
         if (Number.isSafeInteger(value)) total = value;
       }
-    } catch { /* named subscribers can still be recorded without a usable total */ }
-    return { items, truncated, total };
+    } catch (err) {
+      if (err?.reason === 'quotaExceeded') throw err;
+      // Named subscribers can still be recorded without a usable total.
+    }
+    return { items, truncated, total, ownerChannelId };
   }
 
   // Matches ids when both exist; otherwise use the case-insensitive name. An id learned later
@@ -183,27 +190,46 @@ export class FollowerRegistry extends EventEmitter {
     return this.list();
   }
 
-  sync(platform) {
+  // Capture ownership when work is admitted, including the offline interval between periods.
+  captureYouTubeActivity() {
+    const generation = this.youtubeGeneration;
+    return () => this.youtubeGeneration === generation;
+  }
+
+  sync(platform, { live, active = () => true, establish = false } = {}) {
     if (!PLATFORMS.includes(platform)) return Promise.reject(new Error('Plataforma desconocida.'));
-    if (this.halted) return Promise.resolve();
+    const owner = platform === 'youtube' ? this.captureYouTubeActivity() : () => true;
+    const admitted = () => !this.halted && owner() && active() && !(platform === 'youtube' && this.youtubePeriod?.quota);
+    if (!admitted()) return Promise.resolve();
     const run = async () => {
-      if (this.halted) return;
+      if (!admitted()) return;
+      const period = platform === 'youtube' ? this.youtubePeriod : null;
+      // Startup refreshes share the same reader: once the listening baseline exists,
+      // they must not silently consume a subscriber before the next scheduled poll.
+      const enabled = () => Number(this.youtube?.cfg?.subscriberPollSeconds ?? 120) !== 0;
+      const liveRead = platform === 'youtube' && (live ?? !!(period?.ready && enabled()));
+      const current = () => admitted() && (!liveRead || (period && this.youtubePeriod === period && enabled()));
       const state = this.platforms[platform], startedAt = new Date(this.now()).toISOString();
       let result;
       try { result = await this.readers[platform](state.lastSync); } catch (err) {
-        if (this.halted) return;
-        this.states[platform] = { status: 'error', error: err?.message || String(err) };
+        if (!current()) return;
+        const quota = platform === 'youtube' && err?.reason === 'quotaExceeded';
+        if (quota && this.youtubePeriod) {
+          this.youtubePeriod.quota = true;
+          clearTimeout(this.youtubePeriod.timer); this.youtubePeriod.timer = null;
+        }
+        this.states[platform] = { status: quota ? 'quota' : 'error', error: err?.message || String(err) };
         this.log(`[seguidores] ${platform}: ${this.states[platform].error}`);
         if (this.dirty && this.lastWriteError) this.changed(); else this.emit('change', this.snapshot());
-        return;
+        return this.states[platform].status;
       }
-      if (this.halted) return;
+      if (!current()) return;
       if (result == null) {
         this.states[platform] = { status: 'needs_account', error: null };
         if (this.dirty && this.lastWriteError) this.changed(); else this.emit('change', this.snapshot());
-        return;
+        return this.states[platform].status;
       }
-      const baseline = !state.lastSync;
+      const baseline = !state.lastSync, discovered = [];
       if (platform === 'youtube') {
         const known = new Set(state.knownIds), seen = new Set(); let named = 0;
         for (const item of result.items) {
@@ -212,7 +238,10 @@ export class FollowerRegistry extends EventEmitter {
           const afterLastSync = item.followedAt == null || Date.parse(item.followedAt) > Date.parse(state.lastSync);
           if (!baseline && !known.has(item.id) && afterLastSync) {
             named++;
-            this.add(platform, { ...item, followedAt: item.followedAt ?? null, source: 'offline', thanked: false });
+            const before = state.entries.length;
+            const { avatar: _avatar, ...entry } = item; // Thumbnail URLs are transient, never registry data.
+            this.add(platform, { ...entry, followedAt: item.followedAt ?? null, source: liveRead ? 'live' : 'offline', thanked: false });
+            if (liveRead && state.entries.length > before) discovered.push(item);
           }
           known.add(item.id);
         }
@@ -232,7 +261,16 @@ export class FollowerRegistry extends EventEmitter {
       // next reconnect cannot silently advance past unread followers.
       if (!(platform === 'twitch' && result.truncated && !baseline)) state.lastSync = startedAt;
       this.states[platform] = { status: result.truncated ? 'partial' : 'ok', error: null };
+      // Mark the baseline before releasing the busy queue to any already-queued refresh.
+      if (establish && period && this.youtubePeriod === period) period.ready = true;
       this.changed();
+      for (const item of discovered) {
+        if (!current()) break;
+        const avatar = youtubeAvatarUrl(item.avatar);
+        this.emit('liveFollow', { platform, id: item.id, name: item.name,
+          ...(avatar ? { avatar } : {}), ...(result.ownerChannelId ? { ownerChannelId: result.ownerChannelId } : {}) });
+      }
+      return this.states[platform].status;
     };
     const next = (this.busy[platform] || Promise.resolve()).then(run, run);
     const tracked = next.finally(() => { if (this.busy[platform] === tracked) delete this.busy[platform]; });
@@ -240,7 +278,63 @@ export class FollowerRegistry extends EventEmitter {
     return next;
   }
 
-  halt() { this.halted = true; }
+  // Each listening transition owns its baseline and its timer. The next timer is armed
+  // only after the preceding sync settles, so slow requests never build a backlog.
+  beginYouTubeListening(baseline) {
+    this.endYouTubeListening();
+    if (this.halted) return;
+    const period = { ready: false, quota: false, pending: true, timer: null, deadline: 0 };
+    this.youtubePeriod = period;
+    const active = () => this.youtubePeriod === period;
+    const finish = status => {
+      if (!active() || this.halted) return;
+      period.pending = false;
+      if (status === 'ok' || status === 'partial') period.ready = true;
+      this.updateYouTubePolling();
+    };
+    Promise.resolve(baseline(active)).then(finish, () => finish());
+  }
+
+  updateYouTubePolling() {
+    const period = this.youtubePeriod;
+    if (!period) return;
+    clearTimeout(period.timer); period.timer = null;
+    if (this.halted || period.quota || period.pending) return;
+    const configured = Number(this.youtube?.cfg?.subscriberPollSeconds ?? 120);
+    if (configured === 0) return;
+    const seconds = Number.isFinite(configured) ? Math.max(60, configured) : 120;
+    period.deadline = Math.min(Number.MAX_VALUE, Date.now() + seconds * 1000);
+    const active = () => this.youtubePeriod === period;
+    const schedule = () => {
+      const delay = Math.min(MAX_TIMER_MS, Math.max(0, period.deadline - Date.now()));
+      period.timer = setTimeout(() => {
+        period.timer = null;
+        if (!active() || this.halted || period.quota) return;
+        if (Date.now() < period.deadline) { schedule(); return; }
+        period.pending = true;
+        this.sync('youtube', { live: period.ready, establish: !period.ready, active }).then(status => {
+          if (!active() || this.halted) return;
+          period.pending = false;
+          if (status === 'ok' || status === 'partial') period.ready = true;
+          this.updateYouTubePolling();
+        }, () => {
+          if (!active() || this.halted) return;
+          period.pending = false;
+          this.updateYouTubePolling();
+        });
+      }, delay);
+      period.timer.unref?.();
+    };
+    schedule();
+  }
+
+  endYouTubeListening() {
+    this.youtubeGeneration++;
+    if (this.youtubePeriod) clearTimeout(this.youtubePeriod.timer);
+    this.youtubePeriod = null;
+  }
+
+  halt() { this.halted = true; this.endYouTubeListening(); }
 
   changed() {
     if (this.readOnly) { this.emit('change', this.snapshot()); return; }

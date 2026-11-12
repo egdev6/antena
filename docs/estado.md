@@ -22,9 +22,10 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   `publicViewers` (live, current, peak y record por plataforma) por SSE `viewers`, el mismo evento
   que el SDK de los overlays propios expone como `viewers`.
 - **Seguidores sin conexión (#128):** registro local de Twitch y de suscripciones públicas de YouTube con recuento anónimo; requiere cuenta de YouTube conectada y no dispara alertas recuperadas.
-- **Alertas de Twitch y YouTube:** doce tipos normalizados (follow, sub, resub, giftsub,
-  cheer, raid, redemption; superchat, supersticker, member, milestone, giftmember) con
+- **Alertas de Twitch y YouTube:** tipos normalizados (follow, sub, resub, giftsub,
+  cheer, raid, redemption; ytsub, superchat, supersticker, member, milestone, giftmember) con
   tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en Meld.
+- **Suscriptores de YouTube (#134):** alerta `ytsub` para suscripciones públicas detectadas durante la escucha, con intervalo configurable y parada por cuota.
 - **Chat y moderación local:** Twitch y YouTube unificados, envío a una o a las dos
   plataformas con resultado por plataforma, filtro local y reflejo de la moderación de Twitch.
 - **Comandos y timers multicanal:** comandos con permisos y esperas, y mensajes programados
