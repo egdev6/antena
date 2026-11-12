@@ -8,7 +8,7 @@ import { ALERT_TYPES } from './alerts.mjs';
 // (los tipos de ALERT_TYPES ya declaran la plataforma de cada evento).
 export const PLATFORM_METRICS = {
   twitch: ['follows', 'subs', 'bits', 'raids', 'events'],
-  youtube: ['superchats', 'members', 'events'],
+  youtube: ['subscribers', 'superchats', 'members', 'events'],
 };
 
 // Clave de marcador en la raíz de session-current.json: registra que el offset legacy

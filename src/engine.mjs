@@ -1,4 +1,5 @@
 // Motor: decide qué alerta sale, la filtra, la pausa si toca, la registra, ejecuta sus acciones y alimenta los widgets.
+import { isTotalMetric } from './channel-totals.mjs';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { buildAlert, buildCommandAlert, buildCustomAlert, render, cutWords, ALERT_TYPES } from './alerts.mjs';
@@ -607,7 +608,8 @@ export class Engine extends EventEmitter {
     const s = this.session;
     const goals = (this.config.widgets?.goals || []).map(g => ({
       ...g,
-      bars: (g.bars || []).map(b => ({ ...b, value: s.goalValue(b.metric, b.platform) })),
+      // source «channel»: total real del canal (#132), puede ser null si nunca se leyó
+      bars: (g.bars || []).map(b => ({ ...b, value: s.goalValue(b.metric, b.platform), source: isTotalMetric(b.metric, b.platform) ? 'channel' : 'session' })),
     }));
     return {
       totals: s.totals(), latest: s.latest(), goals,
