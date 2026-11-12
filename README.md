@@ -35,7 +35,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Chat commands** (`!engram`, `!web`…) that trigger their own alerts, with permissions and cooldowns.
 - **Scheduled messages:** texts that post themselves to chat every X minutes (also as a highlighted announcement) and, if you want, also appear on screen as an alert.
 - **Interactives:** chat question queue, a tier list the chat votes on, and giveaways with an on-screen roulette.
-- **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker, live concurrent viewers for Twitch and YouTube, and end credits.
+- **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker, live concurrent viewers, offline follower thank-yous and end credits.
 - **Custom overlays:** HTML, CSS and JavaScript layers for a scene or to frame the camera, written by you or by Claude via MCP, with live data and actions you approve.
 - **Stream recap:** totals, who to thank and a timeline with the minute of each event, in Markdown.
 - **Offline followers:** records Twitch followers gained while antena was closed, and YouTube's public subscribers plus an anonymous count; YouTube requires a connected account.
@@ -143,6 +143,9 @@ In the panel, **Meld and Stream Deck › Sources for Meld** lists all of them wi
 | Tier list | `http://127.0.0.1:4500/widget/tierlist` | 1920×1080 |
 | Giveaway | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
 | Viewers | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
+| Thank-yous | `http://127.0.0.1:4500/widget/thanks` | 900×200 |
+
+**Offline thank-yous.** This layer rotates one pending offline follower at a time and can finish with YouTube's anonymous count. In Widgets › Agradecimientos, choose platforms, all time / since the last archived stream / a number of days, the maximum names and rotation interval. Unknown follow dates remain included; with no archived stream, the last-stream window has no cutoff. Nothing pending leaves the layer transparent. Individual and confirmed bulk thank-you actions apply immediately; bulk affects only the names and anonymous records selected for the saved widget settings, not other pending followers.
 
 **Goal bars.** Twitch followers and subs and YouTube subscribers show the platform's channel total, not just events from the stream, and do not reset between streams. Antena reads it at startup, on reconnect and every five minutes; live events add between reads. For an explicitly configured YouTube channel, detected subscribers add only when the connected account's channel ID matches; if it differs or cannot be verified, the next platform read updates the total instead. If the platform does not respond, the last known value remains; before the first read the bar shows `—`. Manual +1, −1 and Set apply a persistent correction (for example, to exclude your own sub). Twitch subs require the `channel:read:subscriptions` permission. YouTube rounds subscriber counts to three significant figures from 1,000. Other goal metrics remain per stream.
 
@@ -472,7 +475,7 @@ Examples of what you can ask Claude to do:
 
 ### REST API
 
-`GET /api/followers` lists the local follower registry, anonymous YouTube counts and sync status (`?pending=true` shows only unthanked records). `POST /api/followers/thank` accepts `{ "ids": ["<id>"] }` or `{ "all": true }` to mark them thanked; `all` also marks anonymous counts and entries without an ID. Invalid requests return 400; an unreadable registry returns 503.
+`GET /api/followers` lists the local follower registry, anonymous YouTube counts and sync status (`?pending=true` shows only unthanked records). Add `shown=true` to include the exact records selected by the saved thanks widget configuration. `POST /api/followers/thank` accepts `{ "ids": ["<id>"] }` or `{ "all": true }` to mark them thanked; `all` also marks anonymous counts and entries without an ID. Alternatively, `{ "entries": [{ "platform": "twitch", "id": "<id>" }, { "platform": "youtube", "name": "<name>" }], "anonymous": ["<at>"] }` targets exact platform/id pairs, platform/name pairs only when the ID is absent, and YouTube anonymous records by timestamp (including `null` for an unknown timestamp). Either array may be omitted; non-null timestamps must exactly match their canonical ISO form (for example, `2026-01-01T00:00:00.000Z`). Add `"onlyShown": true` to this selective form to require every selected record still to be in the widget's current selection; otherwise — or if a selection also matches a hidden pending record with the same identity, e.g. duplicates in a hand-edited file — the whole request returns 409 without changing the registry. The panel uses this guard for individual and bulk actions. Invalid requests return 400 without changing the registry; an unreadable registry returns 503.
 
 `POST /api/session/end` ends the current session and returns `{ session }`. An optional body `{ "id": "<session-id>" }` protects against ending a different session; an invalid id returns 400, and a changed current session returns 409. It is idempotent for an already ended session, closes viewer gaps and preserves the data; archiving and resetting still happen on the next `POST /api/session/new`. It returns 409 while Meld is connected and confirms it is streaming. Normal mutating-route origin checks apply.
 

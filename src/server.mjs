@@ -7,7 +7,7 @@ import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { readdir, stat, mkdir, unlink, rename, readFile, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
-import { Store, ROOT, deepMerge } from './store.mjs';
+import { Store, ROOT, DEFAULT_CONFIG, deepMerge } from './store.mjs';
 import { instanceId } from './instance-id.mjs';
 import { validatePatch, validatePath, validateChatVariantsTransition, warnUnknownKeys } from './config-schema.mjs';
 import { Bus } from './bus.mjs';
@@ -69,7 +69,7 @@ const MIME = {
   '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
   '.webm': 'video/webm', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
 };
-export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter', 'viewers'];
+export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter', 'viewers', 'thanks'];
 
 /** Viewer counts for on-screen widgets: only what the widget shows, never settings or errors. */
 export function publicViewers(snap) {
@@ -191,6 +191,26 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // #132: barras de objetivo con el total real del canal (persisten entre directos)
   const channelTotals = await new ChannelTotals({ dir: store.dir, twitch, youtube, log }).load();
   const followers = await new FollowerRegistry({ dir: store.dir, twitch, youtube, log }).load();
+  // Session.list is asynchronous; snapshots stay synchronous and only use this cached cutoff.
+  let lastStreamCutoff = null, cutoffGeneration = 0;
+  const refreshLastStream = async () => {
+    const generation = ++cutoffGeneration;
+    // Every archive, not the history view's 50 id-sorted entries: legacy ids are not chronological.
+    const sessions = await session.list({ limit: Infinity });
+    let newest = null;
+    for (const archived of sessions) {
+      const end = Date.parse(archived.endedAt), start = Date.parse(archived.startedAt);
+      const at = Number.isFinite(end) ? end : start;
+      if (Number.isFinite(at) && (newest === null || at > newest)) newest = at;
+    }
+    if (generation === cutoffGeneration) lastStreamCutoff = newest;
+  };
+  await refreshLastStream();
+  const thanksSelection = () => followers.thanksSelection(deepMerge(DEFAULT_CONFIG.widgets.thanks, store.config.widgets?.thanks || {}), lastStreamCutoff);
+  engine.thanksState = () => {
+    const selected = thanksSelection();
+    return { names: selected.entries.map(({ name, platform }) => ({ name, platform })), anonymous: selected.anonymous.reduce((sum, a) => sum + a.count, 0) };
+  };
   session.channelTotals = channelTotals;
   const timers = new Timers({ store, engine, twitch, youtube, meld, session, log });
   engine.timers = timers;
@@ -251,7 +271,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   youtube.on('event', e => engine.handleEvent(e));
   chat.on('delete', ({ id }) => engine.deleteChat(id));
   chat.on('clearUser', ({ login }) => engine.clearChatUser(login));
-  session.on('change', () => { engine.pushWidgets(); pushTimeline(); });
+  session.on('change', change => {
+    engine.pushWidgets(); pushTimeline();
+    if (change?.reset) refreshLastStream().then(() => engine.pushWidgets()).catch(() => {});
+  });
   // Only the current session loaded at startup, or one whose finalization was
   // confirmed durable, is eligible. An in-flight failed checkpoint is not.
   const durableFinished = new Set();
@@ -311,7 +334,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
   requestPushReconciliation();
   channelTotals.on('change', () => { engine.pushWidgets(); pushStatus(); });
-  followers.on('change', pushStatus);
+  followers.on('change', () => { pushStatus(); engine.pushWidgets(); });
   followers.on('liveFollow', ({ id, name, avatar, ownerChannelId }) => {
     const safeAvatar = youtubeAvatarUrl(avatar);
     const event = { externalId: `ytsub:${id}`, type: 'ytsub', vars: { user: name, ...(safeAvatar ? { avatar: safeAvatar } : {}) } };
@@ -1008,6 +1031,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       const [error] = validatePath('widgets.chat.layout', patch.chat.layout ?? false);
       if (error) throw httpError(400, error.message);
     }
+    if (Object.hasOwn(patch, 'thanks')) {
+      const [error] = validatePath('widgets.thanks', patch.thanks);
+      if (error) throw httpError(400, error.message);
+    }
     if (Object.hasOwn(patch, 'chatVariants')) {
       const [error] = validateChatVariantsTransition(store.config.widgets?.chatVariants, patch.chatVariants, store.config.widgets?.chat);
       if (error) throw httpError(400, error.message);
@@ -1020,7 +1047,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // widgets y objetivos (#128: rutas de cajas/barras en módulo propio, mismo punto y orden)
   registerChatVariantsRoutes({ route, store });
   registerGoalsRoutes({ route, store, session, id8 });
-  registerFollowersRoutes({ route, followers });
+  registerFollowersRoutes({ route, followers, thanksSelection });
   route('POST', '/api/credits/play', async () => { bus.send('credits', { action: 'play' }, ['widget']); return { ok: true }; });
   route('POST', '/api/credits/stop', async () => { bus.send('credits', { action: 'stop' }, ['widget']); return { ok: true }; });
 

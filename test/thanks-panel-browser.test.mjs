@@ -1,0 +1,106 @@
+// Immediate follower actions and stale list responses in the React Widgets panel.
+import { after, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { evaluateChrome } from './helpers/chrome-dom.mjs';
+
+const root = await mkdtemp(path.join(tmpdir(), 'thanks-panel-'));
+process.env.ANTENA_DATA = path.join(root, 'default-data');
+process.env.ANTENA_MEDIA = path.join(root, 'default-media');
+const { createApp } = await import('../src/server.mjs');
+after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+const blank = () => ({ lastSync: null, total: null, totalSource: null, knownIds: [], entries: [], anonymous: [] });
+async function setup(t) {
+  const bin = await skipIfNoBrowserOrUi(t); if (!bin) return null;
+  const dir = await mkdtemp(path.join(root, 'case-'));
+  const twitch = blank(), youtube = blank();
+  const row = (id, name, followedAt) => ({ id, name, followedAt, source: 'offline', thanked: false });
+  twitch.entries = [row('old', 'Old', '2026-01-01T00:00:00Z'), row('same', 'Twitch Shared', '2026-01-02T00:00:00Z')];
+  youtube.entries = [row('same', 'YouTube Shared', '2026-01-03T00:00:00Z')];
+  youtube.anonymous = [{ at: '2026-01-03T00:00:00.000Z', count: 3, thanked: false }];
+  await writeFile(path.join(dir, 'followers.json'), JSON.stringify({ version: 1, platforms: { twitch, youtube } }));
+  const app = await createApp({ dataDir: dir, mediaDir: path.join(dir, 'media'), log: () => {} });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${app.server.address().port}`; let chrome;
+  const call = async (method, url, body) => {
+    const response = await fetch(base + url, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    assert.equal(response.status, 200); return response.json();
+  };
+  await call('PUT', '/api/config', { panel: { onboardingDone: true } });
+  await call('PUT', '/api/widgets', { thanks: { window: 'all', maxNames: 1, showAnonymous: true } });
+  t.after(async () => { if (chrome) await closeChrome(chrome); app.timers.stop(); await app.closeHttp(); await rm(dir, { recursive: true, force: true }); });
+  return { base, call, open: async () => { chrome = await openChromePage(bin, base + '/#/widgets/thanks'); return chrome.cdp; } };
+}
+const list = `document.querySelector('[data-thanks-list]')`;
+const entry = name => `Array.from(${list}?.querySelectorAll('[data-thanks-entry]') || []).find(e => e.textContent.includes(${JSON.stringify(name)}))`;
+
+test('S3: individual and confirmed bulk actions are immediate and target only displayed records', { timeout: 90000 }, async t => {
+  const f = await setup(t); if (!f) return;
+  const c = await f.open();
+  await waitDom(c, `!!${entry('YouTube Shared')} && !${entry('Old')} && !${entry('Twitch Shared')}`, { timeoutMs: 15000 });
+  await evaluateChrome(c, `window.confirm = () => true; ${entry('YouTube Shared')}.querySelector('button').click(); true`);
+  await waitDom(c, `!${entry('YouTube Shared')} && !!${entry('Twitch Shared')}`, { timeoutMs: 8000 });
+  let pending = await f.call('GET', '/api/followers?pending=true');
+  assert.deepEqual(pending.entries.map(e => e.name), ['Old', 'Twitch Shared']);
+  assert.equal(pending.anonymous.length, 1);
+  await evaluateChrome(c, `document.querySelector('[data-thanks-bulk]').click(); true`);
+  await waitDom(c, `!${entry('Twitch Shared')} && !!${entry('Old')}`, { timeoutMs: 8000 });
+  pending = await f.call('GET', '/api/followers?pending=true');
+  assert.deepEqual(pending.entries.map(e => e.name), ['Old']);
+  assert.deepEqual(pending.anonymous, []);
+});
+
+test('S3: an older follower fetch cannot restore records after a newer change', { timeout: 90000 }, async t => {
+  const f = await setup(t); if (!f) return;
+  const c = await f.open();
+  await c.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+    const real = window.fetch; let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    window.releaseOldFollowers = release; window.heldFollowerFetch = false; let first = true;
+    window.fetch = function (...args) {
+      const request = real.apply(this, args);
+      if (first && String(args[0]).includes('/api/followers?pending=true')) {
+        first = false;
+        return request.then(async response => { const text = await response.text(); window.heldFollowerFetch = true; await gate; return new Response(text, { status: response.status, headers: response.headers }); });
+      }
+      return request;
+    };
+  })()` });
+  await c.send('Page.reload');
+  await waitDom(c, `window.heldFollowerFetch === true`, { timeoutMs: 15000 });
+  await f.call('POST', '/api/followers/thank', { entries: [{ platform: 'youtube', id: 'same' }] });
+  await waitDom(c, `!!${entry('Twitch Shared')} && !${entry('YouTube Shared')}`, { timeoutMs: 10000 });
+  await evaluateChrome(c, `window.releaseOldFollowers(); true`);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(await evaluateChrome(c, `!!${entry('YouTube Shared')}`), false);
+});
+
+test('S3: a stale individual selection shows the 409 and reloads without changing followers', { timeout: 90000 }, async t => {
+  const f = await setup(t); if (!f) return;
+  const c = await f.open();
+  await waitDom(c, `!!${entry('YouTube Shared')}`, { timeoutMs: 15000 });
+  const before = await f.call('GET', '/api/followers');
+  await evaluateChrome(c, `(() => {
+    const real = window.fetch; let release; const gate = new Promise(r => { release = r; });
+    window.releaseThank = release; window.heldThank = null; window.followerReloads = 0;
+    window.fetch = function (...args) {
+      const url = String(args[0]);
+      if (url.includes('/api/followers/thank') && args[1]?.method === 'POST') {
+        window.heldThank = JSON.parse(args[1].body); return gate.then(() => real.apply(this, args));
+      }
+      if (url.includes('/api/followers?pending=true&shown=true')) window.followerReloads++;
+      return real.apply(this, args);
+    };
+    ${entry('YouTube Shared')}.querySelector('button').click(); return true;
+  })()`);
+  await waitDom(c, `window.heldThank !== null`, { timeoutMs: 8000 });
+  assert.deepEqual(await evaluateChrome(c, `window.heldThank`), { entries: [{ platform: 'youtube', id: 'same' }], anonymous: [], onlyShown: true });
+  await f.call('PUT', '/api/widgets', { thanks: { platforms: ['twitch'] } });
+  await waitDom(c, `!!${entry('Twitch Shared')} && !${entry('YouTube Shared')}`, { timeoutMs: 10000 });
+  await evaluateChrome(c, `window.followerReloads = 0; window.releaseThank(); true`);
+  await waitDom(c, `window.followerReloads > 0 && document.querySelector('.toast')?.textContent.includes('La selección del widget ha cambiado')`, { timeoutMs: 10000 });
+  assert.deepEqual(await f.call('GET', '/api/followers'), before);
+});

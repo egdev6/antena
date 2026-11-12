@@ -68,6 +68,11 @@ const CHAT_FIELDS = {
   layout: en(['vertical', 'horizontal']), css: str,
 };
 const CHAT_VARIANTS = list({ id: str, name: str, ...CHAT_FIELDS });
+const THANKS_FIELDS = {
+  title: str, platforms: arrStr(['twitch', 'youtube']), window: en(['all', 'lastStream', 'days']),
+  days: num({ int: true, min: 1, max: 3650 }), maxNames: num({ int: true, min: 1, max: 1000 }),
+  intervalSec: num({ int: true, min: 1, max: 3600 }), showAnonymous: bool, css: str,
+};
 
 /** Mismo slug y reserva para CRUD y escrituras genéricas. */
 export function chatVariantId(name, variants) {
@@ -256,6 +261,7 @@ export const CONFIG_SCHEMA = {
     ticker: { label: str, count: num({ int: true, min: 1, max: 100 }), speed: num({ int: true, min: 10, max: 500 }), css: str },
     credits: { title: str, subtitle: str, speed: num({ int: true, min: 10, max: 500 }), css: str },
     viewers: { platforms: arrStr(['twitch', 'youtube']), showTotal: bool, showPeak: bool, css: str },
+    thanks: THANKS_FIELDS,
   },
 };
 
@@ -263,6 +269,14 @@ export const CONFIG_SCHEMA = {
 const TIPO = { num: 'un número', str: 'un texto', bool: 'true o false', enum: 'uno de los valores permitidos', arrStr: 'una lista de textos' };
 
 function checkNode(node, value, path, errors) {
+  if (node === THANKS_FIELDS && value !== undefined) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      errors.push({ path, message: `${path}: se esperaba un objeto` });
+      return;
+    }
+    for (const key of Object.keys(THANKS_FIELDS)) if (Object.hasOwn(value, key) && value[key] === null)
+      errors.push({ path: `${path}.${key}`, message: `${path}.${key}: no admite null` });
+  }
   // Solo la lista nueva exige elementos completos y no acepta null. Los demás nodos
   // conservan su política histórica de parches parciales y valores ausentes.
   if (node === CHAT_VARIANTS && value !== undefined) {
@@ -400,6 +414,8 @@ const HOJAS = new Set(['num', 'str', 'bool', 'enum', 'arrStr', 'theme']);
  *  Las rutas sin esquema (claves nuevas) se aceptan, pero nunca las que tocan el prototipo,
  *  las que bajan por debajo de un valor simple ni una sección entera sin validar. */
 export function validatePath(dotted, value) {
+  if (String(dotted).startsWith('widgets.thanks.') && value === null)
+    return [{ path: dotted, message: `${dotted}: no admite null` }];
   const keys = String(dotted || '').split('.').filter(Boolean);
   const proto = keys.find(k => PROTO_KEYS.has(k));
   if (proto) return [{ path: dotted, message: `${dotted}: ruta no válida («${proto}»)` }];

@@ -27,6 +27,7 @@ const BROWSER_SOURCES = [
   { id: 'tierlist', name: 'Tier list', path: '/widget/tierlist', width: 1920, height: 1080 },
   { id: 'giveaway', name: 'Sorteo', path: '/widget/giveaway', width: 1920, height: 1080 },
   { id: 'viewers', name: 'Espectadores', path: '/widget/viewers', width: 900, height: 160 },
+  { id: 'thanks', name: 'Agradecimientos', path: '/widget/thanks', width: 900, height: 200 },
 ];
 const SHORTCUT_ENGINE_KINDS = ['scene', 'layer', 'hideLayer', 'toggleLayer', 'effect', 'command', 'streamEvent', 'chat', 'say'];
 // S10: pestañas del prompter retiradas. La API ya no las ofrece (prompterTabs y la lista de

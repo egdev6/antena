@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>antena · agradecimientos</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+.root{display:flex;align-items:flex-start;padding:18px}
+.item{min-width:260px;max-width:100%;padding:16px 20px 18px;border-radius:18px}
+.item .big{font-size:40px;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:780px}
+.item .extra{display:flex;align-items:center;gap:8px;font:600 18px var(--f-body);color:var(--grey);margin-top:6px}
+.pf-ico{width:20px;height:20px}
+@media (prefers-reduced-motion:reduce){.item{animation:none;transform:none}}
+}
+</style></head>
+<body><div class="root" id="root"></div>
+<script type="module">
+import { connect, DEMO, demoState, esc, setCss } from '/widgets/widget.js';
+import { platformSvg } from '/platform-icons.js';
+const root = document.getElementById('root');
+const labels = { twitch: 'Twitch', youtube: 'YouTube' };
+let key = '', timer, index = 0, cards = [], title = '';
+function show() {
+  const card = cards[index];
+  if (!card) { root.innerHTML = ''; return; }
+  root.innerHTML = `<div class="item eg-card soft pf-${card.platform}"><p class="kick">${esc(title)}</p><p class="big">${esc(card.name)}</p><p class="extra"><span class="pf"></span>${esc(labels[card.platform])}</p></div>`;
+  const icon = platformSvg(card.platform);
+  if (icon) root.querySelector('.pf').append(icon);
+}
+function apply(state) {
+  const cfg = state.widgets?.thanks || {};
+  setCss(cfg.css);
+  let data = state.thanks || { names: [], anonymous: 0 };
+  if (DEMO) {
+    // Demo names are synthetic and obey the saved platforms and display limits.
+    data = { names: [{ name: 'devconcafe', platform: 'twitch' }, { name: 'pixelmaria', platform: 'youtube' }]
+      .filter(n => (cfg.platforms || ['twitch', 'youtube']).includes(n.platform)).slice(-(cfg.maxNames || 20)),
+      anonymous: cfg.showAnonymous !== false && (cfg.platforms || ['twitch', 'youtube']).includes('youtube') ? 3 : 0 };
+  }
+  const next = [...(data.names || []).filter(n => Object.hasOwn(labels, n.platform))];
+  if (data.anonymous > 0) next.push({ name: `${data.anonymous} ${data.anonymous === 1 ? 'persona más' : 'personas más'}`, platform: 'youtube' });
+  const nextTitle = cfg.title || 'Gracias por seguir', interval = Number(cfg.intervalSec) || 5;
+  const nextKey = JSON.stringify([next, nextTitle, interval]);
+  if (nextKey === key) return;
+  key = nextKey; cards = next; title = nextTitle; index = 0;
+  clearInterval(timer); show();
+  if (cards.length > 1) timer = setInterval(() => { index = (index + 1) % cards.length; show(); }, interval * 1000);
+}
+connect({ widgets: s => apply(DEMO ? { ...demoState(), widgets: s.widgets } : s) });
+if (DEMO) apply(demoState());
+</script></body></html>

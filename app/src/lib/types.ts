@@ -167,6 +167,15 @@ export interface GoalValue extends GoalConfig { bars: (GoalBar & { value?: numbe
 /** Sección de ajustes de un widget (chat, latest, ticker, credits): campos dinámicos. */
 export type WidgetSection = Record<string, unknown>;
 export interface ChatVariant extends WidgetSection { id: string; name: string }
+export interface ThanksConfig extends WidgetSection {
+  title: string; platforms: Platform[]; window: 'all' | 'lastStream' | 'days'; days: number;
+  maxNames: number; intervalSec: number; showAnonymous: boolean; css: string;
+}
+export interface FollowerEntry { platform: Platform; id: string | null; name: string; followedAt: string | null; source: 'offline' | 'live'; thanked: boolean }
+export interface AnonymousFollowers { at: string | null; count: number; thanked: boolean }
+export interface FollowerSelection { entries: FollowerEntry[]; anonymous: AnonymousFollowers[] }
+export interface FollowersList extends FollowerSelection { shown: FollowerSelection }
+export interface ThanksSnapshot { names: { name: string; platform: Platform }[]; anonymous: number }
 export interface WidgetsConfig {
   goals?: GoalConfig[];
   chat?: WidgetSection;
@@ -174,6 +183,7 @@ export interface WidgetsConfig {
   latest?: WidgetSection;
   ticker?: WidgetSection;
   credits?: WidgetSection;
+  thanks?: ThanksConfig;
   [k: string]: unknown;
 }
 /** Estado que consumen los widgets (engine.widgetState()). */
@@ -181,6 +191,7 @@ export interface WidgetState {
   chat: ChatMessage[];
   widgets?: WidgetsConfig;
   goals: GoalValue[];
+  thanks?: ThanksSnapshot;
   totals: Record<string, number>;
   [k: string]: unknown;
 }

@@ -11,6 +11,9 @@ const MAX_TIMER_MS = 2_147_483_647;
 const blank = () => ({ lastSync: null, total: null, totalSource: null, knownIds: [], entries: [], anonymous: [] });
 const validTotal = n => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const lower = name => String(name || '').toLowerCase();
+// The same identity rule drives both selective writes and shown-selection checks.
+export const matchesFollowerSelection = (platform, entry, selected) => selected.platform === platform
+  && (Object.hasOwn(selected, 'id') ? entry.id === selected.id : entry.id === null && entry.name === selected.name);
 const validPlatform = data => data && typeof data === 'object' && !Array.isArray(data)
   && (data.lastSync === null || (typeof data.lastSync === 'string' && Number.isFinite(Date.parse(data.lastSync))))
   && (data.total === null || validTotal(data.total))
@@ -174,6 +177,39 @@ export class FollowerRegistry extends EventEmitter {
       anonymous: this.platforms.youtube.anonymous.filter(a => !pending || !a.thanked).map(a => ({ ...a })),
       platforms: this.snapshot(),
     };
+  }
+
+  // Select once for both the public widget and the panel's exact bulk action.
+  thanksSelection(config = {}, lastStreamCutoff = null) {
+    const list = this.list({ pending: true });
+    const platforms = config.platforms || [];
+    const cutoff = config.window === 'days' ? this.now() - config.days * 86_400_000
+      : config.window === 'lastStream' ? lastStreamCutoff : null;
+    const inWindow = at => {
+      if (cutoff == null || at == null) return true;
+      const time = Date.parse(at);
+      return !Number.isFinite(time) || time >= cutoff;
+    };
+    const when = at => { const n = at == null ? NaN : Date.parse(at); return Number.isFinite(n) ? n : -Infinity; };
+    const entries = list.entries.filter(e => e.source === 'offline' && platforms.includes(e.platform) && inWindow(e.followedAt))
+      .sort((a, b) => when(a.followedAt) - when(b.followedAt)).slice(-config.maxNames);
+    const anonymous = config.showAnonymous && platforms.includes('youtube') ? list.anonymous.filter(a => inWindow(a.at)) : [];
+    return { entries, anonymous };
+  }
+
+  // The route validates the complete selection before entering this method.
+  markSelected({ entries = [], anonymous = [] }) {
+    if (this.readOnly) throw Object.assign(new Error(this.loadError), { status: 503 });
+    let touched = false;
+    for (const p of PLATFORMS) {
+      for (const e of this.platforms[p].entries) {
+        const selected = entries.some(s => matchesFollowerSelection(p, e, s));
+        if (!e.thanked && selected) { e.thanked = true; touched = true; }
+      }
+    }
+    for (const a of this.platforms.youtube.anonymous) if (!a.thanked && anonymous.includes(a.at)) { a.thanked = true; touched = true; }
+    if (touched) this.changed();
+    return this.list();
   }
 
   markThanked(ids) {

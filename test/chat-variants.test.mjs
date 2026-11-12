@@ -694,7 +694,7 @@ test('MCP ver_widgets conserva las URLs anteriores y expone las de cada variante
     const data = JSON.parse(result.content[0].text);
     assert.deepEqual({ ...data.urls, chatVariantes: undefined }, {
       chat: `${f.base}/widget/chat`, objetivo: `${f.base}/widget/goal?id=<id>`, ultimos: `${f.base}/widget/latest`,
-      ticker: `${f.base}/widget/ticker`, creditos: `${f.base}/widget/credits`, espectadores: `${f.base}/widget/viewers`, chatVariantes: undefined,
+      ticker: `${f.base}/widget/ticker`, creditos: `${f.base}/widget/credits`, espectadores: `${f.base}/widget/viewers`, agradecimientos: `${f.base}/widget/thanks`, chatVariantes: undefined,
     });
     assert.deepEqual(data.urls.chatVariantes, variants.map(v => ({ id: v.id, nombre: v.name, url: `${f.base}/widget/chat?variant=${v.id}` })));
   }
