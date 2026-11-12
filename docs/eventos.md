@@ -78,8 +78,16 @@ Missing totals do not produce an anonymous count; a falling total never deletes 
 filters thanked records out. `POST /api/followers/thank` accepts `{ "ids": ["<id>"] }`
 or `{ "all": true }`; `all` includes anonymous counts and entries without an ID. Invalid
 bodies return 400 without changes; an unreadable registry rejects thank updates with 503.
-The thank-you widget is tracked separately in #129; this registry never replays recovered
-followers as on-screen alerts.
+An additive selective form, `{ "entries": [{ "platform": "twitch", "id": "<id>" },
+{ "platform": "youtube", "name": "<name>" }], "anonymous": ["<at>"] }`, targets
+platform/id pairs, platform/name pairs only for ID-less entries, and anonymous YouTube
+records by timestamp (`null` is allowed for an unknown timestamp). Either list may be omitted.
+`?pending=true&shown=true` also returns the exact records selected for the widget. The
+`/widget/thanks` layer displays pending offline entries one at a time and optionally a final
+anonymous count; its window and platforms use saved settings. Unknown dates are included,
+and with no archived session the last-stream window has no cutoff. The panel's individual
+and confirmed bulk actions apply immediately; bulk marks exactly the widget selection.
+Recovered followers are never replayed as on-screen alerts or sent to chat.
 
 Known limits: the checkpoint is per platform, not per account, so use the same connected
 account for consistent history. Strict timestamp checkpoints can miss Twitch follows in

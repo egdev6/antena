@@ -64,7 +64,7 @@ test('GET /api/sources: capas con URL, objetivos intercalados y paneles', async 
   assert.equal(out.base, 'http://127.0.0.1:4500');
   const ids = out.sources.map(x => x.id);
   // los objetivos van entre chat y latest, como en el original
-  assert.deepEqual(ids, ['overlay', 'chat', 'goal-principal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'viewers']);
+  assert.deepEqual(ids, ['overlay', 'chat', 'goal-principal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'viewers', 'thanks']);
   const ov = out.sources.find(x => x.id === 'overlay');
   assert.deepEqual([ov.url, ov.width, ov.height], ['http://127.0.0.1:4500/overlay', 1920, 1080]);
   const goal = out.sources.find(x => x.id === 'goal-principal');

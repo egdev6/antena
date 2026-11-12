@@ -176,6 +176,39 @@ export class FollowerRegistry extends EventEmitter {
     };
   }
 
+  // Select once for both the public widget and the panel's exact bulk action.
+  thanksSelection(config = {}, lastStreamCutoff = null) {
+    const list = this.list({ pending: true });
+    const platforms = config.platforms || [];
+    const cutoff = config.window === 'days' ? this.now() - config.days * 86_400_000
+      : config.window === 'lastStream' ? lastStreamCutoff : null;
+    const inWindow = at => {
+      if (cutoff == null || at == null) return true;
+      const time = Date.parse(at);
+      return !Number.isFinite(time) || time >= cutoff;
+    };
+    const when = at => { const n = at == null ? NaN : Date.parse(at); return Number.isFinite(n) ? n : -Infinity; };
+    const entries = list.entries.filter(e => e.source === 'offline' && platforms.includes(e.platform) && inWindow(e.followedAt))
+      .sort((a, b) => when(a.followedAt) - when(b.followedAt)).slice(-config.maxNames);
+    const anonymous = config.showAnonymous && platforms.includes('youtube') ? list.anonymous.filter(a => inWindow(a.at)) : [];
+    return { entries, anonymous };
+  }
+
+  // The route validates the complete selection before entering this method.
+  markSelected({ entries = [], anonymous = [] }) {
+    if (this.readOnly) throw Object.assign(new Error(this.loadError), { status: 503 });
+    let touched = false;
+    for (const p of PLATFORMS) {
+      for (const e of this.platforms[p].entries) {
+        const selected = entries.some(s => s.platform === p && (Object.hasOwn(s, 'id') ? e.id === s.id : e.id === null && e.name === s.name));
+        if (!e.thanked && selected) { e.thanked = true; touched = true; }
+      }
+    }
+    for (const a of this.platforms.youtube.anonymous) if (!a.thanked && anonymous.includes(a.at)) { a.thanked = true; touched = true; }
+    if (touched) this.changed();
+    return this.list();
+  }
+
   markThanked(ids) {
     if (this.readOnly) throw Object.assign(new Error(this.loadError), { status: 503 });
     const all = ids === 'all';

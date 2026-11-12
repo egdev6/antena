@@ -615,6 +615,7 @@ export class Engine extends EventEmitter {
       totals: s.totals(), latest: s.latest(), goals,
       recent: s.data.events.filter(e => !ALERT_TYPES[e.type]?.system).slice(-30).reverse().map(e => ({ type: e.type, label: ALERT_TYPES[e.type]?.label || e.type, user: e.user, sub: e.sub, at: e.at })),
       credits: s.credits(), session: { id: s.data.id, title: s.data.title, startedAt: s.data.startedAt },
+      thanks: this.thanksState?.() ?? { names: [], anonymous: 0 },
       widgets: this.config.widgets, chat: this.chat.slice(-50),
     };
   }

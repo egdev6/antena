@@ -1,6 +1,6 @@
 // Widgets (v3): el catálogo de widgets en tarjetas → slide con sus ajustes (O3.3: fuente, ajustes y vista previa).
 // Los objetivos, lo único que creas tú, viven dentro de su tarjeta: tabla → objetivo (3.er nivel).
-import { enc, post, put, del } from '../../lib/api';
+import { enc, get, post, put, del } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { goalMetricLabel } from '../../lib/goal';
 import { patchWidgets } from '../../lib/patch';
@@ -8,8 +8,8 @@ import { BrowserSource, codeTab, confirmDelete, copy, EmptyState, guard, LazyInp
 import { useManualSave } from '../../lib/draft';
 import { Box, Card, CardGroup, Dot, ListPanel, NameCell, PageHead, SaveBar, Slide, Tags } from '../../lib/layout';
 import { go } from '../router';
-import { useState, type ReactNode } from 'react';
-import type { GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { FollowerEntry, FollowersList, GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
 import { CHAT_ANIMS, type ChatAnim } from '../../../../public/widgets/chat-anims.js';
 import { ChatWidget } from './ChatWidget';
 
@@ -18,6 +18,7 @@ const INFO: Record<string, { title: string; path: string; size: string; w: numbe
   chat: { title: 'Chat en pantalla', path: '/widget/chat', size: '600×900', w: 600, h: 900, desc: 'El chat de Twitch y YouTube juntos, con tu estilo. Ideal para la escena de solo cámara.' },
   latest: { title: 'Últimos y ticker', path: '/widget/latest', size: '1400×200', w: 1400, h: 260, desc: 'Último seguidor, sub, bits… y una banda que recorre los últimos apoyos.' },
   viewers: { title: 'Espectadores', path: '/widget/viewers', size: '900×160', w: 900, h: 160, desc: 'Espectadores a la vez en Twitch y YouTube, por separado y en total. Se actualiza solo mientras emites.' },
+  thanks: { title: 'Agradecimientos', path: '/widget/thanks', size: '900×200', w: 900, h: 200, desc: 'Agradece a quienes te siguieron mientras antena estaba cerrada.' },
   credits: { title: 'Créditos', path: '/widget/credits', size: '1920×1080', w: 1920, h: 1080, desc: 'Créditos finales con todos los que han apoyado en el directo.' },
 };
 const q = (p: string, mode: string) => `${p}${p.includes('?') ? '&' : '?'}${mode}`;
@@ -65,6 +66,7 @@ export function Widget({ name }: { name: string }) {
     <WField w="viewers" f="css" label="CSS personalizado" type="css" placeholder=".item .big { font-size: 64px; }" />
     <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.item</code> <code>.item-twitch</code> <code>.item-youtube</code> <code>.item-total</code> <code>.item.off</code> <code>.item.up</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p>
     <p className="hint mt">Parámetros: <code>?platforms=twitch</code> · <code>?layout=column</code> · <code>?total=0</code> · <code>?peak=1</code>. La cifra se refresca cada «pollSec» de la alerta de récord.</p></>;
+  if (name === 'thanks') form = <ThanksSettings />;
   if (name === 'credits') form = <>
     <div className="row2"><WField w="credits" f="title" label="Título" /><WField w="credits" f="speed" label="Velocidad (px/s)" type="number" min={10} max={300} /></div>
     <WField w="credits" f="subtitle" label="Línea final" />
@@ -84,6 +86,67 @@ export function Widget({ name }: { name: string }) {
       <Panel>{form}</Panel>
     </WidgetLayout>
   </Slide>;
+}
+
+function ThanksSettings() {
+  const window = useLive(s => s.config.widgets.thanks?.window || 'lastStream');
+  return <>
+    <WField w="thanks" f="title" label="Título" />
+    <div className="lbl">Plataformas<div className="row field-ctl"><ListChecks w="thanks" f="platforms" items={[["twitch", "Twitch"], ["youtube", "YouTube"]]} /></div></div>
+    <label>Ventana <select value={window} onChange={e => patchWidgets({ thanks: { window: e.target.value } })}>
+      <option value="all">Todos</option><option value="lastStream">Desde el último directo</option><option value="days">Últimos días</option>
+    </select></label>
+    <div className="row3"><WField w="thanks" f="days" label="Días" type="number" min={1} max={3650} />
+      <WField w="thanks" f="maxNames" label="Máximo de nombres" type="number" min={1} max={1000} />
+      <WField w="thanks" f="intervalSec" label="Segundos por nombre" type="number" min={1} max={3600} /></div>
+    <WField w="thanks" f="showAnonymous" label="Mostrar suscripciones anónimas de YouTube" type="switch" />
+    <WField w="thanks" f="css" label="CSS personalizado" type="css" placeholder=".item .big { font-size: 48px; }" />
+    <p className="hint">Las fechas desconocidas se incluyen en cualquier ventana. Los ajustes se aplican al guardarlos.</p>
+    <ThanksList />
+  </>;
+}
+
+function ThanksList() {
+  const [list, setList] = useState<FollowersList | null>(null);
+  const [busy, setBusy] = useState(false);
+  const generation = useRef(0);
+  const load = useCallback(async () => {
+    const current = ++generation.current;
+    const next = await get<FollowersList>('/api/followers?pending=true&shown=true');
+    if (generation.current === current) setList(next);
+  }, []);
+  useEffect(() => {
+    const refresh = () => { void guard(load)(); };
+    refresh();
+    const offStatus = live.on('status', refresh), offWidgets = live.on('widgets', refresh), offOpen = live.onOpen(refresh);
+    return () => { generation.current++; offStatus(); offWidgets(); offOpen(); };
+  }, [load]);
+  const identify = (e: FollowerEntry) => e.id ? { platform: e.platform, id: e.id } : { platform: e.platform, name: e.name };
+  const thank = async (selection: { entries: ReturnType<typeof identify>[]; anonymous: (string | null)[] }) => {
+    setBusy(true);
+    try { await post('/api/followers/thank', selection); await load(); }
+    finally { setBusy(false); }
+  };
+  const pending = list?.entries.filter(e => e.source === 'offline') || [];
+  const anonymous = list?.anonymous.reduce((sum, a) => sum + a.count, 0) || 0;
+  const shown = list?.shown;
+  const canBulk = !!shown && (shown.entries.length > 0 || shown.anonymous.length > 0);
+  return <section data-thanks-list>
+    <h3 className="sub-h">Seguidores pendientes</h3>
+    <p className="hint">Las acciones se aplican al momento; «Marcar los mostrados» usa los ajustes guardados del widget.</p>
+    <div className="rows">{pending.length ? pending.map(e => <article className="eg-post eg-post--row" data-thanks-entry key={`${e.platform}:${e.id || e.name}`}>
+      <div className="eg-post__content"><b>{e.name}</b><span className="eg-post__meta"><PfIcon platform={e.platform} /> {e.platform === 'youtube' ? 'YouTube' : 'Twitch'}</span></div>
+      <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={busy} onClick={guard(() => thank({ entries: [identify(e)], anonymous: [] }))}>Agradecido</button>
+    </article>) : <EmptyState>No hay seguidores sin conexión pendientes.</EmptyState>}</div>
+    {anonymous > 0 && <p className="hint">YouTube: {anonymous} {anonymous === 1 ? 'suscripción anónima pendiente' : 'suscripciones anónimas pendientes'}.</p>}
+    <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" data-thanks-bulk disabled={busy || !canBulk} onClick={guard(async () => {
+      const current = await get<FollowersList>('/api/followers?pending=true&shown=true');
+      const selected = current.shown;
+      if (!selected.entries.length && !selected.anonymous.length) { await load(); return; }
+      if (!confirm('¿Marcar como agradecidos los seguidores que muestra el widget?')) return;
+      await thank({ entries: selected.entries.map(identify), anonymous: selected.anonymous.map(a => a.at) });
+    })}>Marcar los mostrados…</button>
+  </section>;
 }
 
 /** Widgets (v3): el catálogo de widgets en tarjetas. Lo que creas tú (los objetivos) vive dentro de su tarjeta. */
@@ -108,7 +171,7 @@ export function Widgets({ parts }: { parts: string[] }) {
     <PageHead crumb={`Configurar · ${Object.keys(INFO).length + 5} widgets`} title="Widgets"
       desc="Cada uno es una fuente de navegador para Meld (sus URL también están en Fuentes para Meld). Cuando la app trae un widget nuevo, aparece aquí como una tarjeta más." />
     <div className="lv-groups">
-      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={5} note="Se ajustan aquí y se dejan puestas en Meld" wide>
+      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={6} note="Se ajustan aquí y se dejan puestas en Meld" wide>
         {fixed('chat', <div className="lv-wchat"><i style={{ width: '62%' }} /><i style={{ width: '80%' }} /><i style={{ width: '48%' }} /><i style={{ width: '72%' }} /><i style={{ width: '56%' }} /></div>,
           [...((w.chat?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.chat?.css)])}
         <Card href="#/widgets/objetivos" label="Abrir Objetivos" open={open === 'objetivos'} title="Objetivos" aside={<span className="lv-cmeta">1 capa por objetivo</span>}
@@ -120,6 +183,8 @@ export function Widgets({ parts }: { parts: string[] }) {
           [{ t: (w.latest?.items || []).length ? `${(w.latest.items as string[]).length} tipos de apoyo` : 'Últimos apoyos' }, { t: 'con ticker' }, ...css(w.latest?.css || w.ticker?.css)])}
         {fixed('viewers', <div className="lv-wbar"><i /><i /></div>,
           [...((w.viewers?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...(w.viewers?.showTotal === false ? [] : [{ t: 'con total' }]), ...css(w.viewers?.css)])}
+        {fixed('thanks', <div className="lv-wcred"><b>GRACIAS</b><i /><i /></div>,
+          [...((w.thanks?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.thanks?.css)])}
         {fixed('credits', <div className="lv-wcred"><b>GRACIAS</b><i /><i /><i /><i /></div>, [{ t: w.credits?.title || 'Créditos del directo' }, ...css(w.credits?.css)],
           <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>)}
       </CardGroup>

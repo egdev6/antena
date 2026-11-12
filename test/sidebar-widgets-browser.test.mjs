@@ -137,7 +137,7 @@ test('Widgets cards retain live states and the sidebar warns about votes and giv
   assert.equal(await evaluateChrome(c, `${widgetsTail}.getAttribute('aria-label')`), 'sorteo abierto');
   assert.equal(await evaluateChrome(c, `${widgetsTail}.classList.contains('is-live')`), true);
   await call('POST', '/api/giveaway/close');
-  await waitDom(c, `${widgetsTail}?.textContent === '9' && ${card('#/sorteo')}?.textContent.includes('Cerrado')`, { timeoutMs: 12000 });
+  await waitDom(c, `${widgetsTail}?.textContent === '10' && ${card('#/sorteo')}?.textContent.includes('Cerrado')`, { timeoutMs: 12000 });
   assert.equal(await evaluateChrome(c, `${widgetsTail}.classList.contains('is-live')`), false);
   await call('POST', `/api/tierlists/${tierlist.id}/vote`, { item: 'One' });
   await waitDom(c, `${widgetsTail}?.textContent === 'votando' && ${card('#/tierlist')}?.textContent.includes('Votando')`, { timeoutMs: 12000 });
@@ -146,6 +146,6 @@ test('Widgets cards retain live states and the sidebar warns about votes and giv
   await call('POST', '/api/vote/cancel');
   await call('POST', '/api/questions/clear', { all: true });
   await call('POST', '/api/teleprompter/control', { action: 'pause' });
-  await waitDom(c, `${widgetsTail}?.textContent === '9' && ${card('#/preguntas')}?.textContent.includes('Cola vacía') && !${card('#/teleprompter')}?.textContent.includes('Leyendo')`, { timeoutMs: 12000 });
+  await waitDom(c, `${widgetsTail}?.textContent === '10' && ${card('#/preguntas')}?.textContent.includes('Cola vacía') && !${card('#/teleprompter')}?.textContent.includes('Leyendo')`, { timeoutMs: 12000 });
   assert.equal(await evaluateChrome(c, `${card('#/teleprompter')}.textContent.includes('Solo lo ves tú')`), true);
 });
