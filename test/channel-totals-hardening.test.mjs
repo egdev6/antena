@@ -128,7 +128,7 @@ test('S3: a live event during the very first read is added to its result', async
   assert.equal(t.value('follows@twitch'), 101);
 });
 
-test('S1/S7: an unreadable totals file does not stop antena; totals stay in memory and the file is never written', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async () => {
+test('S1/S7: an unreadable totals file does not stop antena; totals stay in memory and the file is never written', { skip: process.platform === 'win32' ? 'POSIX file modes: chmod cannot make a file unreadable on Windows; the unreadable-file fallback is platform-independent and runs on Linux' : process.getuid?.() === 0 ? 'root ignores file modes' : false }, async () => {
   const { chmod } = await import('node:fs/promises');
   const d = await dir(), file = path.join(d, 'channel-totals.json');
   await writeFile(file, '{"version":1,"offsets":{"follows@twitch":-1}}');

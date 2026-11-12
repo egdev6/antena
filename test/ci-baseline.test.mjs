@@ -76,6 +76,7 @@ test('CI enumera skips anidados y solo permite excepciones explícitas de plataf
       'POSIX filesystem contract; native Windows ACL equivalent in held-recovery-windows-storage.test.mjs',
       'Linux-only platform guard',
       'Requires a non-elevated Windows user: an elevated process (hosted runner) does not own its files with the user SID',
+      'POSIX file modes: chmod cannot make a file unreadable on Windows; the unreadable-file fallback is platform-independent and runs on Linux',
     ].flatMap(reason => [['win32', `    ok 1 - POSIX # SKIP ${reason}`, true], ['linux', `    ok 1 - POSIX # SKIP ${reason}`, false],
       ['win32', `    ok 1 - POSIX # SKIP ${reason} extra`, false]]),
     ['win32', '    ok 1 - vacío # SKIP', false],
