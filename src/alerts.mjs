@@ -270,6 +270,11 @@ export function normalizeTwitch(subType, e = {}) {
       return { type: 'cheer', vars: { user: e.is_anonymous ? 'Anónimo' : e.user_name, amount: e.bits, message: stripCheermotes(e.message) } };
     case 'channel.raid':
       return { type: 'raid', vars: { user: e.from_broadcaster_user_name, amount: e.viewers } };
+    case 'channel.bits.use':
+      // Power-ups spend bits without a channel.cheer event; plain cheers arrive here too
+      // (type «cheer») and already alert through channel.cheer, so they are ignored.
+      if (e.type !== 'power_up' && e.type !== 'custom_power_up') return null;
+      return { type: 'cheer', vars: { user: e.user_name, amount: e.bits, message: stripCheermotes(e.message?.text || ''), powerUp: e.power_up?.type || e.type } };
     case 'channel.channel_points_custom_reward_redemption.add':
       return { type: 'redemption', vars: { user: e.user_name, reward: e.reward?.title, cost: e.reward?.cost, input: e.user_input } };
     default:

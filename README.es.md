@@ -27,7 +27,7 @@ Alertas, chat y widgets de directo para **Meld Studio**, en local, gratis y con 
 
 antena se queda entera en tu PC y le da a tu directo una capa completa de alertas e interacción:
 
-- **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits, raids, recompensas) y YouTube (Super Chats, Super Stickers, miembros, hitos y membresías regaladas).
+- **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits y Power-ups, raids, recompensas) y YouTube (Super Chats, Super Stickers, miembros, hitos y membresías regaladas). Tabla evento → alerta: [docs/eventos.md](docs/eventos.md).
 - **Tres diseños por alerta:** la tarjeta 3D EGDEV; tu vídeo o imagen (webm con transparencia) con el mensaje encima, colocado donde quieras; o **vídeo + tarjeta**: tu vídeo o imagen de fondo a pantalla completa y encima la tarjeta 3D, con retraso de entrada y ajuste de posición. Todos con CSS propio.
 - **Variaciones:** otra versión de la alerta según la cantidad, el tier, el usuario, el mensaje o una probabilidad.
 - **Voz (TTS)** de los mensajes, **filtro** de palabras, enlaces y usuarios, y **pausa** con cola.

@@ -378,6 +378,7 @@ export class Twitch extends EventEmitter {
       ['channel.subscription.message', '1', { broadcaster_user_id: me }],
       ['channel.subscription.gift', '1', { broadcaster_user_id: me }],
       ['channel.cheer', '1', { broadcaster_user_id: me }],
+      ['channel.bits.use', '1', { broadcaster_user_id: me }],   // #130: Power-ups (bits without channel.cheer)
       ['channel.raid', '1', { to_broadcaster_user_id: me }],
       ['channel.channel_points_custom_reward_redemption.add', '1', { broadcaster_user_id: me }],
     ];
