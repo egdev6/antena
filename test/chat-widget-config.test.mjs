@@ -48,6 +48,45 @@ test('DEFAULT_CONFIG: reverse false y animIn/animOut slide (apariencia actual in
   assert.equal(chat.animOut, 'slide');
 });
 
+test('DEFAULT_CONFIG conserva los campos originales del chat y añade layout vertical', async () => {
+  const { DEFAULT_CONFIG } = await import('../src/store.mjs');
+  assert.deepEqual(DEFAULT_CONFIG.widgets.chat, {
+    platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26,
+    hideCommands: true, hideOwner: true, showPlatform: true, reverse: false,
+    animIn: 'slide', animOut: 'slide', layout: 'vertical', css: '',
+  });
+  assert.deepEqual(DEFAULT_CONFIG.widgets.chatVariants, []);
+});
+
+test('layout solo admite vertical u horizontal en el chat y sus variantes', async () => {
+  const { validatePath, validatePatch } = await import('../src/config-schema.mjs');
+  const { DEFAULT_CONFIG } = await import('../src/store.mjs');
+  const variant = { ...DEFAULT_CONFIG.widgets.chat, id: 'a', name: 'A' };
+  for (const value of ['vertical', 'horizontal']) {
+    assert.deepEqual(validatePath('widgets.chat.layout', value), []);
+    assert.deepEqual(validatePatch({ widgets: { chatVariants: [{ ...variant, layout: value }] } }), []);
+  }
+  assert.ok(validatePath('widgets.chat.layout', 'diagonal').length);
+  assert.ok(validatePatch({ widgets: { chatVariants: [{ ...variant, layout: 'diagonal' }] } }).length);
+  assert.ok(validatePatch({ widgets: { chatVariants: 'no es una lista' } }).length);
+});
+
+test('Store.load conserva el chat legacy y completa layout y chatVariants ausentes', async () => {
+  const { Store } = await import('../src/store.mjs');
+  const dir = await mkdtemp(path.join(tmpdir(), 'egdev-chat-legacy-'));
+  try {
+    const legacy = { platforms: ['youtube'], maxMessages: 7, css: '.antiguo{}', reverse: true };
+    await writeFile(path.join(dir, 'config.json'), JSON.stringify({ widgets: { chat: legacy } }));
+    const s = await new Store(dir).load();
+    assert.deepEqual(s.config.widgets.chat, {
+      platforms: ['youtube'], maxMessages: 7, fadeAfterSec: 0, fontSize: 26,
+      hideCommands: true, hideOwner: true, showPlatform: true, reverse: true,
+      animIn: 'slide', animOut: 'slide', layout: 'vertical', css: '.antiguo{}',
+    });
+    assert.deepEqual(s.config.widgets.chatVariants, []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('Store.load sanea chat inválido con default y aviso, y conserva lo válido', async () => {
   const { Store } = await import('../src/store.mjs');
   const dir = await mkdtemp(path.join(tmpdir(), 'egdev-chat-cfg-'));

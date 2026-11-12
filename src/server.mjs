@@ -9,7 +9,7 @@ import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { Store, ROOT, deepMerge } from './store.mjs';
 import { instanceId } from './instance-id.mjs';
-import { validatePatch, validatePath, warnUnknownKeys } from './config-schema.mjs';
+import { validatePatch, validatePath, validateChatVariantsTransition, warnUnknownKeys } from './config-schema.mjs';
 import { Bus } from './bus.mjs';
 import { acceptWebSocket } from './ws-stream.mjs';
 import { Twitch } from './twitch.mjs';
@@ -28,6 +28,7 @@ import { registerMediaRoutes } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
 import { registerGoalsRoutes } from './routes/goals.mjs';
+import { registerChatVariantsRoutes } from './routes/chat-variants.mjs';
 import { registerMeldRoutes } from './routes/meld.mjs';
 import { registerViewersRoutes } from './routes/viewers.mjs';
 import { registerThemeRoutes } from './routes/theme.mjs';
@@ -647,9 +648,22 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // #106: validación por esquema antes de guardar nada; las claves desconocidas se aceptan y se avisan.
     const errors = validatePatch(patch);
     if (errors.length) throw httpError(400, errors.map(e => e.message).join('; '));
+    const hasVariants = patch.widgets && Object.hasOwn(patch.widgets, 'chatVariants');
+    if (hasVariants) {
+      const [error] = validateChatVariantsTransition(store.config.widgets?.chatVariants, patch.widgets.chatVariants, store.config.widgets?.chat);
+      if (error) throw httpError(400, error.message);
+    }
     warnUnknownKeys(patch);
-    if (hasOverlays) await customOverlays.replaceAll(overlaysInput);
-    await store.patchConfig(patch);
+    if (hasOverlays && hasVariants) {
+      // Preparar ambos y aceptarlos juntos antes del primer await: ninguna otra petición
+      // puede cambiar las variantes entre la validación y la mutación del store.
+      const overlays = customOverlays.prepareReplacement(overlaysInput);
+      await store.patchConfig({ ...patch, customOverlays: overlays });
+      customOverlays.notify(overlays); // la segunda notificación es la de replaceAll
+    } else {
+      if (hasOverlays) await customOverlays.replaceAll(overlaysInput);
+      await store.patchConfig(patch);
+    }
     afterConfig(patch);
     return { config: store.publicConfig() };
   });
@@ -862,12 +876,22 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   route('GET', '/api/widgets', async () => engine.widgetState());
   route('PUT', '/api/widgets', async body => {
     const patch = { ...body }; delete patch.goals;
+    // Solo el campo nuevo se valida aquí: el resto del merge legacy no cambia.
+    if (patch.chat && Object.hasOwn(patch.chat, 'layout')) {
+      const [error] = validatePath('widgets.chat.layout', patch.chat.layout ?? false);
+      if (error) throw httpError(400, error.message);
+    }
+    if (Object.hasOwn(patch, 'chatVariants')) {
+      const [error] = validateChatVariantsTransition(store.config.widgets?.chatVariants, patch.chatVariants, store.config.widgets?.chat);
+      if (error) throw httpError(400, error.message);
+    }
     store.config.widgets = deepMerge(store.config.widgets, patch);
     if (Array.isArray(body.goals)) store.config.widgets.goals = body.goals;
     await store.save('widgets');
     return { widgets: store.config.widgets };
   });
   // widgets y objetivos (#128: rutas de cajas/barras en módulo propio, mismo punto y orden)
+  registerChatVariantsRoutes({ route, store });
   registerGoalsRoutes({ route, store, session, id8 });
   route('POST', '/api/credits/play', async () => { bus.send('credits', { action: 'play' }, ['widget']); return { ok: true }; });
   route('POST', '/api/credits/stop', async () => { bus.send('credits', { action: 'stop' }, ['widget']); return { ok: true }; });

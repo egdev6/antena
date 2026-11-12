@@ -40,6 +40,9 @@ export function registerShortcutRoutes({ route, store, engine, session, interact
   // ---------- fuentes de navegador para Meld ----------
   route('GET', '/api/sources', async (_, __, url, req) => {
     const base = `http://127.0.0.1:${req.socket.localPort}`;
+    const variants = (store.config.widgets.chatVariants || []).map(v => ({
+      id: 'chat-' + v.id, name: `Chat · ${v.name}`, path: `/widget/chat?variant=${encodeURIComponent(v.id)}`, width: 600, height: 900,
+    }));
     const goals = (store.config.widgets.goals || []).map(g => {
       // Recomendación como en Goals del panel: margen/cabecera + 60 px por barra visible.
       // No redimensiona fuentes ya instaladas; caja oculta o vacía conserva un mínimo útil.
@@ -51,7 +54,7 @@ export function registerShortcutRoutes({ route, store, engine, session, interact
     const custom = (store.config.customOverlays || []).map(o => ({
       id: 'custom-' + o.id, name: `Overlay · ${o.name}`, path: `/custom/${o.id}`, width: o.width, height: o.height,
     }));
-    const sources = [...BROWSER_SOURCES.slice(0, 2), ...goals, ...BROWSER_SOURCES.slice(2), ...custom].map(x => ({ ...x, url: base + x.path }));
+    const sources = [...BROWSER_SOURCES.slice(0, 2), ...variants, ...goals, ...BROWSER_SOURCES.slice(2), ...custom].map(x => ({ ...x, url: base + x.path }));
     return {
       base, sources,
       panels: [

@@ -205,10 +205,11 @@ export class CustomOverlays {
     return o;
   }
   versions() { return Object.fromEntries(this.list().map(o => [o.id, o.updatedAt || 0])); }
+  notify(next) { this.onChange(next); }
   async #commit(next) {
     this.store.config.customOverlays = next;
     await this.store.save('customOverlays');
-    this.onChange(next);
+    this.notify(next);
   }
   #stamp(prev) { return Math.max(Date.now(), (prev || 0) + 1); }
   async create(input) {
@@ -246,9 +247,8 @@ export class CustomOverlays {
     await this.#commit(next);
     return overlay;
   }
-  /** Replaces the whole list (generic config write paths: PUT /api/config, POST /api/config/set, MCP
-   *  config tools). Applies the same rules as create/update; unchanged overlays keep their version. */
-  async replaceAll(input) {
+  /** Prepara la lista sin mutar ni guardar; el llamador debe guardarla en el mismo turno. */
+  prepareReplacement(input) {
     if (!Array.isArray(input)) throw httpError(400, 'customOverlays tiene que ser una lista de overlays');
     const prev = new Map(this.list().map(o => [o.id, o]));
     const seen = new Set();
@@ -271,6 +271,11 @@ export class CustomOverlays {
     });
     for (const o of next) checkSize(o, next);
     if (!next.length) checkSize({}, next);
+    return next;
+  }
+  /** Replaces the whole list with the same rules and notifications as before. */
+  async replaceAll(input) {
+    const next = this.prepareReplacement(input);
     await this.#commit(next);
     return next;
   }

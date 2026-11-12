@@ -209,6 +209,12 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .widget-layout .browser-source .overlay-url{margin:0}
 .widget-layout .browser-source .overlay-url code{min-width:0;overflow-wrap:anywhere;white-space:normal}
 @media (max-width:1180px){.editor.widget-layout{grid-template-columns:1fr}}
+/* Chat: el selector y sus acciones pertenecen al mismo ajuste, también en móvil. */
+.chat-variant-editor .chat-variants{display:grid;gap:10px;margin-bottom:20px}
+.chat-variant-editor .chat-variants label,.chat-variant-editor .chat-variants p{margin:0}
+.chat-variant-editor .chat-variant-name{display:grid;gap:10px}
+.chat-variant-editor .chat-variant-error{color:var(--color-status-danger)}
+.chat-variant-editor .chat-settings{border:0;padding:0;margin:0;min-width:0}
 /* StageFrame */
 .preview{position:relative;aspect-ratio:16/9;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--color-border-default);
   background-color:var(--color-primitive-neutral-950);
