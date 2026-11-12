@@ -83,7 +83,7 @@ const T = [];
 const tool = (name, description, properties, call, required = []) => T.push({ name, description, inputSchema: { type: 'object', properties, required, additionalProperties: false }, call });
 
 // estado y configuración
-tool('estado', 'Estado general: conexiones (Twitch, YouTube, chat, Meld), overlays abiertos, pausa, totales del directo actual y metadatos de recuperación de alertas retenidas (listado limitado, sin payload ni ejecución automática).', {}, async () => {
+tool('estado', 'Estado general: conexiones (Twitch, YouTube, chat, Meld), overlays abiertos, pausa, totales del directo, envío de métricas (último éxito, último error y pendientes) y recuperación de alertas retenidas (sin payload ni ejecución automática).', {}, async () => {
   const [st, ses] = await Promise.all([get('/api/status'), get('/api/session')]);
   return { ...st, directo: { titulo: ses.title, inicio: ses.startedAt, eventos: ses.eventCount, totales: ses.totals } };
 });

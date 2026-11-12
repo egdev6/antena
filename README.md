@@ -494,6 +494,27 @@ Viewer `viewer_samples` coverage reports observed seconds and `ratio = coveredSe
 
 Version 1 allows additive fields, metrics and coverage bases; removing or renaming fields or changing definitions requires a new version and `/api/metrics/v2/…`.
 
+#### Optional local push
+
+Push is **off by default**. To send an ended automatic session to a local receiver, set both process environment variables before starting antena. For example, in PowerShell:
+
+```powershell
+$env:ANTENA_PUSH_URL = 'http://127.0.0.1:4311/api/v1/ingest/antena/sessions'
+$secret = Read-Host 'Receiver token' -AsSecureString
+$env:ANTENA_PUSH_TOKEN = [System.Net.NetworkCredential]::new('', $secret).Password
+pnpm start
+```
+
+Only explicit `http://127.0.0.1:<port>` or `http://[::1]:<port>` URLs are accepted, optionally with a path: no credentials, query or fragment. The token is sent only as a Bearer authorization header. It is not saved in the delivery queue or exposed by the status and config APIs. Protect the process environment and the session data directory.
+
+The POST body is the existing v1 detail document, with no added fields, and is limited to 256 KiB. Each retry reuses the same bytes; a later GET can have a different `generatedAt` because it generates a fresh document. Responses 200/`stored` and 200/`unchanged` complete delivery. HTTP 408, 429, 5xx and connection failures retry up to five total attempts, with waits of 1, 2, 4 and 8 seconds; other responses are permanent failures. Each request has a five-second timeout. A failed receiver does not hold up session capture or ending.
+
+Up to 100 pending documents, their attempt count and retry time, and the IDs of delivered or permanently failed sessions are stored in `push-export.json` in the data directory. It contains session metrics but no token; keep it private and use only one antena process per data directory. A changed receiver leaves the old queue pending rather than sending it to the new address. On startup, after a successful end and as queue space opens, antena reconciles finished automatic sessions still present in the data directory against those IDs. Enabling push can therefore send older finished sessions too. If the queue is full, a document is too large, or the queue cannot be read or written, delivery reports an error. An oversized stored document is permanently rejected without holding up later items.
+
+Automatic sessions that end while push is enabled, and older eligible archives discovered during reconciliation, remain protected until their queue or permanent-failure record is durable. This also covers a recovered ended current session after an interrupted cutover, including a disabled restart after the first queue write failed. Archives awaiting reconciliation while push is enabled, or while a saved queue remains pending, can temporarily exceed configured session retention. Normal retention resumes after the record is saved; ordinary sessions captured with push disabled and no saved queue retain their usual behavior.
+
+Delivery uses **at-least-once**, not exactly-once, semantics: a crash after a POST but before its result is durably recorded can cause another POST. The receiver **must be idempotent**. A permanent response can also be repeated if a crash occurs before its record can be saved. Delivery is not guaranteed after the retry limit, a permanent failure, loss of queue data, or external removal of an unsent session. Last success and error are in-memory; pending survives restart. `GET /api/status`, `GET /api/state` (`status.push`) and MCP `estado` show the last success, sanitized last error and pending count.
+
 ### Twitch
 
 1. Create an app at https://dev.twitch.tv/console/apps/create:
