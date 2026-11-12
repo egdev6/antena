@@ -1,9 +1,9 @@
 // Goal bars with a platform-reported channel total (#132): Twitch followers/subs and YouTube
 // subscribers show the real total plus a persistent correction, never reset by a session cut.
 // Synthetic temp dirs and injected readers: never touches real data/ or platforms.
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -11,7 +11,9 @@ import { ChannelTotals, isTotalMetric, TOTAL_FILE } from '../src/channel-totals.
 import { PLATFORM_METRICS } from '../src/goals.mjs';
 import { Session } from '../src/session.mjs';
 
-const tmp = () => mkdtemp(path.join(tmpdir(), 'totals-132-'));
+const dirs = [];
+const tmp = async () => { const dir = await mkdtemp(path.join(tmpdir(), 'totals-132-')); dirs.push(dir); return dir; };
+after(async () => { await Promise.all(dirs.map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))); });
 const fixed = values => Object.fromEntries(Object.entries(values).map(([k, v]) => [k, async () => {
   if (v instanceof Error) throw v;
   return v;
