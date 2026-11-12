@@ -47,7 +47,7 @@ import { Timers, newTimer, alertFields, limitWarnings, TIMER_KEYS, TIMER_DESTINA
 import { newCommand, normalizeTrigger } from './commands.mjs';
 import {
   ALERT_TYPES, DEFAULT_ALERTS, LOOK_DEFAULTS, EXTRA_DEFAULTS, ALERT_FIELDS, DEFAULT_CONDITIONS, DEFAULT_COMMAND, SAMPLES,
-  buildAlert, buildCommandAlert, buildCustomAlert, mediaKind, alertConfig,
+  buildAlert, buildCommandAlert, buildCustomAlert, mediaKind, alertConfig, youtubeAvatarUrl,
 } from './alerts.mjs';
 
 const PUBLIC = path.join(ROOT, 'public');
@@ -236,16 +236,27 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   session.on('change', () => { engine.pushWidgets(); pushTimeline(); });
   channelTotals.on('change', () => { engine.pushWidgets(); pushStatus(); });
   followers.on('change', pushStatus);
+  followers.on('liveFollow', ({ id, name, avatar }) => {
+    const safeAvatar = youtubeAvatarUrl(avatar);
+    const event = { externalId: `ytsub:${id}`, type: 'ytsub', vars: { user: name, ...(safeAvatar ? { avatar: safeAvatar } : {}) } };
+    channelTotals.onEvent(event);
+    engine.handleEvent(event);
+  });
   // Refresh channel totals and followers at startup and on the same reconnect transitions.
-  const refreshFollowers = platform => channelTotals.refresh(platform).then(() => followers.sync(platform)).catch(() => {});
+  const refreshFollowers = (platform, options) => channelTotals.refresh(platform).then(() => followers.sync(platform, options)).catch(() => {});
   let twitchState = twitch.status.state, youtubeState = youtube.status.state, youtubeAccount = youtube.status.account;
   twitch.on('status', st => {
     if (st.state === 'conectado' && twitchState !== 'conectado') refreshFollowers('twitch');
     twitchState = st.state;
   });
   youtube.on('status', st => {
-    if ((st.state === 'escuchando' && youtubeState !== 'escuchando') || (st.account && st.account !== youtubeAccount)) refreshFollowers('youtube');
+    const entered = st.state === 'escuchando' && youtubeState !== 'escuchando';
+    const left = st.state !== 'escuchando' && youtubeState === 'escuchando';
+    const accountChanged = st.account && st.account !== youtubeAccount;
     youtubeState = st.state; youtubeAccount = st.account;
+    if (left) followers.endYouTubeListening();
+    if (entered) followers.beginYouTubeListening(active => refreshFollowers('youtube', { active, live: false, establish: true }));
+    else if (accountChanged) refreshFollowers('youtube', { live: false });
   });
   // la cronología apunta también lo que pasa en los interactivos
   interactive.on('questionShown', q => session.addNote({ kind: 'question', text: q.text, user: q.user, platform: q.platform }));
@@ -295,6 +306,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }]));
   };
   store.on('change', patch => {
+    if (patch.youtube || patch.all) followers.updateYouTubePolling();
     if (patch.theme || patch.all) bus.send('theme', publicTheme(store.config.theme), ['overlay', 'preview', 'widget']);
     // The replace-by-type Bus needs a COMPLETE panel rendering snapshot, including
     // after common CSS changes. Keep the three-section config contract unchanged.

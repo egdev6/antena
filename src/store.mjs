@@ -20,7 +20,7 @@ export const DEFAULT_CONFIG = {
   port: 4500,
   paused: false,
   twitch: { clientId: '' },
-  youtube: { apiKey: '', channelId: '', video: '', pollSeconds: 8, clientId: '', clientSecret: '' },  // clientId/Secret: app OAuth «de escritorio» para escribir en el chat
+  youtube: { apiKey: '', channelId: '', video: '', pollSeconds: 8, subscriberPollSeconds: 120, clientId: '', clientSecret: '' },  // clientId/Secret: app OAuth «de escritorio» para escribir en el chat
   chat: { twitchChannel: '', sendTo: 'twitch' },   // sendTo: twitch | youtube | both (desde dónde escribes por defecto)        // vacío = tu propio canal al conectar Twitch
   overlay: { volume: 0.6, gapMs: 700, css: '', queueMax: 20 },   // css: común a todas las alertas; queueMax (#66): tope de la cola del overlay, 0 = sin tope
   tts: { enabled: true, voice: '', rate: 1, pitch: 1, volume: 1, maxChars: 200 },

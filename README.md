@@ -27,7 +27,7 @@ Stream alerts, chat and widgets for **Meld Studio** — local, free and with the
 
 antena runs entirely on your PC and gives your stream a full alert and interaction layer:
 
-- **Alerts** from Twitch (followers, subs, resubs, gifted subs, bits and Power-ups, raids, rewards) and YouTube (Super Chats, Super Stickers, members, milestones and gifted memberships). Event → alert table: [docs/eventos.md](docs/eventos.md).
+- **Alerts** from Twitch (followers, subs, resubs, gifted subs, bits and Power-ups, raids, rewards) and YouTube (new subscribers, Super Chats, Super Stickers, members, milestones and gifted memberships). Event → alert table: [docs/eventos.md](docs/eventos.md).
 - **Three designs per alert:** the EGDEV 3D card; your own video or image (webm with transparency) with the message on top, placed wherever you want; or **video + card**: your video or image as a full-screen background with the 3D card on top, with an entry delay and position offset. All with your own CSS.
 - **Variations:** another version of the alert depending on the amount, the tier, the user, the message or a probability.
 - **Voice (TTS)** for messages, **filtering** of words, links and users, and **pause** with queue.
@@ -510,7 +510,9 @@ Permissions: `moderator:read:followers`, `channel:read:subscriptions`, `bits:rea
 
 **Automatic connection:** when Meld starts streaming (or antena starts with the stream already live), antena starts listening to the YouTube chat on its own, without your account. While YouTube does not show the stream yet, it retries every 30 s, up to 10 times (with a channel ID each attempt costs 100 quota units; with the stream link, much less). When the stream ends, the chat stops and the status is cleared. If a configured platform (Twitch or YouTube) is still not connected a few seconds after the stream starts, the panel shows a warning with a button to connect each one.
 
-Quota: 10,000 units per day. Each read costs about 5, so with 8 s between reads there is enough for about 4 hours. YouTube does not report new subscribers in real time.
+Quota: 10,000 units per day. Each chat read costs about 5, so with 8 s between reads there is enough for about 4 hours.
+
+**New subscriber alert (`ytsub`):** connect the channel's account as described below. While the chat is listening, antena checks public subscribers every 120 seconds by default; set the interval in **Connections › YouTube** (minimum 60 seconds, 0 disables polling). The first read is a silent baseline; later newly detected subscribers get an alert and enter the local follower registry. Only public subscriptions have names, alerts are delayed by the polling interval, and the API may limit the number returned. Each subscriber-list page costs one quota unit, plus an account-total read; the daily quota is shared with chat. A `quotaExceeded` error stops subscriber polling until the next listening period.
 
 **Writing in the YouTube chat** needs your account (once):
 
@@ -529,6 +531,7 @@ Videos, images and sounds are uploaded from the panel (or with `importar_archivo
 | Alert | Variables |
 |---|---|
 | Follower | `{user}` |
+| New YouTube subscriber | `{user}` `{avatar}` (optional URL) |
 | Subscription | `{user}` `{tier}` |
 | Resubscription | `{user}` `{months}` `{tier}` `{message}` |
 | Gifted subs | `{user}` `{amount}` `{tier}` |

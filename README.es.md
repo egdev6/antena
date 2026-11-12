@@ -27,7 +27,7 @@ Alertas, chat y widgets de directo para **Meld Studio**, en local, gratis y con 
 
 antena se queda entera en tu PC y le da a tu directo una capa completa de alertas e interacción:
 
-- **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits y Power-ups, raids, recompensas) y YouTube (Super Chats, Super Stickers, miembros, hitos y membresías regaladas). Tabla evento → alerta: [docs/eventos.md](docs/eventos.md).
+- **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits y Power-ups, raids, recompensas) y YouTube (suscriptores nuevos, Super Chats, Super Stickers, miembros, hitos y membresías regaladas). Tabla evento → alerta: [docs/eventos.md](docs/eventos.md).
 - **Tres diseños por alerta:** la tarjeta 3D EGDEV; tu vídeo o imagen (webm con transparencia) con el mensaje encima, colocado donde quieras; o **vídeo + tarjeta**: tu vídeo o imagen de fondo a pantalla completa y encima la tarjeta 3D, con retraso de entrada y ajuste de posición. Todos con CSS propio.
 - **Variaciones:** otra versión de la alerta según la cantidad, el tier, el usuario, el mensaje o una probabilidad.
 - **Voz (TTS)** de los mensajes, **filtro** de palabras, enlaces y usuarios, y **pausa** con cola.
@@ -510,7 +510,9 @@ Permisos: `moderator:read:followers`, `channel:read:subscriptions`, `bits:read`,
 
 **Conexión automática:** cuando Meld empieza a emitir (o antena arranca con el directo ya en marcha), antena se pone a escuchar el chat de YouTube sola, sin tu cuenta. Mientras YouTube aún no muestra el directo, reintenta cada 30 s, hasta 10 veces (con el ID del canal cada intento cuesta 100 unidades de cuota; con el enlace del directo, mucho menos). Al terminar el directo, el chat se detiene y el estado queda limpio. Si unos segundos después de empezar alguna plataforma configurada (Twitch o YouTube) sigue sin conectar, el panel muestra un aviso con un botón para conectar cada una.
 
-Cuota: 10.000 unidades al día. Cada lectura cuesta unas 5, así que con 8 s entre lecturas hay para unas 4 horas. YouTube no avisa en tiempo real de los suscriptores nuevos.
+Cuota: 10.000 unidades al día. Cada lectura del chat cuesta unas 5, así que con 8 s entre lecturas hay para unas 4 horas.
+
+**Alerta de nuevo suscriptor (`ytsub`):** conecta la cuenta del canal como se explica debajo. Mientras se escucha el chat, antena consulta las suscripciones públicas cada 120 segundos de serie; cambia el intervalo en **Conexiones › YouTube** (mínimo 60 segundos, 0 desactiva el sondeo). La primera lectura fija una referencia sin alertar; los nuevos detectados después reciben alerta y entran en el registro local de seguidores. Solo tienen nombre las suscripciones públicas, la alerta llega con el retraso del intervalo y la API puede limitar cuántos devuelve. Cada página de suscriptores cuesta una unidad de cuota, más una lectura del total de la cuenta; la cuota diaria se comparte con el chat. Un error `quotaExceeded` detiene el sondeo de suscriptores hasta el siguiente periodo de escucha.
 
 **Escribir en el chat de YouTube** necesita tu cuenta (una vez):
 
@@ -529,6 +531,7 @@ Vídeos, imágenes y sonidos se suben desde el panel (o con `importar_archivo` p
 | Alerta | Variables |
 |---|---|
 | Seguidor | `{user}` |
+| Nuevo suscriptor de YouTube | `{user}` `{avatar}` (URL opcional) |
 | Suscripción | `{user}` `{tier}` |
 | Resuscripción | `{user}` `{months}` `{tier}` `{message}` |
 | Subs regaladas | `{user}` `{amount}` `{tier}` |
