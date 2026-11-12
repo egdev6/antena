@@ -11,6 +11,9 @@ const MAX_TIMER_MS = 2_147_483_647;
 const blank = () => ({ lastSync: null, total: null, totalSource: null, knownIds: [], entries: [], anonymous: [] });
 const validTotal = n => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const lower = name => String(name || '').toLowerCase();
+// The same identity rule drives both selective writes and shown-selection checks.
+export const matchesFollowerSelection = (platform, entry, selected) => selected.platform === platform
+  && (Object.hasOwn(selected, 'id') ? entry.id === selected.id : entry.id === null && entry.name === selected.name);
 const validPlatform = data => data && typeof data === 'object' && !Array.isArray(data)
   && (data.lastSync === null || (typeof data.lastSync === 'string' && Number.isFinite(Date.parse(data.lastSync))))
   && (data.total === null || validTotal(data.total))
@@ -200,7 +203,7 @@ export class FollowerRegistry extends EventEmitter {
     let touched = false;
     for (const p of PLATFORMS) {
       for (const e of this.platforms[p].entries) {
-        const selected = entries.some(s => s.platform === p && (Object.hasOwn(s, 'id') ? e.id === s.id : e.id === null && e.name === s.name));
+        const selected = entries.some(s => matchesFollowerSelection(p, e, s));
         if (!e.thanked && selected) { e.thanked = true; touched = true; }
       }
     }

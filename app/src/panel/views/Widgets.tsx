@@ -124,12 +124,15 @@ function ThanksList() {
   const identify = (e: FollowerEntry) => e.id ? { platform: e.platform, id: e.id } : { platform: e.platform, name: e.name };
   const thank = async (selection: { entries: ReturnType<typeof identify>[]; anonymous: (string | null)[] }) => {
     setBusy(true);
-    try { await post('/api/followers/thank', selection); await load(); }
-    finally { setBusy(false); }
+    try {
+      try { await post('/api/followers/thank', { ...selection, onlyShown: true }); }
+      catch (error) { await load().catch(() => {}); throw error; }
+      await load();
+    } finally { setBusy(false); }
   };
-  const pending = list?.entries.filter(e => e.source === 'offline') || [];
-  const anonymous = list?.anonymous.reduce((sum, a) => sum + a.count, 0) || 0;
   const shown = list?.shown;
+  const pending = shown?.entries || [];
+  const anonymous = shown?.anonymous.reduce((sum, a) => sum + a.count, 0) || 0;
   const canBulk = !!shown && (shown.entries.length > 0 || shown.anonymous.length > 0);
   return <section data-thanks-list>
     <h3 className="sub-h">Seguidores pendientes</h3>
@@ -137,7 +140,7 @@ function ThanksList() {
     <div className="rows">{pending.length ? pending.map(e => <article className="eg-post eg-post--row" data-thanks-entry key={`${e.platform}:${e.id || e.name}`}>
       <div className="eg-post__content"><b>{e.name}</b><span className="eg-post__meta"><PfIcon platform={e.platform} /> {e.platform === 'youtube' ? 'YouTube' : 'Twitch'}</span></div>
       <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={busy} onClick={guard(() => thank({ entries: [identify(e)], anonymous: [] }))}>Agradecido</button>
-    </article>) : <EmptyState>No hay seguidores sin conexión pendientes.</EmptyState>}</div>
+    </article>) : <EmptyState>No hay seguidores pendientes en el widget.</EmptyState>}</div>
     {anonymous > 0 && <p className="hint">YouTube: {anonymous} {anonymous === 1 ? 'suscripción anónima pendiente' : 'suscripciones anónimas pendientes'}.</p>}
     <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" data-thanks-bulk disabled={busy || !canBulk} onClick={guard(async () => {
       const current = await get<FollowersList>('/api/followers?pending=true&shown=true');

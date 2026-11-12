@@ -81,8 +81,13 @@ bodies return 400 without changes; an unreadable registry rejects thank updates 
 An additive selective form, `{ "entries": [{ "platform": "twitch", "id": "<id>" },
 { "platform": "youtube", "name": "<name>" }], "anonymous": ["<at>"] }`, targets
 platform/id pairs, platform/name pairs only for ID-less entries, and anonymous YouTube
-records by timestamp (`null` is allowed for an unknown timestamp). Either list may be omitted.
-`?pending=true&shown=true` also returns the exact records selected for the widget. The
+records by timestamp (`null` is allowed for an unknown timestamp). Non-null timestamps must
+exactly match their canonical ISO form, such as `2026-01-01T00:00:00.000Z`; invalid dates
+return 400 without changes. Either list may be omitted. Add `"onlyShown": true` to require
+every selected entry and anonymous record to remain in the current widget selection; if any
+is no longer selected, the entire request returns 409 without changes. The panel uses this
+guard for both individual and bulk actions. `?pending=true&shown=true` also returns the exact
+records selected for the widget. The
 `/widget/thanks` layer displays pending offline entries one at a time and optionally a final
 anonymous count; its window and platforms use saved settings. Unknown dates are included,
 and with no archived session the last-stream window has no cutoff. The panel's individual

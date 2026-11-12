@@ -179,9 +179,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   let lastStreamCutoff = null, cutoffGeneration = 0;
   const refreshLastStream = async () => {
     const generation = ++cutoffGeneration;
-    const [last] = await session.list();
-    const end = Date.parse(last?.endedAt), start = Date.parse(last?.startedAt);
-    if (generation === cutoffGeneration) lastStreamCutoff = Number.isFinite(end) ? end : Number.isFinite(start) ? start : null;
+    const sessions = await session.list();
+    let newest = null;
+    for (const archived of sessions) {
+      const end = Date.parse(archived.endedAt), start = Date.parse(archived.startedAt);
+      const at = Number.isFinite(end) ? end : start;
+      if (Number.isFinite(at) && (newest === null || at > newest)) newest = at;
+    }
+    if (generation === cutoffGeneration) lastStreamCutoff = newest;
   };
   await refreshLastStream();
   const thanksSelection = () => followers.thanksSelection(deepMerge(DEFAULT_CONFIG.widgets.thanks, store.config.widgets?.thanks || {}), lastStreamCutoff);

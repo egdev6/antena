@@ -15,7 +15,7 @@ const DAY = 86_400_000;
 const stamp = (base, days) => new Date(base + days * DAY).toISOString();
 const entry = (id, name, followedAt, source = 'offline', thanked = false) => ({ id, name, followedAt, source, thanked });
 const platform = entries => ({ lastSync: null, total: null, totalSource: null, knownIds: ['private-known-id'], entries, anonymous: [] });
-async function start(t, { locked = false, archive = true } = {}) {
+async function start(t, { locked = false, archive = true, archives = [] } = {}) {
   const dir = await mkdtemp(path.join(root, 'case-'));
   const now = Date.now(), old = stamp(now, -10), cutoff = stamp(now, -5), recent = stamp(now, -2), newest = stamp(now, -1);
   const twitch = platform([
@@ -26,11 +26,14 @@ async function start(t, { locked = false, archive = true } = {}) {
   youtube.anonymous = [{ at: old, count: 2, thanked: false }, { at: recent, count: 3, thanked: false }, { at: newest, count: 7, thanked: true }];
   if (locked) await mkdir(path.join(dir, 'followers.json'));
   else await writeFile(path.join(dir, 'followers.json'), JSON.stringify({ version: 1, platforms: { twitch, youtube } }));
-  if (archive) {
+  if (archive || archives.length) {
     await mkdir(path.join(dir, 'sessions'));
-    const meta = { id: 'prior', title: 'Previous', startedAt: stamp(now, -6), endedAt: cutoff, events: 0 };
-    await writeFile(path.join(dir, 'sessions', 'prior.json'), JSON.stringify({ ...meta, events: [], notes: [], goalOffsets: {} }));
-    await writeFile(path.join(dir, 'sessions', 'prior.meta.json'), JSON.stringify(meta));
+    const saved = archive ? [{ id: 'prior', title: 'Previous', startedAt: stamp(now, -6), endedAt: cutoff }, ...archives] : archives;
+    for (const session of saved) {
+      const meta = { ...session, events: 0 };
+      await writeFile(path.join(dir, 'sessions', `${session.id}.json`), JSON.stringify({ ...session, events: [], notes: [], goalOffsets: {} }));
+      await writeFile(path.join(dir, 'sessions', `${session.id}.meta.json`), JSON.stringify(meta));
+    }
   }
   const app = await createApp({ dataDir: dir, mediaDir: path.join(dir, 'media'), log: () => {} });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
@@ -129,6 +132,65 @@ test('S4: lastStream without archives has no cutoff, and a new cut refreshes it'
   }
   assert.deepEqual(after.names.map(n => n.name), ['Unknown']);
   assert.equal(after.anonymous, 0);
+});
+
+test('S4: newest archive without an end uses its start for the cutoff', async t => {
+  const now = Date.now();
+  const { call } = await start(t, { archive: false, archives: [
+    { id: 'z-old', title: 'Older', startedAt: stamp(now, -13), endedAt: stamp(now, -12) },
+    { id: 'a-new', title: 'Newer', startedAt: stamp(now, -1.5) },
+  ] });
+  assert.equal((await call('PUT', '/api/widgets', { thanks: { window: 'lastStream', maxNames: 20 } })).status, 200);
+  const thanks = (await call('GET', '/api/widgets')).body.thanks;
+  assert.deepEqual(thanks, { names: [{ name: 'Unknown', platform: 'twitch' }, { name: 'Twitch New', platform: 'twitch' }], anonymous: 0 });
+});
+
+test('S3: onlyShown rejects hidden entries and anonymous records atomically, but accepts the current selection', async t => {
+  const { call, dir, recent } = await start(t);
+  assert.equal((await call('PUT', '/api/widgets', { thanks: { window: 'all', platforms: ['youtube'], maxNames: 1, showAnonymous: false } })).status, 200);
+  const before = (await call('GET', '/api/followers')).body, bytes = await readFile(path.join(dir, 'followers.json'), 'utf8');
+  const visible = { platform: 'youtube', id: 'y-new' };
+  for (const body of [
+    { entries: [visible, { platform: 'twitch', id: 't-new' }], onlyShown: true },
+    { entries: [visible, { platform: 'youtube', id: 'shared' }], onlyShown: true },
+    { entries: [{ platform: 'youtube', name: 'YouTube New' }], onlyShown: true },
+    { entries: [visible], anonymous: [recent], onlyShown: true },
+  ]) {
+    const result = await call('POST', '/api/followers/thank', body);
+    assert.equal(result.status, 409, JSON.stringify(body));
+    assert.deepEqual(result.body, { error: 'La selección del widget ha cambiado. Actualiza la lista antes de agradecer.' });
+    assert.deepEqual((await call('GET', '/api/followers')).body, before);
+    assert.equal(await readFile(path.join(dir, 'followers.json'), 'utf8'), bytes);
+  }
+  assert.equal((await call('PUT', '/api/widgets', { thanks: { showAnonymous: true } })).status, 200);
+  assert.equal((await call('POST', '/api/followers/thank', { entries: [visible], anonymous: [recent], onlyShown: true })).status, 200);
+  let pending = (await call('GET', '/api/followers?pending=true')).body;
+  assert.ok(!pending.entries.some(e => e.id === 'y-new'));
+  assert.ok(pending.entries.some(e => e.platform === 'twitch' && e.id === 't-new'));
+  assert.ok(!pending.anonymous.some(a => a.at === recent));
+  assert.equal((await call('PUT', '/api/widgets', { thanks: { platforms: ['twitch'], maxNames: 20 } })).status, 200);
+  assert.equal((await call('POST', '/api/followers/thank', { entries: [{ platform: 'twitch', name: 'Unknown' }], onlyShown: true })).status, 200);
+  pending = (await call('GET', '/api/followers?pending=true')).body;
+  assert.ok(!pending.entries.some(e => e.name === 'Unknown'));
+  assert.ok(pending.entries.some(e => e.platform === 'youtube' && e.id === 'shared'));
+});
+
+test('S3: anonymous selection timestamps require canonical ISO dates; null remains valid', async t => {
+  const { call, dir } = await start(t), before = (await call('GET', '/api/followers')).body;
+  const bytes = await readFile(path.join(dir, 'followers.json'), 'utf8');
+  for (const at of ['2026-02-30T00:00:00.000Z', '2026-01-01T00:00:00Z', '2026-01-01T01:00:00.000+01:00', '2024-02-30T00:00:00.000Z']) {
+    const result = await call('POST', '/api/followers/thank', { entries: [{ platform: 'twitch', id: 't-new' }], anonymous: [at] });
+    assert.equal(result.status, 400, at);
+    assert.deepEqual(result.body, { error: 'Indica «entries» y/o «anonymous» con selecciones válidas.' });
+    assert.deepEqual((await call('GET', '/api/followers')).body, before);
+    assert.equal(await readFile(path.join(dir, 'followers.json'), 'utf8'), bytes);
+  }
+  assert.equal((await call('POST', '/api/followers/thank', { anonymous: [null, '2024-02-29T00:00:00.000Z'] })).status, 200);
+  assert.deepEqual((await call('GET', '/api/followers')).body, before);
+  assert.equal(await readFile(path.join(dir, 'followers.json'), 'utf8'), bytes);
+  const locked = await start(t, { locked: true });
+  const denied = await locked.call('POST', '/api/followers/thank', { entries: [{ platform: 'twitch', id: 't-new' }], onlyShown: true });
+  assert.equal(denied.status, 503); assert.match(denied.body.error, /No se puede leer/);
 });
 
 test('S4: thanks config is validated before any widget settings are changed', async t => {

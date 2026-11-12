@@ -1,4 +1,5 @@
 import { httpError } from '../http-util.mjs';
+import { matchesFollowerSelection } from '../followers.mjs';
 
 export function registerFollowersRoutes({ route, followers, thanksSelection }) {
   route('GET', '/api/followers', async (_, __, url) => ({
@@ -16,11 +17,26 @@ export function registerFollowersRoutes({ route, followers, thanksSelection }) {
         && ['twitch', 'youtube'].includes(e.platform) && Object.keys(e).length === 2
         && ((Object.hasOwn(e, 'id') && typeof e.id === 'string' && !!e.id.trim())
           || (Object.hasOwn(e, 'name') && typeof e.name === 'string' && !!e.name.trim()));
-      const validAt = at => at === null || (typeof at === 'string' && Number.isFinite(Date.parse(at)));
-      if (Object.keys(body).some(k => !['entries', 'anonymous'].includes(k))
+      const validAt = at => {
+        if (at === null) return true;
+        if (typeof at !== 'string') return false;
+        const time = Date.parse(at);
+        return Number.isFinite(time) && new Date(time).toISOString() === at;
+      };
+      if (Object.keys(body).some(k => !['entries', 'anonymous', 'onlyShown'].includes(k))
         || (Object.hasOwn(body, 'entries') && (!Array.isArray(body.entries) || !body.entries.every(validEntry)))
-        || (Object.hasOwn(body, 'anonymous') && (!Array.isArray(body.anonymous) || !body.anonymous.every(validAt))))
+        || (Object.hasOwn(body, 'anonymous') && (!Array.isArray(body.anonymous) || !body.anonymous.every(validAt)))
+        || (Object.hasOwn(body, 'onlyShown') && body.onlyShown !== true))
         throw httpError(400, 'Indica «entries» y/o «anonymous» con selecciones válidas.');
+      // Validate and mark synchronously: no configuration or follower change can slip between them.
+      // In read-only mode let markSelected retain its existing 503 response.
+      if (body.onlyShown && !followers.readOnly) {
+        const shown = thanksSelection();
+        const hiddenEntry = (body.entries || []).some(selected =>
+          !shown.entries.some(entry => matchesFollowerSelection(entry.platform, entry, selected)));
+        const hiddenAnonymous = (body.anonymous || []).some(at => !shown.anonymous.some(record => record.at === at));
+        if (hiddenEntry || hiddenAnonymous) throw httpError(409, 'La selección del widget ha cambiado. Actualiza la lista antes de agradecer.');
+      }
       followers.markSelected(body);
     } else {
       if (!all && !ids) throw httpError(400, 'Indica «ids» como lista de identificadores o «all»: true.');
