@@ -32,8 +32,25 @@ second copy.
 | `giftMembershipReceivedEvent` | — | | One per receiver of a gift: the gifting event already alerts once. |
 | `giftEvent` | — | | Jewels gifts need their own alert design (#138). |
 
-**There is no subscription event in the YouTube live chat.** A new channel subscriber never
-arrives here; see #134 (polling) and #132 (channel totals for goals).
+**There is no subscription event in the YouTube live chat.** New channel subscribers are
+detected separately by polling, not by a `newSubscriberEvent` chat message.
+
+## Public YouTube subscriber alerts (polling)
+
+While YouTube chat is listening, `subscriptions.list` reads public subscribers from the
+connected account. The first read in a listening period is silent; later newly detected
+subscribers enter the same alert queue as Twitch follows as `ytsub` («Nuevo suscriptor»),
+with a name and an optional validated thumbnail. Missing or failed images do not replace
+the configured icon/media or prevent the named alert. The follower registry deduplicates
+these entries, so reconnect recovery does not replay them.
+
+`youtube.subscriberPollSeconds` defaults to 120 seconds, accepts a minimum nonzero interval
+of 60 seconds, and uses 0 to disable polling. Only public subscriptions can be identified;
+results can be delayed or capped by the API. List pages and the account-total read share
+the daily quota with chat. `quotaExceeded` stops this polling until the next listening
+period; stale responses from an older period cannot stop or consume the new baseline.
+Anonymous registry estimates do not generate alerts in this feature. Goal totals remain
+separate (#132), and a subscriber event cannot increment a different configured channel.
 
 ## Followers gained while offline
 
