@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createApp } from '../src/server.mjs';
-const token='SYNTHETIC-136-OBLIGATION';
+const TOKEN = 'SYNTHETIC-136-OBLIGATION';
 const start={id:'000-legacy-owed',title:'synthetic',startedAt:'2026-01-01T00:00:00.000Z',events:[],notes:[],goalOffsets:{},meldAutoSession:true,platforms:{twitch:{streamId:'synthetic'}}};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn,label){for(let i=0;i<800;i++){const x=await fn();if(x)return x;await sleep(5)}throw Error('timeout '+label)}
@@ -21,7 +21,7 @@ test('S8 first enqueue of a pre-existing archive remains owed through disabled r
  const before=await f.request('GET','/api/metrics/v1/sessions/000-legacy-owed');assert.equal(before.status,200);
  assert.equal((await f.request('PUT','/api/config',{sessions:{retention:1}})).status,200);
  fs.open=async function(file,...args){if(String(file).includes('.push-export.json.'))throw Error('synthetic checkpoint failure');return original.call(this,file,...args)};
- await f.restart({url:r.url,token});
+ await f.restart({url:r.url,token:TOKEN});
  await until(async()=>{const st=JSON.parse((await f.request('GET','/api/status')).text).push;return st.lastError==='No se pudo guardar o leer la cola de envío.'},'first enabled enqueue failed');
  assert.deepEqual(r.requests,[]);
  for(let i=0;i<2;i++)assert.equal((await f.request('POST','/api/session/new')).status,200);
@@ -32,7 +32,7 @@ test('S8 first enqueue of a pre-existing archive remains owed through disabled r
  const after=await f.request('GET','/api/metrics/v1/sessions/000-legacy-owed'),status=JSON.parse((await f.request('GET','/api/status')).text).push;
  console.log('S8 previously_disabled_archive: before=',before.status,'first_enqueue=failed disabled_restart=',after.status,'body=',after.text,'status=',JSON.stringify(status),'requests=',r.requests.length);
  assert.equal(after.status,200,'the prior attempted enqueue remains owed, even if the archive predates enabling push');
- fs.open=original;await f.restart({url:r.url,token});await until(()=>r.requests.length===1,'owed legacy archive delivered');assert.equal(r.requests[0].auth,`Bearer ${token}`);const sent=JSON.parse(r.requests[0].body),expected=JSON.parse(before.text);assert.deepEqual({...sent,generatedAt:expected.generatedAt},expected);
+ fs.open=original;await f.restart({url:r.url,token:TOKEN});await until(()=>r.requests.length===1,'owed legacy archive delivered');assert.equal(r.requests[0].auth,`Bearer ${TOKEN}`);const sent=JSON.parse(r.requests[0].body),expected=JSON.parse(before.text);assert.deepEqual({...sent,generatedAt:expected.generatedAt},expected);
 });
 test('S8 ordinary disabled retention remains unchanged',async t=>{
  const f=await fixture(t,createApp,{});
