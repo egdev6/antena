@@ -148,3 +148,32 @@ test('S1/S7: an unreadable totals file does not stop antena; totals stay in memo
     await app.session.flush();
   } finally { await chmod(file, 0o600); }
 });
+
+test('S8: a correction whose write failed is reported and saved by the next poll once storage recovers', async () => {
+  const d = await dir();
+  const t = await new ChannelTotals({ dir: d, readers: { 'follows@twitch': async () => 100 } }).load();
+  await t.poll(); await t.flush();
+  const { mkdir, rm } = await import('node:fs/promises');
+  const file = path.join(d, 'channel-totals.json');
+  await rm(file); await mkdir(file);            // a directory in place of the file: the rename fails
+  t.adjust('follows@twitch', 5);
+  await assert.rejects(t.flush());
+  assert.match(t.snapshot()['follows@twitch'].error, /No se pudieron guardar/);
+  await rm(file, { recursive: true });          // storage recovers; platform count unchanged
+  await t.poll(); await t.flush();
+  assert.equal(t.snapshot()['follows@twitch'].error, null);
+  const restored = await new ChannelTotals({ dir: d, readers: {} }).load();
+  assert.equal(restored.value('follows@twitch'), 105);
+});
+
+test('S3: an in-flight read that already includes a live event does not count it twice', async () => {
+  const g = gate(); let n = 100, delayed = false;
+  const t = await new ChannelTotals({ dir: await dir(), readers: { 'follows@twitch': async () => { if (delayed) await g.promise; return n; } } }).load();
+  await t.poll();
+  delayed = true;
+  const pending = t.poll(); await sleep(0);
+  t.onEvent({ externalId: 'f1', type: 'follow', vars: {} });
+  n = 101;                                       // the platform already counted it
+  g.release(); await pending;
+  assert.equal(t.value('follows@twitch'), 101);
+});

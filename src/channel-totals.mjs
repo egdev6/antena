@@ -55,6 +55,7 @@ export class ChannelTotals extends EventEmitter {
     this.handle = null; this.initialHandle = null; this.busy = null; this.halted = false;
     this.writing = Promise.resolve();
     this.lastWriteError = null;
+    this.dirty = false;          // state not yet confirmed on disk (retried by the next poll/flush)
     this.seen = new Set();
     this.readOnly = false; this.loadError = null;
     this.inflight = new Set();   // keys with a read in flight
@@ -166,7 +167,8 @@ export class ChannelTotals extends EventEmitter {
 
   snapshot() {
     return Object.fromEntries(TOTAL_KEYS.map(key => [key, {
-      value: this.value(key), at: this.totals[key]?.at || null, error: this.errors[key] || this.loadError || null,
+      value: this.value(key), at: this.totals[key]?.at || null,
+      error: this.errors[key] || this.loadError || (this.lastWriteError ? `No se pudieron guardar los totales (${this.lastWriteError.code || this.lastWriteError.message}); se reintentará en la próxima lectura.` : null),
     }]));
   }
 
@@ -196,12 +198,19 @@ export class ChannelTotals extends EventEmitter {
         if (this.errors[key]) { delete this.errors[key]; errorsChanged = true; }
         if (total === null || total === undefined) return;   // no credentials: keep the last value
         const prev = this.totals[key];
-        const live = prev ? Math.max(0, prev.live - liveAtStart) : pending;
+        // Events received during the read may already be in its result: assume the growth over
+        // what we knew when the read started covers them, keep only the rest (next poll corrects).
+        let live = pending;
+        if (prev) {
+          const during = Math.max(0, prev.live - liveAtStart);
+          const growth = Math.max(0, total - (prev.value + liveAtStart));
+          live = during - Math.min(during, growth);
+        }
         if (!prev || prev.value !== total || prev.live !== live) dirty = true;
         this.totals[key] = { value: total, at: new Date(this.now()).toISOString(), live };
       }));
       // errors live in memory only: they refresh the panel but never rewrite the file
-      if (dirty) this.changed();
+      if (dirty || (this.dirty && this.lastWriteError)) this.changed();   // also retries a failed write
       else if (errorsChanged) this.emit('change', this.snapshot());
     };
     // one poll at a time; a request during a poll runs right after it
@@ -235,9 +244,10 @@ export class ChannelTotals extends EventEmitter {
   changed() {
     const data = { version: 1, totals: this.totals, offsets: this.offsets };
     if (this.readOnly) { this.emit('change', this.snapshot()); return; }
+    this.dirty = true;
     this.writing = this.writing.then(() => writeJson(this.file, data)).then(
-      () => { this.lastWriteError = null; },
-      err => { this.lastWriteError = err; this.log(`[totales] no se pudo guardar: ${err.message}`); });
+      () => { this.dirty = false; this.lastWriteError = null; },
+      err => { this.lastWriteError = err; this.log(`[totales] no se pudo guardar: ${err.message}`); this.emit('change', this.snapshot()); });
     this.emit('change', this.snapshot());
   }
 
