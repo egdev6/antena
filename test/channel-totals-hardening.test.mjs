@@ -138,8 +138,11 @@ test('S1/S7: an unreadable totals file does not stop antena; totals stay in memo
     const t = app.channelTotals;
     assert.match(t.snapshot()['follows@twitch'].error, /No se puede leer/);
     t.readers = { 'follows@twitch': async () => 7 };
-    await t.poll(); t.adjust('follows@twitch', 1); await t.flush();
-    assert.equal(t.value('follows@twitch'), 8);
+    await t.poll(); await t.flush();
+    assert.equal(t.value('follows@twitch'), 7);
+    assert.throws(() => t.adjust('follows@twitch', 1), err => err.status === 503 && /No se puede leer/.test(err.message));
+    assert.throws(() => t.set('follows@twitch', 9), err => err.status === 503);
+    assert.equal(t.value('follows@twitch'), 7);
     await chmod(file, 0o600);
     assert.equal(await readFile(file, 'utf8'), '{"version":1,"offsets":{"follows@twitch":-1}}');
     await app.session.flush();

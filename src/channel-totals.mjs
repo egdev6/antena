@@ -128,11 +128,13 @@ export class ChannelTotals extends EventEmitter {
   }
 
   adjust(key, delta) {
+    this.assertWritable();
     this.offsets[key] = (this.offsets[key] || 0) + (Number(delta) || 0);
     this.changed();
   }
 
   set(key, value) {
+    this.assertWritable();
     const t = this.totals[key];
     if (!t) throw conflict('Aún no se conoce el total de la plataforma: conecta la cuenta y espera a la primera lectura antes de fijar el valor.');
     this.offsets[key] = (Number(value) || 0) - t.value - t.live;
@@ -140,6 +142,11 @@ export class ChannelTotals extends EventEmitter {
   }
 
   /** Live platform event ({externalId?, type, vars}); redeliveries with the same externalId count once. */
+  /** A correction that cannot be saved would vanish at the next restart: reject it explicitly. */
+  assertWritable() {
+    if (this.readOnly) throw Object.assign(new Error(this.loadError), { status: 503 });
+  }
+
   onEvent(alert) {
     const id = alert?.externalId;
     if (id) {
