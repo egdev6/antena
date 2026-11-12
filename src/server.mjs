@@ -179,7 +179,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   let lastStreamCutoff = null, cutoffGeneration = 0;
   const refreshLastStream = async () => {
     const generation = ++cutoffGeneration;
-    const sessions = await session.list();
+    // Every archive, not the history view's 50 id-sorted entries: legacy ids are not chronological.
+    const sessions = await session.list({ limit: Infinity });
     let newest = null;
     for (const archived of sessions) {
       const end = Date.parse(archived.endedAt), start = Date.parse(archived.startedAt);

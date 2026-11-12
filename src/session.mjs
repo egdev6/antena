@@ -743,12 +743,14 @@ export class Session extends EventEmitter {
       try { await this.io.unlink(path.join(this.dir, this._metaFile(f))); } catch { /* sin meta que borrar */ }
     }
   }
-  async list() {
+  /** Archive metadata, newest id first. `limit` defaults to the history view's 50 entries;
+   *  pass Infinity to scan every archive (e.g. the thanks widget's last-stream cutoff). */
+  async list({ limit = 50 } = {}) {
     const out = [];
     try {
       const files = (await this.io.readdir(this.dir)).filter(f => f.endsWith('.json') && !f.endsWith('.meta.json'))
         .sort((a, b) => idTimestamp(b.slice(0, -5)).localeCompare(idTimestamp(a.slice(0, -5))) || b.localeCompare(a));
-      for (const f of files.slice(0, 50)) {
+      for (const f of files.slice(0, limit)) {
         // #68: primero el fichero de metadatos ligeros; el archivo completo solo se lee
         // una vez (compatibilidad) cuando no existe o está roto.
         let m = null;
@@ -766,7 +768,7 @@ export class Session extends EventEmitter {
     if (entry && !out.some(r => r.id === entry.data.id)) {
       out.unshift({ ...this._metaOf(entry.data), pending: true });
     }
-    return out.slice(0, 50);
+    return out.slice(0, limit);
   }
   async get(id) {
     if (id && this.pendingArchive?.data.id === id) return this.getPending();
