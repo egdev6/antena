@@ -241,6 +241,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // confirmed durable, is eligible. An in-flight failed checkpoint is not.
   const durableFinished = new Set();
   if (session.data.meldAutoSession && session.data.endedAt) durableFinished.add(session.data.id);
+  const enqueueFinished = async data => {
+    if (!pushExport.status().enabled || !data?.meldAutoSession || !data.endedAt || pushExport.has(data.id)) return;
+    protectedArchives.add(data.id);
+    try {
+      const marked = await session.checkpointPushOwed(data.id, data);
+      if (marked && pushExport.hasCapacity() && !pushExport.has(data.id)) pushExport.enqueue(marked);
+    } catch { protectedArchives.add(data.id); pushExport.reconciliationError(); }
+  };
   let reconciling = null, reconcileAgain = false;
   requestPushReconciliation = () => {
     // Even with push disabled, the first scan discovers obligations recorded in
@@ -252,7 +260,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       do {
         reconcileAgain = false;
         const current = session.data;
-        if (durableFinished.has(current.id) && !pushExport.has(current.id)) pushExport.enqueue(current);
+        if (durableFinished.has(current.id)) await enqueueFinished(current);
         let names;
         try { names = await readdir(session.dir); }
         catch (error) { if (error?.code === 'ENOENT') names = []; else throw error; }
@@ -265,10 +273,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
           if (pushExport.isDurable(id)) { protectedArchives.delete(id); continue; }
           if (session.getPending()?.id === id) { protectedArchives.add(id); continue; }
           try {
-            const data = await session.get(id);
+            const data = await session.getArchived(id);
             if (data?.meldAutoSession && data.endedAt && (protectPushArchives() || data._pushExportOwed === true)) {
               protectedArchives.add(id);
-              if (pushExport.hasCapacity() && !pushExport.has(id)) pushExport.enqueue(data);
+              await enqueueFinished(data);
             } else protectedArchives.delete(id);
           } catch { protectedArchives.add(id); pushExport.reconciliationError(); }
         }
@@ -283,7 +291,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   session.on('finalized', data => {
     durableFinished.add(data.id);
     if ((protectPushArchives() || data._pushExportOwed === true) && data.meldAutoSession && data.endedAt && !pushExport.isDurable(data.id)) protectedArchives.add(data.id);
-    pushExport.enqueue(data);
+    void enqueueFinished(data);
     requestPushReconciliation();
   });
   requestPushReconciliation();

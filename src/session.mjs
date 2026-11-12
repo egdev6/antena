@@ -62,6 +62,9 @@ const SESSION_RECOVERY_BLOCKED = 'No se pudo leer o recuperar la sesión; el arr
 const SESSION_RECOVERY_RESTORED = 'La sesión se ha recuperado desde la copia de seguridad; revise el estado de recuperación antes de continuar.';
 const SAFE_ROOT_ID = /^[\w-]+$/;
 const QUARANTINE_NAME = /^session-current\.corrupt-[\w-]+\.json$/;
+// The private delivery obligation does not change the identity of an archive.
+const withoutPushOwed = data => { const { _pushExportOwed, ...rest } = data; return rest; };
+const sameArchiveData = (left, right) => isDeepStrictEqual(withoutPushOwed(left), withoutPushOwed(right));
 
 // Error público de bloqueo: sin `cause`, para no transportar el crudo ni el SyntaxError.
 function recoveryBlockedError() {
@@ -668,6 +671,42 @@ export class Session extends EventEmitter {
   _markPushOwed(data) {
     if (this.pushExportEnabled && data.meldAutoSession === true && data.endedAt) data._pushExportOwed = true;
   }
+  // Reconciliation of an older archive must record the same obligation before
+  // an asynchronous queue write can fail. Reuse the archive's atomic writer.
+  async checkpointArchivedPushOwed(id, data) {
+    if (!this.pushExportEnabled || data?._pushExportOwed === true || id === this.data.id) return data;
+    if (typeof id !== 'string' || !SAFE_ROOT_ID.test(id) || data?.id !== id) throw sessionPersistenceError(new Error('id de sesión no seguro'));
+    const marked = structuredClone(data);
+    this._markPushOwed(marked);
+    if (marked._pushExportOwed !== true) return data;
+    await this.writer(path.join(this.dir, id + '.json'), marked, { text: serialize(marked) });
+    return marked;
+  }
+  // All enqueue paths share this checkpoint. A recovered ended current session
+  // may also have an OLD archive; protect both using the existing writers.
+  checkpointPushOwed(id, data) {
+    if (!this.pushExportEnabled || id !== this.data.id) return this.checkpointArchivedPushOwed(id, data);
+    const run = this.transitionChain.then(async () => {
+      if (this.data.id !== id) return this.checkpointArchivedPushOwed(id, await this.getArchived(id));
+      const current = this.data;
+      if (current.meldAutoSession !== true || !current.endedAt) return null;
+      const target = path.join(this.dir, id + '.json');
+      const archived = await readClassified(this.io, target);
+      if (archived.kind === 'ioerror' || archived.kind === 'corrupt'
+        || (archived.kind === 'ok' && !sameArchiveData(archived.data, current))) throw sessionPersistenceError(new Error('archivo no válido'));
+      if (archived.kind === 'ok' && archived.data._pushExportOwed !== true) {
+        this._markPushOwed(archived.data);
+        await this.writer(target, archived.data, { text: serialize(archived.data) });
+      }
+      if (current._pushExportOwed !== true || this.lastSaveError) {
+        this._markPushOwed(current);
+        await this.flush();
+      }
+      return structuredClone(current);
+    });
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
   // Notify only after a durable transition; observers must never change its result.
   _notifyFinalized(data) {
     try { this.emit('finalized', structuredClone(data)); } catch { /* delivery is independent of capture */ }
@@ -704,16 +743,22 @@ export class Session extends EventEmitter {
   }
   async _cutover(title, meldAuto) {
     await this.flush();
-    let target, alreadyArchived = false;
+    let target, alreadyArchived = false, archivedData;
     try {
       if (!SAFE_ROOT_ID.test(String(this.data.id))) throw new Error('id de sesión no seguro');
       target = path.join(this.dir, this.data.id + '.json');
       if (await this._targetExists(target)) {
         const archived = await readClassified(this.io, target);
-        // Reinicio tras guardar OLD y fallar NEW: sólo reutilizar el cierre exacto.
+        // Reinicio tras guardar OLD y fallar NEW: sólo reutilizar el cierre exacto,
+        // independientemente de la marca privada de envío.
         alreadyArchived = archived.kind === 'ok' && isValidDate(this.data.endedAt)
-          && isDeepStrictEqual(archived.data, this.data);
+          && sameArchiveData(archived.data, this.data);
         if (!alreadyArchived) throw new Error('el archivo de destino ya existe');
+        archivedData = archived.data;
+        if (this.data._pushExportOwed === true && archivedData._pushExportOwed !== true) {
+          archivedData = { ...archivedData, _pushExportOwed: true };
+          await this.writer(target, archivedData, { text: serialize(archivedData) });
+        }
       }
     } catch (err) { throw sessionPersistenceError(err); }
     let finalized;
@@ -723,7 +768,10 @@ export class Session extends EventEmitter {
       finalized = { ...structuredClone(this.data), endedAt };
       this._markPushOwed(finalized);
       this.pendingArchive = { data: finalized, file: target, inFlight: null };
-    } else finalized = structuredClone(this.data);
+    } else {
+      finalized = structuredClone(this.data);
+      if (archivedData._pushExportOwed === true) finalized._pushExportOwed = true;
+    }
     const newData = Session.fresh(title);
     if (meldAuto) newData.meldAutoSession = true;
     this.replacedIdentity = { ...this._identityOf(this.data), currentId: newData.id };
@@ -791,9 +839,7 @@ export class Session extends EventEmitter {
     }
     return out.slice(0, 50);
   }
-  async get(id) {
-    if (id && this.pendingArchive?.data.id === id) return this.getPending();
-    if (!id || id === this.data.id) return this.data;
+  async getArchived(id) {
     const safe = String(id).replace(/[^\w-]/g, '');
     try { return JSON.parse(await readFile(path.join(this.dir, safe + '.json'), 'utf8')); }
     catch (err) {
@@ -803,6 +849,11 @@ export class Session extends EventEmitter {
       e.cause = err;
       throw e;
     }
+  }
+  async get(id) {
+    if (id && this.pendingArchive?.data.id === id) return this.getPending();
+    if (!id || id === this.data.id) return this.data;
+    return this.getArchived(id);
   }
 
   totals(data = this.data) {
