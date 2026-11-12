@@ -27,7 +27,7 @@ Stream alerts, chat and widgets for **Meld Studio** — local, free and with the
 
 antena runs entirely on your PC and gives your stream a full alert and interaction layer:
 
-- **Alerts** from Twitch (followers, subs, resubs, gifted subs, bits, raids, rewards) and YouTube (Super Chats, Super Stickers, members, milestones and gifted memberships).
+- **Alerts** from Twitch (followers, subs, resubs, gifted subs, bits and Power-ups, raids, rewards) and YouTube (Super Chats, Super Stickers, members, milestones and gifted memberships). Event → alert table: [docs/eventos.md](docs/eventos.md).
 - **Three designs per alert:** the EGDEV 3D card; your own video or image (webm with transparency) with the message on top, placed wherever you want; or **video + card**: your video or image as a full-screen background with the 3D card on top, with an entry delay and position offset. All with your own CSS.
 - **Variations:** another version of the alert depending on the amount, the tier, the user, the message or a probability.
 - **Voice (TTS)** for messages, **filtering** of words, links and users, and **pause** with queue.
