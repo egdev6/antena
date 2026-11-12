@@ -125,9 +125,10 @@ function sdRequestAllowed(req) {
 
 export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist,
   push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs } = {}) {
-  let notifyPushStatus = () => {};
+  let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {};
   // Validate private process settings before loading or changing any application state.
-  const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs, onChange: () => notifyPushStatus() });
+  const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs,
+    onChange: () => notifyPushStatus(), onSpace: () => requestPushReconciliation(), onCheckpoint: () => notifyPushCheckpoint() });
   const store = await new Store(dataDir).load();
   const id = await instanceId(store.dir);
   // la interfaz React si está compilada; si no, la página mínima de las páginas de app
@@ -171,9 +172,18 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const meld = new Meld(log);
   // #68: la retención de archivados sale de la configuración (0 = sin límite); se lee
   // en vivo para que un cambio en config.json valga sin reiniciar.
-  const session = await new Session(store.dir, { report: log, maxArchived: () => store.config.sessions?.retention }).load();
+  const protectedArchives = new Set();
+  let retentionReady = false;
+  const protectPushArchives = () => pushExport.status().enabled || pushExport.status().pending > 0;
+  const session = await new Session(store.dir, { report: log, maxArchived: () => store.config.sessions?.retention,
+    pushExportEnabled: pushExport.status().enabled,
+    preserveArchived: id => !retentionReady || (protectedArchives.has(id) && !pushExport.isDurable(id)) }).load();
   await pushExport.load(store.dir);
-  session._applyRetention().catch(() => {});   // aplica la retención configurada al arrancar
+  notifyPushCheckpoint = () => {
+    for (const id of protectedArchives) if (pushExport.isDurable(id)) protectedArchives.delete(id);
+    session._applyRetention().catch(() => {});
+  };
+  session._applyRetention().catch(() => {});   // unclassified archives stay protected until reconciliation
   const engine = new Engine({ store, bus, session, meld, twitch, youtube, log });
   const timers = new Timers({ store, engine, twitch, youtube, meld, session, log });
   engine.timers = timers;
@@ -227,7 +237,56 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   chat.on('delete', ({ id }) => engine.deleteChat(id));
   chat.on('clearUser', ({ login }) => engine.clearChatUser(login));
   session.on('change', () => { engine.pushWidgets(); pushTimeline(); });
-  session.on('finalized', data => pushExport.enqueue(data));
+  // Only the current session loaded at startup, or one whose finalization was
+  // confirmed durable, is eligible. An in-flight failed checkpoint is not.
+  const durableFinished = new Set();
+  if (session.data.meldAutoSession && session.data.endedAt) durableFinished.add(session.data.id);
+  let reconciling = null, reconcileAgain = false;
+  requestPushReconciliation = () => {
+    // Even with push disabled, the first scan discovers obligations recorded in
+    // session checkpoints before an initial queue write failed.
+    if (!protectPushArchives() && retentionReady && !protectedArchives.size) return;
+    reconcileAgain = true;
+    if (reconciling) return;
+    reconciling = (async () => {
+      do {
+        reconcileAgain = false;
+        const current = session.data;
+        if (durableFinished.has(current.id) && !pushExport.has(current.id)) pushExport.enqueue(current);
+        let names;
+        try { names = await readdir(session.dir); }
+        catch (error) { if (error?.code === 'ENOENT') names = []; else throw error; }
+        // Classify every archive even when the bounded queue is full; retention
+        // must not remove a session merely because it has not been enqueued yet.
+        for (const name of names.sort().reverse()) {
+          if (!name.endsWith('.json') || name.endsWith('.meta.json')) continue;
+          const id = name.slice(0, -5);
+          if (!/^[\w-]+$/.test(id)) continue;
+          if (pushExport.isDurable(id)) { protectedArchives.delete(id); continue; }
+          if (session.getPending()?.id === id) { protectedArchives.add(id); continue; }
+          try {
+            const data = await session.get(id);
+            if (data?.meldAutoSession && data.endedAt && (protectPushArchives() || data._pushExportOwed === true)) {
+              protectedArchives.add(id);
+              if (pushExport.hasCapacity() && !pushExport.has(id)) pushExport.enqueue(data);
+            } else protectedArchives.delete(id);
+          } catch { protectedArchives.add(id); pushExport.reconciliationError(); }
+        }
+        retentionReady = true;
+        session._applyRetention().catch(() => {});
+      } while (reconcileAgain);
+    })().catch(() => pushExport.reconciliationError()).finally(() => {
+      reconciling = null;
+      if (reconcileAgain) requestPushReconciliation();
+    });
+  };
+  session.on('finalized', data => {
+    durableFinished.add(data.id);
+    if ((protectPushArchives() || data._pushExportOwed === true) && data.meldAutoSession && data.endedAt && !pushExport.isDurable(data.id)) protectedArchives.add(data.id);
+    pushExport.enqueue(data);
+    requestPushReconciliation();
+  });
+  requestPushReconciliation();
   // la cronología apunta también lo que pasa en los interactivos
   interactive.on('questionShown', q => session.addNote({ kind: 'question', text: q.text, user: q.user, platform: q.platform }));
   interactive.on('draw', r => session.addNote({ kind: 'winner', user: r.winner, label: store.config.interactive?.giveaway?.prize || '' }));
@@ -470,10 +529,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       throw httpError(409, 'No se puede terminar el directo mientras Meld está emitiendo.');
     return closeAutoSession({ expectedId }).then(async closed => {
       // An idempotent retry after a failed checkpoint must be durable before success.
-      if (session.lastSaveError) {
-        await session.flush();
-        session._notifyFinalized(closed);
-      }
+      if (session.lastSaveError) await session.flush();
+      // The checkpoint may have recovered in the background before this retry.
+      session._notifyFinalized(closed);
       return closed;
     });
   };

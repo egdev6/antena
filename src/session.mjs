@@ -151,7 +151,7 @@ export function chatMetrics(data, now = Date.now(), includeSeries = true) {
 
 /** La raíz persistida conserva identidades privadas; las respuestas solo llevan agregados. */
 export function publicSession(data) {
-  const { chatStats, chatListeners, ...out } = data;
+  const { chatStats, chatListeners, _pushExportOwed, ...out } = data;
   return chatStats === undefined ? out : { ...out, chatMetrics: chatMetrics(data) };
 }
 
@@ -209,7 +209,8 @@ const CREDIT_GROUPS = [
 ];
 
 export class Session extends EventEmitter {
-  constructor(dir, { writer = writeJson, report = () => {}, debounceMs = 300, maxWaitMs = 2000, maxArchived = 0, io } = {}) {
+  constructor(dir, { writer = writeJson, report = () => {}, debounceMs = 300, maxWaitMs = 2000, maxArchived = 0,
+    preserveArchived = () => false, pushExportEnabled = false, io } = {}) {
     super();
     this.dir = path.join(dir, 'sessions');
     this.file = path.join(dir, 'session-current.json');
@@ -230,6 +231,8 @@ export class Session extends EventEmitter {
     this.retentionLimit = typeof maxArchived === 'function'
       ? () => Math.max(0, Math.floor(Number(maxArchived()) || 0))
       : () => Math.max(0, Math.floor(Number(maxArchived) || 0));
+    this.preserveArchived = preserveArchived;
+    this.pushExportEnabled = pushExportEnabled;
     this.saveT = null;                 // debounce: cada mutación reinicia la cuenta
     this.maxT = null;                  // checkpoint por primer cambio sucio: no se reinicia
     this.chain = Promise.resolve();    // cola por instancia; la cola interna se recupera para el siguiente trabajo
@@ -380,6 +383,9 @@ export class Session extends EventEmitter {
     const raw = started.then(
       () => metaSettled.then(() => {
         if (this.pendingArchive === entry) this.pendingArchive = null;
+        // A later flush may be the operation that recovered a failed cutover.
+        // Announce the old session as soon as its archive is durable, before retention.
+        this._notifyFinalized(entry.data);
         return this._applyRetention().catch(() => {});
       }),
       err => { if (this.pendingArchive === entry) entry.inFlight = null; throw err; }
@@ -658,6 +664,10 @@ export class Session extends EventEmitter {
     this.transitionChain = run.then(() => {}, () => {});
     return run;
   }
+  // The obligation shares the existing finished-session checkpoint and contains no credential.
+  _markPushOwed(data) {
+    if (this.pushExportEnabled && data.meldAutoSession === true && data.endedAt) data._pushExportOwed = true;
+  }
   // Notify only after a durable transition; observers must never change its result.
   _notifyFinalized(data) {
     try { this.emit('finalized', structuredClone(data)); } catch { /* delivery is independent of capture */ }
@@ -674,6 +684,7 @@ export class Session extends EventEmitter {
       const endedAt = Date.parse(at) < Date.parse(this.data.startedAt) ? this.data.startedAt : at;
       this._closeViewerGaps(endedAt);
       this.data.endedAt = endedAt;
+      this._markPushOwed(this.data);
       this.emit('change', { ended: true });
       await this.flush();
       this._notifyFinalized(this.data);
@@ -710,6 +721,7 @@ export class Session extends EventEmitter {
       const endedAt = this.data.endedAt || new Date().toISOString();
       this._closeViewerGaps(endedAt);
       finalized = { ...structuredClone(this.data), endedAt };
+      this._markPushOwed(finalized);
       this.pendingArchive = { data: finalized, file: target, inFlight: null };
     } else finalized = structuredClone(this.data);
     const newData = Session.fresh(title);
@@ -744,7 +756,12 @@ export class Session extends EventEmitter {
     const files = names.filter(f => f.endsWith('.json') && !f.endsWith('.meta.json'))
       .sort((a, b) => idTimestamp(b.slice(0, -5)).localeCompare(idTimestamp(a.slice(0, -5))) || b.localeCompare(a));
     for (const f of files.slice(max)) {
-      if (this.pendingArchive?.data.id === f.slice(0, -5)) continue;
+      const id = f.slice(0, -5);
+      if (this.pendingArchive?.data.id === id) continue;
+      // A failed observer must not turn an uncertain pending export into deletion.
+      let preserve = true;
+      try { preserve = this.preserveArchived(id); } catch { /* retain on uncertainty */ }
+      if (preserve) continue;
       try { await this.io.unlink(path.join(this.dir, f)); } catch { /* queda para la próxima vez */ }
       try { await this.io.unlink(path.join(this.dir, this._metaFile(f))); } catch { /* sin meta que borrar */ }
     }
