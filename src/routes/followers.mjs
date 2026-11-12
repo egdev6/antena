@@ -32,8 +32,14 @@ export function registerFollowersRoutes({ route, followers, thanksSelection }) {
       // In read-only mode let markSelected retain its existing 503 response.
       if (body.onlyShown && !followers.readOnly) {
         const shown = thanksSelection();
-        const hiddenEntry = (body.entries || []).some(selected =>
-          !shown.entries.some(entry => matchesFollowerSelection(entry.platform, entry, selected)));
+        const pending = followers.list({ pending: true });
+        // A selection must match only shown records: a hidden pending record with the same identity
+        // (e.g. duplicates in a hand-edited file) would otherwise be marked too.
+        const count = (list, selected) => list.filter(entry => matchesFollowerSelection(entry.platform, entry, selected)).length;
+        const hiddenEntry = (body.entries || []).some(selected => {
+          const visible = count(shown.entries, selected);
+          return visible === 0 || count(pending.entries, selected) > visible;
+        });
         const hiddenAnonymous = (body.anonymous || []).some(at => !shown.anonymous.some(record => record.at === at));
         if (hiddenEntry || hiddenAnonymous) throw httpError(409, 'La selección del widget ha cambiado. Actualiza la lista antes de agradecer.');
       }
