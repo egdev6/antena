@@ -32,7 +32,7 @@ export class FollowerRegistry extends EventEmitter {
     this.states = Object.fromEntries(PLATFORMS.map(p => [p, { status: 'idle', error: null }]));
     this.readOnly = false; this.loadError = null; this.lastWriteError = null;
     this.writeGen = 0; this.dirty = false; this.writing = Promise.resolve();
-    this.busy = {}; this.halted = false; this.youtubePeriod = null;
+    this.busy = {}; this.halted = false; this.youtubePeriod = null; this.youtubeGeneration = 0;
   }
 
   async load() {
@@ -124,10 +124,11 @@ export class FollowerRegistry extends EventEmitter {
     }
     // The subscriber list belongs to the OAuth account, which may differ from the configured
     // channel used by ChannelTotals. Missing, hidden or invalid statistics cannot imply growth.
-    let total = null;
+    let total = null, ownerChannelId = null;
     try {
       const response = await y.api('/channels', { part: 'statistics', mine: 'true' }, { auth: true });
-      const stats = response?.items?.[0]?.statistics, raw = stats?.subscriberCount;
+      const channel = response?.items?.[0], stats = channel?.statistics, raw = stats?.subscriberCount;
+      if (typeof channel?.id === 'string' && channel.id.trim()) ownerChannelId = channel.id;
       if (!stats?.hiddenSubscriberCount && typeof raw === 'string' && /^\d+$/.test(raw)) {
         const value = Number(raw);
         if (Number.isSafeInteger(value)) total = value;
@@ -136,7 +137,7 @@ export class FollowerRegistry extends EventEmitter {
       if (err?.reason === 'quotaExceeded') throw err;
       // Named subscribers can still be recorded without a usable total.
     }
-    return { items, truncated, total };
+    return { items, truncated, total, ownerChannelId };
   }
 
   // Matches ids when both exist; otherwise use the case-insensitive name. An id learned later
@@ -189,9 +190,16 @@ export class FollowerRegistry extends EventEmitter {
     return this.list();
   }
 
+  // Capture ownership when work is admitted, including the offline interval between periods.
+  captureYouTubeActivity() {
+    const generation = this.youtubeGeneration;
+    return () => this.youtubeGeneration === generation;
+  }
+
   sync(platform, { live, active = () => true, establish = false } = {}) {
     if (!PLATFORMS.includes(platform)) return Promise.reject(new Error('Plataforma desconocida.'));
-    const admitted = () => !this.halted && active() && !(platform === 'youtube' && this.youtubePeriod?.quota);
+    const owner = platform === 'youtube' ? this.captureYouTubeActivity() : () => true;
+    const admitted = () => !this.halted && owner() && active() && !(platform === 'youtube' && this.youtubePeriod?.quota);
     if (!admitted()) return Promise.resolve();
     const run = async () => {
       if (!admitted()) return;
@@ -259,7 +267,8 @@ export class FollowerRegistry extends EventEmitter {
       for (const item of discovered) {
         if (!current()) break;
         const avatar = youtubeAvatarUrl(item.avatar);
-        this.emit('liveFollow', { platform, id: item.id, name: item.name, ...(avatar ? { avatar } : {}) });
+        this.emit('liveFollow', { platform, id: item.id, name: item.name,
+          ...(avatar ? { avatar } : {}), ...(result.ownerChannelId ? { ownerChannelId: result.ownerChannelId } : {}) });
       }
       return this.states[platform].status;
     };
@@ -320,6 +329,7 @@ export class FollowerRegistry extends EventEmitter {
   }
 
   endYouTubeListening() {
+    this.youtubeGeneration++;
     if (this.youtubePeriod) clearTimeout(this.youtubePeriod.timer);
     this.youtubePeriod = null;
   }

@@ -187,6 +187,11 @@ export function alertConfig(type, config, variation = null) {
 export function buildAlert(type, vars, config, { test = false, variationId = null, rnd } = {}) {
   const meta = ALERT_TYPES[type];
   if (!meta) return null;
+  // All ytsub entry points, including preview and simulation, share this boundary.
+  if (type === 'ytsub' && 'avatar' in vars && !youtubeAvatarUrl(vars.avatar)) {
+    const { avatar: _avatar, ...safeVars } = vars;
+    vars = safeVars;
+  }
   const baseCfg = alertConfig(type, config);
   if (!baseCfg.enabled && !test) return null;
   const amount = Number(vars.amount ?? 0);
