@@ -658,6 +658,10 @@ export class Session extends EventEmitter {
     this.transitionChain = run.then(() => {}, () => {});
     return run;
   }
+  // Notify only after a durable transition; observers must never change its result.
+  _notifyFinalized(data) {
+    try { this.emit('finalized', structuredClone(data)); } catch { /* delivery is independent of capture */ }
+  }
   // Marcar el actual cerrado mantiene su resumen accesible; el siguiente startNew
   // lo archivará por el pipeline habitual sin cambiar la hora real de cierre.
   endCurrent(at = new Date().toISOString(), { expectedId } = {}) {
@@ -672,6 +676,7 @@ export class Session extends EventEmitter {
       this.data.endedAt = endedAt;
       this.emit('change', { ended: true });
       await this.flush();
+      this._notifyFinalized(this.data);
       // Capture before any later transition can replace the targeted session.
       if (expectedId !== undefined) return structuredClone(this.data);
     });
@@ -700,12 +705,13 @@ export class Session extends EventEmitter {
         if (!alreadyArchived) throw new Error('el archivo de destino ya existe');
       }
     } catch (err) { throw sessionPersistenceError(err); }
+    let finalized;
     if (!alreadyArchived) {
       const endedAt = this.data.endedAt || new Date().toISOString();
       this._closeViewerGaps(endedAt);
-      const oldSnapshot = { ...structuredClone(this.data), endedAt };
-      this.pendingArchive = { data: oldSnapshot, file: target, inFlight: null };
-    }
+      finalized = { ...structuredClone(this.data), endedAt };
+      this.pendingArchive = { data: finalized, file: target, inFlight: null };
+    } else finalized = structuredClone(this.data);
     const newData = Session.fresh(title);
     if (meldAuto) newData.meldAutoSession = true;
     this.replacedIdentity = { ...this._identityOf(this.data), currentId: newData.id };
@@ -716,6 +722,7 @@ export class Session extends EventEmitter {
     saved.catch(() => {});               // la persistencia arranca ya; el productor la espera abajo
     this.emit('change', { reset: true });
     await saved;
+    this._notifyFinalized(finalized);
     return newData;
   }
 

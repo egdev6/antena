@@ -24,6 +24,7 @@ import { createHeldRecovery } from './held-recovery.mjs';
 import { registerShortcutRoutes, PROMPTER_LEGACY_TABS } from './routes/shortcuts.mjs';
 import { registerSessionRoutes, TIMELINE_MAX } from './routes/sessions.mjs';
 import { registerMetricsRoutes } from './routes/metrics.mjs';
+import { createPushExport } from './push-export.mjs';
 import { registerMediaRoutes } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
@@ -122,7 +123,11 @@ function sdRequestAllowed(req) {
   return originAllowed(req);
 }
 
-export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist } = {}) {
+export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist,
+  push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs } = {}) {
+  let notifyPushStatus = () => {};
+  // Validate private process settings before loading or changing any application state.
+  const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs, onChange: () => notifyPushStatus() });
   const store = await new Store(dataDir).load();
   const id = await instanceId(store.dir);
   // la interfaz React si está compilada; si no, la página mínima de las páginas de app
@@ -167,6 +172,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // #68: la retención de archivados sale de la configuración (0 = sin límite); se lee
   // en vivo para que un cambio en config.json valga sin reiniciar.
   const session = await new Session(store.dir, { report: log, maxArchived: () => store.config.sessions?.retention }).load();
+  await pushExport.load(store.dir);
   session._applyRetention().catch(() => {});   // aplica la retención configurada al arrancar
   const engine = new Engine({ store, bus, session, meld, twitch, youtube, log });
   const timers = new Timers({ store, engine, twitch, youtube, meld, session, log });
@@ -209,8 +215,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     sessionRecovery: session.recoveryState(),
     sessionArchive: session.archiveState(),
     heldRecovery,
+    push: pushExport.status(),
   });
   const pushStatus = () => bus.send('status', status(), ['panel']);
+  notifyPushStatus = pushStatus;
   for (const src of [twitch, youtube, chat, meld]) src.on('status', pushStatus);
 
   // eventos de plataforma → motor
@@ -219,6 +227,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   chat.on('delete', ({ id }) => engine.deleteChat(id));
   chat.on('clearUser', ({ login }) => engine.clearChatUser(login));
   session.on('change', () => { engine.pushWidgets(); pushTimeline(); });
+  session.on('finalized', data => pushExport.enqueue(data));
   // la cronología apunta también lo que pasa en los interactivos
   interactive.on('questionShown', q => session.addNote({ kind: 'question', text: q.text, user: q.user, platform: q.platform }));
   interactive.on('draw', r => session.addNote({ kind: 'winner', user: r.winner, label: store.config.interactive?.giveaway?.prize || '' }));
@@ -461,7 +470,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       throw httpError(409, 'No se puede terminar el directo mientras Meld está emitiendo.');
     return closeAutoSession({ expectedId }).then(async closed => {
       // An idempotent retry after a failed checkpoint must be durable before success.
-      if (session.lastSaveError) await session.flush();
+      if (session.lastSaveError) {
+        await session.flush();
+        session._notifyFinalized(closed);
+      }
       return closed;
     });
   };
@@ -1263,13 +1275,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const isHttpClosing = () => closing;
   const closeHttp = () => {
     if (httpClosePromise) return httpClosePromise;
-    let idle;
+    let idle, pushClose;
     try {
+      pushClose = pushExport.close(); // finish accepted queue writes, never wait for network retries
       closeAckWindow();          // terminal: la ventana no revive
       stopAdmission();
       idle = whenIdle();         // idle fresca: incluye handlers ACK admitidos en la ventana
     } catch (err) { httpClosePromise = Promise.reject(err); return httpClosePromise; }
-    httpClosePromise = idle.then(() => new Promise((resolve, reject) => {
+    httpClosePromise = Promise.all([idle, pushClose]).then(() => new Promise((resolve, reject) => {
       try {
         for (const { timer } of ssePings) clearInterval(timer);
         ssePings.clear();
