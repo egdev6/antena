@@ -99,9 +99,14 @@ test('Twitch registra cada notificación con handled según si se normaliza', ()
 
 test('createApp escribe los eventos de plataforma en data/raw-events.jsonl', async t => {
   const dataDir = await tmp();
-  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  // Windows: the follow also saves the session; retry the cleanup while that write settles
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
-  t.after(() => new Promise(r => { app.server.closeAllConnections(); app.server.close(r); }));
+  t.after(async () => {
+    await new Promise(r => { app.server.closeAllConnections(); app.server.close(r); });
+    await app.session.flush();
+    await app.channelTotals?.flush().catch(() => {});
+  });
   app.twitch.emitEvent('m1', 'channel.follow', { user_name: 'Ana' });
   await app.twitch.rawLog.flush();
   const got = await lines(path.join(dataDir, 'raw-events.jsonl'));
