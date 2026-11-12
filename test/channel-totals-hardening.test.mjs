@@ -106,3 +106,42 @@ test('S1/S8: server shutdown waits for pending channel-total persistence', async
   const onDisk = JSON.parse(await readFile(t.file, 'utf8')); g.release(); await t.flush(); await app.close();
   assert.equal(onDisk.offsets['follows@twitch'], undefined); assert.equal(result, 'pending');
 });
+
+test('S3: a duplicate delivery refreshes recency, so a late redelivery still counts once', async () => {
+  const t = await new ChannelTotals({ dir: await dir(), readers: { 'follows@twitch': async () => 100 } }).load();
+  await t.poll();
+  t.onEvent({ externalId: 'A', type: 'follow', vars: {} });
+  for (let i = 0; i < 999; i++) t.onEvent({ externalId: `x${i}`, type: 'cheer', vars: {} });
+  t.onEvent({ externalId: 'A', type: 'follow', vars: {} });
+  t.onEvent({ externalId: 'C', type: 'cheer', vars: {} });
+  t.onEvent({ externalId: 'A', type: 'follow', vars: {} });
+  assert.equal(t.value('follows@twitch'), 101);
+});
+
+test('S3: a live event during the very first read is added to its result', async () => {
+  const g = gate();
+  const t = await new ChannelTotals({ dir: await dir(), readers: { 'follows@twitch': async () => { await g.promise; return 100; } } }).load();
+  const first = t.poll(); await sleep(0);
+  t.onEvent({ type: 'follow', vars: {} });
+  assert.equal(t.value('follows@twitch'), null);
+  g.release(); await first;
+  assert.equal(t.value('follows@twitch'), 101);
+});
+
+test('S1/S7: an unreadable totals file does not stop antena; totals stay in memory and the file is never written', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async () => {
+  const { chmod } = await import('node:fs/promises');
+  const d = await dir(), file = path.join(d, 'channel-totals.json');
+  await writeFile(file, '{"version":1,"offsets":{"follows@twitch":-1}}');
+  await chmod(file, 0o000);
+  try {
+    const app = await createApp({ dataDir: d, mediaDir: path.join(d, 'media'), log: () => {} });
+    const t = app.channelTotals;
+    assert.match(t.snapshot()['follows@twitch'].error, /No se puede leer/);
+    t.readers = { 'follows@twitch': async () => 7 };
+    await t.poll(); t.adjust('follows@twitch', 1); await t.flush();
+    assert.equal(t.value('follows@twitch'), 8);
+    await chmod(file, 0o600);
+    assert.equal(await readFile(file, 'utf8'), '{"version":1,"offsets":{"follows@twitch":-1}}');
+    await app.session.flush();
+  } finally { await chmod(file, 0o600); }
+});

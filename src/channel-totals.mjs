@@ -56,12 +56,22 @@ export class ChannelTotals extends EventEmitter {
     this.writing = Promise.resolve();
     this.lastWriteError = null;
     this.seen = new Set();
+    this.readOnly = false; this.loadError = null;
+    this.inflight = new Set();   // keys with a read in flight
+    this.pendingLive = {};       // key -> live events while its first read is in flight
   }
 
   async load() {
     let raw = null, text = null;
     try { text = await readFile(this.file, 'utf8'); } catch (err) {
-      if (err?.code !== 'ENOENT') throw err;   // unreadable file: never start empty over it
+      if (err?.code !== 'ENOENT') {
+        // Unreadable file (e.g. permissions): antena still starts, totals stay in memory and the
+        // file is never written, so its corrections are not replaced by an empty state.
+        this.readOnly = true;
+        this.loadError = `No se puede leer ${TOTAL_FILE} (${err?.code || err?.message}); los totales no se guardarán hasta corregirlo y reiniciar.`;
+        this.log(`[totales] ${this.loadError}`);
+        return this;
+      }
     }
     if (text !== null) {
       try { raw = JSON.parse(text); } catch { raw = null; }
@@ -133,21 +143,23 @@ export class ChannelTotals extends EventEmitter {
   onEvent(alert) {
     const id = alert?.externalId;
     if (id) {
-      if (this.seen.has(id)) return;
+      if (this.seen.has(id)) { this.seen.delete(id); this.seen.add(id); return; }   // refresh recency (LRU)
       this.seen.add(id);
       if (this.seen.size > 1000) this.seen.delete(this.seen.values().next().value);
     }
     let touched = false;
     for (const key of TOTAL_KEYS) {
       const d = liveDelta(key, alert);
-      if (d && this.totals[key]) { this.totals[key].live += d; touched = true; }
+      if (!d) continue;
+      if (this.totals[key]) { this.totals[key].live += d; touched = true; }
+      else if (this.inflight.has(key)) this.pendingLive[key] = (this.pendingLive[key] || 0) + d;   // first read pending
     }
     if (touched) this.changed();
   }
 
   snapshot() {
     return Object.fromEntries(TOTAL_KEYS.map(key => [key, {
-      value: this.value(key), at: this.totals[key]?.at || null, error: this.errors[key] || null,
+      value: this.value(key), at: this.totals[key]?.at || null, error: this.errors[key] || this.loadError || null,
     }]));
   }
 
@@ -164,7 +176,11 @@ export class ChannelTotals extends EventEmitter {
         // live events that arrive while this read is in flight are kept on top of its result
         const liveAtStart = this.totals[key]?.live || 0;
         let total, error = null;
+        this.inflight.add(key);
         try { total = await reader(); } catch (err) { error = err?.message || String(err); }
+        finally { this.inflight.delete(key); }
+        const pending = this.pendingLive[key] || 0;
+        delete this.pendingLive[key];
         if (this.halted) return;
         if (error) {
           if (this.errors[key] !== error) { this.errors[key] = error; errorsChanged = true; this.log(`[totales] ${key}: ${error}`); }
@@ -173,7 +189,7 @@ export class ChannelTotals extends EventEmitter {
         if (this.errors[key]) { delete this.errors[key]; errorsChanged = true; }
         if (total === null || total === undefined) return;   // no credentials: keep the last value
         const prev = this.totals[key];
-        const live = Math.max(0, (prev?.live || 0) - liveAtStart);
+        const live = prev ? Math.max(0, prev.live - liveAtStart) : pending;
         if (!prev || prev.value !== total || prev.live !== live) dirty = true;
         this.totals[key] = { value: total, at: new Date(this.now()).toISOString(), live };
       }));
@@ -211,6 +227,7 @@ export class ChannelTotals extends EventEmitter {
   // ---------- persistence ----------
   changed() {
     const data = { version: 1, totals: this.totals, offsets: this.offsets };
+    if (this.readOnly) { this.emit('change', this.snapshot()); return; }
     this.writing = this.writing.then(() => writeJson(this.file, data)).then(
       () => { this.lastWriteError = null; },
       err => { this.lastWriteError = err; this.log(`[totales] no se pudo guardar: ${err.message}`); });
