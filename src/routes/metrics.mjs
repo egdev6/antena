@@ -11,6 +11,23 @@ const validPlatforms = platforms => platforms == null || (typeof platforms === '
     && !Array.isArray(platforms[p]) && [p === 'twitch' ? 'streamId' : 'videoId'].every(k => platforms[p][k] == null
       || typeof platforms[p][k] === 'string'))));
 
+function exportableData(id, data) {
+  if (!safeId(id)) throw httpError(404, 'No existe ese directo');
+  if (!isValidRoot(data) || data.id !== id || !date(data.startedAt) || !validPlatforms(data.platforms))
+    throw httpError(500, 'El directo archivado contiene datos no válidos.');
+  if (data.meldAutoSession !== true || !date(data.endedAt)) return null;
+  if (Date.parse(data.endedAt) < Date.parse(data.startedAt)
+    || Object.values(data.viewers || {}).some(series => Array.isArray(series?.samples)
+      && series.samples.some(sample => !Number.isSafeInteger(sample?.value) || sample.value < 0)))
+    throw httpError(500, 'El directo archivado contiene datos no válidos.');
+  return data;
+}
+const document = data => ({ schema: SCHEMA, version: VERSION, generatedAt: new Date().toISOString(), ...exportSession(data) });
+// The sender and the detail route share both validation and the exact document builder.
+export function metricsDocument(id, data) {
+  return exportableData(id, data) ? document(data) : null;
+}
+
 export function registerMetricsRoutes({ route, session }) {
   const load = async id => {
     if (!safeId(id)) throw httpError(404, 'No existe ese directo');
@@ -18,14 +35,7 @@ export function registerMetricsRoutes({ route, session }) {
       if (error.status === 404) throw httpError(404, 'No existe ese directo');
       throw error;
     });
-    if (!isValidRoot(data) || data.id !== id || !date(data.startedAt) || !validPlatforms(data.platforms))
-      throw httpError(500, 'El directo archivado contiene datos no válidos.');
-    if (data.meldAutoSession !== true || !date(data.endedAt)) return null;
-    if (Date.parse(data.endedAt) < Date.parse(data.startedAt)
-      || Object.values(data.viewers || {}).some(series => Array.isArray(series?.samples)
-        && series.samples.some(sample => !Number.isSafeInteger(sample?.value) || sample.value < 0)))
-      throw httpError(500, 'El directo archivado contiene datos no válidos.');
-    return data;
+    return exportableData(id, data);
   };
   route('GET', '/api/metrics/v1/sessions', async (_, __, url) => {
     const limits = url.searchParams.getAll('limit'), cursors = url.searchParams.getAll('before');
@@ -58,6 +68,6 @@ export function registerMetricsRoutes({ route, session }) {
     try { decoded = decodeURIComponent(id); } catch { throw httpError(404, 'No existe ese directo'); }
     const data = await load(decoded);
     if (!data) throw httpError(404, 'No existe ese directo');
-    return { schema: SCHEMA, version: VERSION, generatedAt: new Date().toISOString(), ...exportSession(data) };
+    return document(data);
   });
 }

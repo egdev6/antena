@@ -24,6 +24,7 @@ import { createHeldRecovery } from './held-recovery.mjs';
 import { registerShortcutRoutes, PROMPTER_LEGACY_TABS } from './routes/shortcuts.mjs';
 import { registerSessionRoutes, TIMELINE_MAX } from './routes/sessions.mjs';
 import { registerMetricsRoutes } from './routes/metrics.mjs';
+import { createPushExport } from './push-export.mjs';
 import { registerMediaRoutes } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
@@ -125,7 +126,12 @@ function sdRequestAllowed(req) {
   return originAllowed(req);
 }
 
-export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist } = {}) {
+export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist,
+  push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs } = {}) {
+  let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {};
+  // Validate private process settings before loading or changing any application state.
+  const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs,
+    onChange: () => notifyPushStatus(), onSpace: () => requestPushReconciliation(), onCheckpoint: () => notifyPushCheckpoint() });
   const store = await new Store(dataDir).load();
   const id = await instanceId(store.dir);
   // la interfaz React si está compilada; si no, la página mínima de las páginas de app
@@ -169,8 +175,18 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const meld = new Meld(log);
   // #68: la retención de archivados sale de la configuración (0 = sin límite); se lee
   // en vivo para que un cambio en config.json valga sin reiniciar.
-  const session = await new Session(store.dir, { report: log, maxArchived: () => store.config.sessions?.retention }).load();
-  session._applyRetention().catch(() => {});   // aplica la retención configurada al arrancar
+  const protectedArchives = new Set();
+  let retentionReady = false;
+  const protectPushArchives = () => pushExport.status().enabled || pushExport.status().pending > 0;
+  const session = await new Session(store.dir, { report: log, maxArchived: () => store.config.sessions?.retention,
+    pushExportEnabled: pushExport.status().enabled,
+    preserveArchived: id => !retentionReady || (protectedArchives.has(id) && !pushExport.isDurable(id)) }).load();
+  await pushExport.load(store.dir);
+  notifyPushCheckpoint = () => {
+    for (const id of protectedArchives) if (pushExport.isDurable(id)) protectedArchives.delete(id);
+    session._applyRetention().catch(() => {});
+  };
+  session._applyRetention().catch(() => {});   // unclassified archives stay protected until reconciliation
   const engine = new Engine({ store, bus, session, meld, twitch, youtube, log });
   // #132: barras de objetivo con el total real del canal (persisten entre directos)
   const channelTotals = await new ChannelTotals({ dir: store.dir, twitch, youtube, log }).load();
@@ -238,8 +254,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     sessionRecovery: session.recoveryState(),
     sessionArchive: session.archiveState(),
     heldRecovery,
+    push: pushExport.status(),
   });
   const pushStatus = () => bus.send('status', status(), ['panel']);
+  notifyPushStatus = pushStatus;
   for (const src of [twitch, youtube, chat, meld]) src.on('status', pushStatus);
 
   // eventos de plataforma → motor
@@ -257,6 +275,64 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     engine.pushWidgets(); pushTimeline();
     if (change?.reset) refreshLastStream().then(() => engine.pushWidgets()).catch(() => {});
   });
+  // Only the current session loaded at startup, or one whose finalization was
+  // confirmed durable, is eligible. An in-flight failed checkpoint is not.
+  const durableFinished = new Set();
+  if (session.data.meldAutoSession && session.data.endedAt) durableFinished.add(session.data.id);
+  const enqueueFinished = async data => {
+    if (!pushExport.status().enabled || !data?.meldAutoSession || !data.endedAt || pushExport.has(data.id)) return;
+    protectedArchives.add(data.id);
+    try {
+      const marked = await session.checkpointPushOwed(data.id, data);
+      if (marked && pushExport.hasCapacity() && !pushExport.has(data.id)) pushExport.enqueue(marked);
+    } catch { protectedArchives.add(data.id); pushExport.reconciliationError(); }
+  };
+  let reconciling = null, reconcileAgain = false;
+  requestPushReconciliation = () => {
+    // Even with push disabled, the first scan discovers obligations recorded in
+    // session checkpoints before an initial queue write failed.
+    if (!protectPushArchives() && retentionReady && !protectedArchives.size) return;
+    reconcileAgain = true;
+    if (reconciling) return;
+    reconciling = (async () => {
+      do {
+        reconcileAgain = false;
+        const current = session.data;
+        if (durableFinished.has(current.id)) await enqueueFinished(current);
+        let names;
+        try { names = await readdir(session.dir); }
+        catch (error) { if (error?.code === 'ENOENT') names = []; else throw error; }
+        // Classify every archive even when the bounded queue is full; retention
+        // must not remove a session merely because it has not been enqueued yet.
+        for (const name of names.sort().reverse()) {
+          if (!name.endsWith('.json') || name.endsWith('.meta.json')) continue;
+          const id = name.slice(0, -5);
+          if (!/^[\w-]+$/.test(id)) continue;
+          if (pushExport.isDurable(id)) { protectedArchives.delete(id); continue; }
+          if (session.getPending()?.id === id) { protectedArchives.add(id); continue; }
+          try {
+            const data = await session.getArchived(id);
+            if (data?.meldAutoSession && data.endedAt && (protectPushArchives() || data._pushExportOwed === true)) {
+              protectedArchives.add(id);
+              await enqueueFinished(data);
+            } else protectedArchives.delete(id);
+          } catch { protectedArchives.add(id); pushExport.reconciliationError(); }
+        }
+        retentionReady = true;
+        session._applyRetention().catch(() => {});
+      } while (reconcileAgain);
+    })().catch(() => pushExport.reconciliationError()).finally(() => {
+      reconciling = null;
+      if (reconcileAgain) requestPushReconciliation();
+    });
+  };
+  session.on('finalized', data => {
+    durableFinished.add(data.id);
+    if ((protectPushArchives() || data._pushExportOwed === true) && data.meldAutoSession && data.endedAt && !pushExport.isDurable(data.id)) protectedArchives.add(data.id);
+    void enqueueFinished(data);
+    requestPushReconciliation();
+  });
+  requestPushReconciliation();
   channelTotals.on('change', () => { engine.pushWidgets(); pushStatus(); });
   followers.on('change', () => { pushStatus(); engine.pushWidgets(); });
   followers.on('liveFollow', ({ id, name, avatar, ownerChannelId }) => {
@@ -534,6 +610,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return closeAutoSession({ expectedId }).then(async closed => {
       // An idempotent retry after a failed checkpoint must be durable before success.
       if (session.lastSaveError) await session.flush();
+      // The checkpoint may have recovered in the background before this retry.
+      session._notifyFinalized(closed);
       return closed;
     });
   };
@@ -1340,13 +1418,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const isHttpClosing = () => closing;
   const closeHttp = () => {
     if (httpClosePromise) return httpClosePromise;
-    let idle;
+    let idle, pushClose;
     try {
+      pushClose = pushExport.close(); // finish accepted queue writes, never wait for network retries
       closeAckWindow();          // terminal: la ventana no revive
       stopAdmission();
       idle = whenIdle();         // idle fresca: incluye handlers ACK admitidos en la ventana
     } catch (err) { httpClosePromise = Promise.reject(err); return httpClosePromise; }
-    httpClosePromise = idle.then(() => new Promise((resolve, reject) => {
+    httpClosePromise = Promise.all([idle, pushClose]).then(() => new Promise((resolve, reject) => {
       try {
         for (const { timer } of ssePings) clearInterval(timer);
         ssePings.clear();
