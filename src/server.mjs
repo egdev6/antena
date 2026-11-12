@@ -174,7 +174,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const engine = new Engine({ store, bus, session, meld, twitch, youtube, log });
   // #132: barras de objetivo con el total real del canal (persisten entre directos)
   const channelTotals = await new ChannelTotals({ dir: store.dir, twitch, youtube, log }).load();
-  const followers = await new FollowerRegistry({ dir: store.dir, twitch, youtube, channelTotals, log }).load();
+  const followers = await new FollowerRegistry({ dir: store.dir, twitch, youtube, log }).load();
   session.channelTotals = channelTotals;
   const timers = new Timers({ store, engine, twitch, youtube, meld, session, log });
   engine.timers = timers;
@@ -236,7 +236,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   session.on('change', () => { engine.pushWidgets(); pushTimeline(); });
   channelTotals.on('change', () => { engine.pushWidgets(); pushStatus(); });
   followers.on('change', pushStatus);
-  // Read the raw channel total before synchronizing followers, at startup and on the same reconnect transitions.
+  // Refresh channel totals and followers at startup and on the same reconnect transitions.
   const refreshFollowers = platform => channelTotals.refresh(platform).then(() => followers.sync(platform)).catch(() => {});
   let twitchState = twitch.status.state, youtubeState = youtube.status.state, youtubeAccount = youtube.status.account;
   twitch.on('status', st => {

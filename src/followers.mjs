@@ -6,7 +6,7 @@ import { writeJson } from './json-file.mjs';
 
 export const FOLLOWERS_FILE = 'followers.json';
 const PLATFORMS = ['twitch', 'youtube'];
-const blank = () => ({ lastSync: null, total: null, knownIds: [], entries: [], anonymous: [] });
+const blank = () => ({ lastSync: null, total: null, totalSource: null, knownIds: [], entries: [], anonymous: [] });
 const validTotal = n => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 const lower = name => String(name || '').toLowerCase();
 const validPlatform = data => data && typeof data === 'object' && !Array.isArray(data)
@@ -20,12 +20,12 @@ const validPlatform = data => data && typeof data === 'object' && !Array.isArray
     && validTotal(a.count) && a.count > 0 && typeof a.thanked === 'boolean');
 
 export class FollowerRegistry extends EventEmitter {
-  constructor({ dir, twitch, youtube, channelTotals, log = () => {}, now = Date.now, readers, write = writeJson } = {}) {
+  constructor({ dir, twitch, youtube, log = () => {}, now = Date.now, readers, write = writeJson } = {}) {
     super();
     this.file = path.join(dir, FOLLOWERS_FILE);
-    this.twitch = twitch; this.youtube = youtube; this.channelTotals = channelTotals;
+    this.twitch = twitch; this.youtube = youtube;
     this.log = log; this.now = now; this.write = write;
-    this.readers = readers || { twitch: lastSync => this.readTwitch(lastSync), youtube: () => this.readYouTube() };
+    this.readers = readers || { twitch: lastSync => this.readTwitch(lastSync), youtube: lastSync => this.readYouTube(lastSync) };
     this.platforms = { twitch: blank(), youtube: blank() };
     this.states = Object.fromEntries(PLATFORMS.map(p => [p, { status: 'idle', error: null }]));
     this.readOnly = false; this.loadError = null; this.lastWriteError = null;
@@ -56,6 +56,7 @@ export class FollowerRegistry extends EventEmitter {
       this.platforms[p] = {
         lastSync: typeof data.lastSync === 'string' && Number.isFinite(Date.parse(data.lastSync)) ? data.lastSync : null,
         total: validTotal(data.total) ? data.total : null,
+        totalSource: data.totalSource === 'youtube-oauth' ? data.totalSource : null,
         knownIds: Array.isArray(data.knownIds) ? [...new Set(data.knownIds.filter(id => typeof id === 'string' && id))] : [],
         entries: Array.isArray(data.entries) ? data.entries.filter(e => e && typeof e.name === 'string' && e.name && ['offline', 'live'].includes(e.source)).map(e => ({
           id: typeof e.id === 'string' && e.id ? e.id : null, name: e.name, followedAt: e.followedAt || null,
@@ -96,24 +97,40 @@ export class FollowerRegistry extends EventEmitter {
     return { items, truncated };
   }
 
-  async readYouTube() {
+  async readYouTube(lastSync = null) {
     const y = this.youtube;
     if (!y?.token?.access) return null;
+    // The baseline reads deeper (20 pages) so existing subscribers are known before later,
+    // shorter syncs (4 pages) look for new ones.
+    const maxPages = lastSync ? 4 : 20;
     let cursor, truncated = false; const items = [];
-    for (let page = 0; page < 4; page++) {
-      const params = { part: 'subscriberSnippet', myRecentSubscribers: 'true', maxResults: 50 };
+    for (let page = 0; page < maxPages; page++) {
+      const params = { part: 'snippet,subscriberSnippet', myRecentSubscribers: 'true', maxResults: 50 };
       if (cursor) params.pageToken = cursor;
       const response = await y.api('/subscriptions', params, { auth: true });
       for (const row of response.items || []) {
-        const snippet = row?.subscriberSnippet;
-        if (!snippet?.channelId || !snippet?.title) throw new Error('YouTube devolvió un suscriptor no válido');
-        items.push({ id: String(snippet.channelId), name: snippet.title, followedAt: snippet.publishedAt || row.snippet?.publishedAt || null });
+        const snippet = row?.subscriberSnippet, publishedAt = row?.snippet?.publishedAt ?? null;
+        if (!snippet?.channelId || !snippet?.title || (publishedAt !== null
+          && (typeof publishedAt !== 'string' || !Number.isFinite(Date.parse(publishedAt)))))
+          throw new Error('YouTube devolvió un suscriptor no válido');
+        items.push({ id: String(snippet.channelId), name: snippet.title, followedAt: publishedAt });
       }
       cursor = response.nextPageToken;
       if (!cursor) break;
-      if (page === 3) truncated = true;
+      if (page === maxPages - 1) truncated = true;
     }
-    return { items, truncated };
+    // The subscriber list belongs to the OAuth account, which may differ from the configured
+    // channel used by ChannelTotals. Missing, hidden or invalid statistics cannot imply growth.
+    let total = null;
+    try {
+      const response = await y.api('/channels', { part: 'statistics', mine: 'true' }, { auth: true });
+      const stats = response?.items?.[0]?.statistics, raw = stats?.subscriberCount;
+      if (!stats?.hiddenSubscriberCount && typeof raw === 'string' && /^\d+$/.test(raw)) {
+        const value = Number(raw);
+        if (Number.isSafeInteger(value)) total = value;
+      }
+    } catch { /* named subscribers can still be recorded without a usable total */ }
+    return { items, truncated, total };
   }
 
   // Matches ids when both exist; otherwise use the case-insensitive name. An id learned later
@@ -192,20 +209,22 @@ export class FollowerRegistry extends EventEmitter {
         for (const item of result.items) {
           if (seen.has(item.id)) continue;
           seen.add(item.id);
-          if (!baseline && !known.has(item.id)) {
+          const afterLastSync = item.followedAt == null || Date.parse(item.followedAt) > Date.parse(state.lastSync);
+          if (!baseline && !known.has(item.id) && afterLastSync) {
             named++;
-            this.add(platform, { ...item, followedAt: item.followedAt || startedAt, source: 'offline', thanked: false });
+            this.add(platform, { ...item, followedAt: item.followedAt ?? null, source: 'offline', thanked: false });
           }
           known.add(item.id);
         }
         state.knownIds = [...known];
-        const raw = this.channelTotals?.totals?.['subscribers@youtube']?.value;
-        const total = !this.channelTotals?.errors?.['subscribers@youtube'] && validTotal(raw) ? raw : null;
-        if (!baseline && total !== null && state.total !== null) {
+        const total = validTotal(result.total) ? result.total : null;
+        // A file written before OAuth-account totals existed may contain another channel's
+        // total. Establish a new baseline instead of comparing those unrelated counts.
+        if (!baseline && state.totalSource === 'youtube-oauth' && total !== null && state.total !== null) {
           const count = Math.max(0, total - state.total - named);
           if (count > 0) state.anonymous.push({ at: startedAt, count, thanked: false });
         }
-        state.total = total;
+        state.total = total; state.totalSource = 'youtube-oauth';
       } else if (!baseline) {
         for (const item of result.items) this.add(platform, { ...item, source: 'offline', thanked: false });
       }

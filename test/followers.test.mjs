@@ -54,7 +54,8 @@ test('S1/S2/S5: first Twitch and YouTube syncs establish silent baselines', asyn
     calls.push(args); return { ok: true, data: { data: [follow('old-t', 'Old Twitch', '2025-12-31T23:00:00.000Z')] } };
   } };
   const youtube = { token: { access: 'x' }, api: async (...args) => {
-    calls.push(args); return { items: [subscriber('old-y', 'Old YouTube')] };
+    calls.push(args);
+    return args[0] === '/channels' ? { items: [{ statistics: { subscriberCount: '100' } }] } : { items: [subscriber('old-y', 'Old YouTube')] };
   } };
   const channelTotals = { totals: { 'subscribers@youtube': { value: 100, live: 5 } }, offsets: { 'subscribers@youtube': 9 } };
   const r = await make(await dir(), { twitch, youtube, channelTotals, now: c.now });
@@ -64,7 +65,8 @@ test('S1/S2/S5: first Twitch and YouTube syncs establish silent baselines', asyn
   assert.equal(r.snapshot().youtube.status, 'ok');
   assert.deepEqual(calls, [
     ['GET', '/channels/followers?broadcaster_id=42&first=100'],
-    ['/subscriptions', { part: 'subscriberSnippet', myRecentSubscribers: 'true', maxResults: 50 }, { auth: true }],
+    ['/subscriptions', { part: 'snippet,subscriberSnippet', myRecentSubscribers: 'true', maxResults: 50 }, { auth: true }],
+    ['/channels', { part: 'statistics', mine: 'true' }, { auth: true }],
   ]);
   const restored = await make(path.dirname(r.file), { twitch, youtube, channelTotals, now: c.now });
   c.advance(); await restored.sync('youtube');
@@ -100,6 +102,7 @@ test('S2: Twitch follows cursors, stops at lastSync including equality, and caps
 test('S2/S6: YouTube follows nextPageToken with auth, caps four pages and only reports unseen ids', async () => {
   const c = clock(), calls = []; let phase = 0;
   const youtube = { token: { access: 'x' }, api: async (url, params, options) => {
+    if (url === '/channels') return { items: [{ statistics: { subscriberCount: phase ? '4' : '3' } }] };
     calls.push([url, params, options]);
     if (!phase) return params.pageToken ? { items: [subscriber('old-2', 'Old Two')] } : { items: [subscriber('old-1', 'Old One')], nextPageToken: 'next' };
     return { items: [subscriber('new', 'New'), subscriber('old-2', 'Old Two')], nextPageToken: 'same' };
@@ -110,7 +113,7 @@ test('S2/S6: YouTube follows nextPageToken with auth, caps four pages and only r
   phase = 1; c.advance(); channelTotals.totals['subscribers@youtube'].value = 4;
   await r.sync('youtube'); assert.equal(calls.length, 6);
   for (const [url, params, opts] of calls) {
-    assert.equal(url, '/subscriptions'); assert.equal(params.part, 'subscriberSnippet');
+    assert.equal(url, '/subscriptions'); assert.equal(params.part, 'snippet,subscriberSnippet');
     assert.equal(params.myRecentSubscribers, 'true'); assert.equal(params.maxResults, 50); assert.deepEqual(opts, { auth: true });
   }
   assert.deepEqual(r.list().entries.map(e => [e.id, e.name, e.source]), [['new', 'New', 'offline']]);
@@ -118,7 +121,8 @@ test('S2/S6: YouTube follows nextPageToken with auth, caps four pages and only r
 
 test('S6: anonymous count is max(0, raw growth minus named new); drops never delete records', async () => {
   const c = clock(); let raw = 100, items = [subscriber('old', 'Old')];
-  const youtube = { token: { access: 'x' }, api: async () => ({ items }) };
+  const youtube = { token: { access: 'x' }, api: async url => url === '/channels'
+    ? { items: [{ statistics: { subscriberCount: String(raw) } }] } : { items } };
   const channelTotals = await new ChannelTotals({ dir: await dir(), readers: { 'subscribers@youtube': async () => raw } }).load();
   await channelTotals.poll(); channelTotals.adjust('subscribers@youtube', 50);
   channelTotals.totals['subscribers@youtube'].live = 17;
@@ -135,13 +139,130 @@ test('S6: anonymous count is max(0, raw growth minus named new); drops never del
 });
 
 test('S6: unknown previous or current YouTube total does not invent anonymous followers', async () => {
-  const c = clock(), totals = { totals: {} };
-  const youtube = { token: { access: 'x' }, api: async () => ({ items: [] }) };
-  const r = await make(await dir(), { youtube, channelTotals: totals, now: c.now });
-  await r.sync('youtube'); totals.totals['subscribers@youtube'] = { value: 50 }; c.advance(); await r.sync('youtube');
-  delete totals.totals['subscribers@youtube']; c.advance(); await r.sync('youtube');
-  totals.totals['subscribers@youtube'] = { value: 70 }; c.advance(); await r.sync('youtube');
+  const c = clock(); let total = null;
+  const youtube = { token: { access: 'x' }, api: async url => url === '/channels'
+    ? { items: [{ statistics: { subscriberCount: total === null ? null : String(total) } }] } : { items: [] } };
+  const r = await make(await dir(), { youtube, now: c.now });
+  await r.sync('youtube'); total = 50; c.advance(); await r.sync('youtube');
+  total = null; c.advance(); await r.sync('youtube');
+  total = 70; c.advance(); await r.sync('youtube');
   assert.deepEqual(r.list().anonymous, []);
+});
+
+test('S2: a 201st pre-baseline subscriber revealed after an unsubscribe is silently learned', async () => {
+  const c = clock(), calls = [];
+  const rows = Array.from({ length: 201 }, (_, i) => ({
+    snippet: { publishedAt: '2025-12-01T00:00:00.000Z' }, subscriberSnippet: { channelId: `old-${i}`, title: `Old ${i}` },
+  }));
+  let current = rows;
+  const youtube = { token: { access: 'x' }, api: async (url, params) => {
+    if (url === '/channels') return { items: [{ statistics: { subscriberCount: String(current.length) } }] };
+    calls.push(params); const offset = Number(params.pageToken || 0), page = current.slice(offset, offset + 50);
+    return { items: page.map(item => params.part.split(',').includes('snippet') ? item : { subscriberSnippet: item.subscriberSnippet }),
+      ...(offset + 50 < current.length ? { nextPageToken: String(offset + 50) } : {}) };
+  } };
+  const r = await make(await dir(), { youtube, now: c.now });
+  await r.sync('youtube'); assert.equal(calls.length, 5); assert.deepEqual(r.list().entries, []);   // baseline reads all 5 pages
+  current = rows.slice(1); c.advance(); await r.sync('youtube');
+  assert.deepEqual(r.list().entries, []); assert.deepEqual(r.list().anonymous, []);
+  // The formerly unseen old id is now known even if a later response gives it a newer date.
+  current = [{ ...rows[200], snippet: { publishedAt: '2026-01-01T00:01:01.000Z' } }];
+  c.advance(); await r.sync('youtube'); assert.deepEqual(r.list().entries, []);
+  assert.ok(calls.every(params => params.part === 'snippet,subscriberSnippet'));
+});
+
+test('S1: YouTube followedAt is the subscription publishedAt, not the synchronization time', async () => {
+  const c = clock(); let rows = [];
+  const publishedAt = '2026-01-01T00:00:17.000Z';
+  const youtube = { token: { access: 'x' }, api: async (url, params) => {
+    if (url === '/channels') return { items: [{ statistics: { subscriberCount: String(rows.length) } }] };
+    return { items: rows.map(item => params.part.split(',').includes('snippet') ? item : { subscriberSnippet: item.subscriberSnippet }) };
+  } };
+  const d = await dir(), r = await make(d, { youtube, now: c.now }); await r.sync('youtube');
+  rows = [{ snippet: { publishedAt }, subscriberSnippet: { channelId: 'new', title: 'New' } }];
+  c.advance(); await r.sync('youtube'); await r.flush();
+  const restored = await make(d, { youtube, now: c.now });
+  assert.deepEqual(restored.list().entries.map(({ id, followedAt, source, thanked }) => ({ id, followedAt, source, thanked })),
+    [{ id: 'new', followedAt: publishedAt, source: 'offline', thanked: false }]);
+});
+
+test('S2: YouTube dates at or before lastSync are silent; a missing date falls back to known ids', async () => {
+  const c = clock(); let rows = [];
+  const youtube = { token: { access: 'x' }, api: async (url, params) => {
+    if (url === '/channels') return { items: [{ statistics: { subscriberCount: '10' } }] };
+    return { items: rows.map(item => params.part.split(',').includes('snippet') ? item : { subscriberSnippet: item.subscriberSnippet }) };
+  } };
+  const r = await make(await dir(), { youtube, now: c.now }); await r.sync('youtube');
+  rows = [
+    { snippet: { publishedAt: '2025-12-31T23:59:59.000Z' }, subscriberSnippet: { channelId: 'old', title: 'Old' } },
+    { snippet: { publishedAt: c.iso() }, subscriberSnippet: { channelId: 'equal', title: 'Equal' } },
+    { snippet: { publishedAt: '2026-01-01T00:00:01.000Z' }, subscriberSnippet: { channelId: 'new', title: 'New' } },
+    { subscriberSnippet: { channelId: 'missing', title: 'Missing' } },
+  ];
+  c.advance(); await r.sync('youtube');
+  assert.deepEqual(r.list().entries.map(e => [e.id, e.followedAt]), [
+    ['new', '2026-01-01T00:00:01.000Z'], ['missing', null],
+  ]);
+  await r.sync('youtube'); assert.equal(r.list().entries.length, 2);
+});
+
+test('S6: configured channel A cannot inflate anonymous followers for OAuth account B', async () => {
+  const c = clock(), calls = []; let aTotal = 100, bTotal = 400, rows = [];
+  const youtube = { cfg: { channelId: 'A', apiKey: 'public-fixture' }, token: { access: 'x' }, api: async (url, params, opts) => {
+    calls.push([url, params, opts]);
+    if (url === '/channels' && params.id === 'A') return { items: [{ statistics: { subscriberCount: String(aTotal) } }] };
+    if (url === '/channels' && params.mine === 'true') return { items: [{ statistics: { subscriberCount: String(bTotal) } }] };
+    return { items: rows };
+  } };
+  const channelTotals = await new ChannelTotals({ dir: await dir(), youtube }).load();
+  await channelTotals.refresh('youtube');
+  const r = await make(await dir(), { youtube, channelTotals, now: c.now }); await r.sync('youtube');
+  aTotal += 3; await channelTotals.refresh('youtube'); c.advance(); await r.sync('youtube');
+  assert.deepEqual(r.list().anonymous, []);
+  bTotal += 5; rows = [
+    { snippet: { publishedAt: '2026-01-01T00:01:01.000Z' }, subscriberSnippet: { channelId: 'new-1', title: 'One' } },
+    { snippet: { publishedAt: '2026-01-01T00:01:02.000Z' }, subscriberSnippet: { channelId: 'new-2', title: 'Two' } },
+  ];
+  c.advance(); await r.sync('youtube');
+  assert.deepEqual(r.list().entries.map(e => e.id), ['new-1', 'new-2']);
+  assert.deepEqual(r.list().anonymous, [{ at: c.iso(), count: 3, thanked: false }]);
+  assert.ok(calls.some(([url, params, opts]) => url === '/channels' && params.id === 'A' && !opts));
+  assert.equal(calls.filter(([url, params, opts]) => url === '/channels' && params.mine === 'true'
+    && params.part === 'statistics' && opts?.auth === true).length, 3);
+  await channelTotals.flush(); await r.flush();
+});
+
+test('S6: hidden or non-digit own-account counts cannot create anonymous records', async () => {
+  const c = clock(); let statistics = { subscriberCount: '100' }, legacyTotal = 100;
+  const youtube = { token: { access: 'x' }, api: async url => url === '/channels' ? { items: [{ statistics }] } : { items: [] } };
+  const channelTotals = { totals: { 'subscribers@youtube': { value: legacyTotal } } };
+  const r = await make(await dir(), { youtube, channelTotals, now: c.now }); await r.sync('youtube');
+  for (const value of ['1.2', '-2', ' 99', '100x', '', null, 100]) {
+    statistics = { subscriberCount: value }; channelTotals.totals['subscribers@youtube'].value = legacyTotal += 10;
+    c.advance(); await r.sync('youtube'); assert.deepEqual(r.list().anonymous, []);
+  }
+  statistics = { subscriberCount: '190', hiddenSubscriberCount: true }; c.advance(); await r.sync('youtube');
+  assert.deepEqual(r.list().anonymous, []);
+  statistics = { subscriberCount: '200' }; c.advance(); await r.sync('youtube');
+  assert.deepEqual(r.list().anonymous, []);
+  statistics = { subscriberCount: '202' }; c.advance(); await r.sync('youtube');
+  assert.deepEqual(r.list().anonymous, [{ at: c.iso(), count: 2, thanked: false }]);
+});
+
+test('S6: an older ChannelTotals-derived baseline is not compared with the OAuth account total', async () => {
+  const d = await dir(), c = clock();
+  const platform = () => ({ lastSync: null, total: null, knownIds: [], entries: [], anonymous: [] });
+  const youtubeData = { ...platform(), lastSync: '2025-12-31T23:59:00.000Z', total: 100 };
+  await writeJson(file(d), { version: 1, platforms: { twitch: platform(), youtube: youtubeData } });
+  let ownTotal = 1000;
+  const youtube = { token: { access: 'x' }, api: async url => url === '/channels'
+    ? { items: [{ statistics: { subscriberCount: String(ownTotal) } }] } : { items: [] } };
+  const channelTotals = { totals: { 'subscribers@youtube': { value: 1000 } } };
+  const r = await make(d, { youtube, channelTotals, now: c.now });
+  await r.sync('youtube'); assert.deepEqual(r.list().anonymous, []); await r.flush();
+  const restored = await make(d, { youtube, channelTotals, now: c.now });
+  ownTotal += 2; c.advance(); await restored.sync('youtube');
+  assert.deepEqual(restored.list().anonymous, [{ at: c.iso(), count: 2, thanked: false }]);
 });
 
 test('S2: without an OAuth account YouTube is skipped with needs_account and no error', async () => {
@@ -209,18 +330,18 @@ test('S2/S4: a live follow arriving during a sync is deduplicated and retained o
 
 test('S1/S5: persistence survives restart, including thank flags and anonymous records', async () => {
   const d = await dir(), c = clock(); let rows = [], total = 10;
-  const youtube = { token: { access: 'x' }, api: async () => ({ items: rows }) };
-  const totals = { totals: { 'subscribers@youtube': { value: total } } };
-  const r = await make(d, { youtube, channelTotals: totals, now: c.now }); await r.sync('youtube');
-  c.advance(); rows = [subscriber('new', 'New')]; totals.totals['subscribers@youtube'].value = total += 3;
+  const youtube = { token: { access: 'x' }, api: async url => url === '/channels'
+    ? { items: [{ statistics: { subscriberCount: String(total) } }] } : { items: rows } };
+  const r = await make(d, { youtube, now: c.now }); await r.sync('youtube');
+  c.advance(); rows = [subscriber('new', 'New')]; total += 3;
   await r.sync('youtube'); r.markThanked(['new']); await r.flush();
-  const restored = await make(d, { youtube, channelTotals: totals, now: c.now });
+  const restored = await make(d, { youtube, now: c.now });
   assert.equal(restored.list().entries[0].thanked, true);
   assert.deepEqual(restored.list().anonymous, [{ at: c.iso(), count: 2, thanked: false }]);
   assert.equal(restored.list({ pending: true }).entries.length, 0);
   restored.markThanked('all'); await restored.flush();
   assert.deepEqual(restored.list({ pending: true }).anonymous, []);
-  const again = await make(d, { youtube, channelTotals: totals, now: c.now });
+  const again = await make(d, { youtube, now: c.now });
   assert.equal(again.list().anonymous[0].thanked, true);
 });
 
