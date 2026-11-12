@@ -7,7 +7,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { goalsBrowserUi, seedTwitchTotals } from './helpers/goals-browser-app.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -18,14 +19,15 @@ process.once('exit', code => {
 });
 
 async function start(t) {
-  const bin = await skipIfNoBrowserOrUi(t);
-  if (!bin) return null;
+  const ui = await goalsBrowserUi(t);
+  if (!ui) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-128-'));
   t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
-  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), appDist: ui.dist, log: () => {} });
+  await seedTwitchTotals(app);
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
-  return { bin, app, base, close: async () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); } };
+  return { bin: ui.bin, app, base, close: async () => { app.timers.stop(); await app.channelTotals.flush(); app.server.closeAllConnections(); app.server.close(); } };
 }
 
 const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 12000 });
@@ -57,7 +59,8 @@ test('overlay goal.html: caja con dos barras, progreso, visibilidad de caja/barr
     }];
     for (const ev of [{ type: 'follow', vars: {} }, { type: 'follow', vars: {} }, { type: 'follow', vars: {} }, { type: 'follow', vars: {} },
       { type: 'superchat', vars: { amount: 4 } }]) {
-      app.engine.handleEvent({ externalId: 'sim:' + Math.random(), type: ev.type, vars: { ...ev.vars, user: 'Sintético' } });
+      // real platform path (#132: channel totals move only with real platform events)
+      (ev.type === 'superchat' ? app.youtube : app.twitch).emit('event', { externalId: 'sim:' + Math.random(), type: ev.type, vars: { ...ev.vars, user: 'Sintético' } });
     }
     await sleep(50);   // los eventos llegan al widget por SSE
 

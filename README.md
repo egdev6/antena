@@ -143,6 +143,8 @@ In the panel, **Meld and Stream Deck › Sources for Meld** lists all of them wi
 | Giveaway | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
 | Viewers | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
 
+**Goal bars.** Twitch followers and subs and YouTube subscribers show the platform's channel total, not just events from the stream, and do not reset between streams. Antena reads it at startup, on reconnect and every five minutes; live events add between reads. If the platform does not respond, the last known value remains; before the first read the bar shows `—`. Manual +1, −1 and Set apply a persistent correction (for example, to exclude your own sub). Twitch subs require the `channel:read:subscriptions` permission. YouTube rounds subscriber counts to three significant figures from 1,000. Other goal metrics remain per stream.
+
 **Chat variants (server API).** `POST /api/widgets/chat/variants` with `{ "name": "Live" }` creates a named copy of every current default-chat setting. Later default changes do not propagate. Explicit creation fields must match the copied defaults; a conflicting value is rejected. `GET` on that path lists variants; `PUT` or `DELETE` on `/:id` edits or removes one. Names and settings are validated, a changed id is rejected on rename, and the default cannot be deleted. Validation applies when `chatVariants` is supplied or addressed explicitly; other config writes retain their existing merge, replacement and `null` semantics. The server lists `/widget/chat?variant=<id>` in sources and MCP; `/widget/chat` remains the unchanged default URL. The widget selects an exact variant id, and falls back to the default if it is missing, unknown or deleted. Each independent configuration has `layout: "vertical" | "horizontal"` (default `vertical`): the horizontal row puts new messages on the right and fades older ones at the left edge; `reverse` mirrors the order and directional animations. Available width and `maxMessages` limit the row, and messages are clamped to two lines. In shorter horizontal layers, vertical spacing and card height adapt; configured fonts also shrink when needed. In **Widgets › Chat en pantalla**, create a variant from the saved default, choose its layout and settings, then press **Guardar**. Copy the selected variant's URL into its Meld browser source; renaming does not change that URL. The panel suggests 600×900 for vertical chat and 1832×160 for horizontal chat; adjust these to your scene. Save or discard a draft before switching or managing variants. A standalone `?layout=` parameter is not supported for chat.
 
 Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Credits: `?transparent`, `?autoplay`, `?loop`. Latest: `?layout=column`, `?items=follow,sub`. Viewers: `?platforms=twitch`, `?layout=column`, `?total=0`, `?peak=1`.
@@ -309,7 +311,7 @@ They live in **Widgets** and each one has its browser layer. Their state (questi
 
 ### Stream, chat and history
 
-- **Stream:** totals, goals, timeline, Markdown recap (copy or download), launch credits and start a new stream (the previous one is archived with its recap).
+- **Stream:** totals, goals, timeline, Markdown recap (copy or download), launch credits and start a new stream (the previous one is archived with its recap). Channel-total goal bars keep their values and corrections across streams; other goals count per stream.
 - **Session identity:** known YouTube and Twitch IDs appear in `/api/sessions` and `listar_directos`; a different ID on reconnect starts a new session, otherwise the first ID is kept.
 - **Viewer history:** automatic live sessions retain every captured sample and error/offline/disconnection gap per platform. JSON summaries expose `viewers` and `viewerMetrics`; `/api/sessions` and `listar_directos` expose only metrics. Average is time-weighted, peak and coverage stay separate per platform (never summed). Each sample covers at most its polling interval; gaps and restart downtime are never interpolated.
 - **Chat metrics:** automatic Meld sessions persist unique chatters and message/minute counts per platform, independently of the 300-message buffer. Simulated and identifiable streamer messages are excluded.
@@ -457,7 +459,7 @@ Claude Desktop (`claude_desktop_config.json`):
 Examples of what you can ask Claude to do:
 
 - «Create a variation of the raid for more than 50 people with the raid-grande.webm video and switch to the Raid scene for 10 seconds».
-- «Set a goal of 30 followers for today and launch the credits when it ends».
+- «Set a goal of 1,500 channel followers and launch the credits when it ends».
 - «Every 20 minutes remind in chat that the code is at github.com/egdev6, as a purple announcement».
 - «Make a tier list of testing tools with Vitest, Jest, Playwright and Cypress and open the vote for Vitest».
 - «Open a giveaway for an EGDEV t-shirt with !camiseta and, when I tell you, draw it».

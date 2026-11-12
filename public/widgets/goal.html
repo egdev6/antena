@@ -36,7 +36,7 @@ import { platformSvg } from '/platform-icons.js';
 import { connect, DEMO, demoState, qs, setCss } from '/widgets/widget.js';
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n).toLocaleString('es-ES', { maximumFractionDigits: 2 });
-const LABELS = { follows: 'Seguidores', subs: 'Suscripciones', bits: 'Bits', raids: 'Raids', superchats: 'Super Chats (€)', members: 'Miembros', events: 'Eventos' };
+const LABELS = { follows: 'Seguidores', subs: 'Suscripciones', bits: 'Bits', raids: 'Raids', subscribers: 'Suscriptores', superchats: 'Super Chats (€)', members: 'Miembros', events: 'Eventos' };
 // #128: una caja puede tener varias barras (una por plataforma). Cada barra visible pinta
 // su propio progreso con su métrica y su meta; showMetric oculta la etiqueta «qué cuenta».
 // Logos de plataforma: SVG por DOM con las rutas fijas de /platform-icons.js, nunca marcado configurable.
@@ -56,8 +56,9 @@ function barRow(b) {
 }
 function updateRow(row, b, g) {
   const target = Number(b.target) || 0;
-  const value = DEMO ? Math.round(target * 0.7) : (b.value ?? 0);
-  const pct = Math.max(0, Math.min(100, target ? value / target * 100 : 0));
+  const value = DEMO ? Math.round(target * 0.7) : (b.value === null ? null : (b.value ?? 0));
+  const shown = value === null ? '—' : fmt(value);
+  const pct = Math.max(0, Math.min(100, target ? (value ?? 0) / target * 100 : 0));
   if (row.dataset.platform !== b.platform) {
     row.dataset.platform = b.platform;
     row.className = 'bar pf-' + b.platform;
@@ -70,8 +71,8 @@ function updateRow(row, b, g) {
     if (!metric) { metric = document.createElement('span'); metric.className = 'metric'; row.querySelector('.pct').before(metric); }
     metric.textContent = LABELS[b.metric] || b.metric;
   } else metric?.remove();
-  row.querySelector('.pct').textContent = `${fmt(value)}/${fmt(target)}`;
-  row.title = `${fmt(value)} / ${fmt(target)}`;
+  row.querySelector('.pct').textContent = `${shown}/${fmt(target)}`;
+  row.title = `${shown} / ${fmt(target)}`;
   return pct;
 }
 function apply(s) {

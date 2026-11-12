@@ -46,6 +46,9 @@ globalThis.fetch = async (url, init = {}) => {
   if (scenario === 'eventsub' && u === 'https://api.twitch.tv/helix/eventsub/subscriptions' && init.method === 'POST') {
     subscriptions++; return Response.json({ data: [] }, { status: 202 });
   }
+  // #132: channel totals read on connect (followers/subscriptions totals), no account data
+  if (scenario === 'eventsub' && /^https:\/\/api\.twitch\.tv\/helix\/(channels\/followers|subscriptions)\?/.test(u) && (init.method || 'GET') === 'GET')
+    return Response.json({ total: 0, data: [] });
   if (scenario === 'oauth' && u === 'https://oauth2.googleapis.com/token') {
     tokens++; mark('token', { grant: new URLSearchParams(init.body).get('grant_type') });
     await gates.token.promise;

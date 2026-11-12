@@ -15,6 +15,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
 
 - **Capas de navegador:** overlay de alertas, y capas de chat, objetivo, últimos apoyos,
   ticker, créditos, pregunta, tier list, sorteo y espectadores, servidas por URL local.
+- **Barras de objetivo (#132):** seguidores y subs de Twitch y suscriptores de YouTube muestran el total del canal informado por la plataforma, no solo los eventos del directo, y no se reinician entre directos. Se consulta al arrancar, al reconectar y cada cinco minutos; los eventos en vivo suman entre lecturas. Si la plataforma no responde se conserva el último valor conocido; antes de la primera lectura se muestra `—`. +1, −1 y «Fijar» aplican una corrección persistente (p. ej., para descontar tu propia sub). Las subs de Twitch requieren `channel:read:subscriptions`; YouTube redondea suscriptores a tres cifras significativas a partir de 1.000. Las demás métricas siguen siendo por directo.
 - **Espectadores en directo:** `public/widgets/viewers.html` (`/widget/viewers`, 900×160) pinta una
   tarjeta por plataforma con los espectadores de ahora y, si se piden, el pico y el total;
   parámetros `?platforms=twitch,youtube`, `?layout=column`, `?total=0`, `?peak=1`. Recibe solo

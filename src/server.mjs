@@ -34,6 +34,7 @@ import { registerViewersRoutes } from './routes/viewers.mjs';
 import { registerThemeRoutes } from './routes/theme.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
 import { ViewerWatch } from './viewers.mjs';
+import { ChannelTotals } from './channel-totals.mjs';
 import { registerTeleprompterRoutes } from './routes/teleprompter.mjs';
 import { registerCustomOverlayRoutes } from './routes/custom-overlays.mjs';
 import { Teleprompter } from './teleprompter.mjs';
@@ -169,6 +170,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const session = await new Session(store.dir, { report: log, maxArchived: () => store.config.sessions?.retention }).load();
   session._applyRetention().catch(() => {});   // aplica la retención configurada al arrancar
   const engine = new Engine({ store, bus, session, meld, twitch, youtube, log });
+  // #132: barras de objetivo con el total real del canal (persisten entre directos)
+  const channelTotals = await new ChannelTotals({ dir: store.dir, twitch, youtube, log }).load();
+  session.channelTotals = channelTotals;
   const timers = new Timers({ store, engine, twitch, youtube, meld, session, log });
   engine.timers = timers;
   const interactive = await new Interactive({ store, twitch, meld, log }).load();
@@ -206,6 +210,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     twitch: twitch.status, youtube: youtube.status, chat: chat.status, meld: meld.status,
     overlays: bus.overlayCount(), pause: engine.pauseState(),
     persistence: store.persistenceState(),
+    channelTotals: channelTotals.snapshot(),
     sessionRecovery: session.recoveryState(),
     sessionArchive: session.archiveState(),
     heldRecovery,
@@ -214,11 +219,25 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   for (const src of [twitch, youtube, chat, meld]) src.on('status', pushStatus);
 
   // eventos de plataforma → motor
+  // #132: el total del canal se complementa con el evento real de la plataforma, aunque su
+  // alerta esté desactivada o el usuario filtrado (es el número real del canal)
+  twitch.on('event', e => channelTotals.onEvent(e));
   twitch.on('event', e => engine.handleEvent(e));
   youtube.on('event', e => engine.handleEvent(e));
   chat.on('delete', ({ id }) => engine.deleteChat(id));
   chat.on('clearUser', ({ login }) => engine.clearChatUser(login));
   session.on('change', () => { engine.pushWidgets(); pushTimeline(); });
+  channelTotals.on('change', () => { engine.pushWidgets(); pushStatus(); });
+  // #132: se relee el total al (re)conectar cada plataforma, no en cada cambio de estado
+  let twitchState = twitch.status.state, youtubeState = youtube.status.state, youtubeAccount = youtube.status.account;
+  twitch.on('status', st => {
+    if (st.state === 'conectado' && twitchState !== 'conectado') channelTotals.refresh('twitch').catch(() => {});
+    twitchState = st.state;
+  });
+  youtube.on('status', st => {
+    if ((st.state === 'escuchando' && youtubeState !== 'escuchando') || (st.account && st.account !== youtubeAccount)) channelTotals.refresh('youtube').catch(() => {});
+    youtubeState = st.state; youtubeAccount = st.account;
+  });
   // la cronología apunta también lo que pasa en los interactivos
   interactive.on('questionShown', q => session.addNote({ kind: 'question', text: q.text, user: q.user, platform: q.platform }));
   interactive.on('draw', r => session.addNote({ kind: 'winner', user: r.winner, label: store.config.interactive?.giveaway?.prize || '' }));
@@ -1290,7 +1309,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
+  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, channelTotals, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
   return app;
 }
 
@@ -1421,6 +1440,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
   app.twitch.start();
   app.timers.start();
   app.viewers.start();
+  app.channelTotals.start();
   if (app.store.config.chat.twitchChannel) app.chat.join(app.store.config.chat.twitchChannel);
   if (app.store.config.meld.enabled) app.meld.start(app.store.config.meld.url);
   const onUnhandledRejection = e => log('[error]', e?.message || e);
@@ -1509,8 +1529,9 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
         try { queued = app.store.chain; } catch { queued = Promise.reject(new Error('Store unavailable')); }
         const sessionFlush = () => Promise.resolve().then(() => app.session.flush());
         const interactiveFlush = () => Promise.resolve().then(() => app.interactive.flush());
+        const totalsFlush = () => Promise.resolve().then(() => app.channelTotals.flush());   // #132: correcciones y último total
         // Start all independent attempts NOW: a failed/hung journal never gates either flush.
-        Promise.allSettled([journal, queued, sessionFlush(), interactiveFlush()]).then(results => {
+        Promise.allSettled([journal, queued, sessionFlush(), interactiveFlush(), totalsFlush()]).then(results => {
           let code = engineFailed || heldFailed || results.some(r => r.status === 'rejected') || unsaved() ? 1 : 0;
           // La persistencia ya está decidida; ahora sí, con el deadline todavía ACTIVO, se cierra el
           // transporte HTTP real. Un cierre HTTP fallido o colgado también sale 1.
@@ -1639,6 +1660,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
       try { app.interactive.quiesceVoteTimer(); } catch { finish(1); return; }
       // Récord de espectadores: sin más lecturas ni alertas al cerrar la app (#142).
       try { app.viewers.halt(); } catch { /* sin temporizadores vivos */ }
+      try { app.channelTotals.halt(); } catch { /* sin temporizadores vivos */ }
       // teleprompter: sin temporizadores vivos más allá de su ancla programada
       try { app.teleprompter.stop(); } catch { /* sin temporizadores vivos */ }
       try { app.beginAckWindow(); } catch { finish(1); return; }

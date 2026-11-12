@@ -36,7 +36,7 @@ const list = (item, o = {}) => ({ kind: 'list', item, ...o });   // lista de obj
 // Objetivos por plataforma (#128): cada objetivo es una caja con barras. La métrica válida
 // de una barra depende de su plataforma (src/goals.mjs); la comprobación cruzada va en el
 // kind «goalBar» de checkNode porque el resto del esquema valida hojas de forma aislada.
-const GOAL_METRICS = ['follows', 'subs', 'bits', 'raids', 'superchats', 'members', 'events'];
+const GOAL_METRICS = ['follows', 'subs', 'bits', 'raids', 'subscribers', 'superchats', 'members', 'events'];
 // kind «crossBar»: esquema de barra con comprobación cruzada plataforma↔métrica; el resto
 // del esquema valida hojas de forma aislada, así que la dependencia va aparte (checkNode).
 const GOAL_BAR = { kind: 'crossBar', fields: {
