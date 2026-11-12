@@ -216,7 +216,7 @@ test('S6/S9: reconnect snapshot cannot undo a newer saved default preview', { ti
 
 test('a reconnect without a newer widgets frame loads a missed goal value and still accepts later updates', { timeout: 90000 }, async t => {
   const f = await fixture(t);
-  const goal = (await f.ok('POST', '/api/goals', { id: 'preserve', title: 'Meta', platform: 'twitch', metric: 'follows', target: 10 })).goal;
+  const goal = (await f.ok('POST', '/api/goals', { id: 'preserve', title: 'Meta', platform: 'twitch', metric: 'bits', target: 10 })).goal;
   const endpoint = `/api/goals/${goal.id}/bars/${goal.bars[0].id}/set`;
   const c = await f.open({ observe: true, hash: `#/widgets/objetivos/${goal.id}`, ready: `!!document.querySelector('.goal-card .gval')` });
   assert.equal(await dom(c, `document.querySelector('.goal-card .gval').textContent`), '0', 'initial snapshot');

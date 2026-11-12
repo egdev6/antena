@@ -29,12 +29,15 @@ import { registerMediaRoutes } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
 import { registerGoalsRoutes } from './routes/goals.mjs';
+import { registerFollowersRoutes } from './routes/followers.mjs';
 import { registerChatVariantsRoutes } from './routes/chat-variants.mjs';
 import { registerMeldRoutes } from './routes/meld.mjs';
 import { registerViewersRoutes } from './routes/viewers.mjs';
 import { registerThemeRoutes } from './routes/theme.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
 import { ViewerWatch } from './viewers.mjs';
+import { ChannelTotals } from './channel-totals.mjs';
+import { FollowerRegistry } from './followers.mjs';
 import { registerTeleprompterRoutes } from './routes/teleprompter.mjs';
 import { registerCustomOverlayRoutes } from './routes/custom-overlays.mjs';
 import { Teleprompter } from './teleprompter.mjs';
@@ -45,7 +48,7 @@ import { Timers, newTimer, alertFields, limitWarnings, TIMER_KEYS, TIMER_DESTINA
 import { newCommand, normalizeTrigger } from './commands.mjs';
 import {
   ALERT_TYPES, DEFAULT_ALERTS, LOOK_DEFAULTS, EXTRA_DEFAULTS, ALERT_FIELDS, DEFAULT_CONDITIONS, DEFAULT_COMMAND, SAMPLES,
-  buildAlert, buildCommandAlert, buildCustomAlert, mediaKind, alertConfig,
+  buildAlert, buildCommandAlert, buildCustomAlert, mediaKind, alertConfig, youtubeAvatarUrl,
 } from './alerts.mjs';
 
 const PUBLIC = path.join(ROOT, 'public');
@@ -185,6 +188,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   };
   session._applyRetention().catch(() => {});   // unclassified archives stay protected until reconciliation
   const engine = new Engine({ store, bus, session, meld, twitch, youtube, log });
+  // #132: barras de objetivo con el total real del canal (persisten entre directos)
+  const channelTotals = await new ChannelTotals({ dir: store.dir, twitch, youtube, log }).load();
+  const followers = await new FollowerRegistry({ dir: store.dir, twitch, youtube, log }).load();
+  session.channelTotals = channelTotals;
   const timers = new Timers({ store, engine, twitch, youtube, meld, session, log });
   engine.timers = timers;
   const interactive = await new Interactive({ store, twitch, meld, log }).load();
@@ -222,6 +229,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     twitch: twitch.status, youtube: youtube.status, chat: chat.status, meld: meld.status,
     overlays: bus.overlayCount(), pause: engine.pauseState(),
     persistence: store.persistenceState(),
+    channelTotals: channelTotals.snapshot(),
+    followers: followers.snapshot(),
     sessionRecovery: session.recoveryState(),
     sessionArchive: session.archiveState(),
     heldRecovery,
@@ -232,6 +241,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   for (const src of [twitch, youtube, chat, meld]) src.on('status', pushStatus);
 
   // eventos de plataforma → motor
+  // #132: el total del canal se complementa con el evento real de la plataforma, aunque su
+  // alerta esté desactivada o el usuario filtrado (es el número real del canal)
+  twitch.on('event', e => channelTotals.onEvent(e));
+  twitch.on('event', e => {
+    if (e.type === 'follow') followers.onLiveFollow({ platform: 'twitch', id: e.followerId, name: e.vars?.user, at: e.followedAt });
+  });
   twitch.on('event', e => engine.handleEvent(e));
   youtube.on('event', e => engine.handleEvent(e));
   chat.on('delete', ({ id }) => engine.deleteChat(id));
@@ -295,6 +310,39 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     requestPushReconciliation();
   });
   requestPushReconciliation();
+  channelTotals.on('change', () => { engine.pushWidgets(); pushStatus(); });
+  followers.on('change', pushStatus);
+  followers.on('liveFollow', ({ id, name, avatar, ownerChannelId }) => {
+    const safeAvatar = youtubeAvatarUrl(avatar);
+    const event = { externalId: `ytsub:${id}`, type: 'ytsub', vars: { user: name, ...(safeAvatar ? { avatar: safeAvatar } : {}) } };
+    const goalChannel = youtube.cfg.channelId;
+    // An explicit channel may differ from the OAuth account that owns the subscriber list.
+    if (!goalChannel || (ownerChannelId && ownerChannelId === goalChannel)) channelTotals.onEvent(event);
+    engine.handleEvent(event);
+  });
+  // Capture YouTube ownership before the total read: that read can outlive a listening period.
+  const refreshFollowers = (platform, options) => {
+    const owner = platform === 'youtube' ? followers.captureYouTubeActivity() : () => true;
+    const active = () => owner() && (!options?.active || options.active());
+    return channelTotals.refresh(platform).then(() => {
+      if (!active()) return;
+      return followers.sync(platform, platform === 'youtube' ? { ...options, active } : options);
+    }).catch(() => {});
+  };
+  let twitchState = twitch.status.state, youtubeState = youtube.status.state, youtubeAccount = youtube.status.account;
+  twitch.on('status', st => {
+    if (st.state === 'conectado' && twitchState !== 'conectado') refreshFollowers('twitch');
+    twitchState = st.state;
+  });
+  youtube.on('status', st => {
+    const entered = st.state === 'escuchando' && youtubeState !== 'escuchando';
+    const left = st.state !== 'escuchando' && youtubeState === 'escuchando';
+    const accountChanged = st.account && st.account !== youtubeAccount;
+    youtubeState = st.state; youtubeAccount = st.account;
+    if (left) followers.endYouTubeListening();
+    if (entered) followers.beginYouTubeListening(active => refreshFollowers('youtube', { active, live: false, establish: true }));
+    else if (accountChanged) refreshFollowers('youtube', { live: false });
+  });
   // la cronología apunta también lo que pasa en los interactivos
   interactive.on('questionShown', q => session.addNote({ kind: 'question', text: q.text, user: q.user, platform: q.platform }));
   interactive.on('draw', r => session.addNote({ kind: 'winner', user: r.winner, label: store.config.interactive?.giveaway?.prize || '' }));
@@ -343,6 +391,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }]));
   };
   store.on('change', patch => {
+    if (patch.youtube || patch.all) followers.updateYouTubePolling();
     if (patch.theme || patch.all) bus.send('theme', publicTheme(store.config.theme), ['overlay', 'preview', 'widget']);
     // The replace-by-type Bus needs a COMPLETE panel rendering snapshot, including
     // after common CSS changes. Keep the three-section config contract unchanged.
@@ -971,6 +1020,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // widgets y objetivos (#128: rutas de cajas/barras en módulo propio, mismo punto y orden)
   registerChatVariantsRoutes({ route, store });
   registerGoalsRoutes({ route, store, session, id8 });
+  registerFollowersRoutes({ route, followers });
   route('POST', '/api/credits/play', async () => { bus.send('credits', { action: 'play' }, ['widget']); return { ok: true }; });
   route('POST', '/api/credits/stop', async () => { bus.send('credits', { action: 'stop' }, ['widget']); return { ok: true }; });
 
@@ -1369,7 +1419,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
+  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
   return app;
 }
 
@@ -1436,7 +1486,7 @@ function readBody(req) {
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 /** Arranca el servidor (lo usan `pnpm start` y el MCP cuando no hay ninguno en marcha). */
-export async function startServer({ log = console.log, quiet = false, shutdownTimeoutMs = 5000, handleSignals = true, heldRecoveryWindows, heldRecoveryIO,
+export async function startServer({ log = console.log, quiet = false, shutdownTimeoutMs = 5000, handleSignals = true, heldRecoveryWindows, heldRecoveryIO, followersDelayMs = 3000,
   // Test seam for the one global shutdown deadline; all other timers remain real.
   shutdownDeadlineTimers = { setTimeout, clearTimeout } } = {}) {
   const app = await createApp({ log, heldRecoveryWindows, heldRecoveryIO });
@@ -1500,6 +1550,10 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
   app.twitch.start();
   app.timers.start();
   app.viewers.start();
+  app.channelTotals.start();
+  // #128: first sync shortly after startup, like the first channel-total read (cancelled by halt)
+  app.followersStartup = setTimeout(() => { app.refreshFollowers('twitch'); app.refreshFollowers('youtube'); }, followersDelayMs);
+  app.followersStartup.unref?.();
   if (app.store.config.chat.twitchChannel) app.chat.join(app.store.config.chat.twitchChannel);
   if (app.store.config.meld.enabled) app.meld.start(app.store.config.meld.url);
   const onUnhandledRejection = e => log('[error]', e?.message || e);
@@ -1588,8 +1642,10 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
         try { queued = app.store.chain; } catch { queued = Promise.reject(new Error('Store unavailable')); }
         const sessionFlush = () => Promise.resolve().then(() => app.session.flush());
         const interactiveFlush = () => Promise.resolve().then(() => app.interactive.flush());
+        const totalsFlush = () => Promise.resolve().then(() => app.channelTotals.flush());   // #132: correcciones y último total
+        const followersFlush = () => Promise.resolve().then(() => app.followers.flush());
         // Start all independent attempts NOW: a failed/hung journal never gates either flush.
-        Promise.allSettled([journal, queued, sessionFlush(), interactiveFlush()]).then(results => {
+        Promise.allSettled([journal, queued, sessionFlush(), interactiveFlush(), totalsFlush(), followersFlush()]).then(results => {
           let code = engineFailed || heldFailed || results.some(r => r.status === 'rejected') || unsaved() ? 1 : 0;
           // La persistencia ya está decidida; ahora sí, con el deadline todavía ACTIVO, se cierra el
           // transporte HTTP real. Un cierre HTTP fallido o colgado también sale 1.
@@ -1718,6 +1774,8 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
       try { app.interactive.quiesceVoteTimer(); } catch { finish(1); return; }
       // Récord de espectadores: sin más lecturas ni alertas al cerrar la app (#142).
       try { app.viewers.halt(); } catch { /* sin temporizadores vivos */ }
+      try { app.channelTotals.halt(); } catch { /* sin temporizadores vivos */ }
+      try { clearTimeout(app.followersStartup); app.followers.halt(); } catch { /* sin nuevas sincronizaciones */ }
       // teleprompter: sin temporizadores vivos más allá de su ancla programada
       try { app.teleprompter.stop(); } catch { /* sin temporizadores vivos */ }
       try { app.beginAckWindow(); } catch { finish(1); return; }

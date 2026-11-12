@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import { writeJson, serialize } from './json-file.mjs';
 import { ALERT_TYPES, isSystemType } from './alerts.mjs';
 import { splitEventsOffsets, platformValue } from './goals.mjs';
+import { isTotalMetric } from './channel-totals.mjs';
 
 // El resumen conserva su zona histórica; solo se fija el formato visible (#126).
 const summaryDateFormat = new Intl.DateTimeFormat('en-GB', {
@@ -23,7 +24,7 @@ function summaryStamp(at) {
 }
 
 export const METRICS = {
-  follows:    { label: 'Seguidores',       types: ['follow'],                      sum: false },
+  follows:    { label: 'Seguidores',       types: ['follow', 'ytsub'],             sum: false },
   subs:       { label: 'Suscripciones',    types: ['sub', 'resub', 'giftsub'],     sum: 'subs' },
   bits:       { label: 'Bits',             types: ['cheer'],                       sum: 'amount' },
   raids:      { label: 'Raids',            types: ['raid'],                        sum: false },
@@ -208,7 +209,7 @@ async function readClassified(io, file) {
 const CREDIT_GROUPS = [
   ['Raids', ['raid']], ['Suscripciones', ['sub', 'resub', 'giftsub']], ['Bits', ['cheer']],
   ['Super Chats', ['superchat', 'supersticker']], ['Miembros', ['member', 'milestone', 'giftmember']],
-  ['Recompensas', ['redemption']], ['Nuevos seguidores', ['follow']],
+  ['Recompensas', ['redemption']], ['Nuevos seguidores', ['follow', 'ytsub']],
 ];
 
 export class Session extends EventEmitter {
@@ -865,11 +866,14 @@ export class Session extends EventEmitter {
   latest(data = this.data) {
     const last = types => [...data.events].reverse().find(e => types.includes(e.type)) || null;
     return {
-      follow: last(['follow']), sub: last(['sub', 'resub', 'giftsub']), cheer: last(['cheer']), raid: last(['raid']),
+      follow: last(['follow', 'ytsub']), sub: last(['sub', 'resub', 'giftsub']), cheer: last(['cheer']), raid: last(['raid']),
       superchat: last(['superchat', 'supersticker']), member: last(['member', 'milestone', 'giftmember']), any: [...data.events].reverse().find(e => !isSystemType(e.type)) || null,
     };
   }
   goalValue(metric, platform) {
+    // Barras con total del canal (#132): el valor lo da src/channel-totals.mjs (total de la
+    // plataforma + corrección persistente); los goalOffsets de sesión ya no se aplican a ellas.
+    if (platform && this.channelTotals && isTotalMetric(metric, platform)) return this.channelTotals.value(`${metric}@${platform}`);
     if (!platform) return (this.totals()[metric] || 0) + (Number(this.data.goalOffsets?.[metric]) || 0);
     // Barra por plataforma (#128): los eventos se filtran por la plataforma declarada de su
     // tipo (src/alerts.mjs). events SOLO lee claves «events@<p>» (nunca la legacy, que quedó
@@ -881,6 +885,7 @@ export class Session extends EventEmitter {
     return base + ajuste;
   }
   addToGoal(metric, delta, platform) {
+    if (platform && this.channelTotals && isTotalMetric(metric, platform)) { this.channelTotals.adjust(`${metric}@${platform}`, delta); this.emit('change', { goal: true }); return; }
     const key = platform ? `${metric}@${platform}` : metric;
     const base = platform ? platformValue(metric, platform, this.data.events) : (this.totals()[metric] || 0);
     const effectiveOffset = this.goalValue(metric, platform) - base;
@@ -888,6 +893,7 @@ export class Session extends EventEmitter {
     this.save(); this.emit('change', { goal: true });
   }
   setGoalValue(metric, value, platform) {
+    if (platform && this.channelTotals && isTotalMetric(metric, platform)) { this.channelTotals.set(`${metric}@${platform}`, value); this.emit('change', { goal: true }); return; }
     const key = platform ? `${metric}@${platform}` : metric;
     const actual = platform ? platformValue(metric, platform, this.data.events) : (this.totals()[metric] || 0);
     this.data.goalOffsets[key] = Number(value || 0) - actual;

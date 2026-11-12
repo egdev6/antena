@@ -27,7 +27,7 @@ export const alertWarnings = (s: AppState) => (s?.types ? Object.keys(s.types).f
 const isVid = (f?: string) => /\.(webm|mp4|mov|m4v)$/i.test(f || '');
 const GROUPS: [string, string, string][] = [
   ['twitch', 'Twitch', 'Seguidores, subs, bits, raids, recompensas y récord'],
-  ['youtube', 'YouTube', 'Super Chats, stickers, miembros y récord'],
+  ['youtube', 'YouTube', 'Suscriptores, Super Chats, stickers, miembros y récord'],
 ];
 
 /** Huella corta de lo que cambia la miniatura: si cambia, el marco se recarga con lo guardado. */

@@ -2,6 +2,7 @@
 // Los objetivos, lo único que creas tú, viven dentro de su tarjeta: tabla → objetivo (3.er nivel).
 import { enc, post, put, del } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
+import { goalMetricLabel } from '../../lib/goal';
 import { patchWidgets } from '../../lib/patch';
 import { BrowserSource, codeTab, confirmDelete, copy, EmptyState, guard, LazyInput, Panel, PfIcon, Stage, Switch, WidgetLayout } from '../../lib/ui';
 import { useManualSave } from '../../lib/draft';
@@ -147,14 +148,17 @@ function ObjetivosSlide({ parts, goals }: { parts: string[]; goals: GoalConfig[]
   const sub = parts[2];
   const metrics = useLive(s => s.metrics || {});
   const values: GoalValue[] = useLive(s => s.widgets?.goals || []);
-  const label = (k: string) => (metrics[k] as { label?: string } | undefined)?.label || k;
+  const label = (k: string) => goalMetricLabel(k, metrics);
   const rows = goals.map(g => {
     const href = `#/widgets/objetivos/${enc(g.id)}`;
     const vs = values.find(x => x.id === g.id);
     return { id: g.id, href, open: sub === g.id, cls: g.visible === false ? 'is-off' : undefined, cells: {
       name: <NameCell href={href} name={g.title} sub={`/widget/goal?id=${g.id}`} />,
       state: <Dot tone={g.visible === false ? 'off' : 'ok'}>{g.visible === false ? 'Oculto' : 'En pantalla'}</Dot>,
-      bars: <Tags items={g.bars.map(b => ({ t: `${b.platform === 'youtube' ? 'YT' : 'TW'} · ${label(b.metric).toLowerCase()} ${vs?.bars?.find(x => x.id === b.id)?.value ?? 0}/${b.target}`, on: b.visible !== false }))} />,
+      bars: <Tags items={g.bars.map(b => {
+        const value = vs?.bars?.find(x => x.id === b.id)?.value;
+        return { t: `${b.platform === 'youtube' ? 'YT' : 'TW'} · ${label(b.metric).toLowerCase()} ${value === null ? '—' : (value ?? 0)}/${b.target}`, on: b.visible !== false };
+      })} />,
       copy: <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(`${origin()}/widget/goal?id=${enc(g.id)}`)}>Copiar URL</button>,
     } };
   });
@@ -167,7 +171,7 @@ function ObjetivosSlide({ parts, goals }: { parts: string[]; goals: GoalConfig[]
             cols={[{ key: 'name', label: 'Objetivo' }, { key: 'state', label: 'Estado' }, { key: 'bars', label: 'Barras' }, { key: 'copy', label: '' }]}
             rows={rows} empty={<>Todavía no hay objetivos. <a href="#/widgets/objetivos/nuevo">Crea el primero</a>.</>} />
         </div>
-        <aside className="lv-col"><Box title="Cómo funcionan"><p className="hint">Una caja, varias metas: añade barras de Twitch y YouTube a un mismo objetivo. Los contadores se mueven solos con el directo; +1, −1 y «Fijar» se aplican al momento.</p></Box></aside>
+        <aside className="lv-col"><Box title="Cómo funcionan"><p className="hint">Una caja, varias metas: añade barras de Twitch y YouTube a un mismo objetivo. Los seguidores y las subs de Twitch y los suscriptores de YouTube muestran el total del canal y no se reinician en cada directo. Las demás barras cuentan por directo; +1, −1 y «Fijar» se aplican al momento.</p></Box></aside>
       </div>
     </Slide>
     {sub === 'nuevo' ? <NuevoObjetivo /> : sub && goals.some(g => g.id === sub) ? <GoalSlide key={sub} id={sub} /> : null}
@@ -189,7 +193,7 @@ function NuevoObjetivo() {
       <label>Título <input autoFocus value={d.title} onChange={e => setD({ ...d, title: e.target.value })} placeholder="Meta de hoy" /></label>
       <div className="row3">
         <label>Plataforma <select value={d.platform} onChange={e => setD({ ...d, platform: e.target.value, metric: GOAL_METRICS[e.target.value][0] })}>{GOAL_PLATFORMS.map(p => <option key={p} value={p}>{p === 'youtube' ? 'YouTube' : 'Twitch'}</option>)}</select></label>
-        <label>Qué cuenta <select value={d.metric} onChange={e => setD({ ...d, metric: e.target.value })}>{GOAL_METRICS[d.platform].map(k => <option key={k} value={k}>{(metrics[k] as { label?: string } | undefined)?.label || k}</option>)}</select></label>
+        <label>Qué cuenta <select value={d.metric} onChange={e => setD({ ...d, metric: e.target.value })}>{GOAL_METRICS[d.platform].map(k => <option key={k} value={k}>{goalMetricLabel(k, metrics)}</option>)}</select></label>
         <label>Meta <input type="number" min={1} value={d.target} onChange={e => setD({ ...d, target: Math.max(1, Number(e.target.value) || 1) })} /></label>
       </div>
       <p className="hint">Se crea con una barra. Después puedes añadir más (por ejemplo, una de YouTube) en el mismo objetivo.</p>
@@ -201,13 +205,14 @@ function NuevoObjetivo() {
 const GOAL_PLATFORMS = ['twitch', 'youtube'] as const;
 const GOAL_METRICS: Record<string, string[]> = {
   twitch: ['follows', 'subs', 'bits', 'raids', 'events'],
-  youtube: ['superchats', 'members', 'events'],
+  youtube: ['subscribers', 'superchats', 'members', 'events'],
 };
 
 function GoalSlide({ id }: { id: string }) {
   const goals: GoalConfig[] = useLive(s => s.config.widgets?.goals || []);
   const values: GoalValue[] = useLive(s => s.widgets?.goals || []);
   const metrics = useLive(s => s.metrics || {});
+  const channelTotals = useLive(s => s.status.channelTotals);
   const [setVal, setSetVal] = useState<Record<string, string>>({});
   const g = goals.find(x => x.id === id);
   const reloadGoals = (list: GoalConfig[]) => live.update(s => ({ config: { ...s.config, widgets: { ...s.config.widgets, goals: list } } }));
@@ -229,7 +234,7 @@ function GoalSlide({ id }: { id: string }) {
     const valid = GOAL_METRICS[platform] || GOAL_METRICS.twitch;
     return saveBar(boxId, b.id, { platform, metric: valid.includes(b.metric) ? b.metric : valid[0] });
   };
-  const setValue = (boxId: string, barId: string, value: number) => live.update(s => ({
+  const setValue = (boxId: string, barId: string, value: number | null) => live.update(s => ({
     widgets: { ...s.widgets, goals: (s.widgets?.goals || []).map(g => (g.id === boxId ? { ...g, bars: g.bars.map(b => (b.id === barId ? { ...b, value } : b)) } : g)) },
   }));
   if (!g) return null;
@@ -256,22 +261,27 @@ function GoalSlide({ id }: { id: string }) {
             <Switch checked={g.showTitle !== false} onChange={guard((x: boolean) => saveGoal(g.id, { showTitle: x }))}>Mostrar título</Switch>
           </div>
           {(g.bars || []).map(b => {
-            const v = vs?.bars?.find(x => x.id === b.id)?.value ?? 0;
+            const snapshot = vs?.bars?.find(x => x.id === b.id);
+            const v = snapshot?.value === null ? '—' : (snapshot?.value ?? 0);
+            const channel = snapshot?.source === 'channel' && snapshot.platform === b.platform && snapshot.metric === b.metric;
+            const error = channel ? channelTotals?.[`${b.metric}@${b.platform}`]?.error : null;
             const validas = GOAL_METRICS[b.platform] || GOAL_METRICS.twitch;
             return <fieldset key={b.id} className="goal-bar-editor">
               <legend><PfIcon platform={b.platform === 'youtube' ? 'youtube' : 'twitch'} /> Barra · {b.platform === 'youtube' ? 'YouTube' : 'Twitch'}</legend>
               <div className="goal-fields">
                 <label>Plataforma <select value={b.platform} onChange={guard(e => savePlatform(g.id, b, e.target.value as GoalBar['platform']))}>{GOAL_PLATFORMS.map(p => <option key={p} value={p}>{p === 'youtube' ? 'YouTube' : 'Twitch'}</option>)}</select></label>
-                <label>Qué cuenta <select value={b.metric} onChange={guard(e => saveBar(g.id, b.id, { metric: e.target.value }))}>{validas.map(k => <option key={k} value={k}>{(metrics[k] as { label?: string } | undefined)?.label || k}</option>)}</select></label>
+                <label>Qué cuenta <select value={b.metric} onChange={guard(e => saveBar(g.id, b.id, { metric: e.target.value }))}>{validas.map(k => <option key={k} value={k}>{goalMetricLabel(k, metrics)}</option>)}</select></label>
                 <label>Meta <LazyInput type="number" min={1} value={b.target} onCommit={guard((x: string) => saveBar(g.id, b.id, { target: Number(x) }))} /></label>
                 <Switch checked={b.visible !== false} onChange={guard((x: boolean) => saveBar(g.id, b.id, { visible: x }))}>Visible</Switch>
               </div>
                 <div className="goal-adjust"><span>Ahora: <b className="gval">{v}</b> / {b.target}</span>
                   <div className="row">
-                    {[-1, 1].map(n => <button key={n} className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const d = await post<{ value: number }>(`/api/goals/${enc(g.id)}/bars/${enc(b.id)}/add`, { amount: n }); setValue(g.id, b.id, d.value); })}>{n > 0 ? '+1' : '−1'}</button>)}
+                    {[-1, 1].map(n => <button key={n} className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const d = await post<{ value: number | null }>(`/api/goals/${enc(g.id)}/bars/${enc(b.id)}/add`, { amount: n }); setValue(g.id, b.id, d.value); })}>{n > 0 ? '+1' : '−1'}</button>)}
                     <input type="number" aria-label={`Fijar valor de ${b.platform} · ${b.metric}`} placeholder="Valor" className="goal-set-value" value={setVal[b.id] ?? ''} onChange={e => setSetVal({ ...setVal, [b.id]: e.target.value })} />
-                    <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const d = await post<{ value: number }>(`/api/goals/${enc(g.id)}/bars/${enc(b.id)}/set`, { value: Number(setVal[b.id] || 0) }); setValue(g.id, b.id, d.value); })}>Fijar</button>
+                    <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { const d = await post<{ value: number | null }>(`/api/goals/${enc(g.id)}/bars/${enc(b.id)}/set`, { value: Number(setVal[b.id] || 0) }); setValue(g.id, b.id, d.value); })}>Fijar</button>
                   </div></div>
+              {channel && <p className="hint">Esta barra muestra el total real del canal. +1, −1 y «Fijar» aplican una corrección persistente (por ejemplo, para descontar tu propia sub).</p>}
+              {error && <p className="hint err-inline" role="status">{error}</p>}
               <button className="eg-btn eg-btn--ghost eg-btn--sm danger" onClick={guard(async () => { if (!confirmDelete(null, 'esta barra')) return; const d = await del<{ bars: GoalBar[] }>(`/api/goals/${enc(g.id)}/bars/${enc(b.id)}`); reloadGoals(goals.map(x => (x.id === g.id ? { ...x, bars: d.bars } : x))); })}>Borrar barra</button>
             </fieldset>;
           })}

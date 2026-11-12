@@ -367,7 +367,10 @@ export class Twitch extends EventEmitter {
   emitEvent(messageId, subType, event) {
     const n = normalizeTwitch(subType, event);
     try { this.rawLog?.record('twitch', subType, !!n, event); } catch {}
-    if (n) this.emit('event', { externalId: 'tw:' + messageId, ...n });
+    if (n) this.emit('event', { externalId: 'tw:' + messageId, ...n,
+      ...(subType === 'channel.follow' && event?.user_id ? { followerId: event.user_id } : {}),
+      ...(subType === 'channel.follow' && event?.followed_at ? { followedAt: event.followed_at } : {}),
+    });
   }
 
   async subscribeAll(sessionId, epoch = this._epoch) {
@@ -378,6 +381,7 @@ export class Twitch extends EventEmitter {
       ['channel.subscription.message', '1', { broadcaster_user_id: me }],
       ['channel.subscription.gift', '1', { broadcaster_user_id: me }],
       ['channel.cheer', '1', { broadcaster_user_id: me }],
+      ['channel.bits.use', '1', { broadcaster_user_id: me }],   // #130: Power-ups (bits without channel.cheer)
       ['channel.raid', '1', { to_broadcaster_user_id: me }],
       ['channel.channel_points_custom_reward_redemption.add', '1', { broadcaster_user_id: me }],
     ];

@@ -21,6 +21,8 @@ const WINDOWS_POSIX_SKIPS = [
   // #87: POSIX-only test scenarios (inherited stdout after exit, ignoring SIGTERM)
   'POSIX inherited-stdout scenario; the Windows signal controller does not relay grandchild output after exit',
   'POSIX signals: Windows has no SIGTERM a process can ignore; forced termination is covered by the other close tests',
+  // #132: unreadable channel-totals.json via chmod 000 (POSIX only; same code path as any read error)
+  'POSIX file modes: chmod cannot make a file unreadable on Windows; the unreadable-file fallback is platform-independent and runs on Linux',
 ];
 
 export function checkCiBaseline(report, tap) {

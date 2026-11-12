@@ -27,7 +27,7 @@ Stream alerts, chat and widgets for **Meld Studio** — local, free and with the
 
 antena runs entirely on your PC and gives your stream a full alert and interaction layer:
 
-- **Alerts** from Twitch (followers, subs, resubs, gifted subs, bits, raids, rewards) and YouTube (Super Chats, Super Stickers, members, milestones and gifted memberships).
+- **Alerts** from Twitch (followers, subs, resubs, gifted subs, bits and Power-ups, raids, rewards) and YouTube (new subscribers, Super Chats, Super Stickers, members, milestones and gifted memberships). Event → alert table: [docs/eventos.md](docs/eventos.md).
 - **Three designs per alert:** the EGDEV 3D card; your own video or image (webm with transparency) with the message on top, placed wherever you want; or **video + card**: your video or image as a full-screen background with the 3D card on top, with an entry delay and position offset. All with your own CSS.
 - **Variations:** another version of the alert depending on the amount, the tier, the user, the message or a probability.
 - **Voice (TTS)** for messages, **filtering** of words, links and users, and **pause** with queue.
@@ -38,6 +38,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker, live concurrent viewers for Twitch and YouTube, and end credits.
 - **Custom overlays:** HTML, CSS and JavaScript layers for a scene or to frame the camera, written by you or by Claude via MCP, with live data and actions you approve.
 - **Stream recap:** totals, who to thank and a timeline with the minute of each event, in Markdown.
+- **Offline followers:** records Twitch followers gained while antena was closed, and YouTube's public subscribers plus an anonymous count; YouTube requires a connected account.
 - **Mobile panel** on your local network, protected with a key.
 - **Browser sources for Meld:** every alert, widget, panel and custom overlay is a browser source with its size, ready to copy.
 - **Prompter for the Elgato Prompter** (1024×600): the app opens it full screen on that display.
@@ -142,6 +143,8 @@ In the panel, **Meld and Stream Deck › Sources for Meld** lists all of them wi
 | Tier list | `http://127.0.0.1:4500/widget/tierlist` | 1920×1080 |
 | Giveaway | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
 | Viewers | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
+
+**Goal bars.** Twitch followers and subs and YouTube subscribers show the platform's channel total, not just events from the stream, and do not reset between streams. Antena reads it at startup, on reconnect and every five minutes; live events add between reads. For an explicitly configured YouTube channel, detected subscribers add only when the connected account's channel ID matches; if it differs or cannot be verified, the next platform read updates the total instead. If the platform does not respond, the last known value remains; before the first read the bar shows `—`. Manual +1, −1 and Set apply a persistent correction (for example, to exclude your own sub). Twitch subs require the `channel:read:subscriptions` permission. YouTube rounds subscriber counts to three significant figures from 1,000. Other goal metrics remain per stream.
 
 **Chat variants (server API).** `POST /api/widgets/chat/variants` with `{ "name": "Live" }` creates a named copy of every current default-chat setting. Later default changes do not propagate. Explicit creation fields must match the copied defaults; a conflicting value is rejected. `GET` on that path lists variants; `PUT` or `DELETE` on `/:id` edits or removes one. Names and settings are validated, a changed id is rejected on rename, and the default cannot be deleted. Validation applies when `chatVariants` is supplied or addressed explicitly; other config writes retain their existing merge, replacement and `null` semantics. The server lists `/widget/chat?variant=<id>` in sources and MCP; `/widget/chat` remains the unchanged default URL. The widget selects an exact variant id, and falls back to the default if it is missing, unknown or deleted. Each independent configuration has `layout: "vertical" | "horizontal"` (default `vertical`): the horizontal row puts new messages on the right and fades older ones at the left edge; `reverse` mirrors the order and directional animations. Available width and `maxMessages` limit the row, and messages are clamped to two lines. In shorter horizontal layers, vertical spacing and card height adapt; configured fonts also shrink when needed. In **Widgets › Chat en pantalla**, create a variant from the saved default, choose its layout and settings, then press **Guardar**. Copy the selected variant's URL into its Meld browser source; renaming does not change that URL. The panel suggests 600×900 for vertical chat and 1832×160 for horizontal chat; adjust these to your scene. Save or discard a draft before switching or managing variants. A standalone `?layout=` parameter is not supported for chat.
 
@@ -309,7 +312,7 @@ They live in **Widgets** and each one has its browser layer. Their state (questi
 
 ### Stream, chat and history
 
-- **Stream:** totals, goals, timeline, Markdown recap (copy or download), launch credits and start a new stream (the previous one is archived with its recap).
+- **Stream:** totals, goals, timeline, Markdown recap (copy or download), launch credits and start a new stream (the previous one is archived with its recap). Channel-total goal bars keep their values and corrections across streams; other goals count per stream.
 - **Session identity:** known YouTube and Twitch IDs appear in `/api/sessions` and `listar_directos`; a different ID on reconnect starts a new session, otherwise the first ID is kept.
 - **Viewer history:** automatic live sessions retain every captured sample and error/offline/disconnection gap per platform. JSON summaries expose `viewers` and `viewerMetrics`; `/api/sessions` and `listar_directos` expose only metrics. Average is time-weighted, peak and coverage stay separate per platform (never summed). Each sample covers at most its polling interval; gaps and restart downtime are never interpolated.
 - **Chat metrics:** automatic Meld sessions persist unique chatters and message/minute counts per platform, independently of the 300-message buffer. Simulated and identifiable streamer messages are excluded.
@@ -457,7 +460,7 @@ Claude Desktop (`claude_desktop_config.json`):
 Examples of what you can ask Claude to do:
 
 - «Create a variation of the raid for more than 50 people with the raid-grande.webm video and switch to the Raid scene for 10 seconds».
-- «Set a goal of 30 followers for today and launch the credits when it ends».
+- «Set a goal of 1,500 channel followers and launch the credits when it ends».
 - «Every 20 minutes remind in chat that the code is at github.com/egdev6, as a purple announcement».
 - «Make a tier list of testing tools with Vitest, Jest, Playwright and Cypress and open the vote for Vitest».
 - «Open a giveaway for an EGDEV t-shirt with !camiseta and, when I tell you, draw it».
@@ -468,6 +471,8 @@ Examples of what you can ask Claude to do:
 - «Make me a custom overlay with the latest follower as an animated HTML/CSS card and add it to Meld».
 
 ### REST API
+
+`GET /api/followers` lists the local follower registry, anonymous YouTube counts and sync status (`?pending=true` shows only unthanked records). `POST /api/followers/thank` accepts `{ "ids": ["<id>"] }` or `{ "all": true }` to mark them thanked; `all` also marks anonymous counts and entries without an ID. Invalid requests return 400; an unreadable registry returns 503.
 
 `POST /api/session/end` ends the current session and returns `{ session }`. An optional body `{ "id": "<session-id>" }` protects against ending a different session; an invalid id returns 400, and a changed current session returns 409. It is idempotent for an already ended session, closes viewer gaps and preserves the data; archiving and resetting still happen on the next `POST /api/session/new`. It returns 409 while Meld is connected and confirms it is streaming. Normal mutating-route origin checks apply.
 
@@ -526,7 +531,11 @@ Permissions: `moderator:read:followers`, `channel:read:subscriptions`, `bits:rea
 
 **Automatic connection:** when Meld starts streaming (or antena starts with the stream already live), antena starts listening to the YouTube chat on its own, without your account. While YouTube does not show the stream yet, it retries every 30 s, up to 10 times (with a channel ID each attempt costs 100 quota units; with the stream link, much less). When the stream ends, the chat stops and the status is cleared. If a configured platform (Twitch or YouTube) is still not connected a few seconds after the stream starts, the panel shows a warning with a button to connect each one.
 
-Quota: 10,000 units per day. Each read costs about 5, so with 8 s between reads there is enough for about 4 hours. YouTube does not report new subscribers in real time.
+Quota: 10,000 units per day. Each chat read costs about 5, so with 8 s between reads there is enough for about 4 hours.
+
+**New subscriber alert (`ytsub`):** connect the channel's account as described below. While the chat is listening, antena checks public subscribers every 120 seconds by default; set the interval in **Connections › YouTube** (minimum 60 seconds, 0 disables polling). The first read is a silent baseline; later newly detected subscribers get an alert and enter the local follower registry. Only public subscriptions have names, alerts are delayed by the polling interval, and the API may limit the number returned. Each subscriber-list page costs one quota unit, plus an account-total read; the daily quota is shared with chat. A `quotaExceeded` error stops subscriber polling until the next listening period.
+
+When available, the subscriber's thumbnail appears beside the alert without replacing its icon or media. The overlay accepts only initial HTTPS avatar URLs on `ggpht.com` or `googleusercontent.com` and their subdomains; the browser loads them without a referrer and may follow redirects. Other hosts are conservatively rejected. If the image is missing, rejected or fails to load, the alert keeps its name, icon and media without an avatar.
 
 **Writing in the YouTube chat** needs your account (once):
 
@@ -545,6 +554,7 @@ Videos, images and sounds are uploaded from the panel (or with `importar_archivo
 | Alert | Variables |
 |---|---|
 | Follower | `{user}` |
+| New YouTube subscriber | `{user}` `{avatar}` (optional URL) |
 | Subscription | `{user}` `{tier}` |
 | Resubscription | `{user}` `{months}` `{tier}` `{message}` |
 | Gifted subs | `{user}` `{amount}` `{tier}` |

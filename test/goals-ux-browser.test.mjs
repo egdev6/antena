@@ -8,20 +8,22 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome, openChromePage, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { goalsBrowserUi, seedTwitchTotals } from './helpers/goals-browser-app.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function start(t) {
-  const bin = await skipIfNoBrowserOrUi(t);
-  if (!bin) return null;
+  const ui = await goalsBrowserUi(t);
+  if (!ui) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-o1-'));
   t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
-  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), appDist: ui.dist, log: () => {} });
+  await seedTwitchTotals(app);
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
-  return { bin, app, base, close: async () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); } };
+  return { bin: ui.bin, app, base, close: async () => { app.timers.stop(); await app.channelTotals.flush(); app.server.closeAllConnections(); app.server.close(); } };
 }
 
 const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 12000 });
@@ -145,6 +147,110 @@ test('O1 panel: tabla de objetivos → slide, + Nuevo objetivo, cabecera, hint C
   } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
+// #132: a never-read channel total is unknown, not zero, across overlay and panel.
+test('S2/S5/S7 overlay: total desconocido, etiqueta, demo y lecturas posteriores', { timeout: 90000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    app.store.config.widgets.goals = [{ id: 'yt', title: 'Suscriptores', visible: true, showMetric: true,
+      bars: [{ id: 'y', platform: 'youtube', metric: 'subscribers', target: 1000, visible: true }] }];
+    chrome = await openChromePage(bin, `${base}/widget/goal?id=yt&debug`);
+    await waitDom(chrome.cdp, `!!document.querySelector('#bars .pct')`);
+    eq(await dom(chrome, `document.querySelector('.pct').textContent`), '—/1000');
+    eq(await dom(chrome, `document.querySelector('.bar').title`), '— / 1000');
+    eq(await dom(chrome, `document.querySelector('.fill').style.width`), '0%');
+    eq(await dom(chrome, `document.querySelector('.metric').textContent`), 'Suscriptores');
+    app.channelTotals.readers['subscribers@youtube'] = async () => 1234;
+    await app.channelTotals.poll(['subscribers@youtube']);
+    await waitDom(chrome.cdp, `document.querySelector('.pct').textContent === '1234/1000'`);
+    eq(await dom(chrome, `document.querySelector('.fill').style.width`), '100%');
+    app.channelTotals.readers['subscribers@youtube'] = async () => 0;
+    await app.channelTotals.poll(['subscribers@youtube']);
+    await waitDom(chrome.cdp, `document.querySelector('.pct').textContent === '0/1000'`);
+    eq(await dom(chrome, `document.querySelector('.fill').style.width`), '0%');
+    await chrome.cdp.send('Page.navigate', { url: `${base}/widget/goal?id=yt&debug&demo` });
+    await waitDom(chrome.cdp, `document.querySelector('.pct')?.textContent === '700/1000'`);
+    eq(await dom(chrome, `document.querySelector('.fill').style.width`), '70%');
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
+});
+
+test('S2/S5/S7 panel: — en lista, editor y Directo; opciones y etiqueta de suscriptores', { timeout: 90000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    app.store.config.panel = { onboardingDone: true };
+    app.store.config.widgets.goals = [{ id: 'yt', title: 'Meta YouTube', visible: true, showMetric: true,
+      bars: [{ id: 'y', platform: 'youtube', metric: 'subscribers', target: 1000, visible: true }] }];
+    chrome = await openChromePage(bin, `${base}/#/widgets/objetivos`);
+    await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="goals-list"] tbody tr')`);
+    eq(await dom(chrome, `document.querySelector('[data-tour="goals-list"] tbody tr').textContent.includes('YT · suscriptores —/1000')`), true);
+    eq(await dom(chrome, `document.body.textContent.includes('total del canal y no se reinician en cada directo')`), true);
+    await dom(chrome, `location.hash = '#/widgets/objetivos/nuevo'`);
+    await waitDom(chrome.cdp, `!!${buttonByText('Crear objetivo')}`);
+    await dom(chrome, `(() => { const s = [...document.querySelectorAll('.lv-slide')].at(-1).querySelector('select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'youtube'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+    eq(await dom(chrome, `[...document.querySelectorAll('.lv-slide')].at(-1).querySelectorAll('select')[1].selectedOptions[0].textContent`), 'Suscriptores');
+    await dom(chrome, `location.hash = '#/widgets/objetivos/yt'`);
+    await waitDom(chrome.cdp, `!!document.querySelector('.goal-card fieldset')`);
+    eq(await dom(chrome, `document.querySelector('.goal-card .gval').textContent`), '—');
+    eq(await dom(chrome, `Array.from(document.querySelectorAll('.goal-card fieldset select')[1].options).map(o => o.value + ':' + o.textContent).join('|')`),
+      'subscribers:Suscriptores|superchats:Super Chats (€)|members:Miembros|events:Eventos');
+    await dom(chrome, `location.hash = '#/directo'`);
+    await waitDom(chrome.cdp, `!!document.querySelector('.goals .goal-bar')`);
+    eq(await dom(chrome, `document.querySelector('.goals .goal-bar b').textContent`), '—/1000');
+    eq(await dom(chrome, `document.querySelector('.goals .goal-metric').textContent`), ' · Suscriptores');
+    eq(await dom(chrome, `document.querySelector('.goals [role=progressbar]').getAttribute('aria-valuenow')`), '0');
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
+});
+
+test('S7/S8 panel: error de lectura y Fijar sin lectura, con corrección persistente', { timeout: 90000 }, async t => {
+  const ctx = await start(t);
+  if (!ctx) return;
+  const { bin, app, base, close } = ctx;
+  let chrome;
+  try {
+    app.store.config.panel = { onboardingDone: true };
+    app.store.config.widgets.goals = [{ id: 'yt', title: 'Meta', visible: true, showMetric: true,
+      bars: [{ id: 'y', platform: 'youtube', metric: 'subscribers', target: 1000, visible: true },
+        { id: 'bits', platform: 'twitch', metric: 'bits', target: 100, visible: true }] }];
+    app.channelTotals.readers['subscribers@youtube'] = async () => { throw new Error('YouTube no responde'); };
+    await app.channelTotals.poll(['subscribers@youtube']);
+    chrome = await openChromePage(bin, `${base}/#/widgets/objetivos/yt`);
+    await waitDom(chrome.cdp, `!!document.querySelector('.goal-card fieldset')`);
+    eq(await dom(chrome, `document.querySelector('.goal-card fieldset').textContent.includes('YouTube no responde')`), true);
+    eq(await dom(chrome, `/total.*canal/i.test(document.querySelector('.goal-card fieldset').textContent) && /corrección persistente/i.test(document.querySelector('.goal-card fieldset').textContent)`), true);
+    eq(await dom(chrome, `/corrección persistente|YouTube no responde/i.test(document.querySelectorAll('.goal-card fieldset')[1].textContent)`), false);
+    const status = () => fetch(`${base}/api/status`).then(r => r.json());
+    const before = (await status()).channelTotals['subscribers@youtube'];
+    const rejected = await fetch(`${base}/api/goals/yt/bars/y/set`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: 5 }) });
+    eq(rejected.status, 409);
+    const message = (await rejected.json()).error;
+    eq(message, 'Aún no se conoce el total de la plataforma: conecta la cuenta y espera a la primera lectura antes de fijar el valor.');
+    eq(JSON.stringify((await status()).channelTotals['subscribers@youtube']), JSON.stringify(before));
+    await dom(chrome, `[...document.querySelectorAll('.goal-card fieldset button')].find(b => b.textContent.trim() === 'Fijar').click()`);
+    await waitDom(chrome.cdp, `document.querySelector('.toast.on.err')?.textContent === ${JSON.stringify(message)}`);
+    eq(await dom(chrome, `document.querySelector('.goal-card .gval').textContent`), '—');
+    await dom(chrome, `(() => { const original = window.fetch; window.fetch = (...args) => { const request = original(...args); if (String(args[0]).endsWith('/bars/y/add')) window.__adjusted = request; return request; }; ${buttonByText('−1')}.click(); })()`);
+    eq(await dom(chrome, `window.__adjusted.then(r => r.status)`), 200);
+    eq((await status()).channelTotals['subscribers@youtube'].value, null);
+    app.channelTotals.readers['subscribers@youtube'] = async () => 10;
+    await app.channelTotals.poll(['subscribers@youtube']);
+    await waitDom(chrome.cdp, `document.querySelector('.goal-card .gval').textContent === '9'`);
+    eq((await status()).channelTotals['subscribers@youtube'].value, 9);
+    eq(await dom(chrome, `document.querySelector('.goal-card fieldset').textContent.includes('YouTube no responde')`), false);
+    app.channelTotals.readers['subscribers@youtube'] = async () => { throw new Error('YouTube no responde'); };
+    await app.channelTotals.poll(['subscribers@youtube']);
+    await waitDom(chrome.cdp, `document.querySelector('.goal-card fieldset').textContent.includes('YouTube no responde')`);
+    eq(await dom(chrome, `document.querySelector('.goal-card .gval').textContent`), '9');
+    const next = await fetch(`${base}/api/session/new`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    eq(next.status, 200);
+    eq((await status()).channelTotals['subscribers@youtube'].value, 9);
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
+});
+
 async function eventually(read, expected, timeoutMs = 5000) {
   const until = Date.now() + timeoutMs;
   let actual = await read();
@@ -178,7 +284,7 @@ test('O1 panel: cambiar la plataforma de una barra se guarda con una métrica v�
     await dom(chrome, pick(1, 'youtube'));
     for (let i = 0; i < 50 && bar('b2').platform !== 'youtube'; i++) await sleep(100);
     eq(bar('b2').platform, 'youtube');
-    eq(['superchats', 'members', 'events'].includes(bar('b2').metric), true);
+    eq(bar('b2').metric, 'subscribers');
     await waitDom(chrome.cdp, `${fs(1)}.querySelector('legend').textContent.includes('YouTube')`, { timeoutMs: 9000 });
     // and the overlay in the preview draws that bar with the YouTube logo and colour
     const rows = `document.querySelector('.goal-card iframe')?.contentDocument?.querySelectorAll('#bars .bar')`;
@@ -191,7 +297,7 @@ test('O1 panel: cambiar la plataforma de una barra se guarda con una métrica v�
     eq(app.session.goalValue('follows', 'twitch'), 106);
     const values = app.engine.widgetState().goals[0].bars;
     eq(values.find(b => b.id === 'b1').value, 106);
-    eq(values.find(b => b.id === 'b2').value, 0);
+    eq(values.find(b => b.id === 'b2').value, null);
 
     // un cambio rechazado (meta 0) vuelve al valor guardado y se avisa
     const meta = `${fs(0)}.querySelector('input[type=number]')`;

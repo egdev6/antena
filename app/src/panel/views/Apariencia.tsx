@@ -22,7 +22,7 @@ const WIDGETS: { id: string; label: string; src: string; w: number; h: number }[
 ];
 // tipos de alerta a los que se les puede cambiar el icono, con su icono de serie
 const ICON_TYPES: [string, string][] = [['follow', 'heart'], ['sub', 'star'], ['resub', 'star'], ['giftsub', 'gift'], ['cheer', 'gem'], ['raid', 'rocket'], ['redemption', 'spark'],
-  ['superchat', 'coin'], ['supersticker', 'coin'], ['member', 'badge'], ['milestone', 'badge'], ['giftmember', 'gift'], ['viewers', 'twitch'], ['ytviewers', 'youtube'], ['command', 'spark']];
+  ['ytsub', 'heart'], ['superchat', 'coin'], ['supersticker', 'coin'], ['member', 'badge'], ['milestone', 'badge'], ['giftmember', 'gift'], ['viewers', 'twitch'], ['ytviewers', 'youtube'], ['command', 'spark']];
 const ICON_LABEL: Record<string, string> = { heart: 'Corazón', star: 'Estrella', gift: 'Regalo', gem: 'Gema', rocket: 'Cohete', spark: 'Chispa', coin: 'Moneda', badge: 'Insignia', eye: 'Ojo', bell: 'Campana', fire: 'Fuego', trophy: 'Trofeo', crown: 'Corona', zap: 'Rayo', megaphone: 'Megáfono', music: 'Música', smile: 'Sonrisa', users: 'Personas', rocket2: 'Cohete 2', thumb: 'Pulgar' };
 
 const TABS = ['color', 'tipografia', 'iconos', 'forma', 'sonido'];

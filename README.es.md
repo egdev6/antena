@@ -27,7 +27,7 @@ Alertas, chat y widgets de directo para **Meld Studio**, en local, gratis y con 
 
 antena se queda entera en tu PC y le da a tu directo una capa completa de alertas e interacción:
 
-- **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits, raids, recompensas) y YouTube (Super Chats, Super Stickers, miembros, hitos y membresías regaladas).
+- **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits y Power-ups, raids, recompensas) y YouTube (suscriptores nuevos, Super Chats, Super Stickers, miembros, hitos y membresías regaladas). Tabla evento → alerta: [docs/eventos.md](docs/eventos.md).
 - **Tres diseños por alerta:** la tarjeta 3D EGDEV; tu vídeo o imagen (webm con transparencia) con el mensaje encima, colocado donde quieras; o **vídeo + tarjeta**: tu vídeo o imagen de fondo a pantalla completa y encima la tarjeta 3D, con retraso de entrada y ajuste de posición. Todos con CSS propio.
 - **Variaciones:** otra versión de la alerta según la cantidad, el tier, el usuario, el mensaje o una probabilidad.
 - **Voz (TTS)** de los mensajes, **filtro** de palabras, enlaces y usuarios, y **pausa** con cola.
@@ -38,6 +38,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Widgets:** chat en pantalla (Twitch + YouTube), objetivos, últimos apoyos, ticker, espectadores en directo de Twitch y YouTube y créditos finales.
 - **Overlays propios:** capas de HTML, CSS y JavaScript para una escena o para enmarcar la cámara, escritas por ti o por Claude por MCP, con datos en vivo y acciones que apruebas tú.
 - **Resumen del directo:** totales, a quién dar las gracias y la cronología con el minuto de cada evento, en Markdown.
+- **Seguidores sin conexión:** registra los seguidores de Twitch ganados mientras antena estaba cerrada y, en YouTube, las suscripciones públicas y un recuento anónimo; YouTube requiere conectar la cuenta.
 - **Panel desde el móvil** en la red local, protegido con clave.
 - **Fuentes para Meld:** cada alerta, widget, panel y overlay propio es una fuente de navegador con su tamaño, listas para copiar.
 - **Prompter para el Elgato Prompter** (1024×600): la app lo abre a pantalla completa en esa pantalla.
@@ -142,6 +143,8 @@ En el panel, **Meld y Stream Deck › Fuentes para Meld** lista todas con su tam
 | Tier list | `http://127.0.0.1:4500/widget/tierlist` | 1920×1080 |
 | Sorteo | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
 | Espectadores | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
+
+**Barras de objetivo.** Los seguidores y subs de Twitch y los suscriptores de YouTube muestran el total del canal que informa la plataforma, no solo los eventos del directo, y no se reinician entre directos. Antena lo consulta al arrancar, al reconectar y cada cinco minutos; los eventos en vivo suman entre lecturas. Si hay un canal de YouTube configurado, los suscriptores detectados solo suman cuando coincide con el ID del canal de la cuenta conectada; si es distinto o no se puede comprobar, el total se actualiza en la siguiente lectura de la plataforma. Si la plataforma no responde, se conserva el último valor conocido; antes de la primera lectura la barra muestra `—`. +1, −1 y «Fijar» aplican una corrección persistente (por ejemplo, para descontar tu propia sub). Las subs de Twitch requieren el permiso `channel:read:subscriptions`. YouTube redondea los suscriptores a tres cifras significativas a partir de 1.000. Las demás métricas de objetivo siguen siendo por directo.
 
 **Variantes del chat (API del servidor).** `POST /api/widgets/chat/variants` con `{ "name": "Directo" }` crea una copia con nombre de todos los ajustes actuales del chat predeterminado. Los cambios posteriores del predeterminado no se propagan. Los campos explícitos al crear deben coincidir con la copia predeterminada; si son distintos se rechazan. `GET` en esa ruta lista las variantes; `PUT` o `DELETE` en `/:id` editan o borran una. Se validan nombres y ajustes, cambiar el id al renombrar se rechaza y el predeterminado no se puede borrar. La validación se aplica cuando se incluye o se apunta explícitamente a `chatVariants`; las demás escrituras conservan su comportamiento de fusión, reemplazo y `null`. El servidor lista `/widget/chat?variant=<id>` en fuentes y MCP; `/widget/chat` sigue siendo la URL predeterminada sin cambios. El widget selecciona el id exacto de la variante y usa el predeterminado si falta, es desconocido o se ha borrado. Cada configuración independiente tiene `layout: "vertical" | "horizontal"` (por defecto `vertical`): la fila horizontal coloca los mensajes nuevos a la derecha y desvanece los antiguos en el borde izquierdo; `reverse` invierte el orden y las animaciones direccionales. El ancho disponible y `maxMessages` limitan la fila y los mensajes se recortan a dos líneas. En capas horizontales de poca altura se adaptan el espacio vertical y la altura de las tarjetas; las fuentes configuradas también se reducen cuando hace falta. En **Widgets › Chat en pantalla**, crea una variante a partir del predeterminado guardado, elige su disposición y ajustes, y pulsa **Guardar**. Copia la URL de la variante seleccionada en su fuente de navegador de Meld; renombrarla no cambia la dirección. El panel sugiere 600×900 para el chat vertical y 1832×160 para el horizontal; ajústalos a tu escena. Guarda o descarta el borrador antes de cambiar o gestionar variantes. El chat no admite un parámetro `?layout=` independiente.
 
@@ -309,7 +312,7 @@ Están en **Widgets** y cada uno tiene su capa de navegador. Su estado (pregunta
 
 ### Directo, chat e historial
 
-- **Directo:** totales, objetivos, cronología, resumen en Markdown (copiar o descargar), lanzar créditos y empezar un directo nuevo (el anterior queda archivado con su resumen).
+- **Directo:** totales, objetivos, cronología, resumen en Markdown (copiar o descargar), lanzar créditos y empezar un directo nuevo (el anterior queda archivado con su resumen). Las barras de total del canal conservan su valor y sus correcciones entre directos; las demás cuentan por directo.
 - **Identidad de sesión:** los IDs conocidos de YouTube y Twitch aparecen en `/api/sessions` y `listar_directos`; un ID distinto al reconectar abre otra sesión, y si no se conserva el primero.
 - **Historial de espectadores:** las sesiones automáticas guardan cada muestra y los huecos por error, fin de emisión o desconexión por plataforma. Los resúmenes JSON incluyen `viewers` y `viewerMetrics`; `/api/sessions` y `listar_directos` solo incluyen métricas. La media es ponderada por tiempo, con pico y cobertura separados por plataforma (nunca se suman). Cada muestra cubre como máximo su intervalo de sondeo; los huecos y el tiempo sin datos al reiniciar no se interpolan.
 - **Métricas de chat:** las sesiones automáticas de Meld guardan chatters únicos y mensajes/minuto por plataforma, independientemente del buffer de 300 mensajes. Se excluyen las simulaciones y los mensajes propios identificables.
@@ -457,7 +460,7 @@ Claude Desktop (`claude_desktop_config.json`):
 Ejemplos de lo que se le puede pedir a Claude:
 
 - «Crea una variación del raid para más de 50 personas con el vídeo raid-grande.webm y que cambie a la escena Raid 10 segundos».
-- «Pon un objetivo de 30 seguidores para hoy y lanza los créditos cuando acabe».
+- «Pon un objetivo de 1.500 seguidores del canal y lanza los créditos cuando acabe».
 - «Cada 20 minutos recuerda en el chat que el código está en github.com/egdev6, como anuncio morado».
 - «Haz una tier list de herramientas de testing con Vitest, Jest, Playwright y Cypress y abre la votación de Vitest».
 - «Abre un sorteo de una camiseta EGDEV con !camiseta y, cuando te diga, sortéalo».
@@ -468,6 +471,8 @@ Ejemplos de lo que se le puede pedir a Claude:
 - «Hazme un overlay propio con el último seguidor en una tarjeta HTML/CSS animada y añádelo a Meld».
 
 ### API REST
+
+`GET /api/followers` lista el registro local, los recuentos anónimos de YouTube y el estado de sincronización (`?pending=true` muestra solo lo pendiente de agradecer). `POST /api/followers/thank` acepta `{ "ids": ["<id>"] }` o `{ "all": true }` para marcar como agradecidos; `all` también marca los recuentos anónimos y las entradas sin ID. Una petición inválida devuelve 400; si el registro no se puede leer, devuelve 503.
 
 `POST /api/session/end` termina la sesión actual y devuelve `{ session }`. El cuerpo opcional `{ "id": "<id-de-sesión>" }` protege frente al cierre de otra sesión; un id inválido devuelve 400 y un cambio de sesión actual devuelve 409. Es idempotente si ya terminó, cierra los huecos de espectadores y conserva los datos; el archivado y la puesta a cero siguen ocurriendo en el siguiente `POST /api/session/new`. Devuelve 409 mientras Meld esté conectado y confirme que está emitiendo. Se aplican las comprobaciones de origen de las rutas de mutación.
 
@@ -526,7 +531,11 @@ Permisos: `moderator:read:followers`, `channel:read:subscriptions`, `bits:read`,
 
 **Conexión automática:** cuando Meld empieza a emitir (o antena arranca con el directo ya en marcha), antena se pone a escuchar el chat de YouTube sola, sin tu cuenta. Mientras YouTube aún no muestra el directo, reintenta cada 30 s, hasta 10 veces (con el ID del canal cada intento cuesta 100 unidades de cuota; con el enlace del directo, mucho menos). Al terminar el directo, el chat se detiene y el estado queda limpio. Si unos segundos después de empezar alguna plataforma configurada (Twitch o YouTube) sigue sin conectar, el panel muestra un aviso con un botón para conectar cada una.
 
-Cuota: 10.000 unidades al día. Cada lectura cuesta unas 5, así que con 8 s entre lecturas hay para unas 4 horas. YouTube no avisa en tiempo real de los suscriptores nuevos.
+Cuota: 10.000 unidades al día. Cada lectura del chat cuesta unas 5, así que con 8 s entre lecturas hay para unas 4 horas.
+
+**Alerta de nuevo suscriptor (`ytsub`):** conecta la cuenta del canal como se explica debajo. Mientras se escucha el chat, antena consulta las suscripciones públicas cada 120 segundos de serie; cambia el intervalo en **Conexiones › YouTube** (mínimo 60 segundos, 0 desactiva el sondeo). La primera lectura fija una referencia sin alertar; los nuevos detectados después reciben alerta y entran en el registro local de seguidores. Solo tienen nombre las suscripciones públicas, la alerta llega con el retraso del intervalo y la API puede limitar cuántos devuelve. Cada página de suscriptores cuesta una unidad de cuota, más una lectura del total de la cuenta; la cuota diaria se comparte con el chat. Un error `quotaExceeded` detiene el sondeo de suscriptores hasta el siguiente periodo de escucha.
+
+Cuando está disponible, la miniatura del suscriptor aparece junto a la alerta sin sustituir su icono ni su recurso. El overlay solo acepta URL iniciales HTTPS de `ggpht.com` o `googleusercontent.com` y sus subdominios; el navegador las carga sin enviar referrer y puede seguir redirecciones. Los demás dominios se rechazan de forma conservadora. Si falta la imagen, se rechaza o no carga, la alerta conserva el nombre, el icono y el recurso sin avatar.
 
 **Escribir en el chat de YouTube** necesita tu cuenta (una vez):
 
@@ -545,6 +554,7 @@ Vídeos, imágenes y sonidos se suben desde el panel (o con `importar_archivo` p
 | Alerta | Variables |
 |---|---|
 | Seguidor | `{user}` |
+| Nuevo suscriptor de YouTube | `{user}` `{avatar}` (URL opcional) |
 | Suscripción | `{user}` `{tier}` |
 | Resuscripción | `{user}` `{months}` `{tier}` `{message}` |
 | Subs regaladas | `{user}` `{amount}` `{tier}` |

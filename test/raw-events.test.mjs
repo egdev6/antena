@@ -62,14 +62,14 @@ function youtubeFixture(rawLog) {
 test('YouTube registra cada item del chat, también los tipos que Antena no reconoce', async () => {
   const recorded = [];
   const yt = youtubeFixture({ record: (...a) => recorded.push(a) });
-  const unknown = { id: 'u1', snippet: { type: 'newSubscriberEvent' }, authorDetails: { displayName: 'Marcos' } };
+  const unknown = { id: 'u1', snippet: { type: 'giftMembershipReceivedEvent' }, authorDetails: { displayName: 'Marcos' } };
   const superChat = { id: 's1', snippet: { type: 'superChatEvent', superChatDetails: { amountMicros: '2000000', amountDisplayString: '2 €' } }, authorDetails: { displayName: 'Ana' } };
   const events = [];
   yt.on('event', e => events.push(e));
   yt.api = async () => ({ items: [unknown, superChat], nextPageToken: 'n' });
   await yt.poll();
   yt.running = false;
-  assert.deepEqual(recorded.map(r => r.slice(0, 3)), [['youtube', 'newSubscriberEvent', false], ['youtube', 'superChatEvent', true]]);
+  assert.deepEqual(recorded.map(r => r.slice(0, 3)), [['youtube', 'giftMembershipReceivedEvent', false], ['youtube', 'superChatEvent', true]]);
   assert.deepEqual(recorded[0][3], unknown);
   assert.equal(events.length, 1, 'el tipo desconocido sigue sin generar alerta');
 });
@@ -99,9 +99,14 @@ test('Twitch registra cada notificación con handled según si se normaliza', ()
 
 test('createApp escribe los eventos de plataforma en data/raw-events.jsonl', async t => {
   const dataDir = await tmp();
-  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  // Windows: the follow also saves the session; retry the cleanup while that write settles
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
-  t.after(() => new Promise(r => { app.server.closeAllConnections(); app.server.close(r); }));
+  t.after(async () => {
+    await new Promise(r => { app.server.closeAllConnections(); app.server.close(r); });
+    await app.session.flush();
+    await app.channelTotals?.flush().catch(() => {});
+  });
   app.twitch.emitEvent('m1', 'channel.follow', { user_name: 'Ana' });
   await app.twitch.rawLog.flush();
   const got = await lines(path.join(dataDir, 'raw-events.jsonl'));

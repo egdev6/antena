@@ -46,6 +46,9 @@ globalThis.fetch = async (url, init = {}) => {
   if (scenario === 'eventsub' && u === 'https://api.twitch.tv/helix/eventsub/subscriptions' && init.method === 'POST') {
     subscriptions++; return Response.json({ data: [] }, { status: 202 });
   }
+  // #132: channel totals read on connect (followers/subscriptions totals), no account data
+  if (scenario === 'eventsub' && /^https:\/\/api\.twitch\.tv\/helix\/(channels\/followers|subscriptions)\?/.test(u) && (init.method || 'GET') === 'GET')
+    return Response.json({ total: 0, data: [] });
   if (scenario === 'oauth' && u === 'https://oauth2.googleapis.com/token') {
     tokens++; mark('token', { grant: new URLSearchParams(init.body).get('grant_type') });
     await gates.token.promise;
@@ -247,7 +250,7 @@ test('EventSub callback real: held síncrono y socket histórico retenido antes 
   const pending = await c.events(), admitted = event(pending, 'admitted'), stale = event(pending, 'stale');
   assert.equal(admitted.held.length, 1); assert.equal(admitted.held[0].user, 'Fixture Follower');
   assert.deepEqual(stale.held, admitted.held); assert.equal(stale.history, 1);
-  assert.equal(stale.sockets, 2); assert.equal(stale.owned, 1); assert.equal(stale.subscriptions, 7);
+  assert.equal(stale.sockets, 2); assert.equal(stale.owned, 1); assert.equal(stale.subscriptions, 8);   // #130: + channel.bits.use
   assert.equal(stale.captures, 0); assert.ok(!pending.some(e => e.event === 'eventsub-idle'));
   await c.command('physical');
   assert.deepEqual(await c.exit(), { code: 1, signal: null });

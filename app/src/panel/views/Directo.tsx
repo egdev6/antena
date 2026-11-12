@@ -3,6 +3,7 @@ import { get, post, put } from '../../lib/api';
 import { ViewerChart, type ViewerSeries } from '../../lib/charts';
 import { IC } from '../../lib/icons';
 import { live, useLive } from '../../lib/live';
+import { goalMetricLabel } from '../../lib/goal';
 import { ConnPill, copy, cx, EmptyState, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, Sec, Status, toast, type Tone } from '../../lib/ui';
 import type { AlertType, AppState, ChatSendResult, Platform, SessionList, SessionSummary, TimelineItem, ViewerPlatform, ViewerSettings } from '../../lib/types';
 import { SendTo, sendResultText } from './Chat';
@@ -44,8 +45,8 @@ export function GoalBars() {
     {g.bars.filter(b => b.visible !== false).map(b => <div className="goal-bar" key={b.id}>
       <div className="goal-top"><span className="goal-platform"><PfIcon platform={b.platform === 'youtube' ? 'youtube' : 'twitch'} />
         {b.platform === 'youtube' ? 'YouTube' : 'Twitch'}
-        {g.showMetric !== false && <span className="goal-metric"> · {metrics[b.metric]?.label || b.metric}</span>}</span>
-        <b>{b.value ?? 0}/{b.target}</b></div>
+        {g.showMetric !== false && <span className="goal-metric"> · {goalMetricLabel(b.metric, metrics)}</span>}</span>
+        <b>{b.value === null ? '—' : (b.value ?? 0)}/{b.target}</b></div>
       <Progress p={b.target ? (b.value ?? 0) / b.target : 0} label={`${g.title} · ${b.platform} · ${b.metric}`} />
     </div>)}
   </article>)}</div>;
@@ -220,7 +221,7 @@ export function Directo() {
     catch (error) { setEndRetryId(ses.id); await load(); throw error; }
   });
   const startSession = guard(async () => {
-    if (!confirm('Se archiva el directo actual y todo vuelve a cero (objetivos, créditos, últimos). ¿Seguir?')) return;
+    if (!confirm('Se archiva el directo actual y vuelven a cero las métricas por directo, los créditos y los últimos. Los totales del canal se conservan. ¿Seguir?')) return;
     await post('/api/session/new', { title: '' }); await load();
   });
   return <>
