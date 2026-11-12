@@ -489,6 +489,23 @@ Viewer `viewer_samples` coverage reports observed seconds and `ratio = coveredSe
 
 Version 1 allows additive fields, metrics and coverage bases; removing or renaming fields or changing definitions requires a new version and `/api/metrics/v2/…`.
 
+#### Optional local push
+
+Push is **off by default**. To send an ended automatic session to a local receiver, set both process environment variables before starting antena. For example, in PowerShell:
+
+```powershell
+$env:ANTENA_PUSH_URL = 'http://127.0.0.1:4311/api/v1/ingest/antena/sessions'
+$secret = Read-Host 'Receiver token' -AsSecureString
+$env:ANTENA_PUSH_TOKEN = [System.Net.NetworkCredential]::new('', $secret).Password
+pnpm start
+```
+
+Only explicit `http://127.0.0.1:<port>/<path>` or `http://[::1]:<port>/<path>` URLs are accepted: no credentials, query or fragment. The token is sent only as a Bearer authorization header. It is not saved in the delivery queue or exposed by the status and config APIs. Protect the process environment and the session data directory.
+
+The POST body is the existing v1 detail document, with no added fields, and is limited to 256 KiB. Each retry reuses the same bytes; a later GET can have a different `generatedAt` because it generates a fresh document. Responses 200/`stored` and 200/`unchanged` complete delivery. HTTP 408, 429, 5xx and connection failures retry up to five total attempts, with waits of 1, 2, 4 and 8 seconds; other responses are permanent failures. Each request has a five-second timeout. A failed receiver does not hold up session capture or ending.
+
+Up to 100 pending documents, their attempt count and retry time are stored in `push-export.json` in the data directory and resumed after restart with the same receiver. The file contains session metrics but no token; keep it private and use only one antena process per data directory. A changed receiver leaves the old queue pending rather than sending it to the new address. If the queue is full, a document is too large, or the queue cannot be read or written, delivery reports an error. A crash before the asynchronous queue write completes can lose the newest item; a crash after an attempt can result in a duplicate, which the receiver must handle idempotently. Last success and error are in-memory; pending survives restart. `GET /api/status`, `GET /api/state` (`status.push`) and MCP `estado` show the last success, sanitized last error and pending count.
+
 ### Twitch
 
 1. Create an app at https://dev.twitch.tv/console/apps/create:

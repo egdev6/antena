@@ -489,6 +489,23 @@ La cobertura de espectadores `viewer_samples` indica segundos observados y `rati
 
 La versión 1 permite añadir campos, métricas y bases de cobertura; quitar o renombrar campos o cambiar definiciones exige una versión nueva en `/api/metrics/v2/…`.
 
+#### Envío local opcional
+
+El envío está **desactivado de serie**. Para mandar una sesión automática terminada a un receptor local, fija ambas variables de entorno del proceso antes de arrancar antena. Por ejemplo, en PowerShell:
+
+```powershell
+$env:ANTENA_PUSH_URL = 'http://127.0.0.1:4311/api/v1/ingest/antena/sessions'
+$secret = Read-Host 'Token del receptor' -AsSecureString
+$env:ANTENA_PUSH_TOKEN = [System.Net.NetworkCredential]::new('', $secret).Password
+pnpm start
+```
+
+Solo se admiten direcciones explícitas `http://127.0.0.1:<puerto>/<ruta>` o `http://[::1]:<puerto>/<ruta>`, sin credenciales, consulta ni fragmento. El token se envía únicamente en la cabecera de autorización Bearer. No se guarda en la cola ni se expone en las API de estado y configuración. Protege el entorno del proceso y la carpeta de datos de las sesiones.
+
+El cuerpo del POST es el documento de detalle v1 existente, sin campos añadidos y con un máximo de 256 KiB. Cada reintento reutiliza los mismos bytes; un GET posterior puede tener otro `generatedAt` porque genera un documento nuevo. Las respuestas 200/`stored` y 200/`unchanged` completan el envío. HTTP 408, 429, 5xx y fallos de conexión se reintentan hasta cinco intentos en total, con esperas de 1, 2, 4 y 8 segundos; las demás respuestas son fallos permanentes. Cada petición tiene un plazo de cinco segundos. Un receptor que falla no frena la captura ni el cierre del directo.
+
+Hasta 100 documentos pendientes, sus intentos y la hora del reintento se guardan en `push-export.json` en la carpeta de datos y se reanudan al arrancar con el mismo receptor. El fichero contiene métricas de sesión, pero no el token; mantenlo privado y usa un solo proceso de antena por carpeta de datos. Si cambia el receptor, la cola anterior queda pendiente en vez de enviarse a la nueva dirección. Si la cola está llena, un documento es demasiado grande o no se puede leer o escribir la cola, el envío informa del error. Una caída antes de completar la escritura asíncrona puede perder el elemento más reciente; una caída tras un intento puede producir un duplicado, que el receptor debe tratar de forma idempotente. El último éxito y error viven en memoria; los pendientes sobreviven al reinicio. `GET /api/status`, `GET /api/state` (`status.push`) y MCP `estado` muestran el último éxito, el último error saneado y los pendientes.
+
 ### Twitch
 
 1. Crea una app en https://dev.twitch.tv/console/apps/create:
