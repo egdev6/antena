@@ -514,6 +514,8 @@ Quota: 10,000 units per day. Each chat read costs about 5, so with 8 s between r
 
 **New subscriber alert (`ytsub`):** connect the channel's account as described below. While the chat is listening, antena checks public subscribers every 120 seconds by default; set the interval in **Connections › YouTube** (minimum 60 seconds, 0 disables polling). The first read is a silent baseline; later newly detected subscribers get an alert and enter the local follower registry. Only public subscriptions have names, alerts are delayed by the polling interval, and the API may limit the number returned. Each subscriber-list page costs one quota unit, plus an account-total read; the daily quota is shared with chat. A `quotaExceeded` error stops subscriber polling until the next listening period.
 
+When available, the subscriber's thumbnail appears beside the alert without replacing its icon or media. The overlay accepts only initial HTTPS avatar URLs on `ggpht.com` or `googleusercontent.com` and their subdomains; the browser loads them without a referrer and may follow redirects. Other hosts are conservatively rejected. If the image is missing, rejected or fails to load, the alert keeps its name, icon and media without an avatar.
+
 **Writing in the YouTube chat** needs your account (once):
 
 1. In the same Google Cloud project, configure the OAuth consent screen (external) and add yourself as a test user with the channel's account.

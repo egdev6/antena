@@ -514,6 +514,8 @@ Cuota: 10.000 unidades al día. Cada lectura del chat cuesta unas 5, así que co
 
 **Alerta de nuevo suscriptor (`ytsub`):** conecta la cuenta del canal como se explica debajo. Mientras se escucha el chat, antena consulta las suscripciones públicas cada 120 segundos de serie; cambia el intervalo en **Conexiones › YouTube** (mínimo 60 segundos, 0 desactiva el sondeo). La primera lectura fija una referencia sin alertar; los nuevos detectados después reciben alerta y entran en el registro local de seguidores. Solo tienen nombre las suscripciones públicas, la alerta llega con el retraso del intervalo y la API puede limitar cuántos devuelve. Cada página de suscriptores cuesta una unidad de cuota, más una lectura del total de la cuenta; la cuota diaria se comparte con el chat. Un error `quotaExceeded` detiene el sondeo de suscriptores hasta el siguiente periodo de escucha.
 
+Cuando está disponible, la miniatura del suscriptor aparece junto a la alerta sin sustituir su icono ni su recurso. El overlay solo acepta URL iniciales HTTPS de `ggpht.com` o `googleusercontent.com` y sus subdominios; el navegador las carga sin enviar referrer y puede seguir redirecciones. Los demás dominios se rechazan de forma conservadora. Si falta la imagen, se rechaza o no carga, la alerta conserva el nombre, el icono y el recurso sin avatar.
+
 **Escribir en el chat de YouTube** necesita tu cuenta (una vez):
 
 1. En el mismo proyecto de Google Cloud, configura la pantalla de consentimiento de OAuth (externa) y añádete como usuario de prueba con la cuenta del canal.
