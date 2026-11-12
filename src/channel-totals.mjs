@@ -39,7 +39,7 @@ export class ChannelTotals extends EventEmitter {
    * @param {object} [o.youtube] client from src/youtube.mjs (api, cfg, token)
    * @param {Record<string, () => Promise<number|null>>} [o.readers] injectable readers (tests); null = no credentials
    */
-  constructor({ dir, twitch, youtube, log = () => {}, now = Date.now, readers, pollMs = DEFAULT_POLL_MS, initialDelayMs = 3000 } = {}) {
+  constructor({ dir, twitch, youtube, log = () => {}, now = Date.now, readers, pollMs = DEFAULT_POLL_MS, initialDelayMs = 3000, settleMs = 30_000, write = writeJson } = {}) {
     super();
     this.file = path.join(dir, TOTAL_FILE);
     this.twitch = twitch; this.youtube = youtube; this.log = log; this.now = now;
@@ -48,7 +48,8 @@ export class ChannelTotals extends EventEmitter {
       'subs@twitch': () => this.readTwitch('/subscriptions'),
       'subscribers@youtube': () => this.readYouTube(),
     };
-    this.pollMs = pollMs; this.initialDelayMs = initialDelayMs;
+    this.pollMs = pollMs; this.initialDelayMs = initialDelayMs; this.settleMs = settleMs; this.write = write;
+    this.writeGen = 0; this.settleHandle = null;
     this.totals = {};    // key -> { value, at, live }
     this.offsets = {};   // key -> number (persistent correction)
     this.errors = {};    // key -> message (memory only)
@@ -178,7 +179,7 @@ export class ChannelTotals extends EventEmitter {
     if (this.halted) return Promise.resolve();
     const run = async () => {
       if (this.halted) return;   // queued before halt: never reads after shutdown began
-      let dirty = false, errorsChanged = false;
+      let dirty = false, errorsChanged = false, settle = false;
       await Promise.all(keys.map(async key => {
         const reader = this.readers[key];
         if (!reader) return;
@@ -200,16 +201,23 @@ export class ChannelTotals extends EventEmitter {
         const prev = this.totals[key];
         // Events received during the read may already be in its result: assume the growth over
         // what we knew when the read started covers them, keep only the rest (next poll corrects).
+        // A total alone cannot tell whether it includes them; undercounting is preferred (an
+        // overshoot could complete a goal falsely) and a quick settle read fixes it either way.
         let live = pending;
         if (prev) {
           const during = Math.max(0, prev.live - liveAtStart);
           const growth = Math.max(0, total - (prev.value + liveAtStart));
           live = during - Math.min(during, growth);
-        }
+          if (during) settle = true;
+        } else if (pending) settle = true;
         if (!prev || prev.value !== total || prev.live !== live) dirty = true;
         this.totals[key] = { value: total, at: new Date(this.now()).toISOString(), live };
       }));
       // errors live in memory only: they refresh the panel but never rewrite the file
+      if (settle && !this.halted && !this.settleHandle) {
+        this.settleHandle = setTimeout(() => { this.settleHandle = null; this.poll(keys).catch(() => {}); }, this.settleMs);
+        this.settleHandle.unref?.();
+      }
       if (dirty || (this.dirty && this.lastWriteError)) this.changed();   // also retries a failed write
       else if (errorsChanged) this.emit('change', this.snapshot());
     };
@@ -233,6 +241,7 @@ export class ChannelTotals extends EventEmitter {
   }
 
   stop() {
+    if (this.settleHandle) { clearTimeout(this.settleHandle); this.settleHandle = null; }
     if (this.handle) clearInterval(this.handle);
     if (this.initialHandle) clearTimeout(this.initialHandle);
     this.handle = null; this.initialHandle = null;
@@ -245,8 +254,9 @@ export class ChannelTotals extends EventEmitter {
     const data = { version: 1, totals: this.totals, offsets: this.offsets };
     if (this.readOnly) { this.emit('change', this.snapshot()); return; }
     this.dirty = true;
-    this.writing = this.writing.then(() => writeJson(this.file, data)).then(
-      () => { this.dirty = false; this.lastWriteError = null; },
+    const gen = ++this.writeGen;   // only the newest write may mark the state as saved
+    this.writing = this.writing.then(() => this.write(this.file, data)).then(
+      () => { if (gen === this.writeGen) { this.dirty = false; this.lastWriteError = null; } },
       err => { this.lastWriteError = err; this.log(`[totales] no se pudo guardar: ${err.message}`); this.emit('change', this.snapshot()); });
     this.emit('change', this.snapshot());
   }

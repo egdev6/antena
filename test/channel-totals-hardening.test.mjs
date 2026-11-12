@@ -177,3 +177,38 @@ test('S3: an in-flight read that already includes a live event does not count it
   g.release(); await pending;
   assert.equal(t.value('follows@twitch'), 101);
 });
+
+test('S8: an older successful write cannot hide a newer failed one', async () => {
+  const outcomes = ['ok', 'ok', 'fail', 'ok'];   // poll, A, B, retry
+  const written = [];
+  const write = async (_file, data) => {
+    const o = outcomes.shift();
+    if (o === 'fail') throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    written.push(JSON.parse(JSON.stringify(data)));
+  };
+  const t = await new ChannelTotals({ dir: await dir(), write, readers: { 'follows@twitch': async () => 100 } }).load();
+  await t.poll(); await t.flush();
+  t.adjust('follows@twitch', 1);                 // A: succeeds
+  t.adjust('follows@twitch', 1);                 // B: fails after A succeeded
+  await assert.rejects(t.flush());
+  assert.match(t.snapshot()['follows@twitch'].error, /No se pudieron guardar/);
+  await t.poll(); await t.flush();               // unchanged platform count: still retries
+  assert.equal(written.at(-1).offsets['follows@twitch'], 2);
+  assert.equal(t.snapshot()['follows@twitch'].error, null);
+});
+
+test('S3: a read that overlapped live events schedules a quick settle read', async () => {
+  let n = 100, delayed = false; const g = gate(); const calls = [];
+  const t = await new ChannelTotals({ dir: await dir(), settleMs: 20, readers: { 'follows@twitch': async () => { calls.push(n); if (delayed) await g.promise; return n; } } }).load();
+  await t.poll();
+  delayed = true;
+  const pending = t.poll(); await sleep(0);
+  t.onEvent({ externalId: 'f2', type: 'follow', vars: {} });
+  delayed = false; g.release(); await pending;
+  n = 102;
+  await sleep(60);
+  await t.busy;
+  assert.equal(calls.length, 3);
+  assert.equal(t.value('follows@twitch'), 102);
+  t.halt();
+});
