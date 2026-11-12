@@ -334,8 +334,10 @@ test('S1/S2: startServer schedules both platform syncs and shutdown waits for ac
   FollowerRegistry.prototype.sync = async function (p) { calls.push('sync:' + p); };
   process.env.PORT = String(await serverPort());
   t.after(() => { ChannelTotals.prototype.refresh = originalRefresh; FollowerRegistry.prototype.sync = originalSync; });
-  const app = await startServer({ quiet: true, log: () => {}, handleSignals: false, shutdownTimeoutMs: 3000 });
+  const app = await startServer({ quiet: true, log: () => {}, handleSignals: false, shutdownTimeoutMs: 3000, followersDelayMs: 20 });
   t.after(() => app.close()); await tick();
+  assert.deepEqual(calls, [], 'no platform call right at startup');
+  await new Promise(r => setTimeout(r, 60)); await tick();
   assert.deepEqual(calls, ['total:twitch', 'total:youtube', 'sync:twitch', 'sync:youtube']);
   const g = gate(); app.followers.writing = g.promise;
   app.followers.onLiveFollow({ platform: 'twitch', id: 'late', name: 'Late' });

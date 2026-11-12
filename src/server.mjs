@@ -1386,7 +1386,7 @@ function readBody(req) {
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 /** Arranca el servidor (lo usan `pnpm start` y el MCP cuando no hay ninguno en marcha). */
-export async function startServer({ log = console.log, quiet = false, shutdownTimeoutMs = 5000, handleSignals = true, heldRecoveryWindows, heldRecoveryIO,
+export async function startServer({ log = console.log, quiet = false, shutdownTimeoutMs = 5000, handleSignals = true, heldRecoveryWindows, heldRecoveryIO, followersDelayMs = 3000,
   // Test seam for the one global shutdown deadline; all other timers remain real.
   shutdownDeadlineTimers = { setTimeout, clearTimeout } } = {}) {
   const app = await createApp({ log, heldRecoveryWindows, heldRecoveryIO });
@@ -1451,8 +1451,9 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
   app.timers.start();
   app.viewers.start();
   app.channelTotals.start();
-  app.refreshFollowers('twitch');
-  app.refreshFollowers('youtube');
+  // #128: first sync shortly after startup, like the first channel-total read (cancelled by halt)
+  app.followersStartup = setTimeout(() => { app.refreshFollowers('twitch'); app.refreshFollowers('youtube'); }, followersDelayMs);
+  app.followersStartup.unref?.();
   if (app.store.config.chat.twitchChannel) app.chat.join(app.store.config.chat.twitchChannel);
   if (app.store.config.meld.enabled) app.meld.start(app.store.config.meld.url);
   const onUnhandledRejection = e => log('[error]', e?.message || e);
@@ -1674,7 +1675,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
       // Récord de espectadores: sin más lecturas ni alertas al cerrar la app (#142).
       try { app.viewers.halt(); } catch { /* sin temporizadores vivos */ }
       try { app.channelTotals.halt(); } catch { /* sin temporizadores vivos */ }
-      try { app.followers.halt(); } catch { /* sin nuevas sincronizaciones */ }
+      try { clearTimeout(app.followersStartup); app.followers.halt(); } catch { /* sin nuevas sincronizaciones */ }
       // teleprompter: sin temporizadores vivos más allá de su ancla programada
       try { app.teleprompter.stop(); } catch { /* sin temporizadores vivos */ }
       try { app.beginAckWindow(); } catch { finish(1); return; }
