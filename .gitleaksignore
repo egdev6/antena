@@ -4,3 +4,4 @@ d58185a73c38b2c51f5d8c30fa323eb13647c6d6:test/ws-stream.test.mjs:generic-api-key
 06d45b011cf941f9c81ef2ca6dcf57880f940d30:test/ws-stream-l9.test.mjs:generic-api-key:148
 # False positive: a synthetic Bearer value in a regression test, not a credential.
 3c47bc57ccef589acf946082ace1067f3c0342bc:test/push-export-legacy-owed.test.mjs:generic-api-key:8
+cd10d303ce3e790dee745902e5324c9ce290b27b:test/push-export-legacy-owed.test.mjs:generic-api-key:8

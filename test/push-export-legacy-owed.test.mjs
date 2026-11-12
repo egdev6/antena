@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createApp } from '../src/server.mjs';
-const TOKEN = 'SYNTHETIC-136-OBLIGATION';
+const TOKEN = 'SYNTHETIC-LEGACY-OBLIGATION';
 const start={id:'000-legacy-owed',title:'synthetic',startedAt:'2026-01-01T00:00:00.000Z',events:[],notes:[],goalOffsets:{},meldAutoSession:true,platforms:{twitch:{streamId:'synthetic'}}};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn,label){for(let i=0;i<800;i++){const x=await fn();if(x)return x;await sleep(5)}throw Error('timeout '+label)}
