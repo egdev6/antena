@@ -30,7 +30,7 @@ second copy.
 | `memberMilestoneChatEvent` | `milestone` | `memberMonth`, `memberLevelName`, `userComment` | Channel memberships only. |
 | `membershipGiftingEvent` | `giftmember` | `giftMembershipsCount`, `giftMembershipsLevelName` | Channel memberships only. |
 | `giftMembershipReceivedEvent` | — | | One per receiver of a gift: the gifting event already alerts once. |
-| `giftEvent` | — | | Jewels gifts need their own alert design (separate issue). |
+| `giftEvent` | — | | Jewels gifts need their own alert design (#138). |
 
 **There is no subscription event in the YouTube live chat.** A new channel subscriber never
 arrives here; see #134 (polling) and #132 (channel totals for goals).
