@@ -38,6 +38,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Widgets:** chat en pantalla (Twitch + YouTube), objetivos, últimos apoyos, ticker, espectadores en directo de Twitch y YouTube y créditos finales.
 - **Overlays propios:** capas de HTML, CSS y JavaScript para una escena o para enmarcar la cámara, escritas por ti o por Claude por MCP, con datos en vivo y acciones que apruebas tú.
 - **Resumen del directo:** totales, a quién dar las gracias y la cronología con el minuto de cada evento, en Markdown.
+- **Seguidores sin conexión:** registra los seguidores de Twitch ganados mientras antena estaba cerrada y, en YouTube, las suscripciones públicas y un recuento anónimo; YouTube requiere conectar la cuenta.
 - **Panel desde el móvil** en la red local, protegido con clave.
 - **Fuentes para Meld:** cada alerta, widget, panel y overlay propio es una fuente de navegador con su tamaño, listas para copiar.
 - **Prompter para el Elgato Prompter** (1024×600): la app lo abre a pantalla completa en esa pantalla.
@@ -470,6 +471,8 @@ Ejemplos de lo que se le puede pedir a Claude:
 - «Hazme un overlay propio con el último seguidor en una tarjeta HTML/CSS animada y añádelo a Meld».
 
 ### API REST
+
+`GET /api/followers` lista el registro local, los recuentos anónimos de YouTube y el estado de sincronización (`?pending=true` muestra solo lo pendiente de agradecer). `POST /api/followers/thank` acepta `{ "ids": ["<id>"] }` o `{ "all": true }` para marcar como agradecidos; `all` también marca los recuentos anónimos y las entradas sin ID. Una petición inválida devuelve 400; si el registro no se puede leer, devuelve 503.
 
 `POST /api/session/end` termina la sesión actual y devuelve `{ session }`. El cuerpo opcional `{ "id": "<id-de-sesión>" }` protege frente al cierre de otra sesión; un id inválido devuelve 400 y un cambio de sesión actual devuelve 409. Es idempotente si ya terminó, cierra los huecos de espectadores y conserva los datos; el archivado y la puesta a cero siguen ocurriendo en el siguiente `POST /api/session/new`. Devuelve 409 mientras Meld esté conectado y confirme que está emitiendo. Se aplican las comprobaciones de origen de las rutas de mutación.
 
