@@ -257,3 +257,11 @@ test('S1/S7: a corrupt totals file is copied aside before anything can replace i
   await t.poll(); await t.flush();
   assert.equal(t.value('subs@twitch'), 5);
 });
+
+test('S7: negative persisted totals or live counts are not trusted at load', async () => {
+  const dir = await tmp();
+  await writeFile(path.join(dir, TOTAL_FILE), JSON.stringify({ version: 1, totals: { 'follows@twitch': { value: 100, live: -3 }, 'subs@twitch': { value: -5, live: 0 } }, offsets: {} }));
+  const t = await make(dir, {});
+  assert.equal(t.value('follows@twitch'), 100);
+  assert.equal(t.value('subs@twitch'), null);
+});

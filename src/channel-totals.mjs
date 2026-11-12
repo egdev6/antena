@@ -85,7 +85,7 @@ export class ChannelTotals extends EventEmitter {
     }
     for (const key of TOTAL_KEYS) {
       const t = raw?.totals?.[key];
-      if (t && finite(t.value)) this.totals[key] = { value: t.value, at: t.at || null, live: finite(t.live) ? t.live : 0 };
+      if (t && finite(t.value) && t.value >= 0) this.totals[key] = { value: t.value, at: t.at || null, live: finite(t.live) && t.live >= 0 ? t.live : 0 };
       if (finite(raw?.offsets?.[key])) this.offsets[key] = raw.offsets[key];
     }
     return this;
