@@ -28,6 +28,7 @@ import { registerMediaRoutes } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
 import { registerGoalsRoutes } from './routes/goals.mjs';
+import { registerFollowersRoutes } from './routes/followers.mjs';
 import { registerChatVariantsRoutes } from './routes/chat-variants.mjs';
 import { registerMeldRoutes } from './routes/meld.mjs';
 import { registerViewersRoutes } from './routes/viewers.mjs';
@@ -35,6 +36,7 @@ import { registerThemeRoutes } from './routes/theme.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
 import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
+import { FollowerRegistry } from './followers.mjs';
 import { registerTeleprompterRoutes } from './routes/teleprompter.mjs';
 import { registerCustomOverlayRoutes } from './routes/custom-overlays.mjs';
 import { Teleprompter } from './teleprompter.mjs';
@@ -172,6 +174,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const engine = new Engine({ store, bus, session, meld, twitch, youtube, log });
   // #132: barras de objetivo con el total real del canal (persisten entre directos)
   const channelTotals = await new ChannelTotals({ dir: store.dir, twitch, youtube, log }).load();
+  const followers = await new FollowerRegistry({ dir: store.dir, twitch, youtube, log }).load();
   session.channelTotals = channelTotals;
   const timers = new Timers({ store, engine, twitch, youtube, meld, session, log });
   engine.timers = timers;
@@ -211,6 +214,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     overlays: bus.overlayCount(), pause: engine.pauseState(),
     persistence: store.persistenceState(),
     channelTotals: channelTotals.snapshot(),
+    followers: followers.snapshot(),
     sessionRecovery: session.recoveryState(),
     sessionArchive: session.archiveState(),
     heldRecovery,
@@ -222,20 +226,25 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // #132: el total del canal se complementa con el evento real de la plataforma, aunque su
   // alerta esté desactivada o el usuario filtrado (es el número real del canal)
   twitch.on('event', e => channelTotals.onEvent(e));
+  twitch.on('event', e => {
+    if (e.type === 'follow') followers.onLiveFollow({ platform: 'twitch', id: e.followerId, name: e.vars?.user, at: e.followedAt });
+  });
   twitch.on('event', e => engine.handleEvent(e));
   youtube.on('event', e => engine.handleEvent(e));
   chat.on('delete', ({ id }) => engine.deleteChat(id));
   chat.on('clearUser', ({ login }) => engine.clearChatUser(login));
   session.on('change', () => { engine.pushWidgets(); pushTimeline(); });
   channelTotals.on('change', () => { engine.pushWidgets(); pushStatus(); });
-  // #132: se relee el total al (re)conectar cada plataforma, no en cada cambio de estado
+  followers.on('change', pushStatus);
+  // Refresh channel totals and followers at startup and on the same reconnect transitions.
+  const refreshFollowers = platform => channelTotals.refresh(platform).then(() => followers.sync(platform)).catch(() => {});
   let twitchState = twitch.status.state, youtubeState = youtube.status.state, youtubeAccount = youtube.status.account;
   twitch.on('status', st => {
-    if (st.state === 'conectado' && twitchState !== 'conectado') channelTotals.refresh('twitch').catch(() => {});
+    if (st.state === 'conectado' && twitchState !== 'conectado') refreshFollowers('twitch');
     twitchState = st.state;
   });
   youtube.on('status', st => {
-    if ((st.state === 'escuchando' && youtubeState !== 'escuchando') || (st.account && st.account !== youtubeAccount)) channelTotals.refresh('youtube').catch(() => {});
+    if ((st.state === 'escuchando' && youtubeState !== 'escuchando') || (st.account && st.account !== youtubeAccount)) refreshFollowers('youtube');
     youtubeState = st.state; youtubeAccount = st.account;
   });
   // la cronología apunta también lo que pasa en los interactivos
@@ -912,6 +921,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // widgets y objetivos (#128: rutas de cajas/barras en módulo propio, mismo punto y orden)
   registerChatVariantsRoutes({ route, store });
   registerGoalsRoutes({ route, store, session, id8 });
+  registerFollowersRoutes({ route, followers });
   route('POST', '/api/credits/play', async () => { bus.send('credits', { action: 'play' }, ['widget']); return { ok: true }; });
   route('POST', '/api/credits/stop', async () => { bus.send('credits', { action: 'stop' }, ['widget']); return { ok: true }; });
 
@@ -1309,7 +1319,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, channelTotals, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
+  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
   return app;
 }
 
@@ -1376,7 +1386,7 @@ function readBody(req) {
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 /** Arranca el servidor (lo usan `pnpm start` y el MCP cuando no hay ninguno en marcha). */
-export async function startServer({ log = console.log, quiet = false, shutdownTimeoutMs = 5000, handleSignals = true, heldRecoveryWindows, heldRecoveryIO,
+export async function startServer({ log = console.log, quiet = false, shutdownTimeoutMs = 5000, handleSignals = true, heldRecoveryWindows, heldRecoveryIO, followersDelayMs = 3000,
   // Test seam for the one global shutdown deadline; all other timers remain real.
   shutdownDeadlineTimers = { setTimeout, clearTimeout } } = {}) {
   const app = await createApp({ log, heldRecoveryWindows, heldRecoveryIO });
@@ -1441,6 +1451,9 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
   app.timers.start();
   app.viewers.start();
   app.channelTotals.start();
+  // #128: first sync shortly after startup, like the first channel-total read (cancelled by halt)
+  app.followersStartup = setTimeout(() => { app.refreshFollowers('twitch'); app.refreshFollowers('youtube'); }, followersDelayMs);
+  app.followersStartup.unref?.();
   if (app.store.config.chat.twitchChannel) app.chat.join(app.store.config.chat.twitchChannel);
   if (app.store.config.meld.enabled) app.meld.start(app.store.config.meld.url);
   const onUnhandledRejection = e => log('[error]', e?.message || e);
@@ -1530,8 +1543,9 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
         const sessionFlush = () => Promise.resolve().then(() => app.session.flush());
         const interactiveFlush = () => Promise.resolve().then(() => app.interactive.flush());
         const totalsFlush = () => Promise.resolve().then(() => app.channelTotals.flush());   // #132: correcciones y último total
+        const followersFlush = () => Promise.resolve().then(() => app.followers.flush());
         // Start all independent attempts NOW: a failed/hung journal never gates either flush.
-        Promise.allSettled([journal, queued, sessionFlush(), interactiveFlush(), totalsFlush()]).then(results => {
+        Promise.allSettled([journal, queued, sessionFlush(), interactiveFlush(), totalsFlush(), followersFlush()]).then(results => {
           let code = engineFailed || heldFailed || results.some(r => r.status === 'rejected') || unsaved() ? 1 : 0;
           // La persistencia ya está decidida; ahora sí, con el deadline todavía ACTIVO, se cierra el
           // transporte HTTP real. Un cierre HTTP fallido o colgado también sale 1.
@@ -1661,6 +1675,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
       // Récord de espectadores: sin más lecturas ni alertas al cerrar la app (#142).
       try { app.viewers.halt(); } catch { /* sin temporizadores vivos */ }
       try { app.channelTotals.halt(); } catch { /* sin temporizadores vivos */ }
+      try { clearTimeout(app.followersStartup); app.followers.halt(); } catch { /* sin nuevas sincronizaciones */ }
       // teleprompter: sin temporizadores vivos más allá de su ancla programada
       try { app.teleprompter.stop(); } catch { /* sin temporizadores vivos */ }
       try { app.beginAckWindow(); } catch { finish(1); return; }

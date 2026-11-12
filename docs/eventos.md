@@ -35,6 +35,40 @@ second copy.
 **There is no subscription event in the YouTube live chat.** A new channel subscriber never
 arrives here; see #134 (polling) and #132 (channel totals for goals).
 
+## Followers gained while offline
+
+The local registry in `data/followers.json` records follower ID, name, follow date,
+source (`offline` or `live`) and thanked state. Startup and reconnect synchronization
+recover entries without replaying alerts. The first synchronization establishes a
+baseline, not a list of everyone who followed before antena was installed. Live Twitch
+follows and recovered entries are deduplicated by ID, or case-insensitive name if no ID
+is available.
+
+| Platform | Reader | Bounded history |
+| --- | --- | --- |
+| Twitch | `GET /helix/channels/followers`, using `followed_at` | Up to ten pages of 100 per sync; an incomplete backlog stays `partial` without advancing the checkpoint. |
+| YouTube | OAuth `subscriptions.list`, `myRecentSubscribers=true`, `part=snippet,subscriberSnippet` | Public subscribers only; up to twenty pages of 50 for the baseline, four pages on later syncs. The API may impose its own limit. |
+
+YouTube requires the channel's account to be connected. Dates come from
+`snippet.publishedAt` when available; missing dates remain unknown. Unknown subscribers
+with older dates are learned silently rather than counted as new. The anonymous count
+uses the same OAuth account's `channels.list(mine=true)` total: `max(0, total growth − new
+names)`. This is a **net estimate**, not an exact count of private new subscribers:
+unsubscribes can cancel out new subscriptions, and YouTube rounds totals from 1,000.
+Missing totals do not produce an anonymous count; a falling total never deletes records.
+
+`GET /api/followers` lists entries, anonymous counts and sync status; `?pending=true`
+filters thanked records out. `POST /api/followers/thank` accepts `{ "ids": ["<id>"] }`
+or `{ "all": true }`; `all` includes anonymous counts and entries without an ID. Invalid
+bodies return 400 without changes; an unreadable registry rejects thank updates with 503.
+The thank-you widget is tracked separately in #129; this registry never replays recovered
+followers as on-screen alerts.
+
+Known limits: the checkpoint is per platform, not per account, so use the same connected
+account for consistent history. Strict timestamp checkpoints can miss Twitch follows in
+the checkpoint's same second. A bounded or private subscriber list is not a complete
+historical record.
+
 ## Manual check
 
 With the [Twitch CLI](https://dev.twitch.tv/docs/cli/) against a local EventSub WebSocket, or

@@ -38,6 +38,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker, live concurrent viewers for Twitch and YouTube, and end credits.
 - **Custom overlays:** HTML, CSS and JavaScript layers for a scene or to frame the camera, written by you or by Claude via MCP, with live data and actions you approve.
 - **Stream recap:** totals, who to thank and a timeline with the minute of each event, in Markdown.
+- **Offline followers:** records Twitch followers gained while antena was closed, and YouTube's public subscribers plus an anonymous count; YouTube requires a connected account.
 - **Mobile panel** on your local network, protected with a key.
 - **Browser sources for Meld:** every alert, widget, panel and custom overlay is a browser source with its size, ready to copy.
 - **Prompter for the Elgato Prompter** (1024×600): the app opens it full screen on that display.
@@ -470,6 +471,8 @@ Examples of what you can ask Claude to do:
 - «Make me a custom overlay with the latest follower as an animated HTML/CSS card and add it to Meld».
 
 ### REST API
+
+`GET /api/followers` lists the local follower registry, anonymous YouTube counts and sync status (`?pending=true` shows only unthanked records). `POST /api/followers/thank` accepts `{ "ids": ["<id>"] }` or `{ "all": true }` to mark them thanked; `all` also marks anonymous counts and entries without an ID. Invalid requests return 400; an unreadable registry returns 503.
 
 `POST /api/session/end` ends the current session and returns `{ session }`. An optional body `{ "id": "<session-id>" }` protects against ending a different session; an invalid id returns 400, and a changed current session returns 409. It is idempotent for an already ended session, closes viewer gaps and preserves the data; archiving and resetting still happen on the next `POST /api/session/new`. It returns 409 while Meld is connected and confirms it is streaming. Normal mutating-route origin checks apply.
 
