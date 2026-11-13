@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
@@ -19,7 +19,10 @@ async function start() {
     const r = await fetch(base + p, { method, body: body === undefined ? undefined : JSON.stringify(body) });
     const d = await r.json(); if (!r.ok) throw new Error(d.error); return d;
   };
-  return { app, sent, call, close: () => new Promise(r => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(r); }) };
+  return { app, sent, call, close: async () => {
+    await new Promise(r => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(r); });
+    await rm(dataDir, { recursive: true, force: true });
+  } };
 }
 
 test('un mensaje programado sale cuando toca y hay movimiento en el chat', async () => {

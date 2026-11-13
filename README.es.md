@@ -278,7 +278,7 @@ Por MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `b
 - **Texto** con variables: `{channel}` (tu canal), `{title}` (título del directo), `{uptime}` (tiempo en directo) y `{follows}` (seguidores nuevos hoy).
 - **Cada cuántos minutos** y **cuántos mensajes tiene que haber en el chat** desde la última vez. Así no se repite en un chat parado; tus propios mensajes no cuentan.
 - **Dónde se publica:** Twitch, YouTube o los dos. Los mensajes que ya tenías siguen saliendo solo en Twitch.
-- **Solo mientras emito** (activado de serie): usa el estado de Meld. Si Meld no está conectado no se sabe si emites, así que **no se publica**, ni solo ni con «Enviar ahora».
+- **Solo mientras emito** (activado de serie): usa el estado de Meld. La cuenta se pausa fuera de directo y, al empezar a emitir, vuelve a contar el intervalo completo. Si Meld no está conectado no se sabe si emites, así que **no se publica**, ni solo ni con «Enviar ahora». Desactiva esta opción para seguir contando y publicando fuera de directo.
 - **Como anuncio destacado** de Twitch, con color (el del canal, azul, verde, naranja o morado). YouTube no tiene anuncios: con «YouTube» o «los dos», allí sale el mismo texto como mensaje normal.
 - **También en pantalla:** además del chat, sale una alerta completa (tarjeta o vídeo, sonido, voz, acciones de Meld…).
 

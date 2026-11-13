@@ -84,8 +84,11 @@ export class Timers {
     this._quiesce = null;
     this._work = new Set();
     this._pauseSeen = false;  // se vio la pausa activa y aún no se ha aplicado la reanudación
-    // La pausa se observa al guardarse (aunque luego no se compruebe hasta reanudar).
-    store.on?.('change', () => this._syncPause());
+    this._liveSeen = this.isLive();
+    // El cambio de Meld fija el instante real, incluso entre dos repasos del planificador.
+    meld?.on?.('status', () => this._syncLive());
+    // La pausa y los cambios de configuración se observan también al guardarse.
+    store.on?.('change', () => { this._syncPause(); this._syncLive(); });
   }
 
   get list() { return this.store.config.timers || []; }
@@ -157,10 +160,33 @@ export class Timers {
 
   intervalMs(t) { return Math.max(1, Number(t.intervalMin) || 15) * 60_000; }
 
+  /** Reinicia solo el intervalo, sin alterar líneas, envíos ni errores anteriores. */
+  resetIntervals(now, include = () => true) {
+    for (const t of this.list) if (include(t)) this.st(t.id).lastAt = now;
+  }
+
   /** Al reanudar, lo que venció en pausa no se recupera: cada timer vuelve a contar su intervalo desde ahora. */
   onResume(now = Date.now()) {
     this._pauseSeen = false;
-    for (const t of this.list) this.st(t.id).lastAt = now;
+    this.resetIntervals(now);
+  }
+
+  /** Congela el valor visible fuera de directo y reinicia el intervalo cuando Meld confirma emisión. */
+  _syncLive(now = Date.now()) {
+    const live = this.isLive();
+    if (live !== this._liveSeen) {
+      this._liveSeen = live;
+      if (live) this.resetIntervals(now, t => t.onlyWhenLive);
+    }
+    for (const t of this.list) {
+      if (t.onlyWhenLive && !live) {
+        const s = this.st(t.id);
+        if (s.offlineAt == null) s.offlineAt = now;
+      } else {
+        const s = this.state.get(t.id);
+        if (s) s.offlineAt = null;
+      }
+    }
   }
 
   /**
@@ -179,6 +205,7 @@ export class Timers {
   }
 
   async _tick(now) {
+    this._syncLive(now);
     const fired = [], errors = [];
     for (const t of this.list) {
       if (this.due(t, now)) continue;
@@ -247,10 +274,13 @@ export class Timers {
   /** Para el panel y el MCP: config + estado de cada mensaje. */
   snapshot() {
     const now = Date.now();
+    this._syncLive(now);
     return this.list.map(t => {
       const s = this.st(t.id);
-      const nextInMs = Math.max(0, s.lastAt + this.intervalMs(t) - now);
-      return { ...t, runtime: { lastRunAt: s.lastRunAt, runs: s.runs, lines: s.lines, lastError: s.lastError, platforms: s.platforms, warnings: limitWarnings(t), nextInSec: Math.round(nextInMs / 1000), blockedBy: nextInMs ? null : this.due(t, now) } };
+      const pausedOffStream = !!t.onlyWhenLive && !this.isLive();
+      const countAt = pausedOffStream ? Math.max(s.lastAt, s.offlineAt) : now;
+      const nextInMs = Math.max(0, s.lastAt + this.intervalMs(t) - countAt);
+      return { ...t, runtime: { lastRunAt: s.lastRunAt, runs: s.runs, lines: s.lines, lastError: s.lastError, platforms: s.platforms, warnings: limitWarnings(t), nextInSec: Math.round(nextInMs / 1000), blockedBy: nextInMs ? null : this.due(t, now), pausedOffStream } };
     });
   }
 

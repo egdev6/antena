@@ -142,7 +142,7 @@ export function Mensajes({ parts }: { parts: string[] }) {
     .map(t => {
       const r = t.runtime || {};
       const href = `#/mensajes/${enc(t.id)}`;
-      const state = t.enabled === false ? <Dot tone="off">Apagado</Dot> : r.lastError ? <Dot tone="warn">Error al enviar</Dot> : r.blockedBy ? <Dot tone="warn">Esperando: {r.blockedBy}</Dot> : <Dot tone="ok">{(r.nextInSec || 0) > 0 ? `Sale en ${fmtNext(r.nextInSec || 0)}` : 'Sale en el próximo repaso'}</Dot>;
+      const state = t.enabled === false ? <Dot tone="off">Apagado</Dot> : r.pausedOffStream === true ? <Dot tone="off">En pausa: no estás en directo</Dot> : r.lastError ? <Dot tone="warn">Error al enviar</Dot> : r.blockedBy ? <Dot tone="warn">Esperando: {r.blockedBy}</Dot> : <Dot tone="ok">{(r.nextInSec || 0) > 0 ? `Sale en ${fmtNext(r.nextInSec || 0)}` : 'Sale en el próximo repaso'}</Dot>;
       return { id: t.id, href, open: open === t.id, cls: t.enabled === false ? 'is-off' : undefined, cells: {
         name: <NameCell href={href} name={t.name} sub={t.message} />,
         state,
@@ -163,7 +163,7 @@ export function Mensajes({ parts }: { parts: string[] }) {
       { value: n(t => !!t.showAlert), label: 'también en pantalla' },
       { value: n(t => !!t.runtime?.lastError), label: 'con error en el último envío', warn: n(t => !!t.runtime?.lastError) > 0 },
     ]} />
-    <ListPanel title="Mensajes" note="Pulsa una fila para editarlo." foot={<>Cada 15 s se mira si toca publicar alguno; si varios coinciden, salen en el mismo repaso. El botón de pausa los detiene, también «Enviar ahora»; al reanudar, cada uno vuelve a contar su intervalo completo. Lo que escribes tú en el chat no se pausa.</>} search={f.q} onSearch={f.setQ} placeholder="Buscar mensaje"
+    <ListPanel title="Mensajes" note="Pulsa una fila para editarlo." foot={<>Cada 15 s se mira si toca publicar alguno; si varios coinciden, salen en el mismo repaso. Los mensajes «Solo mientras emito» se pausan fuera de directo y empiezan su intervalo completo al emitir. El botón de pausa los detiene, también «Enviar ahora»; al reanudar, cada uno vuelve a contar su intervalo completo. Lo que escribes tú en el chat no se pausa.</>} search={f.q} onSearch={f.setQ} placeholder="Buscar mensaje"
       chips={[['all', 'Todos'], ['alert', 'En pantalla'], ['error', 'Con error'], ['off', 'Apagados']]} chip={f.chip} onChip={f.setChip}
       cols={[{ key: 'name', label: 'Mensaje' }, { key: 'state', label: 'Estado' }, { key: 'every', label: 'Frecuencia' }, { key: 'dest', label: 'Dónde', hide: true }, { key: 'tags', label: 'Lleva', hide: true }, { key: 'send', label: '' }]}
       rows={rows} empty={list.length ? 'Ningún mensaje coincide.' : <>Todavía no hay mensajes. Por ejemplo: «¿Ya sigues el canal? Directos cada miércoles a las 19:00 · egdev.es». <a href="#/mensajes/nuevo">Crear el primero</a></>} />
