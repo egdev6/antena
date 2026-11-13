@@ -10,8 +10,12 @@ pub enum Decision {
     Conflict,
 }
 
+// A loopback listener completes the TCP handshake at once, even when its process is busy, so an
+// unanswered connect means nobody listens. Windows only reports a closed loopback port after ~2 s of
+// SYN retries, past the probe's connect timeout, so a timeout must not read as a conflict (#144).
 pub fn connection_failure(kind: std::io::ErrorKind) -> Decision {
-    if kind == std::io::ErrorKind::ConnectionRefused { Decision::Launch } else { Decision::Conflict }
+    use std::io::ErrorKind;
+    if matches!(kind, ErrorKind::ConnectionRefused | ErrorKind::TimedOut) { Decision::Launch } else { Decision::Conflict }
 }
 
 fn valid_id(id: &str) -> bool {
@@ -128,11 +132,13 @@ mod tests {
     }
 
     #[test]
-    fn only_connection_refused_means_the_port_is_free() {
+    fn a_refused_or_unanswered_connection_means_the_port_is_free() {
         use std::io::ErrorKind;
         assert_eq!(connection_failure(ErrorKind::ConnectionRefused), Decision::Launch);
-        assert_eq!(connection_failure(ErrorKind::TimedOut), Decision::Conflict);
+        // Windows answers a closed loopback port only after ~2 s of SYN retries (#144).
+        assert_eq!(connection_failure(ErrorKind::TimedOut), Decision::Launch);
         assert_eq!(connection_failure(ErrorKind::Other), Decision::Conflict);
+        assert_eq!(connection_failure(ErrorKind::PermissionDenied), Decision::Conflict);
     }
 
     #[test]
