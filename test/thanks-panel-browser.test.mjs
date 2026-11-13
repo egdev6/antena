@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const root = await mkdtemp(path.join(tmpdir(), 'thanks-panel-'));
@@ -31,7 +31,7 @@ async function setup(t) {
   };
   await call('PUT', '/api/config', { panel: { onboardingDone: true } });
   await call('PUT', '/api/widgets', { thanks: { window: 'all', maxNames: 1, showAnonymous: true } });
-  t.after(async () => { if (chrome) await closeChrome(chrome); app.timers.stop(); await app.closeHttp(); await rm(dir, { recursive: true, force: true }); });
+  t.after(() => closeAll(() => chrome && closeChrome(chrome), () => app.timers.stop(), () => app.closeHttp(), () => rm(dir, { recursive: true, force: true })));
   return { base, call, open: async () => { chrome = await openChromePage(bin, base + '/#/widgets/thanks'); return chrome.cdp; } };
 }
 const list = `document.querySelector('[data-thanks-list]')`;

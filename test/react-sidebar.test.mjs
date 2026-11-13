@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 // Simula la app de escritorio sin invocar Tauri, cuentas ni hardware reales: ni siquiera ahí hay pie.
@@ -99,9 +99,9 @@ test('barra lateral: activo, grupos y scroll exclusivo bajo el logo, sin pie', {
     assert.ok(movil.scroll > 0, 'navegación horizontal móvil accesible');
     assert.deepEqual(movil.orden, orden, 'sin reordenar ni ocultar destinos');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    app.timers.stop();
-    app.server.closeAllConnections();
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => {
+      app.timers.stop();
+      app.server.closeAllConnections();
+    }, () => new Promise(r => app.server.close(r)));
   }
 });

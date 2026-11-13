@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
@@ -36,7 +36,7 @@ test('giveaway widget demo uses the saved title and prize and creates no entries
     assert.equal(s.giveaway.open, false, 'the preview does not open the giveaway');
     assert.equal(s.giveaway.count, 0, 'the preview creates no entries');
     assert.deepEqual(s.giveaway.winners, [], 'the preview creates no winners');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('panel giveaway preview: demo while closed, real widget once open', { timeout: 120000 }, async t => {
@@ -52,5 +52,5 @@ test('panel giveaway preview: demo while closed, real widget once open', { timeo
     assert.match(await evaluateChrome(c, `document.querySelector('main .preview-col .eg-stage__bar').textContent`), /Datos de ejemplo/);
     await api('POST', '/api/giveaway/open', {});
     await waitDom(c, `(${src}) === '/widget/giveaway?debug'`, { timeoutMs: 10000 });
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

@@ -9,7 +9,7 @@ import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -88,8 +88,7 @@ test('chat overlay: vista previa en vivo, reverse con tope, anim none, fade e ic
     app.engine.handleChat(chat(211));
     await waitDom(c, `!!document.querySelector('.msg .pf svg[aria-label="Twitch"]') || !!document.querySelector('.msg .pf svg[aria-label="YouTube"]')`, { timeoutMs: 12000 });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await close();
+    await closeAll(() => chrome && closeChrome(chrome), close);
   }
 });
 
@@ -133,9 +132,7 @@ test('chat overlay: la config se reaplica en vivo a los mensajes existentes', { 
     await waitDom(d, `getComputedStyle(document.getElementById('root')).getPropertyValue('--fs').trim() === '31px'`, { timeoutMs: 12000, intervalMs: 20 });
     assert.ok(await dom(d, `!!document.querySelector('.msg.a-pop')`), 'la muestra demo usa la entrada nueva en cuanto llega la config');
   } finally {
-    try { if (chrome) await closeChrome(chrome); }
-    finally { if (demo) await closeChrome(demo); }
-    await close();
+    await closeAll(() => chrome && closeChrome(chrome), () => demo && closeChrome(demo), close);
   }
 });
 
@@ -171,8 +168,7 @@ test('chat overlay: efectos nuevos de entrada y salida', { timeout: 120000 }, as
     await waitDom(c, `!!document.querySelector('.msg.a-bounce')`, { timeoutMs: 12000 });
     assert.equal(await dom(c, `getComputedStyle(document.querySelector('.msg.a-bounce')).animationName`), 'inBR', 'bounce invertido entra desde arriba');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await close();
+    await closeAll(() => chrome && closeChrome(chrome), close);
   }
 });
 
@@ -254,8 +250,7 @@ test('chat overlay: mismas animaciones de entrada y salida, orientadas al orden'
       assert.equal(await leave('fade', false, animIn), 'outF', `normal: entrada ${animIn} no pisa la salida`);
     }
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await close();
+    await closeAll(() => chrome && closeChrome(chrome), close);
   }
 });
 
@@ -308,7 +303,6 @@ test('chat overlay: el mensaje que sobra por el tope sale con la animación de s
     await waitDom(c, `!!(${byN(725)})`, { timeoutMs: 12000, intervalMs: 20 });
     await waitDom(c, `!(${byN(722)}) && ${visible} === 3`, { timeoutMs: 300, intervalMs: 10 });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await close();
+    await closeAll(() => chrome && closeChrome(chrome), close);
   }
 });

@@ -9,7 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 
 const setNativeValue = `(el, v) => {
   const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
@@ -60,8 +60,7 @@ test('apariencia: el punto de partida gana a un cambio pendiente del autoguardad
     assert.equal(trasPreset.accent, '#00D1FF',
       `el preset «cian» gana al cambio pendiente (guardado ${trasPreset.accent})`);
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });
 
@@ -112,7 +111,6 @@ test('apariencia: si «Guardar» falla, avisa y el borrador sigue; «Descartar»
     await ev(`[...document.querySelectorAll('.lv-sfoot button')].find(b => b.textContent.trim() === 'Descartar').click()`);
     await waitDom(c, `document.querySelector('.ap-color input.mono').value === ${JSON.stringify(ultimo)}`, { timeoutMs: 9000 });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });

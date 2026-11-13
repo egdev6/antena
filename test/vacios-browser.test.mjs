@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
@@ -41,7 +41,7 @@ test('#4 chat vacío: caja de estado vacío con CTA a conexiones, no texto suelt
     app.engine.handleChat({ id: 'c-1', user: 'EspectadorBot', text: 'hola', platform: 'twitch', color: '#3B5CFF' });
     await waitDom(chrome.cdp, `Array.from(document.querySelectorAll('main ol.chatlog li')).some(li => li.textContent.includes('EspectadorBot'))`, { timeoutMs: 9000 });
     eq(await dom(chrome, `document.querySelectorAll('main .eg-post--empty').length`), 0, 'con mensajes no queda la caja');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('#4 archivos vacíos en Archivos: caja con CTA «Subir archivos» y desaparece al subir', { timeout: 90000 }, async t => {
@@ -63,7 +63,7 @@ test('#4 archivos vacíos en Archivos: caja con CTA «Subir archivos» y desapar
     await dom(chrome, `setTimeout(() => location.reload(), 0); 'ok'`);
     await waitDom(chrome.cdp, `!!document.querySelector('main table.lv-list tbody tr')`, { timeoutMs: 12000 });
     eq(await dom(chrome, `document.querySelectorAll('main .empty-state').length`), 0, 'con archivos no queda la caja');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('#4 recorrido del panel: ninguna vista dice «Aún no hay»', { timeout: 120000 }, async t => {
@@ -92,5 +92,5 @@ test('#4 recorrido del panel: ninguna vista dice «Aún no hay»', { timeout: 12
     await waitDom(chrome.cdp, `${EMPTY}.some(x => x.startsWith('Todavía no hay archivos'))`, { timeoutMs: 12000 });
     await dom(chrome, `location.hash = '#/directo'`);
     await waitDom(chrome.cdp, `${EMPTY}.some(x => x.startsWith('Todavía no hay mensajes'))`, { timeoutMs: 12000 });
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

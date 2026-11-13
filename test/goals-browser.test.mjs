@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { goalsBrowserUi, seedTwitchTotals } from './helpers/goals-browser-app.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
@@ -98,7 +98,7 @@ test('overlay goal.html: caja con dos barras, progreso, visibilidad de caja/barr
     await sleep(80);
     await waitDom(chrome.cdp, `document.getElementById('goal').style.display === '' && document.querySelectorAll('#bars .bar').length === 1`, { timeoutMs: 12000 });
     await shot(chrome, 'overlay-caja-restaurada.png');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('panel: el bloque Goals muestra cajas y barras; crear/editar/ocultar/borrar y add/set funcionan en la UI', { timeout: 120000 }, async t => {
@@ -163,7 +163,7 @@ test('panel: el bloque Goals muestra cajas y barras; crear/editar/ocultar/borrar
     await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 680, height: 1000, deviceScaleFactor: 1, mobile: false });
     assert2(await dom(chrome, `document.querySelector('.goal-card').scrollWidth <= document.querySelector('.goal-card').clientWidth`), true);
     await shot(chrome, '129-panel-estrecho.png');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('#129: Directo agrupa cajas y respeta visibilidad; overlay conserva cero, negativos y metas superadas en estrecho', { timeout: 90000 }, async t => {
@@ -214,7 +214,7 @@ test('#129: Directo agrupa cajas y respeta visibilidad; overlay conserva cero, n
     await waitDom(chrome.cdp, `document.querySelectorAll('.goals .goal-bar').length === 1`);
     await putBox(app, { visible: false });
     await waitDom(chrome.cdp, `document.querySelectorAll('.goals .goal').length === 0`);
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 // Espera a que el valor guardado llegue (sondeo, no un sleep fijo): en un runner lento el guardado

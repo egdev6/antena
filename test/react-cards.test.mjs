@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 
 const cssOf = (c, sel, prop) => `getComputedStyle(document.querySelector(${JSON.stringify(sel)})).${prop}`;
 
@@ -56,7 +56,6 @@ test('tarjeta común del panel: cabecera, separadores finos y pie opcional', { t
     assert.equal(foot.sep, '1px', 'el pie se separa del contenido con un filete de 1px');
     assert.equal(foot.atenuado, true, 'el texto del pie va atenuado');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });

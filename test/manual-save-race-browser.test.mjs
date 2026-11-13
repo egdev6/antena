@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const q = JSON.stringify;
@@ -251,14 +251,14 @@ async function withPanel(t, template, run) {
     } catch (error) {
       t.diagnostic(`fetch restoration unavailable: ${error.kind || error.name}; browser is being closed`);
     } finally {
-      if (chrome) await closeChrome(chrome);
-      app.timers.stop();
-      app.teleprompter.stop();
-      app.viewers.stop();
-      app.meld.stop();
-      app.chat.stop();
-      app.server.closeAllConnections();
-      await app.closeHttp(); // also clears SSE heartbeat timers and destroys remaining sockets
+      await closeAll(() => chrome && closeChrome(chrome), () => {
+        app.timers.stop();
+        app.teleprompter.stop();
+        app.viewers.stop();
+        app.meld.stop();
+        app.chat.stop();
+        app.server.closeAllConnections();
+      }, () => app.closeHttp()); // also clears SSE heartbeat timers and destroys remaining sockets
     }
   }
 }

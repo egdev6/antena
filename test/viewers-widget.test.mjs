@@ -100,7 +100,7 @@ test('widgets.viewers config has defaults and is editable through PUT /api/widge
 // #64: with "Color de cada plataforma" on, each platform card takes its own theme color
 // (like the goal bars, via pf-<platform>), and the total card keeps the general accent.
 test('viewers widget paints each platform card with its theme color', { timeout: 90000 }, async t => {
-  const { closeChrome, findChrome, openChromePage, waitDom } = await import('./helpers/react-browser.mjs');
+  const { closeAll, closeChrome, findChrome, openChromePage, waitDom } = await import('./helpers/react-browser.mjs');
   const { evaluateChrome } = await import('./helpers/chrome-dom.mjs');
   const bin = await findChrome();
   if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la regresión de navegador');
@@ -115,5 +115,5 @@ test('viewers widget paints each platform card with its theme color', { timeout:
     const red = await evaluateChrome(c, `JSON.stringify(Object.fromEntries(['twitch', 'youtube', 'total'].map(id =>
       [id, getComputedStyle(document.querySelector('.item-' + id)).getPropertyValue('--red').trim().toLowerCase()])))`);
     assert.deepEqual(JSON.parse(red), { twitch: '#9146ff', youtube: '#ff0000', total: '#00ff00' });
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

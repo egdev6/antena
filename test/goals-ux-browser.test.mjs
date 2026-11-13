@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { goalsBrowserUi, seedTwitchTotals } from './helpers/goals-browser-app.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
@@ -95,7 +95,7 @@ test('O1 overlay: relleno recortado, color de plataforma, cabecera configurable 
     await waitDom(chrome.cdp, `getComputedStyle(document.getElementById('kick')).display === 'none' && getComputedStyle(document.getElementById('title')).display === 'none'`, { timeoutMs: 12000 });
     await putBox(app, { label: '', showLabel: true, showTitle: true });
     await waitDom(chrome.cdp, `document.getElementById('kick').textContent === 'Objetivo' && getComputedStyle(document.getElementById('kick')).display !== 'none' && getComputedStyle(document.getElementById('title')).display !== 'none'`, { timeoutMs: 12000 });
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('O1 panel: tabla de objetivos → slide, + Nuevo objetivo, cabecera, hint CSS y preview que se recarga con la config', { timeout: 120000 }, async t => {
@@ -144,7 +144,7 @@ test('O1 panel: tabla de objetivos → slide, + Nuevo objetivo, cabecera, hint C
     await waitDom(chrome.cdp, `location.hash.startsWith('#/widgets/objetivos/') && !location.hash.endsWith('/nuevo') && ${title} === 'Nuevo objetivo'`, { timeoutMs: 12000 });
     await dom(chrome, `location.hash = '#/widgets/objetivos'`);
     await waitDom(chrome.cdp, `${rows}.length === 3`, { timeoutMs: 12000 });
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 // #132: a never-read channel total is unknown, not zero, across overlay and panel.
@@ -173,7 +173,7 @@ test('S2/S5/S7 overlay: total desconocido, etiqueta, demo y lecturas posteriores
     await chrome.cdp.send('Page.navigate', { url: `${base}/widget/goal?id=yt&debug&demo` });
     await waitDom(chrome.cdp, `document.querySelector('.pct')?.textContent === '700/1000'`);
     eq(await dom(chrome, `document.querySelector('.fill').style.width`), '70%');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('S2/S5/S7 panel: — en lista, editor y Directo; opciones y etiqueta de suscriptores', { timeout: 90000 }, async t => {
@@ -203,7 +203,7 @@ test('S2/S5/S7 panel: — en lista, editor y Directo; opciones y etiqueta de sus
     eq(await dom(chrome, `document.querySelector('.goals .goal-bar b').textContent`), '—/1000');
     eq(await dom(chrome, `document.querySelector('.goals .goal-metric').textContent`), ' · Suscriptores');
     eq(await dom(chrome, `document.querySelector('.goals [role=progressbar]').getAttribute('aria-valuenow')`), '0');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('S7/S8 panel: error de lectura y Fijar sin lectura, con corrección persistente', { timeout: 90000 }, async t => {
@@ -248,7 +248,7 @@ test('S7/S8 panel: error de lectura y Fijar sin lectura, con corrección persist
     const next = await fetch(`${base}/api/session/new`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     eq(next.status, 200);
     eq((await status()).channelTotals['subscribers@youtube'].value, 9);
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 async function eventually(read, expected, timeoutMs = 5000) {
@@ -305,5 +305,5 @@ test('O1 panel: cambiar la plataforma de una barra se guarda con una métrica v�
     await waitDom(chrome.cdp, `!!document.querySelector('.toast.on.err')`, { timeoutMs: 9000 });
     await waitDom(chrome.cdp, `${meta}.value === '200'`, { timeoutMs: 9000 });
     eq(bar('b1').target, 200);
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

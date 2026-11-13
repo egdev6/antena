@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 
 test('tarjeta del sorteo: filas de participantes, quitar accesible y premio en cabecera', { timeout: 90000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
@@ -74,7 +74,6 @@ test('tarjeta del sorteo: filas de participantes, quitar accesible y premio en c
     assert.equal(wins.hay, true, 'sigue la tarjeta de ganadores');
     assert.equal(wins.filas, 1, 'el ganador del sorteo sintético aparece como fila');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { fakeMeldRecording } from './helpers/fake-meld-recording.mjs';
-import { findChrome, closeChrome, openChromePage, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
+import { findChrome, closeAll, closeChrome, openChromePage, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const dom = (chrome, expression) => evaluateChrome(chrome.cdp, expression, { timeoutMs: 12000 });
@@ -35,14 +35,13 @@ async function setup(t) {
   const meld = fakeMeldRecording(), pages = [];
   let app;
   t.after(async () => {
-    for (const page of pages) await closeChrome(page);
-    if (app) {
-      await app.drainAutoSession().catch(() => {});
-      await app.session.flush().catch(() => {});
-      app.meld.stop(); await app.closeHttp().catch(() => {});
-    }
-    await new Promise(resolve => meld.server.close(resolve));
-    await rm(dir, { recursive: true, force: true });
+    await closeAll(...pages.map(page => () => closeChrome(page)), async () => {
+      if (app) {
+        await app.drainAutoSession().catch(() => {});
+        await app.session.flush().catch(() => {});
+        app.meld.stop(); await app.closeHttp().catch(() => {});
+      }
+    }, () => new Promise(resolve => meld.server.close(resolve)), () => rm(dir, { recursive: true, force: true }));
   });
   await new Promise(resolve => meld.server.listen(0, '127.0.0.1', resolve));
   app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });

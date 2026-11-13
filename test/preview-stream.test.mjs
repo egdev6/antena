@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function withProxy(t, run) {
@@ -41,11 +41,8 @@ async function withProxy(t, run) {
     await run(chrome.cdp, requests, base);
   } finally {
     for (const timer of pending) clearTimeout(timer);
-    if (chrome) await closeChrome(chrome);
-    proxy.closeAllConnections();
-    await app.closeHttp();
-    await new Promise(resolve => proxy.close(resolve));
-    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => chrome && closeChrome(chrome), () => proxy.closeAllConnections(), () => app.closeHttp(),
+      () => new Promise(resolve => proxy.close(resolve)), () => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   }
 }
 

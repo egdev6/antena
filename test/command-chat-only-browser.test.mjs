@@ -5,7 +5,7 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage, waitDom, clickWhen } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, waitDom, clickWhen } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const quote = JSON.stringify;
@@ -36,11 +36,9 @@ async function panel(run) {
     await waitDom(c, `!!document.querySelector('.lv-drawer input.mono') && !!(${button('Crear comando')})`, { timeoutMs: 15000 });
     await run({ c, dom, api });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    if (app) {
-      app.timers.stop(); app.server.closeAllConnections(); await app.closeHttp();
-    }
-    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => chrome && closeChrome(chrome), async () => {
+      if (app) { app.timers.stop(); app.server.closeAllConnections(); await app.closeHttp(); }
+    }, () => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   }
 }
 

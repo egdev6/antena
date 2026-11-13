@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const dom = (chrome, expr) => evaluateChrome(chrome.cdp, expr, { timeoutMs: 12000 });
@@ -111,7 +111,6 @@ test('O3.3 páginas de widgets: fuente de navegador primero a la izquierda y vis
     await dom(chrome, `location.hash = ${JSON.stringify('#/widgets/objetivos/' + encodeURIComponent(goal.id))}`);
     await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="goals-editor"] .widget-layout')`, { timeoutMs: 12000 });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    app.timers.stop(); app.server.closeAllConnections(); app.server.close();
+    await closeAll(() => chrome && closeChrome(chrome), () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
 });

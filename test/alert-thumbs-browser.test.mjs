@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const frame = type => `document.querySelector('.lv-still iframe[src*="still=${type}&"]')`;
@@ -51,7 +51,6 @@ test('alertas: la miniatura es el overlay real y sigue a Apariencia y a la confi
     await waitDom(c, `${frame('raid')}?.src !== ${JSON.stringify(src1)}`, { timeoutMs: 9000 });
     await waitDom(c, inFrame('raid', `getComputedStyle(d.querySelector('.alert')).getPropertyValue('--accent').trim().toUpperCase() === '#00D1FF'`), { timeoutMs: 12000 });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    app.timers.stop(); app.server.closeAllConnections(); app.server.close();
+    await closeAll(() => chrome && closeChrome(chrome), () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
 });

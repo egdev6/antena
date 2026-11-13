@@ -12,7 +12,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
@@ -100,7 +100,7 @@ test('a 1024 los 6 KPIs del directo se reparten 3×2 sin huérfanos y a 1440 cab
       assert.equal(width === 500 ? wrong.stacked : wrong.sideBySide, false, `${width}: detecta la disposición incorrecta`);
       await dom(c, `document.querySelector('.dir-pulse-grid').style.removeProperty('grid-template-columns')`);
     }
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('a 1024 la barra lateral corta grupo e items por palabra y el placeholder del chat es corto', { timeout: 120000 }, async t => {
@@ -133,7 +133,7 @@ test('a 1024 la barra lateral corta grupo e items por palabra y el placeholder d
     assert.equal(await dom(c, `document.querySelector('.chat-send input').placeholder`), 'Escribe en tu chat…');
     const hint = await dom(c, `document.querySelector('.view-head .hint')?.textContent || ''`);
     assert.ok(hint.includes('no salen en el chat en pantalla'), 'el aviso «tus mensajes no salen en el chat en pantalla» debe quedar como hint de la vista');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('en /prompter las dos pestañas caben y los bloques de Eventos llenan el alto con scroll propio', { timeout: 120000 }, async t => {
@@ -173,5 +173,5 @@ test('en /prompter las dos pestañas caben y los bloques de Eventos llenan el al
     await waitDom(c, `document.querySelectorAll('.ev-list')[0].scrollTop > 0`, { timeoutMs: 9000 });
     assert.equal(await dom(c, `document.querySelectorAll('.ev-list')[1].scrollTop`), 0);
     assert.equal(await dom(c, `document.documentElement.scrollWidth <= document.documentElement.clientWidth`), true, 'la página no desborda a lo ancho');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
