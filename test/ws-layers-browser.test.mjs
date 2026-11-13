@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { WsResponse } from '../src/ws-stream.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function withApp(t, run) {
@@ -22,10 +22,10 @@ async function withApp(t, run) {
     chrome = await openChromePage(bin, 'about:blank');
     await run({ app, base, c: chrome.cdp });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    for (const name of ['timers', 'teleprompter', 'viewers', 'meld', 'chat']) app[name].stop();
-    app.server.closeAllConnections();
-    await app.closeHttp();
+    await closeAll(() => chrome && closeChrome(chrome), () => {
+      for (const name of ['timers', 'teleprompter', 'viewers', 'meld', 'chat']) app[name].stop();
+      app.server.closeAllConnections();
+    }, () => app.closeHttp());
   }
 }
 const viewers = n => ({ twitch: { live: true, current: n, peak: n, record: n }, youtube: { live: false, current: 0, peak: 0, record: 0 } });

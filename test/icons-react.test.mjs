@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 test('ninguna fuente de app/src usa dangerouslySetInnerHTML', async () => {
@@ -54,7 +54,6 @@ test('los iconos pintan el mismo SVG que antes (barra lateral e IconBtn)', { tim
     })`, { timeoutMs: 12000 }));
     assert.deepEqual(got, BEFORE);
   } finally {
-    if (chrome) await closeChrome(chrome);
-    app.timers.stop(); app.server.closeAllConnections(); app.server.close();
+    await closeAll(() => chrome && closeChrome(chrome), () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
 });

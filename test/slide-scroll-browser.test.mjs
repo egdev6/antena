@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const settle = c => evaluateChrome(c, 'new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => r(true), 150))))');
@@ -90,8 +90,7 @@ test('slides: the wheel scrolls the slide, never the page behind it', { timeout:
     await wheel(c, page.x, page.y);
     assert.ok(await ev('scrollY') > 0, 'the page scrolls again once the slide is closed');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    app.timers.stop(); app.server.closeAllConnections(); app.server.close();
-    await rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => chrome && closeChrome(chrome), () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); },
+      () => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   }
 });

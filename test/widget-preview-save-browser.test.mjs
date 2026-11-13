@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -47,7 +47,6 @@ test('widget chat: a field changed from the panel is saved and reaches the previ
     assert.equal(await fontSize(), 40, 'the panel saves the change with PUT /api/widgets');
     await waitDom(c, `${previewFs} === '40px'`, { timeoutMs: 8000 });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    app.timers.stop(); app.server.closeAllConnections(); app.server.close();
+    await closeAll(() => chrome && closeChrome(chrome), () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
 });

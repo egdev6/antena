@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const route = '/api/widgets/chat/variants';
@@ -77,11 +77,11 @@ async function fixture(t) {
   const app = await createApp({ dataDir: dir, mediaDir: path.join(dir, 'media'), log: () => {} });
   let chrome;
   t.after(async () => {
-    if (chrome) await closeChrome(chrome);
-    app.teleprompter.stop(); app.viewers.stop(); app.meld.stop(); app.timers.stop();
-    app.engine.flushScheduledSends(); app.server.closeAllConnections();
-    await new Promise(resolve => app.server.close(resolve));
-    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => chrome && closeChrome(chrome), () => {
+      app.teleprompter.stop(); app.viewers.stop(); app.meld.stop(); app.timers.stop();
+      app.engine.flushScheduledSends(); app.server.closeAllConnections();
+    }, () => new Promise(resolve => app.server.close(resolve)),
+    () => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   });
   await new Promise((resolve, reject) => {
     app.server.once('error', reject); app.server.listen(0, '127.0.0.1', resolve);

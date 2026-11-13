@@ -97,6 +97,16 @@ async function closesWithin(done, ms) {
   } finally { clearTimeout(timer); }
 }
 
+/** Run all cleanup steps in order, preserving the first failure. */
+export async function closeAll(...steps) {
+  let failed = false, firstError;
+  for (const step of steps) {
+    try { await step(); }
+    catch (error) { if (!failed) { failed = true; firstError = error; } }
+  }
+  if (failed) throw firstError;
+}
+
 /** Close CDP and Chrome once, then best-effort remove its temporary profile. */
 export function closeChrome(chrome) {
   if (closeTasks.has(chrome)) return closeTasks.get(chrome);
@@ -106,6 +116,12 @@ export function closeChrome(chrome) {
       try { cdp?.close(); } catch { /* The socket may already be closed. */ }
       if (child) {
         const state = trackChild(child);
+        // Startup diagnostics are no longer needed; an open pipe can delay 'close'.
+        if (child.stderr) {
+          child.stderr.pause();
+          child.stderr.removeAllListeners('data');
+          child.stderr.destroy();
+        }
         if (!state.closed && child.exitCode === null && child.signalCode === null) child.kill();
         if (!await closesWithin(state.done, 1500)) {
           if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');

@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const stamp = '2026-01-03T00:07:00Z';
@@ -46,9 +46,7 @@ test('fechas React: panel local dd/MM/yyyy HH:mm, reloj 24h y duración dock int
     assert.equal(await ev(`document.querySelector('.d-live b').textContent`), '1:05');
     await capture('dock-duration');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
-    await app.session.flush();
-    await rm(dataDir, { recursive: true, force: true });
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)),
+      () => app.session.flush(), () => rm(dataDir, { recursive: true, force: true }));
   }
 });

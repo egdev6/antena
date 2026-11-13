@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const dom = (c, expression) => evaluateChrome(c.cdp, expression, { timeoutMs: 12000 });
@@ -30,12 +30,12 @@ async function fixture(t, { gap = true, missing = false, stale = false, goals = 
   const root = await mkdtemp(path.join(tmpdir(), 'antena-directo-monitor-'));
   let app, chrome;
   t.after(async () => {
-    if (chrome) await closeChrome(chrome);
-    if (app) {
-      app.viewers.halt(); await app.youtube.quiescePoll(); await app.chat.quiesceChat();
-      await app.drainAutoSession(); await app.drainChatMetrics(); await app.session.flush(); await app.closeHttp();
-    }
-    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => chrome && closeChrome(chrome), async () => {
+      if (app) {
+        app.viewers.halt(); await app.youtube.quiescePoll(); await app.chat.quiesceChat();
+        await app.drainAutoSession(); await app.drainChatMetrics(); await app.session.flush(); await app.closeHttp();
+      }
+    }, () => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   });
   const now = Math.floor(Date.now() / 1000) * 1000, start = now - ageSeconds * 1000;
   const at = seconds => new Date(start + seconds * 1000).toISOString();

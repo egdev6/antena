@@ -9,7 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage } from './helpers/react-browser.mjs';
 import { fakeMeld } from './helpers/fake-meld.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -81,9 +81,8 @@ test('un overlay propio recibe la alerta por el SDK dentro del marco opaco', { t
     assert.equal(hit.searchParams.get('user'), 'ana');
     assert.equal(hit.searchParams.get('title'), 'Nuevo seguidor');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await back.close();
-    app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
+    await closeAll(() => chrome && closeChrome(chrome), () => back.close(),
+      () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
 });
 
@@ -135,9 +134,8 @@ test('probar_overlay: la prueba llega al marco de su capa y a ninguna otra', { t
     const seen = new URL(await back.waitFor(h => h === '/a-viewers?current=' + current), back.base);
     assert.equal(seen.searchParams.get('current'), String(current));
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await back.close();
-    app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
+    await closeAll(() => chrome && closeChrome(chrome), () => back.close(),
+      () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
 });
 
@@ -179,10 +177,8 @@ test('S11b: antena.run aprobado ejecuta la acción y Meld cambia de escena', { t
     assert.deepEqual(meldSrv.state.calls, [[10, 's2']], 'el motor cambió de escena en Meld');
     assert.equal(app.meld.session().scenes.find(s => s.current).name, 'Pantalla');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await back.close();
-    meldSrv.server.close();
-    app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
+    await closeAll(() => chrome && closeChrome(chrome), () => back.close(), () => meldSrv.server.close(),
+      () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
 });
 
@@ -222,9 +218,7 @@ test('S11b: antena.run sin aprobación rechaza la promesa y no toca Meld', { tim
     assert.deepEqual(meldSrv.state.calls, [], 'no se ejecutó ninguna acción');
     assert.equal(app.meld.session().scenes.find(s => s.current).name, 'Cámara');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await back.close();
-    meldSrv.server.close();
-    app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close();
+    await closeAll(() => chrome && closeChrome(chrome), () => back.close(), () => meldSrv.server.close(),
+      () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
 });

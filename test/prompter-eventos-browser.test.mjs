@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const dom = (cdp, expr) => evaluateChrome(cdp, expr, { timeoutMs: 12000 });
@@ -128,7 +128,6 @@ test('prompter: Eventos con Cronología y Destacados, cabecera compacta y sin lo
     await clickWhen(c, `Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Ocultar'))`);
     await waitDom(c, `document.body.textContent.includes('Ninguna pregunta en pantalla')`, { timeoutMs: 9000 });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });

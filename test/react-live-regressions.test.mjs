@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -93,7 +93,7 @@ test('chat React: tope de 200 mensajes con anclaje de scroll y borrador intactos
       const draft = document.querySelector('.chat-send input:not([placeholder="canal de Twitch (vacío = el tuyo)"])').value;
       return a.row.text === b.row.text && Math.abs(a.row.y - b.row.y) <= 4 && a.sel === b.sel && draft === 'Borrador sintético, sin enviar' && log.querySelectorAll('li').length <= 200;
     })()`, { timeoutMs: 10000 });
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 // Carrera real (CI de Windows): un gap o una reconexión lanza load() y la instantánea de
@@ -142,7 +142,7 @@ test('chat React: un borrado durante una recarga en vuelo no reaparece con la in
     await sleep(500);
     const text = await dom(chrome, `document.querySelector('.chatlog').textContent`);
     if (/Se borra|Se limpia/.test(text) || !/Se queda/.test(text)) throw new Error('la instantánea vieja deshizo el borrado: ' + text);
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('chat React: tras un corte de SSE reconecta, recarga el snapshot y muestra el aviso', { timeout: 90000 }, async t => {
@@ -170,5 +170,5 @@ test('chat React: tras un corte de SSE reconecta, recarga el snapshot y muestra 
     await waitDom(c, `Array.from(document.querySelectorAll('.chatlog li')).some(li => li.textContent.includes('Durante el corte'))`, { timeoutMs: 20000 });
     await waitDom(c, '!document.querySelector(".offline")', { timeoutMs: 15000 });
     await waitDom(c, `Array.from(document.querySelectorAll('.chatlog li')).some(li => li.textContent.includes('Antes del corte'))`, { timeoutMs: 5000 });
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

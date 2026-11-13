@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
@@ -66,5 +66,5 @@ test('las tres superficies redactan el estado de conexión igual', { timeout: 90
     await waitDom(chrome.cdp, `!!(${pillText('.pr-warns', 'Twitch ·')} && ${pillText('.pr-warns', 'Meld ·')})`, { timeoutMs: 15000 });
     eq(await dom(chrome, pillText('.pr-warns', 'Twitch ·')), panel.twitch);
     eq(await dom(chrome, pillText('.pr-warns', 'Meld ·')), panel.meld);
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

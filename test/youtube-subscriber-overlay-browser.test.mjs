@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { buildAlert } from '../src/alerts.mjs';
-import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const CDN = 'https://yt3.ggpht.com';
@@ -59,10 +59,9 @@ async function fixture(t, bin) {
   const dir = await mkdtemp(path.join(tmpdir(), 'ytsub-overlay-'));
   let app, chrome, gate;
   t.after(async () => {
-    if (gate) await gate.close();
-    if (chrome) await closeChrome(chrome);
-    if (app) { app.followers.halt(); app.channelTotals.halt(); await app.closeHttp(); }
-    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => gate && gate.close(), () => chrome && closeChrome(chrome), async () => {
+      if (app) { app.followers.halt(); app.channelTotals.halt(); await app.closeHttp(); }
+    }, () => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   });
   app = await createApp({ dataDir: dir, mediaDir: path.join(dir, 'media'), log: () => {} });
   await writeFile(path.join(dir, 'media', 'background.svg'), svg);

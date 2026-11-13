@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
 
 test('panel React: etiquetas de la cronología, «Probar» con texto y marca más grande', { timeout: 90000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
@@ -50,7 +50,6 @@ test('panel React: etiquetas de la cronología, «Probar» con texto y marca má
     const probar = await ev(`Array.from(document.querySelectorAll('button')).filter(b => b.textContent.trim() === 'Probar').length`);
     assert.ok(probar >= 1, 'el botón «Probar» de la variación muestra su texto');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });

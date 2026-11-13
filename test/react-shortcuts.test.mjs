@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
 
 // Los inputs controlados de React necesitan el setter nativo + evento input.
 const typeInto = (el, text) => `(() => {
@@ -64,7 +64,6 @@ test('atajos React: crear, editar, probar y borrar un atajo desde el panel', { t
     await new Promise(r => setTimeout(r, 400));
     assert.equal(custom().length, 0, 'el atajo se borró de la configuración del servidor');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });
