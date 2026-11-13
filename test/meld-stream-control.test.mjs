@@ -182,3 +182,90 @@ test('las rutas genéricas command y call conservan sus respuestas y órdenes', 
   assert.deepEqual(commandCalls(f.meld), [[12, 'meld.screenshot'], [12, 'meld.recordClip']]);
   assert.deepEqual(await current(f.api), before);
 });
+
+test('peticiones simultáneas no duplican órdenes sin cambio de estado', async t => {
+  const f = await setup(t);
+  await f.connect();
+  const before = await current(f.api);
+
+  const starts = await Promise.all(Array.from({ length: 4 }, () =>
+    f.api('POST', '/api/meld/stream', { action: 'start' })));
+  assert.ok(starts.some(r => r.status === 200));
+  assert.deepEqual(commandCalls(f.meld), [[12, 'meld.startStreamingAction']]);
+  assert.deepEqual(await current(f.api), before);
+
+  const reset = nextWhere(f.app.session, 'change', v => v.reset);
+  await f.report(true);
+  await reset;
+  const stops = await Promise.all(Array.from({ length: 2 }, () =>
+    f.api('POST', '/api/meld/stream', { action: 'stop' })));
+  assert.ok(stops.some(r => r.status === 200));
+  assert.deepEqual(commandCalls(f.meld), [
+    [12, 'meld.startStreamingAction'],
+    [12, 'meld.stopStreamingAction'],
+  ]);
+});
+
+test('acciones JSON duplicadas y contradictorias se rechazan sin orden', async t => {
+  const f = await setup(t, { omitStreaming: true });
+  await f.connect();
+  const before = await current(f.api);
+  const url = `http://127.0.0.1:${f.app.server.address().port}/api/meld/stream`;
+
+  for (const body of [
+    '{"action":"stop","action":"start"}',
+    '{"action":"start","action":"stop"}',
+  ]) {
+    const r = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+    });
+    assert.equal(r.status, 400);
+    assert.deepEqual(commandCalls(f.meld), []);
+    assert.deepEqual(await current(f.api), before);
+  }
+});
+
+test('la orden pendiente bloquea duplicados hasta la confirmación o el plazo inyectado', async t => {
+  let now = 0;
+  t.mock.method(performance, 'now', () => now);
+  const f = await setup(t); await f.connect();
+  const before = await current(f.api);
+  assert.equal((await f.api('POST', '/api/meld/stream', { action: 'start' })).status, 200);
+  const duplicate = await f.api('POST', '/api/meld/stream', { action: 'start' });
+  assert.equal(duplicate.status, 409); assert.match(duplicate.body.error, /pendiente/i);
+  now += 19999;
+  assert.equal((await f.api('POST', '/api/meld/stream', { action: 'start' })).status, 409);
+  assert.deepEqual(commandCalls(f.meld), [[12, 'meld.startStreamingAction']]);
+  assert.deepEqual(await current(f.api), before);
+  now += 1;
+  assert.equal((await f.api('POST', '/api/meld/stream', { action: 'start' })).status, 200);
+  const reset = nextWhere(f.app.session, 'change', v => v.reset);
+  await f.report(true); await reset;
+  assert.equal((await f.api('POST', '/api/meld/stream', { action: 'stop' })).status, 200);
+  assert.equal((await f.api('POST', '/api/meld/stream', { action: 'stop' })).status, 409);
+  const ended = nextWhere(f.app.session, 'change', v => v.ended);
+  await f.report(false); await ended;
+  assert.equal((await f.api('POST', '/api/meld/stream', { action: 'start' })).status, 200);
+  assert.deepEqual(commandCalls(f.meld), [
+    [12, 'meld.startStreamingAction'], [12, 'meld.startStreamingAction'],
+    [12, 'meld.stopStreamingAction'], [12, 'meld.startStreamingAction'],
+  ]);
+});
+
+test('claves action duplicadas incluso con escapes JSON no envían órdenes', async t => {
+  const f = await setup(t, { omitStreaming: true }); await f.connect();
+  const before = await current(f.api);
+  const url = `http://127.0.0.1:${f.app.server.address().port}/api/meld/stream`;
+  for (const body of [
+    '{"action":"start","action":"start"}',
+    '{"\\u0061ction":"start","action":"stop"}',
+    '{"action":"start","\\u0061ction":"stop"}',
+  ]) {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    assert.equal(r.status, 400); assert.match((await r.json()).error, /acción/i);
+    assert.deepEqual(commandCalls(f.meld), []); assert.deepEqual(await current(f.api), before);
+  }
+  const valid = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"\\u0061ction":"start"}' });
+  assert.equal(valid.status, 200); assert.deepEqual(await valid.json(), { requested: 'start', streaming: null });
+  assert.deepEqual(commandCalls(f.meld), [[12, 'meld.startStreamingAction']]);
+});

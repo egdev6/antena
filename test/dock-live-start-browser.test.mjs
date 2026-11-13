@@ -222,3 +222,26 @@ test('contadores por plataforma: valores frescos, cero real y sin dato para falt
   await v.tick();
   await waitDom(chrome.cdp, `${counter('twitch')}.textContent.includes('sin dato') && ${counter('youtube')}.textContent.includes('18')`);
 });
+
+test('un viewer_count ausente no se muestra como cero', { timeout: 60000 }, async t => {
+  const f = await start(t); if (!f) return;
+  let row = { id: 'synthetic-live', viewer_count: 37 };
+  const v = f.app.viewers;
+  v.twitch = {
+    userId: 'synthetic', token: 'synthetic',
+    helix: async () => ({ ok: true, data: { data: [row] } }),
+  };
+  v.readers.youtube = async () => ({ live: false, off: true });
+  await v.tick();
+  const chrome = await f.open();
+  const value = `${counter('twitch')}.querySelector('b').textContent`;
+  await waitDom(chrome.cdp, `${value} === '37'`);
+
+  row = { id: 'synthetic-live' };
+  await v.tick();
+  await waitDom(chrome.cdp, `${value} === 'sin dato'`);
+
+  row = { id: 'synthetic-live', viewer_count: 0 };
+  await v.tick();
+  await waitDom(chrome.cdp, `${value} === '0'`);
+});

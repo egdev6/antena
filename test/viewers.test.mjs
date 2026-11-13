@@ -187,3 +187,20 @@ test('lectores reales con clientes falsos: readTwitch y readYouTube', async () =
   const ytGone = { status: { videoId: 'v1', state: 'escuchando' }, api: async () => ({ items: [] }) };
   assert.deepEqual(await w.readYouTube.call({ youtube: ytGone }), { live: false });
 });
+
+test('cifras ausentes o no numéricas son desconocidas en ambas plataformas; cero es válido', async () => {
+  const { w } = setup();
+  let count;
+  w.twitch = { userId: 'synthetic', token: 'synthetic', helix: async () => ({ ok: true, data: { data: [{ viewer_count: count }] } }) };
+  w.youtube = { status: { videoId: 'synthetic', state: 'escuchando' }, api: async () => ({ items: [{ liveStreamingDetails: { concurrentViewers: count } }] }) };
+  for (const value of [undefined, null, '', '  ', 'no-numérico', false, [], {}, NaN, Infinity]) {
+    count = value;
+    assert.deepEqual(await w.readTwitch(), { live: true, viewers: null });
+    assert.deepEqual(await w.readYouTube(), { live: true, viewers: null });
+  }
+  for (const value of [0, '0']) {
+    count = value;
+    assert.deepEqual(await w.readTwitch(), { live: true, viewers: 0 });
+    assert.deepEqual(await w.readYouTube(), { live: true, viewers: 0 });
+  }
+});
