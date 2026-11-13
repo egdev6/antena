@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { get, post, put } from '../../lib/api';
+import { enc, get, post, put } from '../../lib/api';
 import { ViewerChart, type ViewerSeries } from '../../lib/charts';
 import { IC } from '../../lib/icons';
 import { live, useLive } from '../../lib/live';
 import { goalMetricLabel } from '../../lib/goal';
-import { ConnPill, copy, cx, EmptyState, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, Sec, Status, toast, type Tone } from '../../lib/ui';
-import type { AlertType, AppState, ChatSendResult, Platform, SessionList, SessionSummary, TimelineItem, ViewerPlatform, ViewerSettings } from '../../lib/types';
+import { ConnPill, copy, cx, EmptyState, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, ScaledFrame, Sec, Status, toast, type Tone } from '../../lib/ui';
+import type { AlertType, AppState, ChatSendResult, ChatVariant, Platform, SessionList, SessionSummary, TimelineItem, ViewerPlatform, ViewerSettings } from '../../lib/types';
 import { SendTo, sendResultText } from './Chat';
 import { formatCoverage, formatNumber, platformNames, platforms, type ChatMetric, type Summary, type ViewerMetric } from './directos/model';
 
@@ -181,6 +181,84 @@ function ChatBox() {
   </div>;
 }
 
+const PREVIEW_VISIBLE = 'egdev.panel.directo.chat-preview.visible';
+const PREVIEW_VARIANT = 'egdev.panel.directo.chat-preview.variant';
+const VARIANTS_ROUTE = '/api/widgets/chat/variants';
+
+function readPreviewPreference(key: string) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function writePreviewPreference(key: string, value: string) {
+  try { localStorage.setItem(key, value); } catch { /* el panel funciona sin almacenamiento */ }
+}
+
+/** A local view of the real widget, independent of the editor's unsaved drafts. */
+function ChatPreview() {
+  const savedWidgets = useLive(s => s.widgets?.widgets);
+  const [visible, setVisible] = useState(() => readPreviewPreference(PREVIEW_VISIBLE) === 'true');
+  const [id, setId] = useState(() => readPreviewPreference(PREVIEW_VARIANT) || 'default');
+  const [variants, setVariants] = useState<ChatVariant[] | null>(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!visible) return;
+    let active = true, eventVersion = 0, requestVersion = 0;
+    const refresh = () => {
+      const eventAtStart = eventVersion, request = ++requestVersion;
+      get<ChatVariant[]>(VARIANTS_ROUTE).then(list => {
+        if (!Array.isArray(list)) throw new Error('Respuesta no válida');
+        if (active && request === requestVersion && eventAtStart === eventVersion) { setVariants(list); setError(''); }
+      }).catch(e => {
+        if (active && request === requestVersion && eventAtStart === eventVersion) setError(`No se pudieron cargar las variantes: ${e instanceof Error ? e.message : 'error desconocido'}`);
+      });
+    };
+    // A later saved widgets event wins over an older GET; config.widgets can be a draft.
+    const off = live.on('widgets', state => {
+      const list = state.widgets?.chatVariants;
+      if (!Array.isArray(list)) return;
+      eventVersion++; setVariants(list); setError('');
+    });
+    const offOpen = live.onOpen(refresh);
+    refresh();
+    return () => { active = false; off(); offOpen(); };
+  }, [visible, attempt]);
+
+  useEffect(() => {
+    if (visible && variants && id !== 'default' && !variants.some(v => v.id === id)) {
+      setId('default'); writePreviewPreference(PREVIEW_VARIANT, 'default');
+      setNotice('La variante ya no existe. Se muestra el chat predeterminado.');
+    }
+  }, [visible, variants, id]);
+
+  const toggle = (next: boolean) => {
+    // A list from an earlier visit cannot confirm whether a variant still exists.
+    setVariants(null); setError(''); setVisible(next); writePreviewPreference(PREVIEW_VISIBLE, String(next));
+  };
+  const choose = (next: string) => {
+    setId(next); setNotice(''); writePreviewPreference(PREVIEW_VARIANT, next);
+  };
+  const selected = variants?.find(v => v.id === id);
+  const horizontal = (id === 'default' ? savedWidgets?.chat?.layout : selected?.layout) === 'horizontal';
+  const src = id === 'default' ? '/widget/chat' : `/widget/chat?variant=${enc(id)}`;
+  return <div className="dir-widget-preview">
+    <label className="check" htmlFor="dir-chat-preview"><input id="dir-chat-preview" type="checkbox" checked={visible} onChange={e => toggle(e.target.checked)} /> Vista previa del widget de chat</label>
+    {visible && <div className="dir-widget-preview__content">
+      {variants && variants.length > 0 && <label htmlFor="dir-chat-variant">Variante de chat<select id="dir-chat-variant" value={id} onChange={e => choose(e.target.value)}>
+        <option value="default">Predeterminada</option>{variants.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+      </select></label>}
+      {!variants && !error && <p className="hint" role="status">Cargando variantes…</p>}
+      {error && <p className="hint" role="alert">{error} <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => { setError(''); setAttempt(n => n + 1); }}>Reintentar</button></p>}
+      {notice && <p className="hint" role="status">{notice}</p>}
+      <figure className={cx('eg-stage', 'dir-widget-stage', horizontal && 'is-horizontal')}>
+        <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista previa</span><span className="eg-stage__spacer" /><span>Mensajes reales</span></figcaption>
+        <ScaledFrame src={src} w={horizontal ? 1832 : 600} h={horizontal ? 160 : 900} title="Vista previa del widget de chat" />
+      </figure>
+    </div>}
+  </div>;
+}
+
 export function Directo() {
   const s = useLive(x => x), tl = live.timeline;
   const [ses, setSes] = useState<LiveSession | null>(null);
@@ -250,7 +328,7 @@ export function Directo() {
         <Timeline items={tl.items} types={s.types} />
       </Sec>
       <Sec title="Control de respaldo" id="h-backup" aside={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={mark}><Icon d={IC.bookmark} className="eg-btn__icon" />Marcar momento</button>}>
-        <AlertsCard /><ChatBox />
+        <AlertsCard /><ChatBox /><ChatPreview />
       </Sec>
     </div>
     <div className="dir-extras"><GoalBars />

@@ -315,7 +315,7 @@ Están en **Widgets** y cada uno tiene su capa de navegador. Su estado (pregunta
 
 ### Directo, chat e historial
 
-- **Directo:** totales, objetivos, cronología, resumen en Markdown (copiar o descargar), lanzar créditos y empezar un directo nuevo (el anterior queda archivado con su resumen). Las barras de total del canal conservan su valor y sus correcciones entre directos; las demás cuentan por directo.
+- **Directo:** totales, objetivos, cronología, resumen en Markdown (copiar o descargar), lanzar créditos y empezar un directo nuevo (el anterior queda archivado con su resumen). Puedes mostrar la vista previa del widget de chat en pantalla con mensajes reales y elegir una variante guardada; el panel recuerda ambas elecciones en este navegador. Las barras de total del canal conservan su valor y sus correcciones entre directos; las demás cuentan por directo.
 - **Identidad de sesión:** los IDs conocidos de YouTube y Twitch aparecen en `/api/sessions` y `listar_directos`; un ID distinto al reconectar abre otra sesión, y si no se conserva el primero.
 - **Historial de espectadores:** las sesiones automáticas guardan cada muestra y los huecos por error, fin de emisión o desconexión por plataforma. Los resúmenes JSON incluyen `viewers` y `viewerMetrics`; `/api/sessions` y `listar_directos` solo incluyen métricas. La media es ponderada por tiempo, con pico y cobertura separados por plataforma (nunca se suman). Cada muestra cubre como máximo su intervalo de sondeo; los huecos y el tiempo sin datos al reiniciar no se interpolan.
 - **Métricas de chat:** las sesiones automáticas de Meld guardan chatters únicos y mensajes/minuto por plataforma, independientemente del buffer de 300 mensajes. Se excluyen las simulaciones y los mensajes propios identificables.

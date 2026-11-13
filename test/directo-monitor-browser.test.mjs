@@ -1,11 +1,11 @@
 // #116 · S1–S7: the live monitor through the public panel and HTTP API, with synthetic data only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeChrome, findChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const dom = (c, expression) => evaluateChrome(c.cdp, expression, { timeoutMs: 12000 });
@@ -18,8 +18,15 @@ const api = async (base, method, url, body) => {
   return response.json();
 };
 
-async function fixture(t, { gap = true, missing = false, stale = false, goals = true, extraArchives = [], withoutSeries = false, chatOnly = false, emptyEvents = false, ageSeconds = 600 } = {}) {
-  const bin = await skipIfNoBrowserOrUi(t); if (!bin) return null;
+async function fixture(t, { gap = true, missing = false, stale = false, goals = true, extraArchives = [], withoutSeries = false, chatOnly = false, emptyEvents = false, ageSeconds = 600, requireUi = false } = {}) {
+  let bin;
+  if (requireUi) {
+    bin = await findChrome();
+    if (!bin) { t.skip('sin Chrome local; define CHROME_PATH para ejecutar la regresión de navegador'); return null; }
+    const built = await stat(new URL('../app/dist/index.html', import.meta.url)).then(() => true, e => { if (e.code === 'ENOENT') return false; throw e; });
+    assert.ok(built, 'Chrome está disponible pero falta app/dist/index.html; compila el panel antes de probar #151');
+  } else bin = await skipIfNoBrowserOrUi(t);
+  if (!bin) return null;
   const root = await mkdtemp(path.join(tmpdir(), 'antena-directo-monitor-'));
   let app, chrome;
   t.after(async () => {
@@ -377,6 +384,124 @@ test('#116: controles de respaldo y chat reducido usan las acciones existentes',
   assert.deepEqual(JSON.parse(calls.find(x => x.path === '/api/chat/send').body), { text: 'hola sintético', to: 'youtube' });
   assert.ok((await api(f.base, 'GET', '/api/timeline')).items.some(item => item.kind === 'marker'));
   await wait(c, `!!${buttonByText('Pausar alertas')}`);
+});
+
+// #151 S3: the real widget opens on demand, keeps its choice and receives snapshot + live chat.
+test('#151: vista previa opcional con mensajes reales, teclado y diseño adaptable', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { requireUi: true }); if (!f) return;
+  await api(f.base, 'POST', '/api/chat/simulate', { user: 'AlAbrir', text: 'mensaje existente real', platform: 'twitch' });
+  const c = await f.open();
+  const toggle = `document.querySelector('#dir-chat-preview')`;
+  const frame = `document.querySelector('iframe[title="Vista previa del widget de chat"]')`;
+  await wait(c, `!!${toggle}`);
+  assert.equal(await dom(c, `${toggle}.checked`), false);
+  assert.match(await dom(c, `${toggle}.labels[0].textContent`), /Vista previa del widget de chat/);
+  assert.equal(await dom(c, `!!${frame}`), false);
+  assert.equal(await dom(c, `!!document.querySelector('#dir-say') && !!document.querySelector('#h-crono')`), true);
+  await dom(c, `${toggle}.focus()`);
+  assert.equal(await dom(c, `document.activeElement === ${toggle}`), true);
+  await c.cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+  await c.cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+  await wait(c, `${toggle}.checked && !!${frame}`);
+  assert.equal(await dom(c, `${frame}.getAttribute('src')`), '/widget/chat');
+  assert.equal(await dom(c, `!!document.querySelector('#dir-chat-variant')`), false);
+  await wait(c, `${frame}?.contentDocument?.querySelector('#root')?.textContent.includes('mensaje existente real')`);
+  // Flush the existing coalescer instead of waiting for its wall-clock debounce.
+  await api(f.base, 'PUT', '/api/widgets', { chat: { layout: 'horizontal' } }); f.app.engine.flushScheduledSends();
+  await wait(c, `${frame}?.style.width === '1832px' && ${frame}.style.height === '160px'`);
+  await api(f.base, 'PUT', '/api/widgets', { chat: { layout: 'vertical' } }); f.app.engine.flushScheduledSends();
+  await wait(c, `${frame}?.style.width === '600px' && ${frame}.style.height === '900px'`);
+  await api(f.base, 'POST', '/api/chat/simulate', { user: 'EnVivo', text: 'mensaje recibido después', platform: 'youtube' });
+  await wait(c, `${frame}?.contentDocument?.querySelector('#root')?.textContent.includes('mensaje recibido después') && document.querySelector('.dir-chat')?.textContent.includes('mensaje recibido después')`);
+  for (const width of [1440, 1024, 390]) {
+    await c.cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    const layout = await dom(c, `(() => { const preview = document.querySelector('.dir-widget-preview'), box = ${frame}.parentElement;
+      const a = preview.getBoundingClientRect(), b = box.getBoundingClientRect();
+      return { left: a.left, right: a.right, frameLeft: b.left, frameRight: b.right, client: preview.clientWidth, scroll: preview.scrollWidth }; })()`);
+    assert.ok(layout.left >= -1 && layout.right <= width + 1, `${width}: preview fuera de pantalla: ${JSON.stringify(layout)}`);
+    assert.ok(layout.frameLeft >= layout.left - 1 && layout.frameRight <= layout.right + 1 && layout.scroll <= layout.client + 1, `${width}: preview desbordada: ${JSON.stringify(layout)}`);
+  }
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  await wait(c, `window.__beforeReload !== true && ${toggle}?.checked && !!${frame}`);
+  assert.equal(await dom(c, `${frame}.getAttribute('src')`), '/widget/chat');
+  await dom(c, `${toggle}.click()`); await wait(c, `!${toggle}.checked && !${frame}`);
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  await wait(c, `window.__beforeReload !== true && !!${toggle}`);
+  assert.equal(await dom(c, `${toggle}.checked`), false);
+  assert.equal(await dom(c, `!!${frame}`), false);
+});
+
+// #151 S3: variant choices use saved widget data and a confirmed deletion falls back visibly.
+test('#151: variante guardada, cambios en vivo y repliegue tras borrarla', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { requireUi: true }); if (!f) return;
+  const first = (await api(f.base, 'POST', '/api/widgets/chat/variants', { name: 'Chat horizontal' })).variant;
+  const second = (await api(f.base, 'POST', '/api/widgets/chat/variants', { name: 'Otra escena' })).variant;
+  await api(f.base, 'PUT', `/api/widgets/chat/variants/${encodeURIComponent(first.id)}`, { layout: 'horizontal' });
+  f.app.engine.flushScheduledSends();
+  const c = await f.open();
+  const toggle = `document.querySelector('#dir-chat-preview')`, select = `document.querySelector('#dir-chat-variant')`;
+  const frame = `document.querySelector('iframe[title="Vista previa del widget de chat"]')`;
+  await wait(c, `!!${toggle}`); await dom(c, `${toggle}.click()`);
+  await wait(c, `${select}?.options.length === 3`);
+  assert.match(await dom(c, `${select}.labels[0].textContent`), /Variante de chat/);
+  await dom(c, `${select}.value = ${JSON.stringify(first.id)}; ${select}.dispatchEvent(new Event('change', { bubbles: true }))`);
+  const url = `/widget/chat?variant=${encodeURIComponent(first.id)}`;
+  await wait(c, `${frame}?.getAttribute('src') === ${JSON.stringify(url)} && ${frame}.style.width === '1832px' && ${frame}.style.height === '160px'`);
+  await api(f.base, 'PUT', `/api/widgets/chat/variants/${encodeURIComponent(first.id)}`, { layout: 'vertical' }); f.app.engine.flushScheduledSends();
+  await wait(c, `${frame}?.style.width === '600px' && ${frame}.style.height === '900px'`);
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  await wait(c, `window.__beforeReload !== true && ${select}?.value === ${JSON.stringify(first.id)} && ${frame}?.getAttribute('src') === ${JSON.stringify(url)}`);
+  await api(f.base, 'DELETE', `/api/widgets/chat/variants/${encodeURIComponent(first.id)}`); f.app.engine.flushScheduledSends();
+  await wait(c, `${select}?.value === 'default' && ${frame}?.getAttribute('src') === '/widget/chat' && /variante ya no existe.*predeterminado/i.test(document.querySelector('.dir-widget-preview')?.textContent || '')`);
+  await dom(c, `${select}.value = ${JSON.stringify(second.id)}; ${select}.dispatchEvent(new Event('change', { bubbles: true }))`);
+  await wait(c, `${frame}?.getAttribute('src') === ${JSON.stringify(`/widget/chat?variant=${encodeURIComponent(second.id)}`)}`);
+  await dom(c, `${toggle}.click()`);
+  await api(f.base, 'DELETE', `/api/widgets/chat/variants/${encodeURIComponent(second.id)}`);
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  await wait(c, `window.__beforeReload !== true && !!${toggle} && !${toggle}.checked`);
+  await dom(c, `${toggle}.click()`);
+  await wait(c, `${frame}?.getAttribute('src') === '/widget/chat' && /variante ya no existe.*predeterminado/i.test(document.querySelector('.dir-widget-preview')?.textContent || '')`);
+  assert.equal(await dom(c, `!!${select}`), false);
+  assert.equal(await dom(c, `!!document.querySelector('#dir-say') && !!document.querySelector('#h-crono')`), true);
+});
+
+// An unavailable variant list is not proof of deletion; retry keeps the saved selection.
+test('#151: un error al cargar variantes conserva la elección y permite reintentar', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { requireUi: true }); if (!f) return;
+  const variant = (await api(f.base, 'POST', '/api/widgets/chat/variants', { name: 'Variante guardada' })).variant;
+  f.app.engine.flushScheduledSends();
+  const c = await f.open();
+  const toggle = `document.querySelector('#dir-chat-preview')`, select = `document.querySelector('#dir-chat-variant')`;
+  const frame = `document.querySelector('iframe[title="Vista previa del widget de chat"]')`;
+  await wait(c, `!!${toggle}`); await dom(c, `${toggle}.click()`); await wait(c, `!!${select}`);
+  await dom(c, `${select}.value = ${JSON.stringify(variant.id)}; ${select}.dispatchEvent(new Event('change', { bubbles: true }))`);
+  const url = `/widget/chat?variant=${encodeURIComponent(variant.id)}`;
+  await wait(c, `${frame}?.getAttribute('src') === ${JSON.stringify(url)}`);
+  await dom(c, `${toggle}.click(); window.__previewFetch = window.fetch; window.fetch = (...args) => new URL(String(args[0]), location.href).pathname === '/api/widgets/chat/variants' ? Promise.reject(new Error('fallo sintético')) : window.__previewFetch(...args);`);
+  await dom(c, `${toggle}.click()`);
+  await wait(c, `/No se pudieron cargar las variantes/i.test(document.querySelector('.dir-widget-preview')?.textContent || '')`);
+  assert.equal(await dom(c, `${frame}.getAttribute('src')`), url);
+  assert.doesNotMatch(await dom(c, `document.querySelector('.dir-widget-preview').textContent`), /variante ya no existe/i);
+  await dom(c, `window.fetch = window.__previewFetch; ${buttonByText('Reintentar')}.click()`);
+  await wait(c, `${select}?.value === ${JSON.stringify(variant.id)} && !/No se pudieron cargar las variantes/i.test(document.querySelector('.dir-widget-preview')?.textContent || '')`);
+});
+
+// Storage can be unavailable in a browser or webview; controls still work for the current visit.
+test('#151: la vista previa funciona sin almacenamiento local', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { requireUi: true }); if (!f) return;
+  const variant = (await api(f.base, 'POST', '/api/widgets/chat/variants', { name: 'Sin almacenamiento' })).variant;
+  const c = await f.open();
+  await c.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `Storage.prototype.getItem = () => { throw new Error('storage unavailable'); }; Storage.prototype.setItem = () => { throw new Error('storage unavailable'); };` });
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  const toggle = `document.querySelector('#dir-chat-preview')`, select = `document.querySelector('#dir-chat-variant')`;
+  const frame = `document.querySelector('iframe[title="Vista previa del widget de chat"]')`;
+  await wait(c, `window.__beforeReload !== true && !!${toggle}`);
+  assert.equal(await dom(c, `${toggle}.checked`), false);
+  await dom(c, `${toggle}.click()`); await wait(c, `!!${select}`);
+  await dom(c, `${select}.value = ${JSON.stringify(variant.id)}; ${select}.dispatchEvent(new Event('change', { bubbles: true }))`);
+  await wait(c, `${frame}?.getAttribute('src') === ${JSON.stringify(`/widget/chat?variant=${encodeURIComponent(variant.id)}`)}`);
+  await dom(c, `${toggle}.click()`); await wait(c, `!${frame}`);
+  assert.equal(await dom(c, `!!document.querySelector('#dir-say')`), true);
 });
 
 // #118 S3/S5: a failed durable close remains retryable even after the ended SSE update.
