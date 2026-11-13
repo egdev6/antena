@@ -1,6 +1,6 @@
 // Dock del directo: todo el manejo del directo menos la vista previa (S1) y sin chat (S12).
-// En una ventana apaisada y ancha se ven las tres columnas Control | Audio | Interactivos; en el
-// resto (estrecha, retrato, tablet vertical) una pestaña por sección, con Control primero.
+// Desde 1024 px de ancho se ven las tres columnas Control | Audio | Interactivos, sin importar
+// la orientación; por debajo, una pestaña por sección, con Control primero.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { post } from '../lib/api';
 import { IC } from '../lib/icons';
@@ -14,8 +14,8 @@ import type { MeldTrack, TeleprompterState, TimelineItem } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
 const INTERACTIVE_TAB = 'egdev.dock.interactive.tab';
-/** La misma regla que documenta el README: apaisado y ≥1000 px de ancho → tres columnas. */
-const WIDE_MEDIA = '(orientation: landscape) and (min-width: 1000px)';
+/** Único punto de corte para renderizar las tres columnas y aplicar la clase dock-wide. */
+const WIDE_MEDIA = '(min-width: 1024px)';
 
 function useNow(ms = 1000) {
   const [now, setNow] = useState(() => Date.now());
@@ -23,9 +23,8 @@ function useNow(ms = 1000) {
   return now;
 }
 
-/** Forma de la ventana: tres columnas solo en apaisado ancho (S6/S8). matchMedia se ocupa de la
- *  orientación y del ancho; el listener de resize cubre motores que no emiten «change» al
- *  redimensionar la ventana de Tauri. */
+/** Forma de la ventana según su ancho; el listener de resize cubre motores que no emiten
+ *  «change» al redimensionar la ventana de Tauri. */
 function useWide() {
   const [wide, setWide] = useState(() => window.matchMedia(WIDE_MEDIA).matches);
   useEffect(() => {
