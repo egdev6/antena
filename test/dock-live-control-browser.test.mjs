@@ -1,6 +1,6 @@
-// Dock nuevo (S1–S7): tres columnas Control | Audio | Interactivos en apaisado
-// ancho, pestañas Control/Audio/Interactivos en el resto; cada
-// módulo manda las acciones reales del directo a la API. Meld es el simulado de
+// Dock (S1–S7): tres columnas Control | Audio | Interactivos desde 1024 px,
+// pestañas Control/Audio/Interactivos por debajo; cada módulo manda las acciones
+// reales del directo a la API. Meld es el simulado de
 // test/helpers/fake-meld.mjs: escenas, pistas y gainUpdated salen de ahí.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
