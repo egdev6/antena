@@ -128,6 +128,12 @@ test('#161: page-style headers preserve descriptions and navigation on detail pa
     { name: 'últimos y ticker', hash: '#/widgets/latest', selector: '.lv-slide iframe[src="/widget/ticker?demo"]', back: '#/widgets', close: '#/widgets', label: 'Últimos y ticker', description: 'Último seguidor, sub, bits… y una banda que recorre los últimos apoyos.' },
     { name: 'overlay', hash: `#/overlays/${encodeURIComponent(overlay.id)}`, selector: '.lv-slide input[aria-label="Nombre del overlay"]', back: '#/overlays', close: '#/overlays', label: 'Detalle', editable: true },
     { name: 'comando', hash: `#/comandos/${encodeURIComponent(command.id)}`, selector: '.lv-slide input[aria-label="Disparador"]', back: '#/comandos', close: '#/comandos', label: 'Detalle', editable: true },
+    { name: 'espectadores', hash: '#/widgets/viewers', selector: '.lv-slide iframe[src="/widget/viewers?demo"]', back: '#/widgets', close: '#/widgets', label: 'Espectadores', description: 'Espectadores a la vez en Twitch y YouTube, por separado y en total. Se actualiza solo mientras emites.' },
+    { name: 'agradecimientos', hash: '#/widgets/thanks', selector: '.lv-slide iframe[src="/widget/thanks?demo"]', back: '#/widgets', close: '#/widgets', label: 'Agradecimientos', description: 'Agradece a quienes te siguieron mientras antena estaba cerrada.' },
+    { name: 'créditos', hash: '#/widgets/credits', selector: '.lv-slide iframe[src="/widget/credits?demo"]', back: '#/widgets', close: '#/widgets', label: 'Créditos', description: 'Créditos finales con todos los que han apoyado en el directo.' },
+    { name: 'nueva tier list', hash: '#/tierlist/nueva', selector: '.lv-slide input[placeholder="Frameworks frontend"]', back: '#/tierlist', close: '#/tierlist', label: 'Nueva tier list' },
+    { name: 'nuevo guion', hash: '#/teleprompter/guiones/nuevo', selector: '.lv-slide input[placeholder="Directo · Agent Teams"]', back: '#/teleprompter/guiones', close: '#/teleprompter/guiones', label: 'Nuevo guion' },
+    { name: 'nuevo atajo', hash: '#/atajos/nuevo', selector: '.lv-slide input[placeholder="Empezar el directo"]', back: '#/atajos', close: '#/atajos', label: 'Nuevo atajo' },
   ];
   for (const item of cases) await t.test(item.name, async () => {
     await c.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
