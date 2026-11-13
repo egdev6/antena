@@ -9,8 +9,10 @@ import { findChrome } from './helpers/react-browser.mjs';
 
 const fixture = fileURLToPath(new URL('./goals-browser.test.mjs', import.meta.url));
 
-async function probe(root, browser) {
-  const env = { ...process.env, CHROME_PATH: browser, TMPDIR: root, TMP: root, TEMP: root };
+async function probe(root, browser, temporaryRoot = tmpdir()) {
+  // Keep screenshot isolation independent from the browser's inherited temporary root.
+  const env = { ...process.env, CHROME_PATH: browser, ANTENA_GOAL_SCREENSHOTS_ROOT: root,
+    TMPDIR: temporaryRoot, TMP: temporaryRoot, TEMP: temporaryRoot };
   // A nested test runner is a separate fixture, not a recursive run in this worker.
   delete env.NODE_TEST_CONTEXT;
   const child = spawn(process.execPath, [
@@ -33,6 +35,22 @@ test('goal screenshots use a fresh directory that is removed after a passing bro
   if (!bin) return t.skip('Chrome is not available');
   const root = await mkdtemp(path.join(tmpdir(), 'antena-goal-shots-success-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const result = await probe(root, bin);
+  assert.equal(result.signal, null, result.output);
+  assert.equal(result.code, 0, result.output);
+  assert.match(result.output, /ok 1 - overlay goal\.html:/);
+  assert.deepEqual(await screenshots(root), [], 'successful run removes its screenshot directory');
+});
+
+test('goal screenshots are removed with an isolated nested screenshot path', { timeout: 120000 }, async t => {
+  const bin = await findChrome();
+  if (!bin) return t.skip('Chrome is not available');
+  // Nest only the screenshot root. Chrome keeps the inherited temporary root: its
+  // Crashpad/singleton Unix sockets live there and fail (SIGTRAP, ENOENT) once the
+  // path exceeds the ~107-byte socket limit, which deep sandbox paths can reach.
+  const parent = await mkdtemp(path.join(tmpdir(), 'antena-recording-baseline-corrected-'));
+  t.after(() => rm(parent, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const root = await mkdtemp(path.join(parent, 'antena-goal-shots-success-'));
   const result = await probe(root, bin);
   assert.equal(result.signal, null, result.output);
   assert.equal(result.code, 0, result.output);

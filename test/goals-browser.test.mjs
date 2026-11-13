@@ -12,7 +12,7 @@ import { goalsBrowserUi, seedTwitchTotals } from './helpers/goals-browser-app.mj
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const SHOTS = await mkdtemp(path.join(tmpdir(), 'egdev-128-shots-'));
+const SHOTS = await mkdtemp(path.join(process.env.ANTENA_GOAL_SCREENSHOTS_ROOT || tmpdir(), 'egdev-128-shots-'));
 process.once('exit', code => {
   if (code === 0) rmSync(SHOTS, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   else console.error(`Screenshots retained at ${SHOTS}`);

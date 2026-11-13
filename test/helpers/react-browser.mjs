@@ -1,7 +1,7 @@
 // Shared browser helpers: each page gets its own Chrome process and profile.
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { constants, tmpdir } from 'node:os';
 import path from 'node:path';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -27,6 +27,50 @@ export async function skipIfNoBrowserOrUi(t) {
 
 const childStates = new WeakMap();
 const closeTasks = new WeakMap();
+
+// Only fixed classifications are emitted: raw stderr can contain paths, URLs or user data.
+const startupReasons = [
+  [/File name too long/i, 'File name too long'],
+  [/\b(?:bind|socket).*failed/i, 'socket operation failed'],
+  [/Failed to (?:create|bind).*socket/i, 'socket operation failed'],
+  [/Failed to create.*ProcessSingleton/i, 'ProcessSingleton creation failed'],
+  [/Failed to create.*SingletonLock/i, 'SingletonLock creation failed'],
+  [/Failed to connect to the bus/i, 'D-Bus connection failed'],
+  [/Failed to connect to socket/i, 'socket connect failed'],
+  [/crashpad/i, 'Crashpad diagnostic'],
+  [/\bFATAL\b/i, 'fatal Chrome error'],
+  [/Check failed/i, 'Chrome check failed'],
+  [/pthread_create/i, 'thread creation failed'],
+  [/No usable sandbox/i, 'No usable sandbox'],
+  [/running as root without --no-sandbox/i, 'root sandbox unavailable'],
+  [/Resource temporarily unavailable/i, 'Resource temporarily unavailable'],
+  [/Too many open files/i, 'Too many open files'],
+  [/No space left on device/i, 'No space left on device'],
+  [/Permission denied/i, 'Permission denied'],
+  [/Address already in use/i, 'Address already in use'],
+  [/No such file or directory/i, 'No such file or directory'],
+];
+const validSignals = new Set(Object.keys(constants.signals));
+
+function observeStartupStderr(child) {
+  const limit = 4096;
+  let tail = Buffer.alloc(0), truncated = false;
+  child.stderr.on('data', chunk => {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (tail.length + bytes.length > limit) truncated = true;
+    tail = bytes.length >= limit ? Buffer.from(bytes.subarray(-limit)) :
+      Buffer.concat([tail, bytes]).subarray(-limit);
+  });
+  return () => {
+    const stderrTail = tail.toString('utf8').split(/\r?\n/).filter(Boolean).slice(-8).map(line => {
+      const reasons = [...new Set(startupReasons.filter(([pattern]) => pattern.test(line)).map(([, reason]) => reason))];
+      return reasons.length ? reasons.join('; ') : '[redacted]';
+    }).join('\n').slice(-1000);
+    return { exitCode: Number.isInteger(child.exitCode) ? child.exitCode : null,
+      signal: validSignals.has(child.signalCode) ? child.signalCode : null,
+      stderrTail, stderrTruncated: truncated };
+  };
+}
 
 function trackChild(child) {
   let state = childStates.get(child);
@@ -82,11 +126,15 @@ export async function openChromePage(bin, url) {
   const profile = await mkdtemp(path.join(tmpdir(), 'egdev-chrome-'));
   const chrome = { profile };
   try {
-    const child = chrome.child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-gpu', '--disable-dev-shm-usage', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: 'ignore' });
+    const child = chrome.child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-gpu', '--disable-dev-shm-usage', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const startupDiagnostic = observeStartupStderr(child);
     const state = trackChild(child);
     const checkStartup = () => {
       if (state.error) throw state.error;
-      if (state.closed) throw new Error('Chrome exited during startup');
+      if (state.closed) {
+        const startup = startupDiagnostic();
+        throw Object.assign(new Error(`Chrome exited during startup; ${JSON.stringify(startup)}`), { startup });
+      }
     };
     let port, page;
     // The first Chrome start on a fresh CI runner (cold profile and font cache) took over 15 s
