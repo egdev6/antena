@@ -132,6 +132,9 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .row{display:flex;flex-wrap:wrap;gap:8px}
 
 /* ---------- Button ---------- */
+/* bundle.css se sincroniza del sistema: el panel da superficie y canto al ghost en reposo aquí,
+   sin tapar sus estados hover, focus-visible ni disabled del sistema. */
+.eg-btn--ghost{background:var(--color-surface-2);box-shadow:0 0 0 1px var(--color-border-hairline)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:6px 13px;white-space:nowrap;cursor:pointer;text-decoration:none;
   border-radius:var(--radius-md);border:1px solid color-mix(in srgb,var(--logo-red-shade) 70%,transparent);
   font:700 13.5px/1 var(--font-sans);letter-spacing:0;text-transform:none;
