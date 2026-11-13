@@ -278,7 +278,7 @@ Over MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `
 - **Text** with variables: `{channel}` (your channel), `{title}` (stream title), `{uptime}` (time live) and `{follows}` (new followers today).
 - **Every how many minutes** and **how many chat messages** must have happened since the last time. That way it does not repeat in a dead chat; your own messages do not count.
 - **Where it posts:** Twitch, YouTube or both. Messages you already had keep posting to Twitch only.
-- **Only while streaming** (on by default): it uses the Meld status. If Meld is not connected there is no way to know if you are live, so it **does not post**, neither alone nor with «Send now».
+- **Only while streaming** (on by default): it uses the Meld status. The countdown pauses while offline and starts a full interval when the stream starts. If Meld is not connected there is no way to know if you are live, so it **does not post**, neither alone nor with «Send now». Turn this option off to keep counting and posting while offline.
 - **As a highlighted Twitch announcement**, with a color (the channel's, blue, green, orange or purple). YouTube has no announcements: with «YouTube» or «both», the same text goes there as a normal message.
 - **Also on screen:** besides chat, a full alert comes out (card or video, sound, voice, Meld actions…).
 
