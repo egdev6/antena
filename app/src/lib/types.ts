@@ -210,7 +210,7 @@ export interface PrompterConfig {
 }
 export interface ChatConfig { sendTo?: Destination; twitchChannel?: string; [k: string]: unknown }
 export interface OverlayConfig { css?: string; volume?: number; queueMax?: number; [k: string]: unknown }
-export interface MeldConfig { enabled?: boolean; autoSession?: boolean; url?: string; [k: string]: unknown }
+export interface MeldConfig { enabled?: boolean; autoSession?: boolean; recordOnStart?: boolean; url?: string; [k: string]: unknown }
 export interface TtsConfig { enabled?: boolean; voice?: string; rate?: number; pitch?: number; volume?: number; maxChars?: number; [k: string]: unknown }
 export interface FiltersConfig {
   enabled?: boolean;
@@ -271,7 +271,7 @@ export interface YoutubeStatus {
   errors?: string[];
   [k: string]: unknown;
 }
-export interface MeldStatus { state?: string; streaming?: boolean; streamingKnown?: boolean; error?: string; [k: string]: unknown }
+export interface MeldStatus { state?: string; streaming?: boolean; streamingKnown?: boolean; recording?: boolean; recordingKnown?: boolean; recordingWarning?: string | null; error?: string; [k: string]: unknown }
 export interface PersistenceState { dirty?: Record<string, boolean>; pending?: Record<string, number>; [k: string]: unknown }
 export interface PauseState { paused?: boolean; held?: number; [k: string]: unknown }
 export interface Status {

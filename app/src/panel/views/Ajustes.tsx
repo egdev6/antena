@@ -33,6 +33,8 @@ export function Meld({ parts }: { parts: string[] }) {
     <ol className="steps"><li>En Meld: <b>Ajustes › Avanzado › Allow remote connections</b>.</li><li>Pulsa <b>Conectar</b>. Se reconecta solo si cierras Meld.</li></ol>
     <div className="row2"><label>Dirección <input value={url} onChange={e => setUrl(e.target.value)} className="mono" /></label>
       <Switch checked={!!m.autoSession} onChange={x => live.patchConfig({ meld: { autoSession: x } })}>Empezar un directo nuevo en el panel al empezar a emitir</Switch></div>
+    <Switch checked={!!m.recordOnStart} onChange={x => live.patchConfig({ meld: { recordOnStart: x } })}>Grabar al empezar el directo</Switch>
+    <p className="hint">Solo al iniciar desde antena y cuando Meld confirme la emisión. Si ya estabas grabando, antena no toca esa grabación.</p>
     {st.error && <ul className="errors"><li>{st.error}</li></ul>}
     <div className="row tight"><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await saveAll(); await post('/api/meld/connect', { url: url.trim() }); }, 'Conectando con Meld…')}>{on ? 'Guardar y reconectar' : 'Guardar y conectar'}</button><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/meld/disconnect'))}>Desconectar</button></div>
   </Sec>;

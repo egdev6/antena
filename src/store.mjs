@@ -25,7 +25,7 @@ export const DEFAULT_CONFIG = {
   overlay: { volume: 0.6, gapMs: 700, css: '', queueMax: 20 },   // css: común a todas las alertas; queueMax (#66): tope de la cola del overlay, 0 = sin tope
   tts: { enabled: true, voice: '', rate: 1, pitch: 1, volume: 1, maxChars: 200 },
   filters: DEFAULT_FILTERS,
-  meld: { enabled: false, url: 'ws://127.0.0.1:13376', autoSession: true },
+  meld: { enabled: false, url: 'ws://127.0.0.1:13376', autoSession: true, recordOnStart: false },
   panel: { onboardingDone: false },   // bienvenida del panel con tarjetas; true = ya la vio (se relanza desde General)
   access: { lan: false, key: '' },   // acceso desde el móvil en la red local
   sessions: { retention: 0 },        // #68: sesiones archivadas a conservar; 0 = sin límite (desactivado)
@@ -52,6 +52,11 @@ export const DEFAULT_CONFIG = {
     credits: { title: 'Gracias por estar', subtitle: 'egdev.es · directos los miércoles a las 19:00', speed: 60, css: '' },
   },
 };
+
+// Mismos tramos para escribir una ruta y decidir sus efectos posteriores.
+export function configPathKeys(dotted) {
+  return String(dotted).split('.').filter(Boolean);
+}
 
 export function deepMerge(base, extra) {
   if (Array.isArray(base) || typeof base !== 'object' || base === null) return extra === undefined ? base : extra;
@@ -187,7 +192,7 @@ export class Store extends EventEmitter {
   }
   /** Cambia un valor por ruta con puntos («alerts.follow.title», «widgets.goals.0.target»). */
   async setPath(dotted, value) {
-    const keys = String(dotted).split('.').filter(Boolean);
+    const keys = configPathKeys(dotted);
     if (!keys.length) throw new Error('Ruta vacía');
     // defensa en profundidad (validatePath ya lo rechaza): nunca se escribe en el prototipo
     if (keys.some(k => PROTO_KEYS.has(k))) throw new Error(`Ruta no válida: ${dotted}`);
