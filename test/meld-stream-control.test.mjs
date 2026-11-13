@@ -186,30 +186,41 @@ test('las rutas genéricas command y call conservan sus respuestas y órdenes', 
 test('peticiones simultáneas no duplican órdenes sin cambio de estado', async t => {
   const f = await setup(t);
   await f.connect();
-  const before = await current(f.api);
+  const before = await current(f.api), beforeList = await list(f.api);
 
   const starts = await Promise.all(Array.from({ length: 4 }, () =>
     f.api('POST', '/api/meld/stream', { action: 'start' })));
-  assert.ok(starts.some(r => r.status === 200));
+  assert.deepEqual(starts.map(r => r.status).sort((a, b) => a - b), [200, 409, 409, 409]);
+  for (const r of starts) assert.deepEqual(r.body, r.status === 200
+    ? { requested: 'start', streaming: false }
+    : { error: 'Ya hay una orden pendiente de confirmación de Meld.' });
   assert.deepEqual(commandCalls(f.meld), [[12, 'meld.startStreamingAction']]);
   assert.deepEqual(await current(f.api), before);
+  assert.deepEqual(await list(f.api), beforeList);
 
   const reset = nextWhere(f.app.session, 'change', v => v.reset);
   await f.report(true);
   await reset;
+  await f.app.drainAutoSession();
+  const beforeStop = await current(f.api), beforeStopList = await list(f.api);
   const stops = await Promise.all(Array.from({ length: 2 }, () =>
     f.api('POST', '/api/meld/stream', { action: 'stop' })));
-  assert.ok(stops.some(r => r.status === 200));
+  assert.deepEqual(stops.map(r => r.status).sort((a, b) => a - b), [200, 409]);
+  for (const r of stops) assert.deepEqual(r.body, r.status === 200
+    ? { requested: 'stop', streaming: true }
+    : { error: 'Ya hay una orden pendiente de confirmación de Meld.' });
   assert.deepEqual(commandCalls(f.meld), [
     [12, 'meld.startStreamingAction'],
     [12, 'meld.stopStreamingAction'],
   ]);
+  assert.deepEqual(await current(f.api), beforeStop);
+  assert.deepEqual(await list(f.api), beforeStopList);
 });
 
 test('acciones JSON duplicadas y contradictorias se rechazan sin orden', async t => {
   const f = await setup(t, { omitStreaming: true });
   await f.connect();
-  const before = await current(f.api);
+  const before = await current(f.api), beforeList = await list(f.api);
   const url = `http://127.0.0.1:${f.app.server.address().port}/api/meld/stream`;
 
   for (const body of [
@@ -220,8 +231,10 @@ test('acciones JSON duplicadas y contradictorias se rechazan sin orden', async t
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
     });
     assert.equal(r.status, 400);
+    assert.deepEqual(await r.json(), { error: 'La acción no puede repetirse en el mismo JSON.' });
     assert.deepEqual(commandCalls(f.meld), []);
     assert.deepEqual(await current(f.api), before);
+    assert.deepEqual(await list(f.api), beforeList);
   }
 });
 
@@ -254,7 +267,7 @@ test('la orden pendiente bloquea duplicados hasta la confirmación o el plazo in
 
 test('claves action duplicadas incluso con escapes JSON no envían órdenes', async t => {
   const f = await setup(t, { omitStreaming: true }); await f.connect();
-  const before = await current(f.api);
+  const before = await current(f.api), beforeList = await list(f.api);
   const url = `http://127.0.0.1:${f.app.server.address().port}/api/meld/stream`;
   for (const body of [
     '{"action":"start","action":"start"}',
@@ -262,8 +275,11 @@ test('claves action duplicadas incluso con escapes JSON no envían órdenes', as
     '{"action":"start","\\u0061ction":"stop"}',
   ]) {
     const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-    assert.equal(r.status, 400); assert.match((await r.json()).error, /acción/i);
-    assert.deepEqual(commandCalls(f.meld), []); assert.deepEqual(await current(f.api), before);
+    assert.equal(r.status, 400);
+    assert.deepEqual(await r.json(), { error: 'La acción no puede repetirse en el mismo JSON.' });
+    assert.deepEqual(commandCalls(f.meld), []);
+    assert.deepEqual(await current(f.api), before);
+    assert.deepEqual(await list(f.api), beforeList);
   }
   const valid = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"\\u0061ction":"start"}' });
   assert.equal(valid.status, 200); assert.deepEqual(await valid.json(), { requested: 'start', streaming: null });
