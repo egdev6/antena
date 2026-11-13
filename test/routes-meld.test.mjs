@@ -51,6 +51,7 @@ test('registra exactamente las rutas de Meld', () => {
   assert.deepEqual(routes.map(r => `${r.method} ${r.pattern}`), [
     'GET /api/meld', 'POST /api/meld/connect', 'POST /api/meld/disconnect',
     'POST /api/meld/scene', 'POST /api/meld/layer', 'POST /api/meld/effect',
+    'POST /api/meld/stream',
     'POST /api/meld/command', 'POST /api/meld/event', 'POST /api/meld/track',
     'POST /api/meld/media', 'POST /api/meld/property', 'POST /api/meld/call',
   ]);
