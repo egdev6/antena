@@ -59,6 +59,7 @@ export function createMeldRecording({ meld, enabled, timers = { setTimeout, clea
       // Una grabación ya activa en cualquier momento previo nunca pasa a ser nuestra.
       if (st.recordingKnown === true && st.recording === true) return discard();
       if (!st.streaming) return;
+      if (!enabled()) return discard();
       if (st.recordingKnown !== true) return discard(UNKNOWN);
       return command(op, 'start');
     }
@@ -108,11 +109,13 @@ export function createMeldRecording({ meld, enabled, timers = { setTimeout, clea
       arm(op, null);
       return op;
     },
-    streamFailed(op) {
-      // Si Meld ya confirmó el fin y se envió la orden de grabación, su RPC y su
-      // confirmación siguen siendo independientes del fallo tardío del RPC de emisión.
-      if (op && operation === op && op.phase !== 'stopping')
-        discard(op.phase === 'starting' ? START_FAILED : op.phase === 'stream-stop' ? STOP_UNCERTAIN : null);
+    streamFailed(op, action) {
+      if (!op || operation !== op) return;
+      // Una propiedad ya confirmada y una parada posterior no dependen del RPC
+      // tardío de inicio. Tampoco se cancela una orden de grabación ya detenida.
+      if (action === 'start' && (op.phase === 'stream-start' || op.phase === 'starting'))
+        discard(op.phase === 'starting' ? START_FAILED : null);
+      else if (action === 'stop' && op.phase === 'stream-stop') discard(STOP_UNCERTAIN);
     },
   };
 }

@@ -7,7 +7,7 @@ import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { readdir, stat, mkdir, unlink, rename, readFile, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
-import { Store, ROOT, DEFAULT_CONFIG, deepMerge } from './store.mjs';
+import { Store, ROOT, DEFAULT_CONFIG, deepMerge, configPathKeys } from './store.mjs';
 import { instanceId } from './instance-id.mjs';
 import { validatePatch, validatePath, validateChatVariantsTransition, warnUnknownKeys } from './config-schema.mjs';
 import { Bus } from './bus.mjs';
@@ -831,7 +831,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const [error] = validatePath(p, value);
     if (error) throw httpError(400, error.message);
     await store.setPath(p, value);
-    afterConfig({ [p.split('.')[0]]: p !== 'meld.recordOnStart' });
+    const keys = configPathKeys(p);
+    const onlyRecording = keys.length === 2 && keys[0] === 'meld' && keys[1] === 'recordOnStart';
+    afterConfig({ [p.split('.')[0]]: !onlyRecording });
     return { path: p, value: store.getPath(p) };
   });
 

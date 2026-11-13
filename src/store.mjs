@@ -53,6 +53,11 @@ export const DEFAULT_CONFIG = {
   },
 };
 
+// Mismos tramos para escribir una ruta y decidir sus efectos posteriores.
+export function configPathKeys(dotted) {
+  return String(dotted).split('.').filter(Boolean);
+}
+
 export function deepMerge(base, extra) {
   if (Array.isArray(base) || typeof base !== 'object' || base === null) return extra === undefined ? base : extra;
   const out = { ...base };
@@ -187,7 +192,7 @@ export class Store extends EventEmitter {
   }
   /** Cambia un valor por ruta con puntos («alerts.follow.title», «widgets.goals.0.target»). */
   async setPath(dotted, value) {
-    const keys = String(dotted).split('.').filter(Boolean);
+    const keys = configPathKeys(dotted);
     if (!keys.length) throw new Error('Ruta vacía');
     // defensa en profundidad (validatePath ya lo rechaza): nunca se escribe en el prototipo
     if (keys.some(k => PROTO_KEYS.has(k))) throw new Error(`Ruta no válida: ${dotted}`);

@@ -77,7 +77,7 @@ export function registerMeldRoutes({ route, store, meld, scheduleLayerHide, http
     pending.set(body.action, current + STREAM_PENDING_MS);
     const intent = recording.begin(body.action, streaming);
     try { await recording.streamCommand(body.action === 'start' ? 'meld.startStreamingAction' : 'meld.stopStreamingAction'); }
-    catch (error) { recording.streamFailed(intent); throw error; }
+    catch (error) { recording.streamFailed(intent, body.action); throw error; }
     return { requested: body.action, streaming };
   });
   route('POST', '/api/meld/command', async ({ command }) => { needMeld(); await meld.command(command); return { ok: true }; });

@@ -375,3 +375,123 @@ test('automatic session starts and ends exactly once; autoSession off preserves 
     } else { assert.equal(resets, 0); assert.equal(ends, 0); assert.deepEqual(await f.session(), before); assert.deepEqual(await f.sessions(), list); }
   }
 });
+
+test('S2: turning off the setting before confirmation suppresses the recording request', async t => {
+  const f = await setup(t, { initial: enabled }); await f.connect();
+  assert.deepEqual(await f.stream('start'), { status: 200, body: { requested: 'start', streaming: false } });
+  assert.deepEqual(await f.api('POST', '/api/config/set', { path: 'meld.recordOnStart', value: false }),
+    { status: 200, body: { path: 'meld.recordOnStart', value: false } });
+  assert.equal((await f.api('GET', '/api/config?path=meld.recordOnStart')).body.value, false);
+  await f.report({ streaming: true });
+  assert.deepEqual(f.calls(), [START]);
+});
+
+test('S2: late stream RPC failure cannot revoke an already confirmed owned recording', async t => {
+  const f = await setup(t, { initial: enabled }); await f.connect();
+  let reject;
+  const gate = new Promise((_, no) => { reject = no; }); gate.catch(() => {});
+  const original = f.app.meld.command.bind(f.app.meld);
+  f.app.meld.command = command => command === START ? original(command).then(() => gate) : original(command);
+  const pending = f.stream('start'); pending.catch(() => {});
+  try {
+    await f.expectCalls([START]);
+    await f.report({ streaming: true }); await f.expectCalls([START, RECORD]);
+    await f.report({ recording: true });
+    reject(new Error('Meld no responde'));
+    assert.deepEqual(await pending, { status: 500, body: { error: 'Meld no responde' } });
+    assert.deepEqual(await f.stream('stop'), { status: 200, body: { requested: 'stop', streaming: true } });
+    await f.report({ streaming: false });
+    assert.deepEqual(f.calls(), [START, RECORD, STOP, END_RECORD]);
+  } finally { reject(new Error('fin')); await pending.catch(() => {}); }
+});
+
+test('S2: an accepted equivalent setting path does not reconnect Meld', async t => {
+  const f = await setup(t, { initial: enabled }); await f.connect();
+  let disconnected = 0;
+  f.app.meld.on('status', st => { if (st.state !== 'conectado') disconnected++; });
+  assert.deepEqual(await f.api('POST', '/api/config/set', { path: 'meld..recordOnStart', value: false }),
+    { status: 200, body: { path: 'meld..recordOnStart', value: false } });
+  assert.equal((await f.api('GET', '/api/config?path=meld.recordOnStart')).body.value, false);
+  assert.equal(disconnected, 0);
+});
+
+test('S2: lost recording RPC response warns even after recording state turns true', async t => {
+  const f = await setup(t, { initial: enabled }); await f.connect();
+  let reject;
+  const gate = new Promise((_, no) => { reject = no; }); gate.catch(() => {});
+  const original = f.app.meld.command.bind(f.app.meld);
+  f.app.meld.command = command => command === RECORD ? original(command).then(() => gate) : original(command);
+  try {
+    assert.equal((await f.stream('start')).status, 200);
+    await f.report({ streaming: true }); await f.expectCalls([START, RECORD]);
+    await f.report({ recording: true }); reject(new Error('Meld no responde'));
+    await until(() => !!f.app.meld.status.recordingWarning, 'warning');
+    const status = (await f.api('GET', '/api/status')).body.meld;
+    assert.equal(status.streaming, true); assert.equal(status.recording, true);
+    assert.equal(status.recordingWarning, 'No se pudo iniciar la grabación en Meld. Comprueba la grabación.');
+    assert.equal((await f.api('GET', '/api/state')).body.status.meld.recordingWarning, status.recordingWarning);
+    assert.deepEqual(f.calls(), [START, RECORD]);
+  } finally { reject(new Error('fin')); }
+});
+
+test('S2: restoring the setting before confirmation still requests recording', async t => {
+  const f = await setup(t, { initial: enabled }); await f.connect();
+  assert.deepEqual(await f.stream('start'), { status: 200, body: { requested: 'start', streaming: false } });
+  for (const value of [false, true]) {
+    assert.deepEqual(await f.api('POST', '/api/config/set', { path: 'meld.recordOnStart', value }),
+      { status: 200, body: { path: 'meld.recordOnStart', value } });
+  }
+  await f.report({ streaming: true }); await f.expectCalls([START, RECORD]);
+});
+
+test('S2: late start RPC failure cannot cancel a pending owned-recording stop', async t => {
+  const f = await setup(t, { initial: enabled }); await f.connect();
+  let reject;
+  const gate = new Promise((_, no) => { reject = no; }); gate.catch(() => {});
+  const original = f.app.meld.command.bind(f.app.meld);
+  f.app.meld.command = command => command === START ? original(command).then(() => gate) : original(command);
+  const pending = f.stream('start'); pending.catch(() => {});
+  try {
+    await f.expectCalls([START]);
+    await f.report({ streaming: true }); await f.expectCalls([START, RECORD]);
+    await f.report({ recording: true });
+    assert.deepEqual(await f.stream('stop'), { status: 200, body: { requested: 'stop', streaming: true } });
+    reject(new Error('Meld no responde'));
+    assert.deepEqual(await pending, { status: 500, body: { error: 'Meld no responde' } });
+    await f.report({ streaming: false });
+    assert.deepEqual(f.calls(), [START, RECORD, STOP, END_RECORD]);
+  } finally { reject(new Error('fin')); await pending.catch(() => {}); }
+});
+
+test('S2: accepted dotted variants of the recording setting keep the connection', async t => {
+  const f = await setup(t, { initial: enabled }); await f.connect();
+  let reconnects = 0;
+  f.meld.server.on('upgrade', () => { reconnects++; });
+  for (const [path, value] of [['..meld..recordOnStart..', false], ['meld.recordOnStart..', true], ['meld...recordOnStart', false]]) {
+    assert.deepEqual(await f.api('POST', '/api/config/set', { path, value }), { status: 200, body: { path, value } });
+    assert.equal((await f.api('GET', '/api/config?path=meld.recordOnStart')).body.value, value);
+    assert.equal((await f.api('GET', '/api/status')).body.meld.state, 'conectado');
+    await f.report({ streaming: false });
+    assert.equal(reconnects, 0);
+  }
+  assert.deepEqual(f.calls(), []);
+});
+
+test('S2: changing another Meld setting through config/set still reconnects', async t => {
+  const f = await setup(t, { initial: enabled }); await f.connect();
+  let reconnects = 0;
+  f.meld.server.on('upgrade', () => { reconnects++; });
+  assert.deepEqual(await f.api('POST', '/api/config/set', { path: 'meld.autoSession', value: true }),
+    { status: 200, body: { path: 'meld.autoSession', value: true } });
+  assert.equal((await f.api('GET', '/api/config?path=meld.autoSession')).body.value, true);
+  await until(() => reconnects > 0, 'reconexión a Meld');
+  const deadline = Date.now() + 3000;
+  let state;
+  do {
+    state = (await f.api('GET', '/api/status')).body.meld.state;
+    if (state !== 'conectado') await tick();
+  } while (state !== 'conectado' && Date.now() < deadline);
+  assert.equal(state, 'conectado');
+  assert.equal(reconnects, 1);
+  assert.deepEqual(f.calls(), []);
+});
