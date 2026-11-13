@@ -1022,6 +1022,38 @@ mod tests {
     }
 
     #[test]
+    fn probe_launches_on_a_closed_port_and_still_flags_a_foreign_listener() {
+        use std::net::TcpListener;
+        let data = std::env::temp_dir().join(format!("antena-probe-{}", std::process::id()));
+
+        // A closed loopback port must mean "free" on every platform; on Windows the refusal only
+        // arrives after ~2 s, past the probe's connect timeout (#144).
+        let closed = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = closed.local_addr().unwrap().port();
+        drop(closed);
+        assert_eq!(status_probe(port, &data, false).0, Decision::Launch);
+
+        // A listening server that is not ours is still a conflict, never a launch or a reuse.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            let mut request = Vec::new();
+            let mut byte = [0];
+            while !request.ends_with(b"\r\n\r\n") {
+                socket.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+            }
+            let body = r#"{"instance":{"app":"other","id":"fedcba9876543210fedcba9876543210"}}"#;
+            let reply = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+            socket.write_all(reply.as_bytes()).unwrap();
+        });
+        assert_eq!(status_probe(port, &data, false).0, Decision::Conflict);
+        server.join().unwrap();
+    }
+
+    #[test]
     fn panel_close_label_is_strictly_allowlisted() {
         assert!(valid_panel_close_label("prompter"));
         assert!(valid_panel_close_label("teleprompter"));
