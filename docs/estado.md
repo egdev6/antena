@@ -30,7 +30,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
 - **Chat y moderación local:** Twitch y YouTube unificados, envío a una o a las dos
   plataformas con resultado por plataforma, filtro local y reflejo de la moderación de Twitch.
 - **Comandos y timers multicanal:** comandos con permisos y esperas, y mensajes programados
-  con destino Twitch, YouTube o ambos y pausa global. Los comandos pueden usar «Solo chat»:
+  con destino Twitch, YouTube o ambos y pausa global. Los mensajes «Solo mientras emito» pausan la cuenta fuera de directo y esperan un intervalo completo al empezar a emitir; los demás siguen contando. Los comandos pueden usar «Solo chat»:
   `outputMode: "chat"` envía `chatReply` (con `{user}` y `{args}`) a la plataforma de origen,
   sin alerta, overlay ni espera de ACK. Sin `outputMode` siguen sacando su alerta; la plantilla
   «Alerta y respuesta» mantiene además su acción de chat a ambas plataformas. En solo chat las

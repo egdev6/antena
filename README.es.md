@@ -45,7 +45,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Alerta de récord de espectadores** por plataforma (Twitch y YouTube), con freno anti-spam.
 - **Apariencia:** un solo tema para todo lo que sale en pantalla (alertas, widgets y créditos): colores, fuentes (también las tuyas), iconos por alerta, forma, posición, animación y sonido. El de serie es el de EGDEV.
 - **Atajos para Stream Deck** personalizables: cada uno encadena pasos (marca, pausa, escena, capa, chat, pestaña del prompter…) y tiene su dirección `/sd/custom/<id>`.
-- **Dock para Meld:** todo el manejo del directo menos la vista previa —escenas, pistas de audio de Meld, alertas, preguntas, votación, sorteo, teleprompter y créditos— y adaptable: tres columnas en apaisado, una pestaña por sección en el resto.
+- **Dock para Meld:** todo el manejo del directo menos la vista previa —escenas, pistas de audio de Meld, alertas, preguntas, votación, sorteo, teleprompter y créditos— y adaptable: tres columnas desde 1024 px de ancho, sin importar la orientación; por debajo, una pestaña por sección.
 
 El servidor no tiene dependencias (Node ≥ 24). La interfaz es React compilada con esbuild y la app de escritorio es Tauri 2, que arranca ese servidor como *sidecar*. Todo se queda en tu PC.
 
@@ -278,7 +278,7 @@ Por MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `b
 - **Texto** con variables: `{channel}` (tu canal), `{title}` (título del directo), `{uptime}` (tiempo en directo) y `{follows}` (seguidores nuevos hoy).
 - **Cada cuántos minutos** y **cuántos mensajes tiene que haber en el chat** desde la última vez. Así no se repite en un chat parado; tus propios mensajes no cuentan.
 - **Dónde se publica:** Twitch, YouTube o los dos. Los mensajes que ya tenías siguen saliendo solo en Twitch.
-- **Solo mientras emito** (activado de serie): usa el estado de Meld. Si Meld no está conectado no se sabe si emites, así que **no se publica**, ni solo ni con «Enviar ahora».
+- **Solo mientras emito** (activado de serie): usa el estado de Meld. La cuenta se pausa fuera de directo y, al empezar a emitir, vuelve a contar el intervalo completo. Si Meld no está conectado no se sabe si emites, así que **no se publica**, ni solo ni con «Enviar ahora». Desactiva esta opción para seguir contando y publicando fuera de directo.
 - **Como anuncio destacado** de Twitch, con color (el del canal, azul, verde, naranja o morado). YouTube no tiene anuncios: con «YouTube» o «los dos», allí sale el mismo texto como mensaje normal.
 - **También en pantalla:** además del chat, sale una alerta completa (tarjeta o vídeo, sonido, voz, acciones de Meld…).
 
@@ -315,7 +315,7 @@ Están en **Widgets** y cada uno tiene su capa de navegador. Su estado (pregunta
 
 ### Directo, chat e historial
 
-- **Directo:** totales, objetivos, cronología, resumen en Markdown (copiar o descargar), lanzar créditos y empezar un directo nuevo (el anterior queda archivado con su resumen). Las barras de total del canal conservan su valor y sus correcciones entre directos; las demás cuentan por directo.
+- **Directo:** totales, objetivos, cronología, resumen en Markdown (copiar o descargar), lanzar créditos y empezar un directo nuevo (el anterior queda archivado con su resumen). Puedes mostrar la vista previa del widget de chat en pantalla con mensajes reales y elegir una variante guardada; el panel recuerda ambas elecciones en este navegador. Las barras de total del canal conservan su valor y sus correcciones entre directos; las demás cuentan por directo.
 - **Identidad de sesión:** los IDs conocidos de YouTube y Twitch aparecen en `/api/sessions` y `listar_directos`; un ID distinto al reconectar abre otra sesión, y si no se conserva el primero.
 - **Historial de espectadores:** las sesiones automáticas guardan cada muestra y los huecos por error, fin de emisión o desconexión por plataforma. Los resúmenes JSON incluyen `viewers` y `viewerMetrics`; `/api/sessions` y `listar_directos` solo incluyen métricas. La media es ponderada por tiempo, con pico y cobertura separados por plataforma (nunca se suman). Cada muestra cubre como máximo su intervalo de sondeo; los huecos y el tiempo sin datos al reiniciar no se interpolan.
 - **Métricas de chat:** las sesiones automáticas de Meld guardan chatters únicos y mensajes/minuto por plataforma, independientemente del buffer de 300 mensajes. Se excluyen las simulaciones y los mensajes propios identificables.
@@ -406,7 +406,7 @@ Meld no admite paneles propios, pero su **panel de chat** carga una dirección. 
 - **Audio:** pistas globales y de las escenas al aire, con interruptor de mute y fader de **volumen real**. Si Meld no informa del volumen, el fader queda desactivado. En estrecho, la pestaña Audio avisa de pistas visibles silenciadas.
 - **Interactivos:** pestañas para preguntas (interruptor, pregunta actual, siguiente, ocultar y cola), votación de tier list (cerrar y colocar, cancelar) y sorteo (abrir/cerrar, sortear, participantes), con indicadores de estado.
 
-En **apaisado y con al menos 1000 px de ancho** las columnas son **Control | Audio | Interactivos**; en el resto son pestañas. Los dos niveles de pestañas admiten flechas y recuerdan la última selección. El dock no tiene chat, vista previa ni atajos; estos siguen en el panel y Stream Deck.
+Desde **1024 px de ancho, sin importar la orientación**, las columnas son **Control | Audio | Interactivos**; por debajo de 1024 px son pestañas. Los dos niveles de pestañas admiten flechas y recuerdan la última selección. El dock no tiene chat, vista previa ni atajos; estos siguen en el panel y Stream Deck.
 
 ### Panel
 

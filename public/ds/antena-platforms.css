@@ -1,0 +1,5 @@
+/* Extensión propia de antena; pnpm ds:sync solo gestiona tokens.css y bundle.css. */
+:root{
+  --platform-twitch:#9146FF;
+  --platform-youtube:#FF0000;
+}

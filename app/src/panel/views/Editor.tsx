@@ -60,6 +60,7 @@ export function TimerState({ id }: { id: string }) {
   const r = t.runtime || {};
   const parts: string[] = [];
   if (t.enabled === false) parts.push('Desactivado');
+  else if (r.pausedOffStream === true) parts.push('En pausa: no estás en directo');
   else if ((r.nextInSec || 0) > 0) parts.push(`Siguiente en ${fmtNext(r.nextInSec || 0)}`);
   else if (r.blockedBy) parts.push(`Esperando: ${r.blockedBy}`);
   else parts.push('Sale en el próximo repaso');
@@ -426,7 +427,7 @@ export function Editor({ target }: { target: Target }) {
           {item.announce && ['youtube', 'both'].includes(item.destination) && <p className="hint">En YouTube no hay anuncios destacados: recibe el mismo texto como mensaje normal.</p>}
           <p className="timer-state"><TimerState id={item.id} /></p>
           {fireMsg && <p className={cx('hint', fireMsg.err && 'err-inline')} aria-live="polite">{fireMsg.text}</p>}
-          <p className="hint">Variables: <code>{'{channel}'}</code> tu canal, <code>{'{title}'}</code> título del directo, <code>{'{uptime}'}</code> tiempo en directo, <code>{'{follows}'}</code> seguidores nuevos hoy. «Solo mientras emito» usa el estado de Meld: sin Meld conectado no se publica. Límites: 500 caracteres en Twitch y 200 en YouTube; si el texto no cabe, no se envía a esa plataforma (nunca se corta).</p>
+          <p className="hint">Variables: <code>{'{channel}'}</code> tu canal, <code>{'{title}'}</code> título del directo, <code>{'{uptime}'}</code> tiempo en directo, <code>{'{follows}'}</code> seguidores nuevos hoy. «Solo mientras emito» usa el estado de Meld: sin Meld conectado no se publica. Fuera de directo la cuenta se pausa y, al empezar a emitir, vuelve a contar el intervalo completo. Límites: 500 caracteres en Twitch y 200 en YouTube; si el texto no cabe, no se envía a esa plataforma (nunca se corta).</p>
           {box('También en pantalla', <p className="hint">Además del mensaje en el chat, saca una alerta en el overlay con su diseño, mensaje y sonido (aparecen sus pestañas).</p>, <Switch checked={item.showAlert} onChange={x => set('showAlert', x)}>Mostrar alerta</Switch>)}
         </>)}
 
