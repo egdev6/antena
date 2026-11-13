@@ -85,20 +85,18 @@ export function useListFilter(def = 'all') {
 }
 
 // ---------- slide a todo el ancho ----------
-export function Slide({ crumb, title, back, close, head, tabs, tab, onTab, children, foot, wide }: {
-  crumb: ReactNode; title: ReactNode; back: string; close?: string; head?: ReactNode;
+export function Slide({ crumb, title, desc, back, close, head, tabs, tab, onTab, children, foot, wide }: {
+  crumb: ReactNode; title: ReactNode; desc?: ReactNode; back: string; close?: string; head?: ReactNode;
   tabs?: TabDef[]; tab?: string; onTab?: (id: string) => void; children: ReactNode; foot?: ReactNode; wide?: boolean;
 }) {
   return <div className="lv-drawer" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : 'Detalle'}
     onKeyDown={e => { if (e.key === 'Escape' && !(e.target as HTMLElement).closest('input,textarea,select')) go(close || back); }}>
     <a className="lv-scrim" href={close || back} aria-label="Cerrar" tabIndex={-1} />
     <div className={cx('lv-slide', wide && 'wide')}>
-      <header className="lv-shead">
+      <header className={cx('lv-shead', tabs && 'has-tabs')}>
         <div className="lv-sbar">
-          <div className="lv-stitle">
-            <a className="eg-icon-btn" href={back} aria-label="Volver" title="Volver"><Icon d={IC.arrowLeft} /></a>
-            <div><p className="lv-crumb">{crumb}</p><h2>{title}</h2></div>
-          </div>
+          <a className="eg-icon-btn" href={back} aria-label="Volver" title="Volver"><Icon d={IC.arrowLeft} /></a>
+          <div className="lv-stitle"><span className="crumb">{crumb}</span><h2>{title}</h2>{desc ? <p className="hint">{desc}</p> : null}</div>
           {head}
           <a className="eg-icon-btn" href={close || back} aria-label="Cerrar" title="Cerrar"><Icon d={IC.x} /></a>
         </div>
