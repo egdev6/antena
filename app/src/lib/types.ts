@@ -271,7 +271,7 @@ export interface YoutubeStatus {
   errors?: string[];
   [k: string]: unknown;
 }
-export interface MeldStatus { state?: string; streaming?: boolean; error?: string; [k: string]: unknown }
+export interface MeldStatus { state?: string; streaming?: boolean; streamingKnown?: boolean; error?: string; [k: string]: unknown }
 export interface PersistenceState { dirty?: Record<string, boolean>; pending?: Record<string, number>; [k: string]: unknown }
 export interface PauseState { paused?: boolean; held?: number; [k: string]: unknown }
 export interface Status {

@@ -138,6 +138,62 @@ test('muestras, media ponderada, pico y huecos independientes en REST y MCP', { 
   assert.deepEqual((await ctx.get(`/api/session/summary?format=json&id=${current.id}`)).viewerMetrics, current.viewerMetrics);
 });
 
+test('lecturas ausentes o no numéricas son huecos y el cero real es una muestra', async t => {
+  const ctx = await (await fixture(t)).start();
+  const start = await startLive(ctx);
+  const v = ctx.app.viewers;
+  let time = start, twitchRow = { id: 'stream-1' }, youtubeDetails = {};
+  v.now = () => time;
+  v.twitch = { userId: 'synthetic', token: 'synthetic', helix: async () => ({ ok: true, data: { data: [twitchRow] } }) };
+  v.youtube = { status: video, api: async () => ({ items: [{ liveStreamingDetails: youtubeDetails }] }) };
+  v.readers = { twitch: () => v.readTwitch(), youtube: () => v.readYouTube() };
+  const poll = async seconds => { time = start + seconds * 1000; await v.tick(); await ctx.app.session.transitionChain; };
+
+  await poll(0);
+  // El identificador del directo sigue siendo válido aunque falte el recuento.
+  assert.equal((await ctx.get('/api/session')).platforms.twitch.streamId, 'stream-1');
+  let snapshot = await ctx.get('/api/viewers');
+  for (const p of ['twitch', 'youtube']) {
+    assert.equal(snapshot.platforms[p].current, null, `${p}: un dato ausente no es cero`);
+    assert.ok(snapshot.platforms[p].error, `${p}: dato desconocido como error de lectura`);
+  }
+  twitchRow = { id: 'stream-1', viewer_count: 0 }; youtubeDetails = { concurrentViewers: '0' };
+  await poll(20); snapshot = await ctx.get('/api/viewers');
+  assert.equal(snapshot.platforms.twitch.current, 0); assert.equal(snapshot.platforms.youtube.current, 0);
+  assert.equal(snapshot.platforms.twitch.error, null); assert.equal(snapshot.platforms.youtube.error, null);
+  twitchRow = { id: 'stream-1', viewer_count: 37 }; youtubeDetails = { concurrentViewers: '37' };
+  await poll(40);
+  twitchRow = { id: 'stream-1', viewer_count: 'no-numérico' }; youtubeDetails = { concurrentViewers: 'no-numérico' };
+  await poll(60); snapshot = await ctx.get('/api/viewers');
+  for (const p of ['twitch', 'youtube']) assert.ok(snapshot.platforms[p].error, `${p}: no numérico queda desconocido`);
+  await ctx.app.session.endCurrent(iso(start + 80_000));
+  const session = await ctx.get('/api/session');
+  for (const p of ['twitch', 'youtube']) {
+    assert.deepEqual(session.viewers[p].samples, [{ at: iso(start + 20_000), value: 0 }, { at: iso(start + 40_000), value: 37 }]);
+    assert.deepEqual(session.viewers[p].gaps, [
+      { from: iso(start), to: iso(start + 20_000), reason: 'error' },
+      { from: iso(start + 60_000), to: iso(start + 80_000), reason: 'error' },
+    ]);
+    assert.deepEqual(session.viewerMetrics[p], { average: 18.5, peak: 37, coverage: { liveSeconds: 80, coveredSeconds: 40, ratio: 0.5 } });
+  }
+  const exported = await ctx.get(`/api/metrics/v1/sessions/${session.id}`);
+  for (const p of ['twitch', 'youtube']) {
+    const rows = exported.metrics.filter(m => m.platform === p && m.metric.startsWith('viewers_'));
+    assert.deepEqual(rows.map(m => m.value), [18.5, 37]);
+    assert.ok(rows.every(m => m.coverage.coveredSeconds === 40));
+  }
+});
+
+test('el sondeo de identidad de Twitch funciona sin cifra con espectadores desactivados', async t => {
+  const ctx = await (await fixture(t)).start(); await startLive(ctx);
+  ctx.app.store.config.viewers.enabled = false;
+  ctx.app.viewers.twitch = { userId: 'synthetic', token: 'synthetic', helix: async () => ({ ok: true, data: { data: [{ id: 'stream-1' }] } }) };
+  await ctx.app.viewers.tick(); await ctx.app.session.transitionChain;
+  const session = await ctx.get('/api/session');
+  assert.equal(session.platforms.twitch.streamId, 'stream-1');
+  assert.equal(session.viewers?.twitch?.samples?.length || 0, 0);
+});
+
 test('sin muestras la cobertura es cero y no se inventan valores', async t => {
   const ctx = await (await fixture(t)).start(); const start = await startLive(ctx); const poll = poller(ctx, start);
   await poll(10, offline, disconnected); await poll(40, offline, disconnected);

@@ -12,8 +12,41 @@
 import { MELD_COMMANDS, MELD_STREAM_EVENTS } from '../meld.mjs';
 import { httpError as httpErrorBase } from '../http-util.mjs';
 
-export function registerMeldRoutes({ route, store, meld, scheduleLayerHide, httpError = httpErrorBase }) {
+// El cuerpo ya es JSON válido. Solo se cuentan claves del objeto superior, decodificando
+// escapes ("\\u0061ction" también es "action"); los strings y objetos anidados no cuentan.
+function repeatedAction(raw = '') {
+  let depth = 0, key = false, count = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '"') {
+      const start = i++;
+      for (; i < raw.length; i++) {
+        if (raw[i] === '\\') { i++; continue; }
+        if (raw[i] === '"') break;
+      }
+      if (depth === 1 && key) {
+        if (JSON.parse(raw.slice(start, i + 1)) === 'action' && ++count > 1) return true;
+        key = false;
+      }
+    } else if (ch === '{' || ch === '[') {
+      depth++;
+      if (depth === 1 && ch === '{') key = true;
+    } else if (ch === '}' || ch === ']') depth--;
+    else if (ch === ',' && depth === 1) key = true;
+  }
+  return false;
+}
+
+const STREAM_PENDING_MS = 20000;
+
+export function registerMeldRoutes({ route, store, meld, scheduleLayerHide, httpError = httpErrorBase, now = () => performance.now() }) {
   const needMeld = () => { if (!meld.connected) throw httpError(409, 'Meld no está conectado. Actívalo en Ajustes › Avanzado › «Allow remote connections» y pulsa Conectar.'); };
+  // Por instancia, compartido entre todos los clientes HTTP; no se borra al desconectar.
+  const pending = new Map();
+  meld.on?.('status', st => {
+    if (st.state !== 'conectado' || st.streamingKnown !== true) return;
+    for (const action of pending.keys()) if (st.streaming === (action === 'start')) pending.delete(action);
+  });
   route('GET', '/api/meld', async () => ({ status: meld.status, ...meld.session(), commands: MELD_COMMANDS, events: MELD_STREAM_EVENTS }));
   route('POST', '/api/meld/connect', async ({ url } = {}) => { await store.patchConfig({ meld: { enabled: true, ...(url ? { url } : {}) } }); meld.stop(); meld.start(store.config.meld.url); return meld.status; });
   route('POST', '/api/meld/disconnect', async () => { await store.patchConfig({ meld: { enabled: false } }); meld.stop(); return meld.status; });
@@ -26,6 +59,23 @@ export function registerMeldRoutes({ route, store, meld, scheduleLayerHide, http
     return { scene: f.scene.name, layer: f.layer.name };
   });
   route('POST', '/api/meld/effect', async ({ scene, layer, effect }) => { needMeld(); await meld.toggleEffect(scene, layer, effect); return { ok: true }; });
+  route('POST', '/api/meld/stream', async (body, _unused, _url, req) => {
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || !['start', 'stop'].includes(body.action))
+      throw httpError(400, 'Indica una acción válida: start o stop.');
+    if (repeatedAction(req?.rawBody)) throw httpError(400, 'La acción no puede repetirse en el mismo JSON.');
+    needMeld();
+    // Un valor ausente no es una confirmación de que Meld no emite.
+    const streaming = meld.status.streamingKnown ? meld.status.streaming : null;
+    if (body.action === 'start' && streaming === true) throw httpError(409, 'Meld ya está emitiendo.');
+    if (body.action === 'stop' && streaming === false) throw httpError(409, 'Meld no está emitiendo.');
+    const current = now(), deadline = pending.get(body.action);
+    if (deadline !== undefined && deadline > current) throw httpError(409, 'Ya hay una orden pendiente de confirmación de Meld.');
+    // Reservar antes del primer await: dos clientes no pueden enviar la misma orden.
+    // Si falla la respuesta, pudo haberse enviado; se conserva hasta confirmar o agotar el plazo.
+    pending.set(body.action, current + STREAM_PENDING_MS);
+    await meld.command(body.action === 'start' ? 'meld.startStreamingAction' : 'meld.stopStreamingAction');
+    return { requested: body.action, streaming };
+  });
   route('POST', '/api/meld/command', async ({ command }) => { needMeld(); await meld.command(command); return { ok: true }; });
   route('POST', '/api/meld/event', async ({ event, amount }) => { needMeld(); await meld.streamEvent(event, amount ? { amount: Number(amount) } : undefined); return { ok: true }; });
   route('POST', '/api/meld/track', async ({ track, action = 'mute', gain }) => { needMeld(); if (action === 'gain') await meld.setGain(track, gain); else await meld.toggleMute(track); return { ok: true }; });

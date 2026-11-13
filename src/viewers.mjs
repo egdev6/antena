@@ -36,6 +36,13 @@ export const DEFAULT_VIEWERS = {
 
 const n = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
+// Sin dato no es cero. La identidad de un directo puede ser válida sin su cifra.
+function viewerCount(value) {
+  if ((typeof value !== 'number' && typeof value !== 'string') || (typeof value === 'string' && !value.trim())) return null;
+  const count = Number(value);
+  return Number.isFinite(count) ? count : null;
+}
+
 /** Cuánto hay que superar `base` para que merezca alerta. */
 export function nextAnnounce(base, cfg) {
   const b = Math.max(0, n(base, 0));
@@ -77,7 +84,7 @@ export class ViewerWatch extends EventEmitter {
     const r = await t.helix('GET', `/streams?user_id=${encodeURIComponent(t.userId)}`);
     if (!r.ok) throw new Error(`Twitch respondió ${r.status} al leer los espectadores`);
     const row = r.data?.data?.[0];
-    return row ? { live: true, viewers: Number(row.viewer_count) || 0,
+    return row ? { live: true, viewers: viewerCount(row.viewer_count),
       ...(row.id ? { streamId: row.id } : {}), ...(row.started_at ? { startedAt: row.started_at } : {}) } : { live: false };
   }
 
@@ -87,9 +94,9 @@ export class ViewerWatch extends EventEmitter {
     if (!id || !['escuchando', 'en espera'].includes(y.status.state)) return { live: false, off: true };
     const d = await y.api('/videos', { part: 'liveStreamingDetails', id });
     const det = d.items?.[0]?.liveStreamingDetails;
-    // un directo terminado ya no trae concurrentViewers
-    if (!det || det.actualEndTime || det.concurrentViewers === undefined) return { live: false };
-    return { live: true, viewers: Number(det.concurrentViewers) || 0 };
+    // Un directo terminado no es lo mismo que una lectura sin cifra.
+    if (!det || det.actualEndTime) return { live: false };
+    return { live: true, viewers: viewerCount(det.concurrentViewers) };
   }
 
   // ---------- ciclo ----------
@@ -122,6 +129,7 @@ export class ViewerWatch extends EventEmitter {
     if (this.busy) return this.busy;
     this.busy = (async () => {
       const fired = [];
+      const twitchIdentity = (r, epoch) => this.emit('streamIdentity', r.live && r.streamId ? { streamId: r.streamId, startedAt: r.startedAt } : null, epoch);
       // Aunque el récord esté desactivado, el directo automático necesita la fila
       // de Twitch. Se consulta sin actualizar snapshots, récords ni alertas.
       if (this.cfg.enabled === false) {
@@ -129,7 +137,7 @@ export class ViewerWatch extends EventEmitter {
         const epoch = this.identityEpoch?.();
         try {
           const r = await this.readTwitch();
-          this.emit('streamIdentity', r.live && r.streamId ? { streamId: r.streamId, startedAt: r.startedAt } : null, epoch);
+          twitchIdentity(r, epoch);
         } catch { /* el siguiente sondeo reintenta sin activar las métricas */ }
         return fired;
       }
@@ -138,15 +146,22 @@ export class ViewerWatch extends EventEmitter {
         const epoch = this.identityEpoch?.(p); // captura antes de iniciar la petición
         const videoId = p === 'youtube' ? this.youtube?.status?.videoId : undefined;
         const intervalSec = this.handle ? this.every / 1000 : Math.min(600, Math.max(20, n(this.cfg.pollSec, 60)));
-        try { r = await this.readers[p](); this.state[p].error = null; }
-        catch (err) {
+        try {
+          r = await this.readers[p]();
+          if (r.live && viewerCount(r.viewers) === null) {
+            // La fila identifica el directo aunque el contador no esté disponible.
+            if (p === 'twitch') twitchIdentity(r, epoch);
+            throw new Error(`${p === 'twitch' ? 'Twitch' : 'YouTube'} no informa del número de espectadores`);
+          }
+          this.state[p].error = null;
+        } catch (err) {
           this.state[p].error = err.message;
           this.emit('seriesObservation', p, { at: new Date(this.now()).toISOString(), intervalSec, reason: 'error' }, epoch);
           continue;
         }
         const at = new Date(this.now()).toISOString();
         // La fila real también identifica el directo; no se añade al snapshot de espectadores.
-        if (p === 'twitch') this.emit('streamIdentity', r.live && r.streamId ? { streamId: r.streamId, startedAt: r.startedAt } : null, epoch);
+        if (p === 'twitch') twitchIdentity(r, epoch);
         const a = this.observe(p, r);
         this.emit('seriesObservation', p, r.live
           ? { at, intervalSec, value: this.state[p].current, streamId: r.streamId, videoId }

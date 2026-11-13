@@ -1333,7 +1333,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         if (r.method !== req.method) continue;
         const m = r.re.exec(url.pathname);
         if (!m) continue;
-        const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req) : {};
+        const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream') : {};
         // rutas con parámetros: fn(params, body, url) · sin parámetros: fn(body, _, url)
         return json(res, 200, await (m.groups ? r.fn(m.groups, body, url, req) : r.fn(body, null, url, req)));
       }
@@ -1492,7 +1492,7 @@ function json(res, code, data) {
   res.end(JSON.stringify(data ?? null));
 }
 
-function readBody(req) {
+function readBody(req, retainRaw = false) {
   return new Promise((resolve, reject) => {
     let raw = '', done = false;
     // El cierre/interrupción del socket también finaliza: nunca deja la promesa colgada ni el
@@ -1502,7 +1502,11 @@ function readBody(req) {
     req.on('end', () => {
       if (done) return;
       done = true;
-      try { resolve(raw ? JSON.parse(raw) : {}); } catch { reject(httpError(400, 'JSON no válido')); }
+      try {
+        const body = raw ? JSON.parse(raw) : {};
+        if (retainRaw) req.rawBody = raw;
+        resolve(body);
+      } catch { reject(httpError(400, 'JSON no válido')); }
     });
     req.on('error', fail);
     req.on('aborted', fail);

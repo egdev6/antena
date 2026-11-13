@@ -81,6 +81,19 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-card-h .d-sw{flex:none}
 .d-q{margin:0;font-size:14px;overflow-wrap:anywhere}.d-q b{color:var(--pink)}
 .d-muted{margin:0;color:var(--muted);font-size:12px}
+/* Emisión y espectadores: estados con texto, sin confundir ausencia con cero. */
+.d-stream .d-btn{width:100%}
+.d-stream-notice{margin:0;color:var(--warn);font-size:12px;overflow-wrap:anywhere}
+.d-stream-notice:empty{display:none}
+.d-viewers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.d-viewers>div{display:flex;align-items:baseline;justify-content:space-between;gap:6px;color:var(--grey);font-size:12px;min-width:0}
+.d-viewers b{color:var(--text);font:600 12px/1.2 var(--font-mono);font-variant-numeric:tabular-nums}
+.d-confirm{width:min(420px,calc(100% - 24px));max-height:calc(100% - 24px);padding:16px;color:var(--text);background:var(--s1);border:1px solid var(--line2);border-radius:var(--radius-md);box-shadow:var(--shadow-elev-1)}
+.d-confirm::backdrop{background:var(--color-bg-scrim)}
+.d-confirm h2{margin:0;font:800 20px/1.1 var(--font-display)}
+.d-confirm p{margin:10px 0;font-size:14px}
+.d-confirm-actions{justify-content:flex-end;flex-wrap:wrap;margin-top:14px}
+.d-confirm-actions .d-btn{width:auto}
 /* Compact interactive lists and forms. */
 .d-pick{display:grid;gap:4px;min-width:0;color:var(--grey);font-size:12px}
 .d-pick select{width:100%;min-width:0;padding:7px 8px;font:inherit;color:var(--text);border:1px solid var(--line2);border-radius:var(--radius-md);background:var(--s0)}

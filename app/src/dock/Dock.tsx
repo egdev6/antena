@@ -10,7 +10,7 @@ import { ConnPill, cx, guard, Icon, mmss, toast, Toaster } from '../lib/ui';
 import { DockQuestions } from './DockQuestions';
 import { DockTierlist } from './DockTierlist';
 import { DockGiveaway } from './DockGiveaway';
-import type { MeldTrack, TeleprompterState, TimelineItem } from '../lib/types';
+import type { MeldTrack, TeleprompterState, TimelineItem, ViewerPlatform, ViewerSettings } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
 const INTERACTIVE_TAB = 'egdev.dock.interactive.tab';
@@ -42,17 +42,19 @@ function Status() {
   const s = useLive(x => x);
   const now = useNow();
   const tl = live.timeline;
-  const st = s.status, meldOn = st.meld?.state === 'conectado', streaming = !!st.meld?.streaming;
+  const st = s.status, meldOn = st.meld?.state === 'conectado' && !live.failed;
+  const known = meldOn && st.meld?.streamingKnown === true;
+  const streaming = known && st.meld?.streaming === true;
   const tracks = s.meld?.session?.tracks || [];
   const want = (s.config.prompter?.micTrack || '').toLowerCase();
   const mic = want ? tracks.find(t => t.name.toLowerCase() === want) : tracks.find(t => /mic/i.test(t.name));
   const pause = st.pause || {};
   return <header className="d-top">
-    <div className={cx('d-live', streaming && 'on')}><i />{streaming ? 'En directo' : meldOn ? 'Sin emitir' : 'Sesión'}<b>{tl.startedAt ? mmss((now - +new Date(tl.startedAt)) / 1000) : ''}</b></div>
+    <div className={cx('d-live', streaming && 'on')}><i />{streaming ? 'En directo' : known ? 'Sin emitir' : 'Sesión'}<b>{tl.startedAt ? mmss((now - +new Date(tl.startedAt)) / 1000) : ''}</b></div>
     <div className="d-warns">
       {mic?.muted && <span className="d-warn big">🎙 Micro silenciado</span>}
       {pause.paused && <span className="d-warn">Alertas en pausa{pause.held ? ` · ${pause.held}` : ''}</span>}
-      {!meldOn && <ConnPill platform="meld" state={st.meld?.state} />}
+      {!meldOn && !live.failed && <ConnPill platform="meld" state={st.meld?.state} />}
       {st.overlays === 0 && <span className="d-warn soft">Sin overlay</span>}
       {st.twitch && st.twitch.state !== 'conectado' && <ConnPill platform="twitch" state={st.twitch.state} />}
       {st.youtube?.state === 'en espera' && <ConnPill platform="youtube" state="en espera" label={st.youtube.notice || undefined} />}
@@ -147,10 +149,117 @@ function Audio() {
   </div>;
 }
 
-// ---------- Control (S11) ----------
+// ---------- Control (S11 y #158) ----------
 const sd = (a: string, ok?: string) => guard(() => post('/sd/' + a), ok);
+type StreamAction = 'start' | 'stop';
+const STREAM_CONFIRM_MS = 20000;
 
-function Control() {
+/** El estado y el plazo viven en Dock para sobrevivir al cambio entre pestañas y columnas. */
+function useStreamControl() {
+  const meld = useLive(s => s?.status?.meld);
+  const offline = useLive(() => live.failed);
+  const connected = meld?.state === 'conectado' && !offline;
+  const known = connected && meld?.streamingKnown === true && typeof meld.streaming === 'boolean';
+  const streaming = known ? meld.streaming === true : null;
+  const [confirmation, setConfirmation] = useState<StreamAction | null>(null);
+  const [pending, setPending] = useState<StreamAction | null>(null);
+  const [notice, setNotice] = useState('');
+  const op = useRef<{ action: StreamAction; timer: number } | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const active = op.current;
+    if (!active || streaming === null || streaming !== (active.action === 'start')) return;
+    window.clearTimeout(active.timer); op.current = null; setPending(null); setNotice('');
+  }, [streaming, pending]);
+  useEffect(() => () => {
+    if (op.current) window.clearTimeout(op.current.timer);
+    op.current = null;
+  }, []);
+  const dismiss = () => { setConfirmation(null); trigger.current?.focus(); };
+  const request = async (action: StreamAction) => {
+    const current = live.state?.status?.meld;
+    // La conexión o el estado pueden cambiar mientras está abierto el diálogo.
+    if (op.current || live.failed || current?.state !== 'conectado' || current.streamingKnown !== true ||
+      typeof current.streaming !== 'boolean' || current.streaming === (action === 'start')) {
+      setConfirmation(null); setNotice('El estado de Meld ha cambiado. Compruébalo antes de volver a intentarlo.'); return;
+    }
+    setConfirmation(null); setNotice('');
+    const active = { action, timer: 0 };
+    active.timer = window.setTimeout(() => {
+      if (op.current !== active) return;
+      op.current = null; setPending(null);
+      setNotice('Meld no confirmó la orden a tiempo. Comprueba si está emitiendo antes de volver a intentarlo.');
+    }, STREAM_CONFIRM_MS);
+    op.current = active; setPending(action);
+    try { await post('/api/meld/stream', { action }); }
+    catch (err) {
+      if (op.current !== active) return;
+      window.clearTimeout(active.timer); op.current = null; setPending(null);
+      setNotice(err instanceof Error ? err.message : 'No se pudo solicitar la orden a Meld.');
+    }
+  };
+  const reason = !connected ? (offline ? 'Sin conexión con antena: no se conoce el estado de Meld.' : 'Meld no está conectado. Conéctalo para controlar la emisión.')
+    : !known ? 'Meld todavía no informa del estado de emisión.' : '';
+  return { streaming, confirmation, setConfirmation, pending, notice, trigger, dismiss, request, reason };
+}
+
+/** Igual que la lectura watcher-only de Directo: nunca sustituir ausencia por cero. */
+function currentViewers(watcher: ViewerPlatform | undefined, settings: ViewerSettings | undefined, now: number): number | null {
+  if (!settings?.enabled || !watcher?.live || watcher.off || watcher.error || watcher.current == null || !Number.isFinite(watcher.current)) return null;
+  const at = Date.parse(watcher.updatedAt || '');
+  const interval = Math.min(600, Math.max(20, Number.isFinite(settings.pollSec) ? settings.pollSec : 60));
+  return Number.isFinite(at) && at <= now && now < at + interval * 1000 ? watcher.current : null;
+}
+
+function StreamDialog({ control }: { control: ReturnType<typeof useStreamControl> }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const action = control.confirmation;
+  useEffect(() => {
+    if (!action || !dialog.current) return;
+    dialog.current.showModal(); cancel.current?.focus();
+  }, [action]);
+  if (!action) return null;
+  const valid = control.streaming === (action === 'stop') && !control.pending;
+  const dismiss = () => { dialog.current?.close(); control.dismiss(); };
+  return <dialog ref={dialog} className="d-confirm" aria-labelledby="d-confirm-title" aria-describedby="d-confirm-description"
+    onCancel={e => { e.preventDefault(); dismiss(); }}>
+    <h2 id="d-confirm-title">{action === 'start' ? '¿Iniciar directo?' : '¿Terminar directo?'}</h2>
+    <p id="d-confirm-description">{action === 'start'
+      ? 'Esto inicia la emisión pública de Meld de verdad. Con la sesión automática activada, antena creará la sesión cuando Meld confirme que emite.'
+      : 'Esto termina la emisión pública de Meld de verdad.'}</p>
+    {!valid && <p className="d-muted">{control.reason || 'El estado de emisión ha cambiado. Cancela y compruébalo.'}</p>}
+    <div className="d-row d-confirm-actions">
+      <button ref={cancel} type="button" className="d-btn sm" data-cancel-stream onClick={dismiss}>Cancelar</button>
+      <button type="button" className="d-btn sm pri" data-confirm-stream disabled={!valid} onClick={() => void control.request(action)}>{action === 'start' ? 'Sí, iniciar directo' : 'Sí, terminar directo'}</button>
+    </div>
+  </dialog>;
+}
+
+function StreamControl({ control }: { control: ReturnType<typeof useStreamControl> }) {
+  const viewers = useLive(s => s.viewers);
+  const offline = useLive(() => live.failed);
+  useNow(); // actualiza también cuando una lectura vigente caduca sin recibir eventos
+  const now = Date.now();
+  const action: StreamAction = control.streaming ? 'stop' : 'start';
+  const label = control.pending ? (control.pending === 'start' ? 'Iniciando…' : 'Terminando…') : action === 'start' ? 'Iniciar directo' : 'Terminar directo';
+  return <section className="d-card d-stream" aria-label="Control de emisión">
+    <div className="d-card-h">Emisión <span className="d-meta">{control.streaming === null ? 'estado desconocido' : control.streaming ? 'En directo' : 'Sin emitir'}</span></div>
+    <button ref={control.trigger} type="button" className={cx('d-btn', action === 'start' && 'pri')} disabled={!!control.reason || !!control.pending}
+      title={control.reason || (action === 'start' ? 'Solicitar el inicio de la emisión pública' : 'Solicitar el fin de la emisión pública')}
+      onClick={() => control.setConfirmation(action)}>{label}</button>
+    {control.reason && <p className="d-muted">{control.reason}</p>}
+    <p className="d-stream-notice" role="status">{control.notice}</p>
+    <div className="d-viewers" aria-label="Espectadores por plataforma">{(['twitch', 'youtube'] as const).map(platform => {
+      const value = offline ? null : currentViewers(viewers?.platforms?.[platform], viewers?.settings, now);
+      return <div key={platform} data-platform={platform}><span>{platform === 'twitch' ? 'Twitch' : 'YouTube'}</span><b>{value === null ? 'sin dato' : value.toLocaleString('es-ES')}</b></div>;
+    })}</div>
+    <StreamDialog control={control} />
+  </section>;
+}
+
+function Control({ stream }: { stream: ReturnType<typeof useStreamControl> }) {
   useLiveVersion(); // la cronología (pendientes) vive fuera del snapshot de /api/state
   const pause = useLive(s => s.status.pause || {});
   const tp = useLive(s => s.teleprompter) as TeleprompterState | undefined;
@@ -163,6 +272,7 @@ function Control() {
   const block = tp?.playback?.block ?? 0;
   const tpAct = (action: string) => guard(() => post('/api/teleprompter/control', { action }))();
   return <>
+    <StreamControl control={stream} />
     <div className="d-grid">
       <button className={cx('d-btn', pause.paused && 'on')} onClick={sd('pausa')} title={pause.paused ? 'Reanudar las alertas' : 'Pausar las alertas que lleguen'}>
         {pause.paused ? '▶ Reanudar' : '⏸ Pausar'}<small>alertas{pause.held ? ` · ${pause.held} en cola` : ''}</small></button>
@@ -262,8 +372,10 @@ function AudioMeta() {
 }
 
 function ControlMeta() {
-  const streaming = useLive(s => !!s.status.meld?.streaming);
-  return <>{streaming ? 'en directo' : 'sin emitir'}</>;
+  const meld = useLive(s => s.status.meld);
+  const offline = useLive(() => live.failed);
+  const known = !offline && meld?.state === 'conectado' && meld.streamingKnown === true;
+  return <>{!known ? 'estado desconocido' : meld.streaming ? 'en directo' : 'sin emitir'}</>;
 }
 
 function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
@@ -295,6 +407,7 @@ export function Dock() {
   const ready = useLive(s => !!s);
   const offline = useLive(() => live.failed);
   const wide = useWide();
+  const stream = useStreamControl();
   const [tab, setTab] = useState<Tab>(() => tabOf(localStorage.getItem(DOCK_TAB)));
   useEffect(() => { live.load().then(() => live.connect('panel')).catch(e => toast(e.message, true)); }, []);
   useEffect(() => { try { localStorage.setItem(DOCK_TAB, tab); } catch { /* almacenamiento no disponible: se ignora */ } }, [tab]);
@@ -303,14 +416,14 @@ export function Dock() {
     <Status />
     {wide
       ? <div className="d-cols">
-        <Col id="control" title="Control" meta={<ControlMeta />}><Control /></Col>
+        <Col id="control" title="Control" meta={<ControlMeta />}><Control stream={stream} /></Col>
         <Col id="audio" title="Audio" meta={<AudioMeta />}><Audio /></Col>
         <section className="d-col d-col-inter" aria-labelledby="d-h-interactivos"><h2 className="d-col-h" id="d-h-interactivos">Interactivos</h2><Interactivos /></section>
       </div>
       : <>
         <Tabs tab={tab} onTab={setTab} />
         <div className="d-panels">
-          <main className="d-body" role="tabpanel" id="d-p-control" aria-labelledby="d-t-control" hidden={tab !== 'control'}><Control /></main>
+          <main className="d-body" role="tabpanel" id="d-p-control" aria-labelledby="d-t-control" hidden={tab !== 'control'}><Control stream={stream} /></main>
           <main className="d-body" role="tabpanel" id="d-p-audio" aria-labelledby="d-t-audio" hidden={tab !== 'audio'}><Audio /></main>
           <main className="d-inter-panel" role="tabpanel" id="d-p-interactivos" aria-labelledby="d-t-interactivos" hidden={tab !== 'interactivos'}><Interactivos /></main>
         </div>
