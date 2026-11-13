@@ -26,6 +26,17 @@ export function registerMeldRoutes({ route, store, meld, scheduleLayerHide, http
     return { scene: f.scene.name, layer: f.layer.name };
   });
   route('POST', '/api/meld/effect', async ({ scene, layer, effect }) => { needMeld(); await meld.toggleEffect(scene, layer, effect); return { ok: true }; });
+  route('POST', '/api/meld/stream', async body => {
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || !['start', 'stop'].includes(body.action))
+      throw httpError(400, 'Indica una acción válida: start o stop.');
+    needMeld();
+    // Un valor ausente no es una confirmación de que Meld no emite.
+    const streaming = meld.status.streamingKnown ? meld.status.streaming : null;
+    if (body.action === 'start' && streaming === true) throw httpError(409, 'Meld ya está emitiendo.');
+    if (body.action === 'stop' && streaming === false) throw httpError(409, 'Meld no está emitiendo.');
+    await meld.command(body.action === 'start' ? 'meld.startStreamingAction' : 'meld.stopStreamingAction');
+    return { requested: body.action, streaming };
+  });
   route('POST', '/api/meld/command', async ({ command }) => { needMeld(); await meld.command(command); return { ok: true }; });
   route('POST', '/api/meld/event', async ({ event, amount }) => { needMeld(); await meld.streamEvent(event, amount ? { amount: Number(amount) } : undefined); return { ok: true }; });
   route('POST', '/api/meld/track', async ({ track, action = 'mute', gain }) => { needMeld(); if (action === 'gain') await meld.setGain(track, gain); else await meld.toggleMute(track); return { ok: true }; });
