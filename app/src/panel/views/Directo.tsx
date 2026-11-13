@@ -183,6 +183,7 @@ function ChatBox() {
 
 const PREVIEW_VISIBLE = 'egdev.panel.directo.chat-preview.visible';
 const PREVIEW_VARIANT = 'egdev.panel.directo.chat-preview.variant';
+const THANKS_PREVIEW_VISIBLE = 'egdev.panel.directo.thanks-preview.visible';
 const VARIANTS_ROUTE = '/api/widgets/chat/variants';
 
 function readPreviewPreference(key: string) {
@@ -259,6 +260,24 @@ function ChatPreview() {
   </div>;
 }
 
+/** The same saved, live widget shown in Meld; an empty selection stays empty. */
+function ThanksPreview() {
+  const [visible, setVisible] = useState(() => readPreviewPreference(THANKS_PREVIEW_VISIBLE) === 'true');
+  const toggle = (next: boolean) => {
+    setVisible(next); writePreviewPreference(THANKS_PREVIEW_VISIBLE, String(next));
+  };
+  return <div className="dir-widget-preview">
+    <label className="check" htmlFor="dir-thanks-preview"><input id="dir-thanks-preview" type="checkbox" checked={visible} onChange={e => toggle(e.target.checked)} /> Vista previa del widget de agradecimientos</label>
+    {visible && <div className="dir-widget-preview__content">
+      <figure className="eg-stage dir-widget-stage is-horizontal">
+        <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista previa</span><span className="eg-stage__spacer" /><span>Seguidores pendientes</span></figcaption>
+        <ScaledFrame src="/widget/thanks" w={900} h={200} title="Vista previa del widget de agradecimientos" />
+      </figure>
+      <p className="hint">Sin pendientes que mostrar, la vista estará vacía.</p>
+    </div>}
+  </div>;
+}
+
 export function Directo() {
   const s = useLive(x => x), tl = live.timeline;
   const [ses, setSes] = useState<LiveSession | null>(null);
@@ -328,7 +347,7 @@ export function Directo() {
         <Timeline items={tl.items} types={s.types} />
       </Sec>
       <Sec title="Control de respaldo" id="h-backup" aside={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={mark}><Icon d={IC.bookmark} className="eg-btn__icon" />Marcar momento</button>}>
-        <AlertsCard /><ChatBox /><ChatPreview />
+        <AlertsCard /><ChatBox /><ChatPreview /><ThanksPreview />
       </Sec>
     </div>
     <div className="dir-extras"><GoalBars />
