@@ -201,8 +201,7 @@ export function ChatWidget({ info, anims }: { info: Info; anims: Options }) {
   // size follow the saved layout (not an unsaved edit) using the issue's 1832×160 reference.
   const horizontal = (id === 'default' ? savedDefaultLayout : current?.layout) === 'horizontal';
   const dimensions = horizontal ? { size: '1832×160', w: 1832, h: 160 } : info;
-  return <Slide crumb={<><a href="#/widgets">Widgets</a> › {info.title}</>} title={info.title} back="#/widgets" wide foot={<SaveBar />}>
-    <p className="hint">{info.desc}</p>
+  return <Slide crumb={<><a href="#/widgets">Widgets</a> › {info.title}</>} title={info.title} desc={info.desc} back="#/widgets" wide foot={<SaveBar />}>
     <WidgetLayout className="chat-variant-editor"
       source={<BrowserSource url={location.origin + path} size={dimensions.size} />}
       preview={<Stage eyebrow="Vista previa" aside={<span>Datos de ejemplo</span>} src={preview} w={dimensions.w} h={dimensions.h} />}>

@@ -74,9 +74,8 @@ export function Widget({ name }: { name: string }) {
     <p className="css-help">Clases: <code>.roll</code> <code>.head</code> <code>.grp</code> <code>.grp li</code> <code>.end</code> <code>.kick</code> <code>.big</code> <code>.sub</code> <code>.hl</code></p>
     <div className="row"><button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(() => post('/api/credits/play'))}>Lanzar créditos</button><button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/credits/stop'))}>Parar</button></div>
     <p className="hint mt">Parámetros: <code>?transparent</code> (sin fondo) · <code>?autoplay</code> · <code>?loop</code>. Se lanzan desde aquí, desde el MCP, con una acción o con un atajo del Stream Deck.</p></>;
-  return <Slide crumb={<><a href="#/widgets">Widgets</a> › {info.title}</>} title={info.title} back="#/widgets" wide
+  return <Slide crumb={<><a href="#/widgets">Widgets</a> › {info.title}</>} title={info.title} desc={info.desc} back="#/widgets" wide
     foot={<SaveBar />}>
-    <p className="hint">{info.desc}</p>
     <WidgetLayout
       source={<BrowserSource url={origin() + info.path} size={info.size} label={name === 'latest' ? 'Últimos' : undefined} also={name === 'latest' ? [{ url: origin() + '/widget/ticker', size: '1920×64', label: 'Ticker' }] : []} />}
       preview={<>
