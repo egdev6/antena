@@ -7,6 +7,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { PassThrough } from 'node:stream';
+import * as browserHelpers from './helpers/react-browser.mjs';
 import { closeChrome, findChrome, openChromePage } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
@@ -65,6 +67,42 @@ test('close waits for process streams when exit has already happened', async () 
     await closing;
   }
   assert.equal(finished, true);
+});
+
+test('close releases stderr and its data listener before waiting for process close', async () => {
+  const stderr = new PassThrough();
+  stderr.on('data', () => {});
+  const child = Object.assign(new EventEmitter(), {
+    exitCode: null, signalCode: null, connected: false, stderr,
+    stdio: [null, null, stderr], kill: () => true,
+  });
+  const closing = closeChrome({ child });
+  try {
+    assert.equal(stderr.destroyed, true, 'stderr is destroyed before waiting');
+    assert.equal(stderr.listenerCount('data'), 0, 'stderr is no longer observed');
+    let finished = false;
+    closing.then(() => { finished = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(finished, false, 'process close is still awaited');
+  } finally {
+    child.exitCode = 0;
+    child.emit('close');
+    await closing;
+    stderr.destroy();
+  }
+});
+
+test('closeAll runs every cleanup step in order and rethrows the first error', async () => {
+  const calls = [], first = new Error('Chrome close failed'), second = new Error('timer stop failed');
+  await assert.rejects(browserHelpers.closeAll(
+    async () => { calls.push('chrome'); throw first; },
+    () => { calls.push('timer'); throw second; },
+    async () => { await Promise.resolve(); calls.push('http'); },
+    () => { calls.push('directory'); },
+  ), error => error === first);
+  assert.deepEqual(calls, ['chrome', 'timer', 'http', 'directory']);
+  await browserHelpers.closeAll(() => { calls.push('success'); });
+  assert.deepEqual(calls, ['chrome', 'timer', 'http', 'directory', 'success']);
 });
 
 test('close also handles a process that closed before tracking', { timeout: 10000 }, async () => {

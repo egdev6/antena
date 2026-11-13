@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const input = label => `Array.from(document.querySelectorAll('main label')).find(l => l.textContent.trim().startsWith(${JSON.stringify(label)}))?.querySelector('input')`;
@@ -130,10 +130,11 @@ for (const unit of units) {
           await assertForm(c, unit, false);
         }
       } finally {
-        if (chrome) await closeChrome(chrome);
-        app.timers.stop();
-        app.server.closeAllConnections();
-        app.server.close();
+        await closeAll(() => chrome && closeChrome(chrome), () => {
+          app.timers.stop();
+          app.server.closeAllConnections();
+          app.server.close();
+        });
       }
     });
   }

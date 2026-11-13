@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const root = await mkdtemp(path.join(tmpdir(), 'thanks-browser-'));
@@ -47,7 +47,7 @@ test('S1/S2: escaped names rotate one card at a time, unchanged events do not re
     assert.equal((await call('POST', '/api/followers/thank', { all: true })).status, 200);
     await waitDom(c, `document.querySelectorAll('.item').length === 0`, { timeoutMs: 4000 });
     assert.equal(await evaluateChrome(c, `getComputedStyle(document.body).backgroundColor`), 'rgba(0, 0, 0, 0)');
-  } finally { if (chrome) await closeChrome(chrome); app.timers.stop(); await app.closeHttp(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), () => app.timers.stop(), () => app.closeHttp()); }
 });
 
 test('S2: demo uses synthetic names with saved widget settings', { timeout: 90000 }, async t => {
@@ -62,5 +62,5 @@ test('S2: demo uses synthetic names with saved widget settings', { timeout: 9000
     assert.equal(response.status, 200);
     chrome = await openChromePage(bin, base + '/widget/thanks?demo');
     await waitDom(chrome.cdp, `document.querySelector('.kick')?.textContent.includes('Gracias de prueba') && !!document.querySelector('.big')?.textContent`, { timeoutMs: 5000 });
-  } finally { if (chrome) await closeChrome(chrome); app.timers.stop(); await app.closeHttp(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), () => app.timers.stop(), () => app.closeHttp()); }
 });

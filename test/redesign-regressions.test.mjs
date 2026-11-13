@@ -12,7 +12,7 @@ import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { observeChromeStartup, chromePortFileDiagnostic, chromeTargetDiagnostic } from './helpers/chrome-startup.mjs';
 import { evaluateChrome, waitChromeDom, chromeDiagnosticEvent } from './helpers/chrome-dom.mjs';
-import { closeChrome } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome } from './helpers/react-browser.mjs';
 
 // El panel React requiere app/dist compilado; el servidor ya no tiene panel clásico de repliegue.
 
@@ -511,7 +511,7 @@ test('prompter React: guardar una marca libera la cronología (Enter/blur, SSE y
     }
     const mok = await marker(base, 'Tras el fallo');
     await waitDom(c, `document.body.innerText.includes(${JSON.stringify(mok.label)})`);
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('panel React: el aviso de configuración/secretos persiste, no finge guardado y se recupera sin recargar', { timeout: 90000 }, async t => {
@@ -582,5 +582,5 @@ test('panel React: el aviso de configuración/secretos persiste, no finge guarda
     app.store.secFile = path.join(dataDir, 'secrets.json');
     await app.store.setSecret('youtube', { access: 'ok' });
     await waitDom(c, '!document.querySelector(".persist")');
-  } finally { release?.(); if (chrome) await closeChrome(chrome); await close(); }
+  } finally { release?.(); await closeAll(() => chrome && closeChrome(chrome), close); }
 });

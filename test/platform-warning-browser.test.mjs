@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t, configure) {
@@ -57,7 +57,7 @@ test('#73 al empezar el directo avisa de las plataformas sin conectar y lleva a 
     await sleep(300);
     app.meld.setStatus({ state: 'conectado', streaming: true });
     await waitDom(chrome.cdp, `!!${DIALOG}`, { timeoutMs: 12000 });
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('#73 sin plataformas configuradas, o todas conectadas, no hay aviso', { timeout: 90000 }, async t => {
@@ -74,5 +74,5 @@ test('#73 sin plataformas configuradas, o todas conectadas, no hay aviso', { tim
     app.meld.setStatus({ state: 'conectado', streaming: true });
     await sleep(4500); // más que la espera de gracia del aviso
     eq(await dom(chrome, `!!${DIALOG}`), false, 'Twitch sin configurar y YouTube escuchando: sin aviso');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage } from './helpers/react-browser.mjs';
 import { evaluateChrome, waitChromeDom } from './helpers/chrome-dom.mjs';
 
 const dom = (c, expr) => evaluateChrome(c, expr);
@@ -67,5 +67,5 @@ test('widget teleprompter: párrafos múltiples renderizan todas las palabras, u
 
     const errores = await dom(c, `window.__errores || []`);
     assert.deepEqual(errores, [], 'sin errores de página capturados');
-  } finally { if (page) await closeChrome(page); await close(); }
+  } finally { await closeAll(() => page && closeChrome(page), close); }
 });

@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome as closeSharedChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome as closeSharedChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -150,8 +150,7 @@ test('panel: Overlays en el grupo de Widgets, estado vacío que habla del agente
     await waitDom(c, `!!document.querySelector('main .lv-slide iframe')`, { timeoutMs: 12000 });
     assert.equal(await dom(c, `document.querySelector('main .lv-slide iframe').getAttribute('src')`), `/custom/${id}`);
   } finally {
-    await closeChrome(chrome);
-    await close();
+    await closeAll(() => closeChrome(chrome), close);
     void app;
   }
 });
@@ -211,8 +210,7 @@ test('panel: editar el CSS y guardar persiste y sube updatedAt; un ancho inváli
     await waitDom(c, `location.hash === '#/overlays' && !!document.querySelector('main .empty-state')`, { timeoutMs: 12000 });
     assert.equal(await dom(c, `document.querySelectorAll('main .lv-card').length`), 0);
   } finally {
-    await closeChrome(chrome);
-    await close();
+    await closeAll(() => closeChrome(chrome), close);
   }
 });
 
@@ -249,8 +247,7 @@ test('panel: un cambio del agente llega al editor abierto y nunca pisa el borrad
     await waitDom(c, `document.querySelector('textarea[data-code=css]').value === '.agente{}'`, { timeoutMs: 12000 });
     assert.equal(await dom(c, `document.querySelector('[data-agent-change]') ? 1 : 0`), 0);
   } finally {
-    await closeChrome(chrome);
-    await close();
+    await closeAll(() => closeChrome(chrome), close);
   }
 });
 
@@ -301,7 +298,6 @@ test('panel: aprueba y revoca permisos, y avisa si el código cambió desde la a
     await eventually(async () => JSON.stringify((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay.permissions), '["scene"]');
     assert.equal(await dom(c, `document.body.textContent.includes(${JSON.stringify(warning)}) ? 1 : 0`), 0);
   } finally {
-    await closeChrome(chrome);
-    await close();
+    await closeAll(() => closeChrome(chrome), close);
   }
 });

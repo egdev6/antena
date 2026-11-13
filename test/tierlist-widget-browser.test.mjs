@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 test('tier list: the vote panel keeps its size when votes and texts change', { timeout: 90000 }, async t => {
@@ -36,5 +36,5 @@ test('tier list: the vote panel keeps its size when votes and texts change', { t
         document.getElementById('how').innerHTML = ${JSON.stringify(how)}; document.getElementById('timer').textContent = ${JSON.stringify(timer)}; return true; })()`);
       assert.deepEqual(await size(), before, `same size with "${vitem}" / "${how}"`);
     }
-  } finally { if (chrome) await closeChrome(chrome); app.meld.stop(); app.server.closeAllConnections(); await new Promise(r => app.server.close(r)); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), () => { app.meld.stop(); app.server.closeAllConnections(); }, () => new Promise(r => app.server.close(r))); }
 });

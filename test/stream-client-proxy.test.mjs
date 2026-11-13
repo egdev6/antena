@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 
 test('a proxy that never finishes the initial WebSocket upgrade falls back to SSE', { timeout: 20000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
@@ -34,10 +34,7 @@ test('a proxy that never finishes the initial WebSocket upgrade falls back to SS
     } catch (error) { error.message += `; stream requests: ${JSON.stringify(streams)}`; throw error; }
     assert.ok(streams.includes('sse'));
   } finally {
-    if (chrome) await closeChrome(chrome);
-    proxy.closeAllConnections();
-    await app.closeHttp();
-    await new Promise(resolve => proxy.close(resolve));
-    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => chrome && closeChrome(chrome), () => proxy.closeAllConnections(), () => app.closeHttp(),
+      () => new Promise(resolve => proxy.close(resolve)), () => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   }
 });

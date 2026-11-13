@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 import { serveSourcePanel } from './charts-style-browser.test.mjs';
 
@@ -56,11 +56,10 @@ async function fixture(t, { current, extraArchives = [], archiveEntries = archiv
   const releases = [];
   t.after(async () => {
     releases.forEach(release => release());
-    if (chrome) await closeChrome(chrome);
-    if (proxy) await proxy.close();
-    if (app) { app.viewers.halt(); await app.youtube.quiescePoll(); await app.chat.quiesceChat();
-      await app.drainAutoSession(); await app.drainChatMetrics(); await app.session.flush(); await app.closeHttp(); }
-    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => chrome && closeChrome(chrome), () => proxy && proxy.close(), async () => {
+      if (app) { app.viewers.halt(); await app.youtube.quiescePoll(); await app.chat.quiesceChat();
+        await app.drainAutoSession(); await app.drainChatMetrics(); await app.session.flush(); await app.closeHttp(); }
+    }, () => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   });
   const dataDir = path.join(root, 'data');
   await mkdir(path.join(dataDir, 'sessions'), { recursive: true });

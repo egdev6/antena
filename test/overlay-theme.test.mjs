@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 
 test('overlay: icono por tipo, etiqueta como logo y posición del tema', { timeout: 90000 }, async t => {
   const bin = await findChrome();
@@ -50,7 +50,6 @@ test('overlay: icono por tipo, etiqueta como logo y posición del tema', { timeo
     assert.equal(p2.status, 200);
     await waitDom(c, `!!document.querySelector('.alert-card.type-sub .tile svg.logo')`, { timeoutMs: 9000 });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });

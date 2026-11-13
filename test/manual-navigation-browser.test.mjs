@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const dirty = `!!document.querySelector('main .lv-dirty.is-on')`;
@@ -28,11 +28,11 @@ async function fixture(t, hash, ready) {
   });
   let chrome;
   t.after(async () => {
-    if (chrome) await closeChrome(chrome);
-    app.timers.stop();
-    app.server.closeAllConnections();
-    if (app.server.listening) await new Promise(r => app.server.close(r));
-    await rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => chrome && closeChrome(chrome), () => {
+      app.timers.stop();
+      app.server.closeAllConnections();
+    }, () => app.server.listening && new Promise(r => app.server.close(r)),
+    () => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   chrome = await openChromePage(bin, `http://127.0.0.1:${app.server.address().port}/${hash}`);

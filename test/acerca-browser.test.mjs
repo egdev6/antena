@@ -8,7 +8,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
@@ -63,7 +63,7 @@ test('acerca de: en el navegador muestra la versión, los créditos y las releas
     }
     assert.equal(await dom(chrome, `!!${buttonByText('Buscar actualizaciones')}`), false, 'sin Tauri no hay botón de actualizar');
     assert.equal(await dom(chrome, `!!document.querySelector('.acerca-browser a[href="${RELEASES}"]')`), true);
-  } finally { if (chrome) await closeChrome(chrome); await ctx.close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), () => ctx.close()); }
 });
 
 test('acerca de: en la app busca e instala con los comandos de la app y enseña el resultado', { timeout: 120000 }, async t => {
@@ -100,5 +100,5 @@ test('acerca de: en la app busca e instala con los comandos de la app y enseña 
     const calls = await dom(chrome, `window.__calls.join(',')`);
     assert.ok(calls.includes('update_install'), calls);
     assert.doesNotMatch(calls, /plugin:/, 'no se usan los comandos JS del plugin');
-  } finally { if (chrome) await closeChrome(chrome); await ctx.close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), () => ctx.close()); }
 });

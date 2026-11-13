@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, buttonByText } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -124,7 +124,7 @@ test('onboarding: primera vez sale el saludo y «Ahora no» lo deja visto aunque
     await waitDom(chrome.cdp, `!!document.querySelector('[data-tour="directo-head"]')`, { timeoutMs: 15000 });
     await sleep(500);
     if (await dom(chrome, `!!${GREET} || !!${POPOVER}`)) throw new Error('el saludo o el tour reaparecen al recargar');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('onboarding: el tour señala zonas, cambia de vista, salta anclas que faltan y al terminar queda visto', { timeout: 180000 }, async t => {
@@ -193,7 +193,7 @@ test('onboarding: el tour señala zonas, cambia de vista, salta anclas que falta
     if (seen.indexOf('meld-connection') !== seen.indexOf('meld-head') + 1) throw new Error(`orden inesperado: ${seen.join(', ')}`);
     if (seen.at(-1) !== 'general-tour') throw new Error(`el tour no terminó en General: ${seen.join(', ')}`);
   } catch (error) { throw await tourError(chrome, error); }
-  finally { if (chrome) await closeChrome(chrome); await close(); }
+  finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('onboarding: Anterior espera a Directo cuando las respuestas de sesión tardan', { timeout: 120000 }, async t => {
@@ -246,7 +246,7 @@ test('onboarding: Anterior espera a Directo cuando las respuestas de sesión tar
     await dom(chrome, `window.__viewClock.restore(); window.__sessionGate.release(); true`);
     await waitDom(chrome.cdp, `location.hash === '#/directo' && ${ACTIVE} === 'directo-alerts' && ${PROGRESS} === '6 de 17'`, { timeoutMs: 9000 });
   } catch (error) { throw await tourError(chrome, error); }
-  finally { if (chrome) await closeChrome(chrome); await close(); }
+  finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('onboarding: «General y archivos» relanza el tour sin saludo; Esc y las flechas funcionan', { timeout: 120000 }, async t => {
@@ -275,7 +275,7 @@ test('onboarding: «General y archivos» relanza el tour sin saludo; Esc y las f
     await key('Escape');
     await waitDom(chrome.cdp, `!${POPOVER} && !document.querySelector('.driver-active-element')`, { timeoutMs: 9000 });
     await waitDone(app);
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
 test('onboarding: red de seguridad, un ancla que no aparece se salta y la numeración se rehace sin huecos', { timeout: 120000 }, async t => {
@@ -305,5 +305,5 @@ test('onboarding: red de seguridad, un ancla que no aparece se salta y la numera
     await waitDom(chrome.cdp, `${ACTIVE} === 'directo-stats' && ${PROGRESS} === '5 de 17'`, { timeoutMs: 1500 });
     const seen = await dom(chrome, `window.__tourSeen`);
     if (seen.includes('directo-alerts')) throw new Error('el ancla invisible se resaltó');
-  } finally { if (chrome) await closeChrome(chrome); await close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

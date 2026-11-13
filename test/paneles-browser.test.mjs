@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
@@ -41,7 +41,7 @@ test('Paneles en el navegador: secciones, acciones y pestaña Vista conservada',
     await dom(chrome, `${click('Vista')}; 'ok'`);
     await waitDom(chrome.cdp, `location.hash === '#/prompter/vista' && !!document.querySelector('main textarea.code')`);
     assert.match(await dom(chrome, `document.querySelector('main').textContent`), /Tamaño de letra/);
-  } finally { if (chrome) await closeChrome(chrome); await ctx.close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), () => ctx.close()); }
 });
 
 test('Paneles de escritorio: estado, cambio de ventanas y actualización al recuperar foco', { timeout: 60000 }, async t => {
@@ -86,5 +86,5 @@ test('Paneles de escritorio: estado, cambio de ventanas y actualización al recu
     await waitDom(chrome.cdp, `!document.querySelector('main').textContent.includes('Abierto')`);
     await dom(chrome, `window.__panelState.teleprompter = 'closed'; window.__panelEvent({}); 'ok'`);
     await waitDom(chrome.cdp, `!document.querySelector('main').textContent.includes('En ventana')`);
-  } finally { if (chrome) await closeChrome(chrome); await ctx.close(); }
+  } finally { await closeAll(() => chrome && closeChrome(chrome), () => ctx.close()); }
 });

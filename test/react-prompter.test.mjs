@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
 
 test('prompter React: pestañas, chat por SSE y marca en la cronología guardada en el servidor', { timeout: 90000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
@@ -50,8 +50,7 @@ test('prompter React: pestañas, chat por SSE y marca en la cronología guardada
     assert.equal(saved.user, 'EspectadorBot');
     assert.equal(saved.text, 'hola desde el test');
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });
 
@@ -75,7 +74,6 @@ test('prompter React: insignia de mod en el chat', { timeout: 90000 }, async t =
     app.engine.handleChat({ id: 'c-mod-1', user: 'ModBot', text: 'presente', platform: 'twitch', color: '#3B5CFF', mod: true });
     await waitDom(c, `!!Array.from(document.querySelectorAll('.chat .msg')).find(m => m.textContent.includes('ModBot') && m.querySelector('[title="Moderador"]'))`, { timeoutMs: 9000 });
   } finally {
-    if (chrome) await closeChrome(chrome);
-    await new Promise(r => app.server.close(r));
+    await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
 });

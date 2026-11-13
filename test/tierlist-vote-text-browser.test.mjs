@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(t) {
@@ -14,9 +14,9 @@ async function start(t) {
   const pages = [];
   let app;
   t.after(async () => {
-    for (const page of pages) await closeChrome(page);
-    if (app) { app.timers.stop(); await app.closeHttp(); await app.interactive.flush(); }
-    await rm(dataDir, { recursive: true, force: true });
+    await closeAll(...pages.map(page => () => closeChrome(page)), async () => {
+      if (app) { app.timers.stop(); await app.closeHttp(); await app.interactive.flush(); }
+    }, () => rm(dataDir, { recursive: true, force: true }));
   });
   app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));

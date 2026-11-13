@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const destinations = [
@@ -24,14 +24,14 @@ async function setup(t) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'antena-sidebar-74-'));
   let app, chrome;
   t.after(async () => {
-    if (chrome) await closeChrome(chrome);
-    if (app) {
-      for (const name of ['timers', 'teleprompter', 'viewers', 'meld', 'chat']) app[name].stop();
-      await app.closeHttp();
-      await app.interactive.flush();
-      await app.store.chain;
-    }
-    await rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await closeAll(() => chrome && closeChrome(chrome), async () => {
+      if (app) {
+        for (const name of ['timers', 'teleprompter', 'viewers', 'meld', 'chat']) app[name].stop();
+        await app.closeHttp();
+        await app.interactive.flush();
+        await app.store.chain;
+      }
+    }, () => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   });
   app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, ui: 'react' });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
