@@ -18,13 +18,13 @@ const api = async (base, method, url, body) => {
   return response.json();
 };
 
-async function fixture(t, { gap = true, missing = false, stale = false, goals = true, extraArchives = [], withoutSeries = false, chatOnly = false, emptyEvents = false, ageSeconds = 600, requireUi = false } = {}) {
+async function fixture(t, { gap = true, missing = false, stale = false, goals = true, extraArchives = [], withoutSeries = false, chatOnly = false, emptyEvents = false, ageSeconds = 600, requireUi = false, pendingFollower = false } = {}) {
   let bin;
   if (requireUi) {
     bin = await findChrome();
     if (!bin) { t.skip('sin Chrome local; define CHROME_PATH para ejecutar la regresión de navegador'); return null; }
     const built = await stat(new URL('../app/dist/index.html', import.meta.url)).then(() => true, e => { if (e.code === 'ENOENT') return false; throw e; });
-    assert.ok(built, 'Chrome está disponible pero falta app/dist/index.html; compila el panel antes de probar #151');
+    assert.ok(built, 'Chrome está disponible pero falta app/dist/index.html; compila el panel antes de probar #151/#160');
   } else bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return null;
   const root = await mkdtemp(path.join(tmpdir(), 'antena-directo-monitor-'));
@@ -53,6 +53,12 @@ async function fixture(t, { gap = true, missing = false, stale = false, goals = 
   const dataDir = path.join(root, 'data');
   await mkdir(path.join(dataDir, 'sessions'), { recursive: true });
   await writeFile(path.join(dataDir, 'session-current.json'), JSON.stringify(current));
+  if (pendingFollower) {
+    const blank = () => ({ lastSync: null, total: null, totalSource: null, knownIds: [], entries: [], anonymous: [] });
+    const twitch = blank();
+    twitch.entries.push({ id: 'offline-1', name: 'SeguidorSintetico', followedAt: at(300), source: 'offline', thanked: false });
+    await writeFile(path.join(dataDir, 'followers.json'), JSON.stringify({ version: 1, platforms: { twitch, youtube: blank() } }));
+  }
   await writeFile(path.join(dataDir, 'sessions', 'archive.json'), JSON.stringify({ id: 'archive', title: 'Directo archivado', startedAt: at(-86400), endedAt: at(-86000), events: [], notes: [], goalOffsets: {} }));
   for (const entry of extraArchives) await writeFile(path.join(dataDir, 'sessions', `${entry.id}.json`), JSON.stringify(entry));
   app = await createApp({ dataDir, mediaDir: path.join(root, 'media'), log: () => {} });
@@ -502,6 +508,112 @@ test('#151: la vista previa funciona sin almacenamiento local', { timeout: 90000
   await wait(c, `${frame}?.getAttribute('src') === ${JSON.stringify(`/widget/chat?variant=${encodeURIComponent(variant.id)}`)}`);
   await dom(c, `${toggle}.click()`); await wait(c, `!${frame}`);
   assert.equal(await dom(c, `!!document.querySelector('#dir-say')`), true);
+});
+
+// #160 S3: the real thanks layer and chat coexist, retain independent choices and fit narrow screens.
+test('#160: vista previa real de agradecimientos, persistencia y convivencia con chat', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { requireUi: true, pendingFollower: true }); if (!f) return;
+  const followers = await api(f.base, 'GET', '/api/followers?pending=true&shown=true');
+  assert.deepEqual(followers.shown.entries.map(e => e.name), ['SeguidorSintetico']);
+  const source = (await api(f.base, 'GET', '/api/sources')).sources.find(s => s.id === 'thanks');
+  assert.deepEqual([source.width, source.height], [900, 200]);
+  await api(f.base, 'PUT', '/api/widgets', { thanks: { title: 'Gracias reales' } });
+  await api(f.base, 'POST', '/api/chat/simulate', { user: 'EnChat', text: 'chat real simultáneo', platform: 'twitch' });
+  f.app.engine.flushScheduledSends();
+  const c = await f.open();
+  const toggle = `document.querySelector('#dir-thanks-preview')`, chatToggle = `document.querySelector('#dir-chat-preview')`;
+  const frame = `document.querySelector('iframe[title="Vista previa del widget de agradecimientos"]')`;
+  const chatFrame = `document.querySelector('iframe[title="Vista previa del widget de chat"]')`;
+  await wait(c, `!!${toggle} && !!${chatToggle}`);
+  assert.equal(await dom(c, `${toggle}.labels[0].textContent.trim()`), 'Vista previa del widget de agradecimientos');
+  assert.equal(await dom(c, `${toggle}.checked || !!${frame}`), false);
+  assert.equal(await dom(c, `${chatToggle}.checked || !!${chatFrame}`), false);
+  assert.equal(await dom(c, `!!document.querySelector('#dir-say') && !!document.querySelector('#h-crono')`), true);
+  await dom(c, `${toggle}.focus()`);
+  assert.equal(await dom(c, `document.activeElement === ${toggle}`), true);
+  await c.cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+  await c.cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+  await wait(c, `${toggle}.checked && !!${frame}`);
+  assert.equal(await dom(c, `${frame}.getAttribute('src')`), '/widget/thanks');
+  assert.deepEqual(await dom(c, `[${frame}.style.width, ${frame}.style.height]`), [`${source.width}px`, `${source.height}px`]);
+  await wait(c, `${frame}?.contentDocument?.querySelector('.big')?.textContent === 'SeguidorSintetico' && ${frame}.contentDocument.querySelector('.kick')?.textContent === 'Gracias reales'`);
+  await dom(c, `${chatToggle}.click()`);
+  await wait(c, `${chatToggle}.checked && ${chatFrame}?.contentDocument?.querySelector('#root')?.textContent.includes('chat real simultáneo')`);
+  assert.equal(await dom(c, `${chatFrame}.getAttribute('src')`), '/widget/chat');
+  for (const width of [1440, 1024, 390]) {
+    await c.cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    for (const currentFrame of [frame, chatFrame]) {
+      const layout = await dom(c, `(() => { const preview = ${currentFrame}.closest('.dir-widget-preview'), box = ${currentFrame}.parentElement;
+        const a = preview.getBoundingClientRect(), b = box.getBoundingClientRect();
+        return { left: a.left, right: a.right, frameLeft: b.left, frameRight: b.right, client: preview.clientWidth, scroll: preview.scrollWidth }; })()`);
+      assert.ok(layout.left >= -1 && layout.right <= width + 1, `${width}: preview fuera de pantalla: ${JSON.stringify(layout)}`);
+      assert.ok(layout.frameLeft >= layout.left - 1 && layout.frameRight <= layout.right + 1 && layout.scroll <= layout.client + 1, `${width}: preview desbordada: ${JSON.stringify(layout)}`);
+    }
+  }
+  await dom(c, `${toggle}.click()`); await wait(c, `!${toggle}.checked && !${frame} && !!${chatFrame}`);
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  await wait(c, `window.__beforeReload !== true && !!${toggle} && ${chatToggle}?.checked && !!${chatFrame}`);
+  assert.equal(await dom(c, `${toggle}.checked || !!${frame}`), false);
+  await dom(c, `${toggle}.click()`); await wait(c, `${toggle}.checked && !!${frame}`);
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  await wait(c, `window.__beforeReload !== true && ${toggle}?.checked && ${chatToggle}?.checked && !!${frame} && !!${chatFrame}`);
+  await wait(c, `${frame}?.contentDocument?.querySelector('.big')?.textContent === 'SeguidorSintetico'`);
+  await api(f.base, 'POST', '/api/followers/thank', { entries: [{ platform: 'twitch', id: 'offline-1' }], onlyShown: true });
+  f.app.engine.flushScheduledSends();
+  assert.deepEqual((await api(f.base, 'GET', '/api/followers?pending=true&shown=true')).shown.entries, []);
+  await wait(c, `${frame}?.contentDocument?.querySelector('#root')?.children.length === 0`);
+  assert.doesNotMatch(await dom(c, `${frame}.contentDocument.querySelector('#root').textContent`), /devconcafe|pixelmaria/i);
+  await dom(c, `${chatToggle}.click()`); await wait(c, `!${chatToggle}.checked && !${chatFrame} && !!${frame}`);
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  await wait(c, `window.__beforeReload !== true && ${toggle}?.checked && !!${frame} && !!${chatToggle}`);
+  assert.equal(await dom(c, `${chatToggle}.checked || !!${chatFrame}`), false);
+  await dom(c, `${toggle}.click()`); await wait(c, `!${toggle}.checked && !${frame}`);
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  await wait(c, `window.__beforeReload !== true && !!${toggle}`);
+  assert.equal(await dom(c, `${toggle}.checked || !!${frame}`), false);
+});
+
+// An empty snapshot is observed only after the widget applies its saved CSS, not at initial load.
+test('#160: sin pendientes iniciales no inventa nombres', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { requireUi: true }); if (!f) return;
+  await api(f.base, 'PUT', '/api/widgets', { thanks: { css: 'body { --thanks-test-ready: 1; }' } });
+  f.app.engine.flushScheduledSends();
+  const shown = await api(f.base, 'GET', '/api/followers?pending=true&shown=true');
+  assert.deepEqual(shown.shown.entries, []); assert.deepEqual(shown.shown.anonymous, []);
+  const c = await f.open();
+  const frame = `document.querySelector('iframe[title="Vista previa del widget de agradecimientos"]')`;
+  await wait(c, `!!document.querySelector('#dir-thanks-preview')`);
+  await dom(c, `document.querySelector('#dir-thanks-preview').click()`);
+  await wait(c, `!!${frame}?.contentDocument?.body && ${frame}.contentWindow.getComputedStyle(${frame}.contentDocument.body).getPropertyValue('--thanks-test-ready').trim() === '1'`);
+  assert.equal(await dom(c, `${frame}.getAttribute('src')`), '/widget/thanks');
+  assert.equal(await dom(c, `${frame}.contentDocument.querySelector('#root').children.length`), 0);
+  assert.doesNotMatch(await dom(c, `${frame}.contentDocument.querySelector('#root').textContent`), /devconcafe|pixelmaria/i);
+  assert.equal(await dom(c, `${frame}.contentWindow.getComputedStyle(${frame}.contentDocument.body).backgroundColor`), 'rgba(0, 0, 0, 0)');
+  // The separate widget editor still intentionally previews demo data.
+  await dom(c, `location.hash = '#/widgets/thanks'`);
+  const demo = `document.querySelector('iframe[src="/widget/thanks?demo"]')`;
+  await wait(c, `${demo}?.contentDocument?.querySelector('.big')?.textContent === 'devconcafe'`);
+});
+
+test('#160: los interruptores funcionan sin almacenamiento local', { timeout: 90000 }, async t => {
+  const f = await fixture(t, { requireUi: true }); if (!f) return;
+  const c = await f.open();
+  await c.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `Storage.prototype.getItem = () => { throw new Error('storage unavailable'); }; Storage.prototype.setItem = () => { throw new Error('storage unavailable'); };` });
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  const toggle = `document.querySelector('#dir-thanks-preview')`, chatToggle = `document.querySelector('#dir-chat-preview')`;
+  const frame = `document.querySelector('iframe[title="Vista previa del widget de agradecimientos"]')`;
+  const chatFrame = `document.querySelector('iframe[title="Vista previa del widget de chat"]')`;
+  await wait(c, `window.__beforeReload !== true && !!${toggle} && !!${chatToggle}`);
+  assert.equal(await dom(c, `${toggle}.checked || ${chatToggle}.checked`), false);
+  await dom(c, `${toggle}.click(); ${chatToggle}.click()`);
+  await wait(c, `${toggle}.checked && ${chatToggle}.checked && !!${frame} && !!${chatFrame}`);
+  assert.equal(await dom(c, `${frame}.getAttribute('src')`), '/widget/thanks');
+  assert.equal(await dom(c, `${chatFrame}.getAttribute('src')`), '/widget/chat');
+  await dom(c, `${toggle}.click()`); await wait(c, `!${frame} && !!${chatFrame}`);
+  assert.equal(await dom(c, `!!document.querySelector('#dir-say') && !!document.querySelector('#h-crono')`), true);
+  await dom(c, `window.__beforeReload = true`); await c.cdp.send('Page.reload');
+  await wait(c, `window.__beforeReload !== true && !!${toggle} && !!${chatToggle}`);
+  assert.equal(await dom(c, `${toggle}.checked || ${chatToggle}.checked || !!${frame} || !!${chatFrame}`), false);
 });
 
 // #118 S3/S5: a failed durable close remains retryable even after the ended SSE update.
