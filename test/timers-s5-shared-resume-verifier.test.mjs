@@ -1,0 +1,70 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { createApp } from '../src/server.mjs';
+
+test('S5: duplicate Meld status and global resume preserve timer counters', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_700_000_000_000 });
+  const dir = await mkdtemp(path.join(tmpdir(), 's5-shared-resume-'));
+  const app = await createApp({ dataDir: dir, mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
+  const sent = [];
+  app.twitch.status.user = 'synthetic';
+  app.twitch.sendChat = async text => {
+    sent.push(text);
+    if (text === 'failure') throw new Error('synthetic failure');
+    return { is_sent: true };
+  };
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    app.timers.stop(); app.server.closeAllConnections();
+    await new Promise(resolve => app.server.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  });
+  const url = `http://127.0.0.1:${app.server.address().port}`;
+  const call = async (method, p, body) => {
+    const r = await fetch(url + p, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: r.status, body: await r.json() };
+  };
+  assert.equal((await call('PUT', '/api/config', { meld: { autoSession: false } })).status, 200);
+  const create = async fields => (await call('POST', '/api/timers', fields)).body.timer;
+  const rows = async () => (await call('GET', '/api/timers')).body;
+  const live = await create({ name: 'live', message: 'live', intervalMin: 1, minChatLines: 0, onlyWhenLive: true });
+  const always = await create({ name: 'always', message: 'failure', intervalMin: 2, minChatLines: 0, onlyWhenLive: false });
+  assert.deepEqual((await rows()).map(x => x.runtime.nextInSec), [60, 120]);
+  t.mock.timers.tick(120_000);
+  assert.deepEqual(await app.timers.tick(Date.now()), [always.id]);
+  assert.deepEqual(sent, ['failure']);
+  let r = await rows();
+  assert.deepEqual(r.map(x => [x.runtime.nextInSec, x.runtime.pausedOffStream]), [[60, true], [120, false]]);
+  assert.equal(r[1].runtime.lastError, 'synthetic failure');
+  await call('POST', '/api/chat/simulate', { user: 'viewer', text: 'hola' });
+  app.meld.setStatus({ state: 'conectado', streaming: true });
+  t.mock.timers.tick(20_000);
+  app.meld.setStatus({ streaming: true });
+  assert.deepEqual((await rows()).map(x => x.runtime.nextInSec), [40, 100]);
+  const project = x => {
+    const { runs, lines, lastError, lastRunAt, platforms } = x.runtime;
+    return { runs, lines, lastError, lastRunAt, platforms };
+  };
+  const before = (await rows()).map(project);
+  assert.equal((await call('POST', '/api/pause')).status, 200);
+  t.mock.timers.tick(300_000);
+  const blocked = await call('POST', `/api/timers/${live.id}/fire`);
+  assert.deepEqual(blocked, { status: 409, body: { error: 'No se envía «live»: pausa activa.' } });
+  assert.deepEqual(await app.timers.tick(Date.now()), []);
+  assert.deepEqual((await rows()).map(project), before);
+  assert.equal((await call('POST', '/api/resume', {})).status, 200);
+  assert.deepEqual((await rows()).map(x => x.runtime.nextInSec), [60, 120]);
+  assert.deepEqual(await app.timers.tick(Date.now()), []);
+  t.mock.timers.tick(60_000);
+  assert.deepEqual(await app.timers.tick(Date.now()), [live.id]);
+  assert.deepEqual(sent, ['failure', 'live']);
+  t.mock.timers.tick(60_000);
+  assert.deepEqual(await app.timers.tick(Date.now()), [live.id, always.id]);
+  r = await rows();
+  assert.deepEqual(r.map(x => x.runtime.runs), [2, 2]);
+  assert.equal(r[1].runtime.lastError, 'synthetic failure');
+  assert.deepEqual(sent, ['failure', 'live', 'live', 'failure']);
+});
