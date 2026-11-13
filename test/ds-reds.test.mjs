@@ -67,7 +67,7 @@ test('los colores y ejemplos de las vistas usan primitivas del sistema', async (
 test('todas las variables usadas están declaradas o tienen fallback', async () => {
   const archivos = [...estilos, ...await archivosFuente()];
   const contenidos = await Promise.all(archivos.map(read));
-  const defs = [await read('public/ds/tokens.css'), await read('public/fonts.css'), ...contenidos].map(sinComentarios).join('\n');
+  const defs = [await read('public/ds/tokens.css'), await read('public/ds/antena-platforms.css'), await read('public/fonts.css'), ...contenidos].map(sinComentarios).join('\n');
   const declaradas = new Set([...defs.matchAll(/(--[\w-]+)\s*['"]?\s*(?:as\s+\w+\s*\])?\s*:/g)].map(m => m[1]));
   const faltan = new Set();
   for (let i = 0; i < archivos.length; i++) {

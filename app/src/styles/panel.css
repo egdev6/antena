@@ -1,6 +1,7 @@
 /* antena · panel — EGDEV Foundation (Material v2 + Grafito).
    Los tokens vienen de /ds/tokens.css y los componentes de /ds/bundle.css (copia del artefacto EGDEV Foundation).
-   Aquí solo se aplican las recetas del sistema a las clases propias del panel, sin inventar colores. */
+   Los colores de plataforma proceden de la extensión propia de antena. */
+@import '../../../public/ds/antena-platforms.css';
 :root{
   /* fuentes locales (pnpm fonts) delante de las de Google */
   --font-display:'EG Barlow Condensed','Barlow Condensed','Arial Narrow',sans-serif;
@@ -12,8 +13,6 @@
   --line:var(--color-border-hairline); --line2:var(--color-border-hairline-strong); --ctrl:var(--color-border-control);
   --text:var(--color-fg-default); --grey:var(--color-fg-secondary); --muted:var(--color-fg-muted);
   --red:var(--color-primitive-red-neon); --red-2:var(--color-primitive-red-light); --pink:var(--color-fg-brand-raised); --ok:var(--color-status-success); --warn:var(--color-status-warning);
-  /* Colores de plataforma del panel; no dependen del tema configurable del overlay. */
-  --platform-twitch:#9146FF; --platform-youtube:#FF0000;
   /* recetas */
   --surface:var(--gradient-sheen),var(--color-surface-1);
   --surface-shadow:var(--shadow-edge),var(--shadow-elev-1);

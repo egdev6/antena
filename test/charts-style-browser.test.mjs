@@ -1,7 +1,7 @@
 // #150: exercise the production panel bundle and its computed SVG styles.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, request } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -100,6 +100,14 @@ async function fixture(t, entry = archive(viewers, chatStats), current = false) 
 
 // When imported by the existing metrics suite, only the memory-build helper is loaded.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  test('#150: la extensión propia declara exactamente los colores de plataforma', async () => {
+    const css = (await readFile(new URL('../public/ds/antena-platforms.css', import.meta.url), 'utf8'))
+      .replace(/\/\*[\s\S]*?\*\//g, '').trim();
+    const declarations = css.match(/^:root\s*\{([\s\S]*)\}$/)?.[1].split(';')
+      .map(value => value.trim().replace(/\s*:\s*/, ':')).filter(Boolean);
+    assert.deepEqual(declarations, ['--platform-twitch:#9146FF', '--platform-youtube:#FF0000']);
+  });
+
   test('#150: colores y leyenda de las dos curvas en el historial', { timeout: 90000 }, async t => {
     const c = await fixture(t); if (!c) return;
     const colors = await dom(c, `(() => {
