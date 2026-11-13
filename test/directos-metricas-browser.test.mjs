@@ -5,8 +5,9 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
+import { serveSourcePanel } from './charts-style-browser.test.mjs';
 
 const start = Date.parse('2026-11-18T18:00:00.000Z');
 const at = (seconds, base = start) => new Date(base + seconds * 1000).toISOString();
@@ -48,14 +49,15 @@ const setSearch = value => `(() => { const e = document.querySelector('input[typ
   e.dispatchEvent(new Event('input', { bubbles: true })); })()`;
 
 async function fixture(t, { current, extraArchives = [], archiveEntries = archives } = {}) {
-  const bin = await skipIfNoBrowserOrUi(t);
-  if (!bin) return null;
+  const bin = await findChrome();
+  if (!bin) { t.skip('sin Chrome local'); return null; }
   const root = await mkdtemp(path.join(tmpdir(), 'antena-directos-metricas-'));
-  let app, chrome;
+  let app, chrome, proxy;
   const releases = [];
   t.after(async () => {
     releases.forEach(release => release());
     if (chrome) await closeChrome(chrome);
+    if (proxy) await proxy.close();
     if (app) { app.viewers.halt(); await app.youtube.quiescePoll(); await app.chat.quiesceChat();
       await app.drainAutoSession(); await app.drainChatMetrics(); await app.session.flush(); await app.closeHttp(); }
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -67,7 +69,8 @@ async function fixture(t, { current, extraArchives = [], archiveEntries = archiv
   app = await createApp({ dataDir, mediaDir: path.join(root, 'media'), log: () => {} });
   app.store.config.panel = { onboardingDone: true };
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
-  const base = `http://127.0.0.1:${app.server.address().port}`;
+  proxy = await serveSourcePanel(app);
+  const base = proxy.base;
   const requests = [];
   const get = app.session.get.bind(app.session);
   app.session.get = async id => { requests.push(id); return get(id); };
@@ -114,8 +117,9 @@ test('#114: métricas por plataforma, huecos, chat y momentos sin sumar ni inven
   assert.equal(await dom(c, `${gap}.getAttribute('data-from')`), at(90));
   assert.equal(await dom(c, `${gap}.getAttribute('data-to')`), at(180));
   const spans = await dom(c, `[...${viewer}.querySelectorAll('path[data-series="youtube"]')].map(p => [p.dataset.from, p.dataset.to])`);
-  assert.ok(spans.length >= 2);
+  assert.ok(spans.length >= 1);
   assert.ok(spans.every(([from, to]) => from && to && (Date.parse(to) <= Date.parse(at(90)) || Date.parse(from) >= Date.parse(at(180)))), 'ningún segmento atraviesa el hueco ni lo dibuja como cero');
+  assert.equal(await dom(c, `!!${viewer}.querySelector('circle.dx-youtube[data-at="${at(180)}"]')`), true, 'la muestra aislada después del hueco sigue visible');
   const chat = `document.querySelector('#detalle svg[aria-label="Mensajes por minuto"]')`;
   assert.equal(await dom(c, `${chat}.querySelectorAll('[data-chat-bar]').length`), 8);
   assert.deepEqual(await dom(c, `[...${chat}.querySelectorAll('[data-chat-bar="twitch"]')].map(e => Number(e.dataset.value))`), [3, 0, 2, 0]);
@@ -221,8 +225,14 @@ test('#114: carga, error recuperable y respuestas obsoletas de la selección', {
   await summaryEntered.promise;
   await dom(c, select('Directo parcial'));
   await wait(c, `document.querySelector('#detalle h2')?.textContent.includes('Directo parcial') && document.querySelector('#detalle').textContent.includes('sin datos de chat')`);
+  // Wait for the delayed response to be parsed and the next frame, not a wall-clock sleep.
+  await dom(c, `(() => { const json = Response.prototype.json; window.__staleSummaryRendered = false;
+    Response.prototype.json = function() { return json.call(this).then(data => {
+      if (data?.id === 'z-auto') requestAnimationFrame(() => { window.__staleSummaryRendered = true; });
+      return data;
+    }); }; })()`);
   summaryGate.release();
-  await new Promise(resolve => setTimeout(resolve, 300));
+  await wait(c, `window.__staleSummaryRendered`);
   assert.match(await dom(c, `document.querySelector('#detalle h2').textContent`), /Directo parcial/);
   assert.deepEqual(f.requests, ['y-partial', 'z-auto']);
   // Failure of a summary, including a direct Slide route, is visible rather than endless loading.
