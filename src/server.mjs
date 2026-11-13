@@ -126,7 +126,7 @@ function sdRequestAllowed(req) {
   return originAllowed(req);
 }
 
-export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist,
+export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist, recordingTimers,
   push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs } = {}) {
   let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {};
   // Validate private process settings before loading or changing any application state.
@@ -814,7 +814,11 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (hasOverlays) await customOverlays.replaceAll(overlaysInput);
       await store.patchConfig(patch);
     }
-    afterConfig(patch);
+    // El borrador puede incluir otras secciones. Solo este campo de Meld no exige reconectar;
+    // cualquier otra entrada de Meld conserva la semántica histórica, incluso si no cambia.
+    const onlyRecording = patch.meld && typeof patch.meld === 'object' && !Array.isArray(patch.meld)
+      && Object.keys(patch.meld).length === 1 && Object.hasOwn(patch.meld, 'recordOnStart');
+    afterConfig(onlyRecording ? { ...patch, meld: false } : patch);
     return { config: store.publicConfig() };
   });
   route('POST', '/api/config/set', async ({ path: p, value }) => {
@@ -827,7 +831,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const [error] = validatePath(p, value);
     if (error) throw httpError(400, error.message);
     await store.setPath(p, value);
-    afterConfig({ [p.split('.')[0]]: true });
+    afterConfig({ [p.split('.')[0]]: p !== 'meld.recordOnStart' });
     return { path: p, value: store.getPath(p) };
   });
 
@@ -1060,7 +1064,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   registerMetricsRoutes({ route, session });
 
   // Meld
-  registerMeldRoutes({ route, store, meld, scheduleLayerHide });
+  registerMeldRoutes({ route, store, meld, scheduleLayerHide, recordingTimers });
   route('POST', '/api/actions/run', async ({ actions = [], vars = {} }) => { checkActions(actions); await engine.runActions(actions, vars); return { ok: true }; });
 
   // conexiones

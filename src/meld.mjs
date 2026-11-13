@@ -10,6 +10,11 @@ const T = { signal: 1, propertyUpdate: 2, init: 3, idle: 4, debug: 5, invokeMeth
 // GAIN_EMIT_MS para no inundar el panel.
 const GAIN_CONTEXT = 'antena';
 const GAIN_EMIT_MS = 50;
+// Un comando explícito de otra ruta invalida una intención de control anterior.
+const CONTROL_COMMANDS = new Set([
+  'meld.startStreamingAction', 'meld.stopStreamingAction', 'meld.toggleStreamingAction',
+  'meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction',
+]);
 
 export const MELD_COMMANDS = [
   'meld.screenshot', 'meld.screenshot.vertical', 'meld.startStreamingAction', 'meld.stopStreamingAction', 'meld.toggleStreamingAction',
@@ -38,7 +43,7 @@ export class Meld extends EventEmitter {
     this.values = {};    // nombre → valor
     this.stopped = true;
     this.url = 'ws://127.0.0.1:13376';
-    this.status = { state: 'desconectado', streaming: false, streamingKnown: false, recording: false, version: null, error: null };
+    this.status = { state: 'desconectado', streaming: false, streamingKnown: false, recording: false, recordingKnown: false, recordingWarning: null, version: null, error: null };
     this.gains = new Map();        // idPista → { gain, muted } según gainUpdated
     this.observedTracks = new Set(); // pistas con observador registrado en Meld
     this.observersUnavailable = false; // ya se avisó de que este Meld no da el volumen
@@ -63,7 +68,7 @@ export class Meld extends EventEmitter {
     for (const ws of this.sockets) {
       try { ws.close(); } catch {}
     }
-    this.setStatus({ state: 'desconectado', streamingKnown: false });
+    this.setStatus({ state: 'desconectado', streamingKnown: false, recordingKnown: false });
   }
 
   /** Corte terminal: conserva RPC aceptadas y espera cierre físico, sin deadline propio. */
@@ -91,7 +96,7 @@ export class Meld extends EventEmitter {
         if (result.status === 'rejected') errors.push(result.reason);
       }
       this.ws = null;
-      try { this.setStatus({ state: 'desconectado', streamingKnown: false }); } catch (error) { errors.push(error); }
+      try { this.setStatus({ state: 'desconectado', streamingKnown: false, recordingKnown: false }); } catch (error) { errors.push(error); }
       if (errors.length) throw new AggregateError(errors, 'No se pudo cerrar la conexión con Meld.');
     });
     return this.closePromise;
@@ -109,7 +114,7 @@ export class Meld extends EventEmitter {
     try { ws = new WebSocket(this.url); } catch (e) { return this.retry(e); }
     this.ws = ws;
     this.sockets.add(ws);
-    this.setStatus({ state: 'conectando', streamingKnown: false, error: null });
+    this.setStatus({ state: 'conectando', streamingKnown: false, recordingKnown: false, error: null });
     ws.onopen = () => {
       if (this.stopped || ws !== this.ws) return;
       this.send({ type: T.init }, true).then(data => {
@@ -129,7 +134,7 @@ export class Meld extends EventEmitter {
   }
   retry(err) {
     if (this.closePromise) return;
-    this.setStatus({ state: this.stopped ? 'desconectado' : 'reintentando', streamingKnown: false, error: this.stopped ? null : err.message });
+    this.setStatus({ state: this.stopped ? 'desconectado' : 'reintentando', streamingKnown: false, recordingKnown: false, error: this.stopped ? null : err.message });
     this.clearRetry();
     if (!this.stopped) {
       const timer = setTimeout(() => {
@@ -184,7 +189,8 @@ export class Meld extends EventEmitter {
     this.gains.clear();
     this.observedTracks.clear();
     this.setStatus({ state: 'conectado', error: null, version: this.values.version ?? 1, streaming: !!this.values.isStreaming,
-      streamingKnown: typeof this.values.isStreaming === 'boolean', recording: !!this.values.isRecording });
+      streamingKnown: typeof this.values.isStreaming === 'boolean', recording: !!this.values.isRecording,
+      recordingKnown: typeof this.values.isRecording === 'boolean' });
     this.emitSession();
     this.syncTrackObservers();
   }
@@ -215,7 +221,8 @@ export class Meld extends EventEmitter {
   afterChange() {
     const streaming = !!this.values.isStreaming, recording = !!this.values.isRecording;
     if (streaming !== this.status.streaming) this.emit('streaming', streaming);
-    this.setStatus({ streaming, streamingKnown: typeof this.values.isStreaming === 'boolean', recording });
+    this.setStatus({ streaming, streamingKnown: typeof this.values.isStreaming === 'boolean', recording,
+      recordingKnown: typeof this.values.isRecording === 'boolean' });
     this.emitSession();
     this.syncTrackObservers();
   }
@@ -293,6 +300,9 @@ export class Meld extends EventEmitter {
   async call(method, ...args) {
     const idx = this.methods[method];
     if (idx === undefined) throw new Error(`Meld no tiene el método «${method}»`);
+    if (method.replace(/\(.*$/, '') === 'sendCommand' && CONTROL_COMMANDS.has(args[0])) {
+      try { this.emit('controlCommand', args[0]); } catch { /* un observador no debe alterar el RPC genérico */ }
+    }
     return this.send({ type: T.invokeMethod, object: 'meld', method: idx, args }, true);
   }
 

@@ -25,7 +25,7 @@ export const DEFAULT_CONFIG = {
   overlay: { volume: 0.6, gapMs: 700, css: '', queueMax: 20 },   // css: común a todas las alertas; queueMax (#66): tope de la cola del overlay, 0 = sin tope
   tts: { enabled: true, voice: '', rate: 1, pitch: 1, volume: 1, maxChars: 200 },
   filters: DEFAULT_FILTERS,
-  meld: { enabled: false, url: 'ws://127.0.0.1:13376', autoSession: true },
+  meld: { enabled: false, url: 'ws://127.0.0.1:13376', autoSession: true, recordOnStart: false },
   panel: { onboardingDone: false },   // bienvenida del panel con tarjetas; true = ya la vio (se relanza desde General)
   access: { lan: false, key: '' },   // acceso desde el móvil en la red local
   sessions: { retention: 0 },        // #68: sesiones archivadas a conservar; 0 = sin límite (desactivado)

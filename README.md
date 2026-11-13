@@ -162,6 +162,10 @@ Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. C
 
 From there you can see scenes, layers and tracks, change scene with a click, show or hide layers and trigger shortcuts (clip, screenshot, confetti, roulette, record). Each track also shows its **current volume**, kept in sync with Meld while you move the fader. When you go live, the panel starts a new stream by itself (this can be disabled).
 
+**Record on start** is off by default. In Meld Studio › Connection, enable «Grabar al empezar el directo» and save. When you start the stream from antena, it asks Meld to record only after Meld confirms the stream and recording is known to be inactive. A recording already running, or a stream started in Meld, is left alone. When you stop the stream from antena, it asks Meld to stop only the recording it started and confirmed. A failure or missing confirmation appears in the dock without stopping the stream; check the recording in Meld.
+
+Meld's public API exposes recording state, not recording IDs: an indistinguishable simultaneous recording started elsewhere cannot be attributed perfectly. Disconnections, unknown state, observed external stops and other stream/recording control commands cancel antena's ownership; check Meld before changing a recording manually. The setting is `meld.recordOnStart`; `status.meld.recordingKnown` and `status.meld.recordingWarning` are available in status, snapshots and panel SSE.
+
 In every alert, variation or command, **Actions on fire** runs right when the alert appears on screen:
 
 | Action | What it does |

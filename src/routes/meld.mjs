@@ -11,6 +11,7 @@
 // src/http-util.mjs (se aceptan por ctx por compatibilidad con los tests).
 import { MELD_COMMANDS, MELD_STREAM_EVENTS } from '../meld.mjs';
 import { httpError as httpErrorBase } from '../http-util.mjs';
+import { createMeldRecording } from '../meld-recording.mjs';
 
 // El cuerpo ya es JSON válido. Solo se cuentan claves del objeto superior, decodificando
 // escapes ("\\u0061ction" también es "action"); los strings y objetos anidados no cuentan.
@@ -39,7 +40,8 @@ function repeatedAction(raw = '') {
 
 const STREAM_PENDING_MS = 20000;
 
-export function registerMeldRoutes({ route, store, meld, scheduleLayerHide, httpError = httpErrorBase, now = () => performance.now() }) {
+export function registerMeldRoutes({ route, store, meld, scheduleLayerHide, httpError = httpErrorBase, now = () => performance.now(), recordingTimers }) {
+  const recording = createMeldRecording({ meld, enabled: () => store.config.meld.recordOnStart === true, timers: recordingTimers });
   const needMeld = () => { if (!meld.connected) throw httpError(409, 'Meld no está conectado. Actívalo en Ajustes › Avanzado › «Allow remote connections» y pulsa Conectar.'); };
   // Por instancia, compartido entre todos los clientes HTTP; no se borra al desconectar.
   const pending = new Map();
@@ -73,7 +75,9 @@ export function registerMeldRoutes({ route, store, meld, scheduleLayerHide, http
     // Reservar antes del primer await: dos clientes no pueden enviar la misma orden.
     // Si falla la respuesta, pudo haberse enviado; se conserva hasta confirmar o agotar el plazo.
     pending.set(body.action, current + STREAM_PENDING_MS);
-    await meld.command(body.action === 'start' ? 'meld.startStreamingAction' : 'meld.stopStreamingAction');
+    const intent = recording.begin(body.action, streaming);
+    try { await recording.streamCommand(body.action === 'start' ? 'meld.startStreamingAction' : 'meld.stopStreamingAction'); }
+    catch (error) { recording.streamFailed(intent); throw error; }
     return { requested: body.action, streaming };
   });
   route('POST', '/api/meld/command', async ({ command }) => { needMeld(); await meld.command(command); return { ok: true }; });

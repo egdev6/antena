@@ -192,7 +192,7 @@ export const CONFIG_SCHEMA = {
     volume: num({ min: 0, max: 1 }),
     maxChars: num({ int: true, min: 20, max: 2000 }),   // la UI ya acota desde 20
   },
-  meld: { enabled: bool, url: str, autoSession: bool },
+  meld: { enabled: bool, url: str, autoSession: bool, recordOnStart: { ...bool, rejectNull: true } },
   panel: { onboardingDone: bool },   // bienvenida del panel vista (relanzable desde General)
   access: { lan: bool, key: str },
   sessions: { retention: num({ int: true, min: 0, max: 1000 }) },
@@ -304,6 +304,10 @@ function checkNode(node, value, path, errors) {
       }
       checkObject(CHAT_VARIANTS.item, item, itemPath, errors);
     }
+    return;
+  }
+  if (value === null && node?.rejectNull) {
+    errors.push({ path, message: `${path}: se esperaba ${TIPO.bool}` });
     return;
   }
   if (value === undefined || value === null) return;   // ausente no es inválido: queda el default

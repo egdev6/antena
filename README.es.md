@@ -162,6 +162,10 @@ Los **overlays propios** salen en esa misma lista como «Overlay · nombre», co
 
 Desde ahí ves las escenas, capas y pistas, cambias de escena con un clic, muestras u ocultas capas y lanzas atajos (clip, captura, confeti, ruleta, grabar). Cada pista muestra además su **volumen actual**, en directo con lo que muevas en Meld. Al empezar a emitir, el panel empieza un directo nuevo él solo (se puede desactivar).
 
+**Grabar al empezar** está desactivado de serie. En Meld Studio › Conexión, activa «Grabar al empezar el directo» y guarda. Al iniciar desde antena, esta pide grabar solo después de que Meld confirme la emisión y se sepa que no está grabando. Una grabación que ya estuviera en marcha o un directo iniciado en Meld no se tocan. Al terminar el directo desde antena, solo pide parar la grabación que inició y confirmó. Si falla o no llega la confirmación, el dock avisa sin parar el directo; comprueba la grabación en Meld.
+
+La API pública de Meld informa del estado de grabación, pero no de su identidad: no permite atribuir perfectamente un inicio simultáneo indistinguible desde otro lugar. Una desconexión, un estado desconocido, una parada externa observada u otra orden de emisión o grabación anulan la propiedad de antena; comprueba Meld antes de cambiar una grabación manualmente. El ajuste es `meld.recordOnStart`; `status.meld.recordingKnown` y `status.meld.recordingWarning` llegan por estado, snapshot y SSE del panel.
+
 En cada alerta, variación o comando, **Acciones al salir** se ejecuta justo cuando la alerta aparece en pantalla:
 
 | Acción | Qué hace |

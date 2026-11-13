@@ -52,6 +52,7 @@ function Status() {
   return <header className="d-top">
     <div className={cx('d-live', streaming && 'on')}><i />{streaming ? 'En directo' : known ? 'Sin emitir' : 'Sesión'}<b>{tl.startedAt ? mmss((now - +new Date(tl.startedAt)) / 1000) : ''}</b></div>
     <div className="d-warns">
+      {st.meld?.recordingWarning && <span className="d-warn soft" role="status">{st.meld.recordingWarning}</span>}
       {mic?.muted && <span className="d-warn big">🎙 Micro silenciado</span>}
       {pause.paused && <span className="d-warn">Alertas en pausa{pause.held ? ` · ${pause.held}` : ''}</span>}
       {!meldOn && !live.failed && <ConnPill platform="meld" state={st.meld?.state} />}
