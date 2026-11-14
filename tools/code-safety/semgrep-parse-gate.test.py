@@ -281,30 +281,38 @@ class ParseGateTest(unittest.TestCase):
         self.assertTrue(all(0 < timeout <= 10.0 for _, timeout in calls))
 
     def test_scaled_budget_boundary_and_cap(self):
-        entries = self.entries([f"{i:06d}.ts" for i in range(800)])
+        # Budget arithmetic needs inventory sizes, not repeated on-disk hashing.
+        # The separate 400-file test still validates a real large snapshot twice.
+        entries = [{"path": str(self.root / f"{i:06d}.ts"), "sha256": "0" * 64}
+                   for i in range(800)]
         for count, budget in [(1, 120.25), (4, 121.0), (400, 220.0), (800, 300.0)]:
             for elapsed, succeeds in [(budget - 0.1, True), (budget, False)]:
                 with self.subTest(count=count, elapsed=elapsed):
                     clock = SnapshotClock(elapsed)
                     calls = []
+                    selected = entries[:count]
+                    expected = [entry["path"] for entry in selected]
 
                     def run(args, **kwargs):
                         calls.append((args[-1], kwargs["timeout"]))
                         return Result()
 
-                    if succeeds:
-                        result = MODULE.check_parse("semgrep", entries[:count], self.root,
-                                                    runner=run, clock=clock)
-                        self.assertEqual(result, [entry["path"] for entry in entries[:count]])
-                        self.assertEqual({path for path, _ in calls}, set(result))
-                        self.assertEqual(len(calls), count)
-                        self.assertTrue(all(0 < timeout <= 0.100001 for _, timeout in calls))
-                    else:
-                        with self.assertRaises(MODULE.ParseGateError) as ctx:
-                            MODULE.check_parse("semgrep", entries[:count], self.root,
-                                               runner=run, clock=clock)
-                        self.assertEqual(str(ctx.exception), FAILED)
-                        self.assertEqual(calls, [])
+                    with mock.patch.object(MODULE, "verify_snapshot", return_value=expected) as snapshot:
+                        if succeeds:
+                            result = MODULE.check_parse("semgrep", selected, self.root,
+                                                        runner=run, clock=clock)
+                            self.assertEqual(result, expected)
+                            self.assertEqual({path for path, _ in calls}, set(result))
+                            self.assertEqual(len(calls), count)
+                            self.assertTrue(all(0 < timeout <= 0.100001 for _, timeout in calls))
+                        else:
+                            with self.assertRaises(MODULE.ParseGateError) as ctx:
+                                MODULE.check_parse("semgrep", selected, self.root,
+                                                   runner=run, clock=clock)
+                            self.assertEqual(str(ctx.exception), FAILED)
+                            self.assertEqual(calls, [])
+                        self.assertEqual(snapshot.call_count, 2 if succeeds else 1)
+                        snapshot.assert_has_calls([mock.call(selected, self.root)] * snapshot.call_count)
 
     def test_scaled_total_exhaustion_during_calls_fails_closed(self):
         entries = self.entries([f"{i:06d}.js" for i in range(40)])

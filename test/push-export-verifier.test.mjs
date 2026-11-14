@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import { EventEmitter, once } from 'node:events';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -271,28 +272,47 @@ test('finding 4: failed attempt checkpoints do not consume the network retry bud
   assert.equal(r.requests.length, 1, 'storage failures before POST must not exhaust the delivery budget');
 });
 
-test('finding 7: startup reconciles beyond the 50-item listing and the 100-item queue', async t => {
+test('finding 7: startup reconciles beyond the 50-item listing and the 100-item queue', { timeout: 15000 }, async t => {
   let held;
-  const r = await fake(t, (_req, res, count) => { if (count === 1) held = res; else res.end('{"result":"stored"}'); });
+  const received = new EventEmitter();
+  const r = await fake(t, (_req, res, count) => {
+    if (count === 1) held = res; else res.end('{"result":"stored"}');
+    if (count >= 101) received.emit('all');
+  });
   t.after(() => held?.destroy());
   const root = await fs.mkdtemp(path.join(tmpdir(), 'antena-136-archives-'));
   const data = path.join(root, 'data'), archives = path.join(data, 'sessions');
   await fs.mkdir(archives, { recursive: true });
   await fs.writeFile(path.join(data, 'session-current.json'), JSON.stringify({ ...initial('current-open'), meldAutoSession: false }));
-  for (let i = 0; i < 101; i++) {
-    const id = `archive-${String(i).padStart(3, '0')}`;
+  const ids = Array.from({ length: 101 }, (_, i) => `archive-${String(i).padStart(3, '0')}`);
+  for (const id of ids) {
     await fs.writeFile(path.join(archives, `${id}.json`), JSON.stringify({ ...initial(id), endedAt: '2026-01-01T00:05:00.000Z' }));
   }
   let app;
   t.after(async () => { if (app) { app.viewers.halt(); await app.closeHttp(); } await fs.rm(root, { recursive: true, force: true }); });
-  app = await createApp({ dataDir: data, mediaDir: path.join(root, 'media'), push: { url: r.url, token: TOKEN }, log: () => {} });
+  // The intentionally held response cannot time out before this test's watchdog.
+  app = await createApp({ dataDir: data, mediaDir: path.join(root, 'media'), push: { url: r.url, token: TOKEN },
+    pushTimeoutMs: 15001, log: () => {} });
   await until(async () => {
     try { return held && JSON.parse(await fs.readFile(path.join(data, 'push-export.json'), 'utf8')).entries.length === 100; }
     catch { return false; }
   }, '100 durable pending documents');
+  assert.equal(r.requests.length, 1);
+  const allReceived = once(received, 'all', { signal: AbortSignal.timeout(5000) });
   held.end('{"result":"stored"}');
-  await until(() => r.requests.length === 101, 'all 101 archives delivered');
-  assert.equal(new Set(r.requests.map(request => JSON.parse(request.body).session.id)).size, 101);
+  await allReceived;
+  const assertRequests = () => {
+    assert.equal(r.requests.length, 101);
+    assert.deepEqual(new Set(r.requests.map(request => JSON.parse(request.body).session.id)), new Set(ids));
+  };
+  assertRequests();
+  await until(async () => {
+    try {
+      const queue = JSON.parse(await fs.readFile(path.join(data, 'push-export.json'), 'utf8'));
+      return queue.entries.length === 0 && queue.delivered.length === 101;
+    } catch { return false; }
+  }, 'all 101 archives durably delivered');
+  assertRequests();
 });
 
 test('finding 7: a durable permanent failure is not regenerated on restart', async t => {
