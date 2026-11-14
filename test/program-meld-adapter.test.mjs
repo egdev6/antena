@@ -107,7 +107,8 @@ function observeWire(server) {
     messages, payloads, idle,
     async until(predicate) { if (!predicate()) await waitFor(notify, 'message', predicate); },
     holdUpdates() { holding = true; },
-    releaseUpdates() { assert.equal(held.length, 1); holding = false; for (const send of held.splice(0)) send(); },
+    // Flush before asserting so a failed check can never leave the fake holding updates and hang teardown.
+    releaseUpdates() { holding = false; const pending = held.splice(0); for (const send of pending) send(); assert.equal(pending.length, 1); },
   };
 }
 
@@ -193,4 +194,14 @@ test('raw Meld and the adapter produce identical WebChannel messages and events'
     return { messages: driver.wire.payloads, events, results };
   }
   assert.deepEqual(await trace(raw, raw.program), await trace(wrapped, adapter));
+});
+
+test("adapter adds one listener per event and dispose restores the baseline", () => {
+  const meld = new Meld(() => {}), names = ["status", "session", "streaming", "controlCommand"];
+  const base = names.map(n => meld.listenerCount(n)), adapter = new MeldAdapter(meld);
+  assert.deepEqual(names.map(n => meld.listenerCount(n)), base.map(c => c + 1));
+  adapter.stop(); adapter.stop();
+  assert.deepEqual(names.map(n => meld.listenerCount(n)), base.map(c => c + 1));
+  adapter.dispose();
+  assert.deepEqual(names.map(n => meld.listenerCount(n)), base);
 });
