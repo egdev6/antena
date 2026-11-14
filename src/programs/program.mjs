@@ -12,12 +12,15 @@ import { EventEmitter } from 'node:events';
  * gain (null until known). Adapters must preserve their underlying values and order.
  * Events are synchronous EventEmitter events: status, session, streaming and
  * controlCommand. `capabilities` is a per-instance Set of supported feature names;
- * an adapter declares e.g. scene-layers, layer-effects, widget-events, confetti,
- * clips, media-controls and raw-meld-rpc only when it supports them. Capabilities
- * describe support; they must not silently discard an action or alter its result.
+ * an adapter declares e.g. scene-layers, layer-effects, audio-tracks, streaming,
+ * recording, widget-events, confetti, clips, media-controls and raw-meld-rpc only
+ * when it supports them. Capabilities describe support; they must not silently
+ * discard an action or alter its result.
  *
  * The action signatures intentionally mirror the existing consumers, including
- * connection lifecycle, warning updates and the generic call escape hatch.
+ * connection lifecycle, warning updates and the generic call escape hatch. stop()
+ * permits restart; dispose() detaches adapter-owned listeners without stopping the
+ * underlying program and is intended for terminal teardown.
  */
 const missing = name => { throw new Error(`Program adapter must implement ${name}`); };
 
@@ -40,4 +43,5 @@ export class Program extends EventEmitter {
   media(layer, command, seconds) { return missing('media'); }
   setProperty(id, property, value) { return missing('setProperty'); }
   call(method, ...args) { return missing('call'); }
+  dispose() { return missing('dispose'); }
 }
