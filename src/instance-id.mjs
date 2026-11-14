@@ -77,32 +77,81 @@ function staleLock(text) {
   } catch { return true; }
 }
 
+// A lock is a hard-linked file or a directory. Another process may be removing it while we
+// inspect it: Windows then reports EPERM/EACCES/EBUSY instead of ENOENT. That says nothing about
+// staleness, so inspecting it must neither abort startup nor count as ownership; the caller
+// retries. Only inspection is covered: deletion errors keep their previous behaviour.
+const TRANSIENT_LOCK_ERRORS = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const LOCK_RELEASE_RETRIES = 5;
+
 function lockFile(lock) { return fs.lstatSync(lock).isDirectory() ? path.join(lock, 'owner.json') : lock; }
+// null means "could not inspect right now": not a directory lock, not a stale lock.
+function lockFileOrNull(lock) {
+  try { return lockFile(lock); }
+  catch (err) { if (TRANSIENT_LOCK_ERRORS.has(err.code) || err.code === 'ENOENT') return null; throw err; }
+}
 function unlinkLock(lock, file) { fs.unlinkSync(file); if (file !== lock) fs.rmdirSync(lock); }
 
 // Re-read the token and the document immediately before the synchronous file operation.
 function ownsLock(lock, token) {
   try {
-    const text = fs.readFileSync(lockFile(lock), 'utf8');
+    const file = lockFileOrNull(lock);
+    if (!file) return false;
+    let text;
+    try { text = fs.readFileSync(file, 'utf8'); }
+    catch (err) { if (TRANSIENT_LOCK_ERRORS.has(err.code)) return false; throw err; }
     return JSON.parse(text).token === token && !staleLock(text);
-  } catch (err) { if (err.code === 'ENOENT' || err instanceof SyntaxError) return false; throw err; }
+  } catch (err) { if (TRANSIENT_LOCK_ERRORS.has(err.code) || err instanceof SyntaxError) return false; throw err; }
 }
 
 function removeStaleLock(lock) {
+  const file = lockFileOrNull(lock);
+  if (!file) return;
   try {
-    const file = lockFile(lock);
     let first;
     try { first = fs.readFileSync(file, 'utf8'); }
     catch (err) {
+      if (TRANSIENT_LOCK_ERRORS.has(err.code)) return;
       if (err.code !== 'ENOENT') throw err;
-      if (file !== lock && Date.now() - fs.statSync(lock).mtimeMs >= LOCK_MAX_AGE_MS) fs.rmdirSync(lock);
+      let age;
+      try { age = Date.now() - fs.statSync(lock).mtimeMs; }
+      catch (statErr) { if (TRANSIENT_LOCK_ERRORS.has(statErr.code) || statErr.code === 'ENOENT') return; throw statErr; }
+      if (file !== lock && age >= LOCK_MAX_AGE_MS) fs.rmdirSync(lock);
       return;
     }
     if (file !== lock) {
       try { JSON.parse(first); } catch { if (Date.now() - fs.statSync(lock).mtimeMs < LOCK_MAX_AGE_MS) return; }
     }
-    if (staleLock(first) && fs.readFileSync(file, 'utf8') === first) unlinkLock(lock, file);
+    let again;
+    try { again = fs.readFileSync(file, 'utf8'); }
+    catch (err) { if (TRANSIENT_LOCK_ERRORS.has(err.code)) return; throw err; }
+    if (staleLock(first) && again === first) unlinkLock(lock, file);
   } catch (err) { if (err.code !== 'ENOENT') throw err; }
+}
+
+// Releasing must not abandon our own lock just because one read failed while the previous
+// owner's removal was still pending: retry the ownership check a bounded number of times.
+async function releaseOwnedLock(lock, token, delay) {
+  for (let attempt = 0; ; attempt++) {
+    let owned;
+    try { owned = ownsLock(lock, token); }
+    catch (err) { if (err.code === 'ENOENT') return; throw err; }
+    if (owned) {
+      let file;
+      try { file = lockFile(lock); }
+      catch (err) {
+        if (err.code === 'ENOENT') return;
+        if (!TRANSIENT_LOCK_ERRORS.has(err.code)) throw err;
+        file = null; // inspected a moment too early; retry below instead of abandoning our lock
+      }
+      if (file) { unlinkLock(lock, file); return; }
+    }
+    let present;
+    try { fs.lstatSync(lock); present = true; }
+    catch (err) { if (TRANSIENT_LOCK_ERRORS.has(err.code) || err.code === 'ENOENT') present = false; else throw err; }
+    if (!present || attempt >= LOCK_RELEASE_RETRIES) return;
+    await delay(LOCK_EPERM_DELAY_MS);
+  }
 }
 
 // Known limitation (accepted in #124): the ownership check and the rename below are not atomic.
@@ -118,10 +167,7 @@ async function withRepairLock(file, action, delay) {
     return false;
   }
   try { return await action(lock, token); }
-  finally {
-    try { if (ownsLock(lock, token)) unlinkLock(lock, lockFile(lock)); }
-    catch (err) { if (err.code !== 'ENOENT') throw err; }
-  }
+  finally { await releaseOwnedLock(lock, token, delay); }
 }
 
 async function quarantineInvalid(file, directory, delay) {
