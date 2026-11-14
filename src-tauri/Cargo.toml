@@ -1,6 +1,6 @@
 [package]
 name = "antena"
-version = "0.14.1"
+version = "0.15.0"
 description = "antena: alertas, chat, widgets y control de Meld Studio para los directos de EGDEV"
 authors = ["egdev6"]
 edition = "2021"
