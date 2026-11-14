@@ -24,13 +24,19 @@ test('a client close frame closes the server socket promptly and removes the bus
   let closes = 0; res.on('close', () => closes++);
   const received = [];
   peer.on('data', chunk => received.push(chunk));
+  // #121: socket.destroyed can flip before the response 'close' event (which removes the bus
+  // client) and before the peer has read the echo. Register both observations before sending.
+  const serverClosed = once(res, 'close');
+  const peerDone = new Promise(resolve => { peer.once('end', resolve); peer.once('close', resolve); });
   // Masked close frame, code 1001 (going away); the peer keeps its side of TCP open.
   const mask = [1, 2, 3, 4], payload = [0x03, 0xe9];
   peer.write(Buffer.from([0x88, 0x80 | payload.length, ...mask, ...payload.map((b, i) => b ^ mask[i % 4])]));
   const started = Date.now();
-  while (!socket.destroyed && Date.now() - started < 1000) await wait(10);
+  await serverClosed;
+  const elapsed = Date.now() - started;
+  await peerDone;
   assert.equal(socket.destroyed, true, 'server closes TCP after echoing the close');
-  assert.ok(Date.now() - started < 1000);
+  assert.ok(elapsed < 1000, `server closed after ${elapsed} ms`);
   assert.equal(closes, 1);
   assert.equal(bus.clients.size, 0);
   const bytes = Buffer.concat(received);
