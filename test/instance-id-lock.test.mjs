@@ -12,7 +12,8 @@ const { instanceId } = await import(new URL('../src/instance-id.mjs', import.met
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fixture(t, shape = 'file') {
-  const dir = await mkdtemp(path.join(tmpdir(), 'lock-independent-'));
+  // instanceId() canonicalises the directory; Windows short paths (RUNNER~1) would not match.
+  const dir = fs.realpathSync.native(await mkdtemp(path.join(tmpdir(), 'lock-independent-')));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'instance.json'), lock = file + '.repair.lock';
   const corrupt = Buffer.from('{broken');
@@ -102,7 +103,7 @@ test('a stale lock pending deletion is reclaimed instead of aborting startup', a
 });
 
 test('transient EPERM on the final lock inspection does not abandon our lock', async t => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'lock-final-lstat-'));
+  const dir = fs.realpathSync.native(await mkdtemp(path.join(tmpdir(), 'lock-final-lstat-')));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'instance.json'), lock = file + '.repair.lock';
   fs.writeFileSync(file, '{broken');

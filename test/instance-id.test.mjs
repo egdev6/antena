@@ -278,7 +278,9 @@ test('different data directories receive different ids', async t => {
 });
 
 test('a repair lock pending deletion is not stolen and does not abort startup', { timeout: 15000 }, async t => {
-  const { dataDir, file } = await fixture(t);
+  const { dataDir: rawDir, file: rawFile } = await fixture(t);
+  // instanceId() canonicalises the directory; Windows short paths would not match the injection.
+  const dataDir = fs.realpathSync.native(rawDir), file = `${dataDir}${rawFile.slice(rawDir.length)}`;
   const lock = `${file}.repair.lock`;
   await writeFile(file, '{broken');
   // Stale by age, so it would be reclaimed once it can be read.
