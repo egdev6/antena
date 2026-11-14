@@ -6,6 +6,33 @@ import path from 'node:path';
 import { fakeMeldRecording } from './fake-meld-recording.mjs';
 import { observeWire, panel } from './meld-trace.mjs';
 
+// Keep the existing source-text probes in one place, and retain registration order
+// whether the auto-session consumer is still raw or has moved to the adapter.
+export function observeStatusConsumers(app, entered) {
+  const labels = [
+    ['auto-session-status', 'const connectedNow ='],
+    ['youtube-auto-status', 'youtubeAuto.begin()'],
+    ['recording-status', 'const op = operation;'],
+    ['route-guard-status', 'pending.keys()'],
+  ];
+  const sources = [app.program, app.meld].map(emitter => ({ emitter, listeners: emitter.listeners('status') }));
+  const names = new Map(labels.map(([label, source]) => {
+    const matches = sources.flatMap(({ listeners }) => listeners.filter(listener => listener.toString().includes(source)));
+    assert.equal(matches.length, 1, `expected one ${label} listener`);
+    return [matches[0], label];
+  }));
+  for (const { emitter, listeners } of sources) {
+    for (const listener of listeners) emitter.off('status', listener);
+    for (const listener of listeners) {
+      const label = names.get(listener);
+      emitter.on('status', label ? function (...args) {
+        entered(label, ...args);
+        return listener.apply(this, args);
+      } : listener);
+    }
+  }
+}
+
 export async function consumerOrderTrace(t) {
   const dir = await mkdtemp(path.join(tmpdir(), 'ant-consumer-order-'));
   const fake = fakeMeldRecording(), wire = observeWire(fake.server), received = [], order = [], broadcasts = [];
@@ -64,28 +91,8 @@ export async function consumerOrderTrace(t) {
   // actually sent to the panel, alongside the synchronous auto-session and
   // recording-on-start calls; then verify the real SSE reader received each one.
   let capture = false, statusDepth = 0;
-  // Preserve the existing raw registration order while observing the entry to
-  // each later consumer, including branches that do not produce an SSE event.
-  const laterConsumers = [
-    ['auto-session-status', 'const connectedNow ='],
-    ['youtube-auto-status', 'youtubeAuto.begin()'],
-    ['recording-status', 'const op = operation;'],
-    ['route-guard-status', 'pending.keys()'],
-  ];
-  const listeners = app.meld.listeners('status');
-  const labels = new Map(laterConsumers.map(([label, source]) => {
-    const matches = listeners.filter(listener => listener.toString().includes(source));
-    assert.equal(matches.length, 1, `expected one raw ${label} listener`);
-    return [matches[0], label];
-  }));
-  for (const listener of listeners) app.meld.off('status', listener);
-  for (const listener of listeners) {
-    const label = labels.get(listener);
-    app.meld.on('status', label ? function (...args) {
-      if (capture) order.push({ event: label });
-      return listener.apply(this, args);
-    } : listener);
-  }
+  // Preserve registration order, including branches with no public side effect.
+  observeStatusConsumers(app, label => { if (capture) order.push({ event: label }); });
   // No other raw session consumers exist today. This sentinel detects whether
   // the exact session sent to the panel has already been broadcast on entry.
   app.meld.on('session', data => {

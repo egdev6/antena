@@ -617,12 +617,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       return closed;
     });
   };
-  meld.on('streaming', live => {
+  program.on('streaming', live => {
     if (!store.config.meld.autoSession || autoSessionClosed) return;
     if (live) { startAutoSession(); return; }
     closeAutoSession();
   });
-  meld.on('status', st => {
+  program.on('status', st => {
     const connectedNow = st.state === 'conectado';
     const reconnected = connectedNow && !meldConnected;
     meldConnected = connectedNow;
