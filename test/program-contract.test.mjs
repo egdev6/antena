@@ -5,7 +5,7 @@ import { Program } from '../src/programs/program.mjs';
 
 const actions = [
   'start', 'stop', 'quiesceClose', 'setStatus', 'session', 'showScene', 'setLayer', 'toggleEffect',
-  'command', 'streamEvent', 'toggleMute', 'setGain', 'media', 'setProperty', 'call',
+  'command', 'streamEvent', 'toggleMute', 'setGain', 'media', 'setProperty', 'call', 'dispose',
 ];
 const status = { state: 'conectado', streaming: false, streamingKnown: true, recording: false,
   recordingKnown: true, recordingWarning: null, version: 2, error: null };
