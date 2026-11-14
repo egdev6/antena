@@ -60,6 +60,23 @@ async function shot(c, name) {
 }
 const resize = (c, width, height) => c.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
 
+test('CSS S1: la vista previa horizontal cabe pese al CSS del chat predeterminado', { timeout: 90000 }, async t => {
+  const f = await fixture(t);
+  await f.request('PUT', '/api/widgets', { chat: {
+    css: '.root{inset:15px 5px auto auto;width:430px;height:600px}', maxMessages: 3, animIn: 'none', animOut: 'none',
+  } });
+  const id = await f.create('Horizontal');
+  await f.update(id, { layout: 'horizontal' });
+  const c = await f.page(`?variant=${id}&demo`);
+  await resize(c, 1832, 160);
+  await wait(c, `innerWidth === 1832 && innerHeight === 160 && document.querySelector('#root.horizontal') && document.querySelectorAll('#root .msg').length > 0 && [...document.querySelectorAll('#root .msg')].every(e => e.getAnimations().every(a => a.playState !== 'running'))`);
+  const geometry = await dom(c, `(() => ({width:innerWidth, height:innerHeight, cards:[...document.querySelectorAll('#root .msg')].map(e => {
+    const b=e.getBoundingClientRect(); return {left:b.left, right:b.right, top:b.top, bottom:b.bottom, width:b.width, height:b.height};
+  })}))()`);
+  assert.ok(geometry.cards.length > 0, JSON.stringify(geometry));
+  assert.ok(geometry.cards.every(b => b.width > 0 && b.height > 0 && b.left >= -1 && b.top >= -1 && b.right <= geometry.width + 1 && b.bottom <= geometry.height + 1), JSON.stringify(geometry));
+});
+
 // S2/S8: sin selector y con ids desconocidos se conserva el chat anterior; layout no es un parámetro.
 test('chat: URL predeterminada, ids exactos y layout independiente ignorado', { timeout: 90000 }, async t => {
   const f = await fixture(t);

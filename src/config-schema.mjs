@@ -386,7 +386,9 @@ export function validatePatch(patch) {
   return errors.map(e => ({ path: e.path.replace(/^config\./, ''), message: e.message.replace(/^config\./, '') }));
 }
 
-/** La lista completa mantiene ids estables; una adición copia el chat y usa el slug del CRUD. */
+export const NEW_CHAT_VARIANT_CSS_ERROR = 'El CSS de una variante nueva empieza vacío';
+
+/** La lista mantiene ids estables; una adición copia el chat salvo el CSS y usa el slug del CRUD. */
 export function validateChatVariantsTransition(previous, next, defaultChat) {
   const errors = validatePatch({ widgets: { chatVariants: next } });
   if (errors.length || !Array.isArray(next)) return errors;
@@ -397,12 +399,13 @@ export function validateChatVariantsTransition(previous, next, defaultChat) {
     errors.push({ path: 'widgets.chatVariants', message: 'widgets.chatVariants: no se puede cambiar el id de una variante; crea o borra por separado' });
     return errors;
   }
-  const { id: _id, name: _name, ...chat } = defaultChat || {};
+  const { id: _id, name: _name, css: _css, ...chat } = defaultChat || {};
   for (const [i, variant] of next.entries()) {
     if (before.has(variant.id)) continue;
     const expectedId = chatVariantId(variant.name, existing);
-    const { id, name, ...fields } = variant;
+    const { id, name, css, ...fields } = variant;
     if (id !== expectedId) errors.push({ path: `widgets.chatVariants.${i}.id`, message: `widgets.chatVariants.${i}.id: el id debe ser el slug único del nombre (${expectedId})` });
+    if (css !== '') errors.push({ path: `widgets.chatVariants.${i}.css`, message: NEW_CHAT_VARIANT_CSS_ERROR });
     if (!isDeepStrictEqual(fields, chat)) errors.push({ path: `widgets.chatVariants.${i}`, message: `widgets.chatVariants.${i}: una variante nueva debe copiar el chat predeterminado completo` });
     existing.push(variant);
   }
