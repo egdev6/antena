@@ -124,7 +124,9 @@ async function fakeOwnedStartup(t, { platform = process.platform, pid = 45678, o
   return { child, heldStream, calls };
 }
 
-test('owned POSIX Chrome signals its group even after the leader exits and waits for close', { skip: process.platform === 'win32' }, async t => {
+const POSIX_GROUPS = process.platform === 'win32' && 'POSIX process groups: Windows escalates the owned Chrome tree with taskkill instead of group signals';
+
+test('owned POSIX Chrome signals its group even after the leader exits and waits for close', { skip: POSIX_GROUPS }, async t => {
   const { calls } = await fakeOwnedStartup(t, { onSignal(child, stream, signal) {
     if (signal === 'SIGTERM') { child.exitCode = 0; child.emit('exit', 0, null); }
     if (signal === 'SIGKILL') { stream.closed = true; child.emit('close', 0, null); }
@@ -161,7 +163,7 @@ test('invalid owned PID never signals a group or tree', { timeout: 10000 }, asyn
   assert.deepEqual(calls, []);
 });
 
-test('failed owned shutdown reports bounded sanitized stream and kill diagnostics', { timeout: 10000, skip: process.platform === 'win32' }, async t => {
+test('failed owned shutdown reports bounded sanitized stream and kill diagnostics', { timeout: 10000, skip: POSIX_GROUPS }, async t => {
   const { calls } = await fakeOwnedStartup(t, { onSignal(child, _stream, signal) {
     if (signal === 'SIGTERM') { child.exitCode = 7; child.emit('exit', 7, null); }
     throw Object.assign(new Error('PRIVATE_CANARY /private/path'), { code: 'EPERM' });

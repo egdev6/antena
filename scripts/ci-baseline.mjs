@@ -23,6 +23,8 @@ const WINDOWS_POSIX_SKIPS = [
   'POSIX signals: Windows has no SIGTERM a process can ignore; forced termination is covered by the other close tests',
   // #132: unreadable channel-totals.json via chmod 000 (POSIX only; same code path as any read error)
   'POSIX file modes: chmod cannot make a file unreadable on Windows; the unreadable-file fallback is platform-independent and runs on Linux',
+  // #173: owned Chrome shutdown signals the POSIX process group; Windows uses taskkill /T instead
+  'POSIX process groups: Windows escalates the owned Chrome tree with taskkill instead of group signals',
 ];
 
 export function checkCiBaseline(report, tap) {
