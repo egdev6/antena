@@ -23,9 +23,9 @@ async function intercept(chrome, base) {
   const port = (await readFile(path.join(chrome.profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0].trim();
   const { targetInfo } = await chrome.cdp.send('Target.getTargetInfo');
   const ws = new WebSocket(`ws://127.0.0.1:${port}/devtools/page/${targetInfo.targetId}`);
-  let seq = 0; const pending = new Map(), delayed = [], imageRequests = [], errors = [];
+  let seq = 0; const pending = new Map(), delayed = [], imageRequests = [], errors = [], actions = new Set();
   const send = (method, params = {}) => new Promise((resolve, reject) => {
-    const id = ++seq; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params }));
+    const id = ++seq; pending.set(id, { resolve, reject, method, requestId: params.requestId }); ws.send(JSON.stringify({ id, method, params }));
   });
   const fulfill = (requestId, ok = true) => send('Fetch.fulfillRequest', { requestId, responseCode: ok ? 200 : 404,
     responseHeaders: [{ name: 'Content-Type', value: 'image/svg+xml' }, { name: 'Cache-Control', value: 'no-store' }],
@@ -34,7 +34,9 @@ async function intercept(chrome, base) {
     const message = JSON.parse(event.data);
     if (message.id) {
       const p = pending.get(message.id); pending.delete(message.id);
-      if (message.error) p?.reject(new Error(`CDP ${message.error.code}`)); else p?.resolve(message.result);
+      if (message.error) p?.reject(Object.assign(new Error(message.error.message), {
+        code: message.error.code, method: p.method, requestId: p.requestId,
+      })); else p?.resolve(message.result);
       return;
     }
     if (message.method !== 'Fetch.requestPaused') return;
@@ -45,14 +47,29 @@ async function intercept(chrome, base) {
     else if (url === CDN + '/delayed.svg') { delayed.push(requestId); return; }
     else if (url.startsWith(CDN + '/')) action = fulfill(requestId, !url.endsWith('/broken.svg'));
     else action = send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
-    action.catch(error => errors.push(error));
+    const tracked = action.catch(error => errors.push({ method: error.method, requestId: error.requestId,
+      code: error.code, message: error.message })).finally(() => actions.delete(tracked));
+    actions.add(tracked);
   });
   await new Promise((resolve, reject) => { ws.addEventListener('open', resolve, { once: true }); ws.addEventListener('error', reject, { once: true }); });
   await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
-  return { imageRequests, delayed, errors, fulfill, async close() {
+  // A protocol round trip brackets each batch so already-delivered pauses are accounted for.
+  const drain = async () => {
+    do {
+      await send('Runtime.evaluate', { expression: 'void 0' });
+      await Promise.all([...actions]);
+      await send('Runtime.evaluate', { expression: 'void 0' });
+    } while (actions.size);
+  };
+  let closing;
+  const close = () => closing ??= (async () => {
     for (const id of delayed.splice(0)) await fulfill(id).catch(() => {});
-    await send('Fetch.disable').catch(() => {}); ws.close();
-  } };
+    await drain();
+    await send('Fetch.disable');
+    await drain();
+    ws.close();
+  })();
+  return { imageRequests, delayed, errors, fulfill, drain, close };
 }
 
 async function fixture(t, bin) {
@@ -75,12 +92,26 @@ async function fixture(t, bin) {
   assert.equal(navigation.errorText, undefined);
   await waitDom(c, '!!window.antenaPreviewReady', { timeoutMs: 10000 });
   await evaluateChrome(c, 'window.antenaPreviewReady.then(() => true)', { timeoutMs: 10000 });
+  // Do not replace a fixture-controlled stylesheet or image while its request is in flight.
+  // The deliberately delayed avatar is the one exception tested below.
+  const settle = async () => {
+    await waitDom(c, `(() => {
+      const theme = document.querySelector('#eg-theme');
+      return !!theme?.sheet && theme.sheet.href === theme.href &&
+        [...document.querySelectorAll('#stage img, #bg img')].every(img => img.src === ${JSON.stringify(CDN + '/delayed.svg')} || img.complete);
+    })()`);
+    await gate.drain();
+  };
   const theme = async (icons, version) => {
+    await settle();
     app.bus.send('theme', { icons, version, sound: 'none' }, ['preview']);
-    await waitDom(c, `document.querySelector('#eg-theme')?.href.includes(${JSON.stringify('v=' + version)})`);
+    await waitDom(c, `(() => { const link = document.querySelector('#eg-theme');
+      return link?.href.includes(${JSON.stringify('v=' + version)}) && link.sheet?.href === link.href; })()`);
+    await gate.drain();
   };
   await theme({ ytsub: 'emoji:⭐', follow: 'emoji:💜' }, 'fixture-icons');
-  const display = (type, layout, user, avatar) => {
+  const display = async (type, layout, user, avatar) => {
+    await settle();
     const config = structuredClone(app.store.config);
     config.alerts[type] = { ...config.alerts[type], layout, media: layout === 'card' ? '' : 'background.svg',
       sound: 'none', animIn: 'none', textDelayMs: 0 };
@@ -88,7 +119,7 @@ async function fixture(t, bin) {
     app.engine.deliver(buildAlert(type, vars, config, { test: true }), { target: 'preview' });
   };
   const shown = user => waitDom(c, `document.querySelector('#stage .alert-name')?.textContent === ${JSON.stringify(user)}`, { timeoutMs: 5000 });
-  return { app, c, gate, base, theme, display, shown };
+  return { app, c, gate, base, theme, display, shown, settle };
 }
 
 const visibleAvatar = `(() => {
@@ -103,13 +134,53 @@ const visibleAvatar = `(() => {
   return true;
 })()`;
 
+test('CDP automatic actions drain and retain method, request ID and exact error', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ytsub-cdp-'));
+  await writeFile(path.join(dir, 'DevToolsActivePort'), '1234\n');
+  const original = globalThis.WebSocket;
+  let socket, gate;
+  class FakeSocket {
+    constructor() { socket = this; this.listeners = new Map(); this.actions = []; queueMicrotask(() => this.emit('open', {})); }
+    addEventListener(name, listener) { this.listeners.set(name, listener); }
+    emit(name, event) { this.listeners.get(name)?.(event); }
+    message(value) { this.emit('message', { data: JSON.stringify(value) }); }
+    send(raw) {
+      const request = JSON.parse(raw);
+      if (['Fetch.continueRequest', 'Fetch.fulfillRequest', 'Fetch.failRequest'].includes(request.method)) this.actions.push(request);
+      else queueMicrotask(() => this.message({ id: request.id, result: {} }));
+    }
+    close() {}
+  }
+  globalThis.WebSocket = FakeSocket;
+  t.after(async () => {
+    for (const request of socket?.actions || []) socket.message({ id: request.id, result: {} });
+    if (gate) await gate.close();
+    globalThis.WebSocket = original;
+    await rm(dir, { recursive: true, force: true });
+  });
+  gate = await intercept({ profile: dir, cdp: { send: async () => ({ targetInfo: { targetId: 'fake' } }) } }, 'http://127.0.0.1:1');
+  for (const [requestId, url] of [['local', 'http://127.0.0.1:1/x'], ['cdn', CDN + '/broken.svg'], ['external', 'https://example.invalid/x']]) {
+    socket.message({ method: 'Fetch.requestPaused', params: { requestId, request: { url }, resourceType: 'Image' } });
+  }
+  assert.deepEqual(socket.actions.map(request => request.method), ['Fetch.continueRequest', 'Fetch.fulfillRequest', 'Fetch.failRequest']);
+  let drained = false;
+  const draining = gate.drain().then(() => { drained = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(drained, false, 'drain must wait for every automatic action');
+  for (const request of socket.actions) socket.message({ id: request.id, error: { code: -32602, message: 'Invalid InterceptionId' } });
+  await draining;
+  assert.equal(drained, true);
+  assert.deepEqual(gate.errors, socket.actions.map(request => ({ method: request.method, requestId: request.params.requestId,
+    code: -32602, message: 'Invalid InterceptionId' })));
+});
+
 test('S2: real overlay avatar, safe URL fallback and independent icons', { timeout: 60000 }, async t => {
   const bin = await findChrome();
   if (!bin) return t.skip('Chrome unavailable: set CHROME_PATH to run the real overlay proof');
   const f = await fixture(t, bin), { c, gate } = f;
   for (const layout of ['card', 'media', 'mixed']) await t.test(`${layout}: synthetic CDN avatar decodes without replacing icon or media`, async () => {
     const user = `Avatar ${layout}`, url = `${CDN}/${layout}.svg`;
-    f.display('ytsub', layout, user, url); await f.shown(user);
+    await f.display('ytsub', layout, user, url); await f.shown(user);
     await waitDom(c, visibleAvatar, { timeoutMs: 2500 });
     const view = await evaluateChrome(c, `(() => {
       const image = document.querySelector('#stage .ytsub-avatar');
@@ -124,18 +195,18 @@ test('S2: real overlay avatar, safe URL fallback and independent icons', { timeo
     assert.ok(gate.imageRequests.includes(url));
   });
   await t.test('broken avatar removes only the avatar, retaining the configured icon and name', async () => {
-    const url = CDN + '/broken.svg'; f.display('ytsub', 'card', 'Broken avatar', url); await f.shown('Broken avatar');
+    const url = CDN + '/broken.svg'; await f.display('ytsub', 'card', 'Broken avatar', url); await f.shown('Broken avatar');
     await until(() => gate.imageRequests.includes(url), 'missing broken-image request');
     await waitDom(c, `!document.querySelector('#stage .ytsub-avatar')`, { timeoutMs: 2500 });
     assert.equal(await evaluateChrome(c, `document.querySelector('#stage .tile .emoji')?.textContent`), '⭐');
     assert.equal(await evaluateChrome(c, `document.querySelector('#stage .alert-name')?.textContent`), 'Broken avatar');
   });
   await t.test('a delayed old response and late image events cannot alter its replacement', async () => {
-    f.display('ytsub', 'card', 'Old delayed', CDN + '/delayed.svg'); await f.shown('Old delayed');
+    await f.display('ytsub', 'card', 'Old delayed', CDN + '/delayed.svg'); await f.shown('Old delayed');
     await until(() => gate.delayed.length === 1, 'missing delayed avatar request');
     await waitDom(c, `!!document.querySelector('#stage .ytsub-avatar')`, { timeoutMs: 2500 });
     await evaluateChrome(c, `window.__oldSubscriberAvatar = document.querySelector('#stage .ytsub-avatar'); true`);
-    f.display('follow', 'card', 'Replacement', CDN + '/ignored.svg'); await f.shown('Replacement');
+    await f.display('follow', 'card', 'Replacement', CDN + '/ignored.svg'); await f.shown('Replacement');
     const requestId = gate.delayed.shift(); await gate.fulfill(requestId);
     await evaluateChrome(c, `window.__oldSubscriberAvatar.dispatchEvent(new Event('load')); window.__oldSubscriberAvatar.dispatchEvent(new Event('error')); true`);
     await evaluateChrome(c, `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
@@ -151,7 +222,7 @@ test('S2: real overlay avatar, safe URL fallback and independent icons', { timeo
       '//ggpht.com/x', '/forbidden-avatar.svg', 'https:ggpht.com/x', 'https://ggpht.com/space here'];
     const before = gate.imageRequests.length;
     for (const [i, url] of unsafe.entries()) {
-      const user = `Unsafe ${i}`; f.display('ytsub', 'card', user, url); await f.shown(user);
+      const user = `Unsafe ${i}`; await f.display('ytsub', 'card', user, url); await f.shown(user);
       assert.equal(await evaluateChrome(c, `!!document.querySelector('#stage .ytsub-avatar')`), false, url);
       assert.equal(await evaluateChrome(c, `document.querySelector('#stage .tile .emoji')?.textContent`), '⭐');
       await evaluateChrome(c, `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
@@ -160,18 +231,20 @@ test('S2: real overlay avatar, safe URL fallback and independent icons', { timeo
   });
   await t.test('icons.ytsub=none hides the icon but leaves the separate avatar visible', async () => {
     await f.theme({ ytsub: 'none', follow: 'emoji:💜' }, 'fixture-none');
-    f.display('ytsub', 'card', 'No icon', CDN + '/no-icon.svg'); await f.shown('No icon');
+    await f.display('ytsub', 'card', 'No icon', CDN + '/no-icon.svg'); await f.shown('No icon');
     await waitDom(c, visibleAvatar, { timeoutMs: 2500 });
     assert.equal(await evaluateChrome(c, `!!document.querySelector('#stage .tile')`), false);
   });
   await t.test('PRESERVE: a non-ytsub alert keeps its local icon and ignores an avatar input', async () => {
     await f.theme({ ytsub: 'none', follow: 'media:background.svg' }, 'fixture-local-icon');
     const url = CDN + '/other.svg';
-    f.display('follow', 'card', 'Twitch follow', url); await f.shown('Twitch follow');
+    await f.display('follow', 'card', 'Twitch follow', url); await f.shown('Twitch follow');
     await waitDom(c, `document.querySelector('#stage .tile img.pic')?.naturalWidth > 0`);
     assert.deepEqual(await evaluateChrome(c, `({ icon: document.querySelector('#stage .tile img.pic')?.getAttribute('src'),
       avatar: !!document.querySelector('#stage .ytsub-avatar') })`), { icon: '/media/background.svg', avatar: false });
     assert.ok(!gate.imageRequests.includes(url));
   });
+  await f.settle();
+  await gate.close();
   assert.deepEqual(gate.errors, []);
 });

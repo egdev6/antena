@@ -27,6 +27,8 @@ export async function skipIfNoBrowserOrUi(t) {
 
 const childStates = new WeakMap();
 const closeTasks = new WeakMap();
+// Only children spawned here may be targeted as a process group/tree.
+const ownedChildren = new WeakMap();
 
 // Only fixed classifications are emitted: raw stderr can contain paths, URLs or user data.
 const startupReasons = [
@@ -107,6 +109,44 @@ export async function closeAll(...steps) {
   if (failed) throw firstError;
 }
 
+const safeKillCode = error => /^[A-Z][A-Z0-9_]{0,31}$/.test(error?.code || '') ? error.code : 'error';
+
+function signalChrome(child, signal, kills) {
+  const owned = ownedChildren.get(child);
+  const result = { signal, result: 'not-signalled' };
+  kills.push(result);
+  if (owned) {
+    // A missing/changed PID must never turn into a group-wide or unrelated kill.
+    if (!owned.pid || child.pid !== owned.pid) return;
+    if (owned.platform !== 'win32') {
+      try { process.kill(-owned.pid, signal); result.result = 'sent'; }
+      catch (error) { result.result = safeKillCode(error); }
+      return;
+    }
+    // taskkill cannot identify a tree after its root has exited; do not risk PID reuse.
+    if (child.exitCode !== null || child.signalCode !== null) { result.result = 'root-exited'; return; }
+    try {
+      const killer = spawn('taskkill', ['/PID', String(owned.pid), '/T', '/F'],
+        { stdio: 'ignore', windowsHide: true, shell: false, timeout: 3000 });
+      result.result = 'started';
+      killer.once('error', error => { result.result = safeKillCode(error); });
+      killer.once('close', code => { if (result.result === 'started') result.result = code === 0 ? 'sent' : 'failed'; });
+    } catch (error) { result.result = safeKillCode(error); }
+    return;
+  }
+  // Preserve support for externally supplied children without targeting their tree.
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  try { result.result = child.kill(signal) ? 'sent' : 'not-sent'; }
+  catch (error) { result.result = safeKillCode(error); }
+}
+
+function shutdownDiagnostic(child, kills) {
+  const openStdio = (child.stdio || []).slice(0, 8).flatMap((stream, index) => stream && !stream.closed ? [index] : []);
+  if (child.connected) openStdio.push('ipc');
+  return { exitCode: Number.isInteger(child.exitCode) ? child.exitCode : null,
+    signalCode: validSignals.has(child.signalCode) ? child.signalCode : null, openStdio, kills };
+}
+
 /** Close CDP and Chrome once, then best-effort remove its temporary profile. */
 export function closeChrome(chrome) {
   if (closeTasks.has(chrome)) return closeTasks.get(chrome);
@@ -115,17 +155,20 @@ export function closeChrome(chrome) {
     try {
       try { cdp?.close(); } catch { /* The socket may already be closed. */ }
       if (child) {
-        const state = trackChild(child);
+        const state = trackChild(child), kills = [];
         // Startup diagnostics are no longer needed; an open pipe can delay 'close'.
         if (child.stderr) {
           child.stderr.pause();
           child.stderr.removeAllListeners('data');
           child.stderr.destroy();
         }
-        if (!state.closed && child.exitCode === null && child.signalCode === null) child.kill();
+        if (!state.closed) signalChrome(child, 'SIGTERM', kills);
         if (!await closesWithin(state.done, 1500)) {
-          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-          if (!await closesWithin(state.done, 3000)) throw new Error('Chrome process did not close after forced shutdown');
+          signalChrome(child, 'SIGKILL', kills);
+          if (!await closesWithin(state.done, 3000)) {
+            const diagnostic = shutdownDiagnostic(child, kills);
+            throw Object.assign(new Error(`Chrome process did not close after forced shutdown; ${JSON.stringify(diagnostic)}`), { diagnostic });
+          }
         }
       }
     } finally {
@@ -142,7 +185,10 @@ export async function openChromePage(bin, url) {
   const profile = await mkdtemp(path.join(tmpdir(), 'egdev-chrome-'));
   const chrome = { profile };
   try {
-    const child = chrome.child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-gpu', '--disable-dev-shm-usage', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const platform = process.platform;
+    const child = chrome.child = spawn(bin, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-gpu', '--disable-dev-shm-usage', '--mute-audio', '--host-resolver-rules=MAP * 127.0.0.1, EXCLUDE 127.0.0.1', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'], detached: platform !== 'win32' });
+    const pid = Number.isSafeInteger(child.pid) && child.pid > 0 && child.pid !== process.pid ? child.pid : null;
+    ownedChildren.set(child, { pid, platform });
     const startupDiagnostic = observeStartupStderr(child);
     const state = trackChild(child);
     const checkStartup = () => {

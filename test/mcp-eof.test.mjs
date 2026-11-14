@@ -66,7 +66,7 @@ const flush = Session.prototype.flush;
 Session.prototype.flush = function () {
   console.error('FIXTURE:FLUSH');
   if (scenario === 'fail') return Promise.reject(new Error('PRIVATE_FLUSH'));
-  if (scenario === 'late-deadline') return new Promise(() => {});
+  if (scenario === 'late-deadline' || scenario === 'late-deadline-probe') return new Promise(() => {});
   const written = flush.call(this);
   // Rama lateral: quien llama recibe la misma promesa, con su rechazo intacto.
   written.then(() => console.error('FIXTURE:SESSION-WRITTEN'), () => {});
@@ -92,12 +92,14 @@ const releaseServer = gateNet.createServer(socket => {
   socket.setEncoding('utf8');
   socket.on('data', data => {
     command += data;
-    if (released || !'release\\n'.startsWith(command)) { socket.destroy(); return; }
-    if (command === 'release\\n') {
-      released = true;
-      releaseServer.close();
-      socket.end('released\\n', () => process.emit('message', 'release'));
+    if (command.length > 32) { socket.destroy(); return; }
+    if (!command.endsWith('\\n')) return;
+    const message = command.slice(0, -1);
+    if ((message === 'release' && released) || !/^(release|advance:(2000|2999|3000|5000|1))$/.test(message)) {
+      socket.destroy(); return;
     }
+    if (message === 'release') released = true;
+    socket.end('accepted\\n', () => process.emit('message', message));
   });
 });
 await new Promise((resolve, reject) => {
@@ -120,7 +122,7 @@ async function launch(t, scenario, external, entry = [MCP], bootstrapName = 'boo
   if (external) env.ANTENA_NO_EMBED = '1';
   if (native) env.MCP_RELEASE_ENDPOINT = path.join(root, 'release-port');
   const args = ['--import', pathToFileURL(bootstrap).href,
-    ...(scenario === 'startup-deadline-probe' ? ['--import', new URL('./helpers/mcp-deadline.mjs', import.meta.url).href] : []),
+    ...(scenario.endsWith('-deadline-probe') ? ['--import', new URL('./helpers/mcp-deadline.mjs', import.meta.url).href] : []),
     ...entry];
   const child = native
     ? await launchSignalChild(process.execPath, args, { env, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -155,7 +157,7 @@ async function launch(t, scenario, external, entry = [MCP], bootstrapName = 'boo
       return result;
     } finally { clearTimeout(timer); }
   };
-  const releaseNative = async () => {
+  const controlNative = async message => {
     const port = Number(await readFile(env.MCP_RELEASE_ENDPOINT, 'utf8'));
     assert.ok(Number.isInteger(port) && port > 0 && port <= 65535, 'puerto de release inválido');
     await new Promise((resolve, reject) => {
@@ -163,7 +165,7 @@ async function launch(t, scenario, external, entry = [MCP], bootstrapName = 'boo
       let ack = '', ended = false;
       socket.setEncoding('utf8');
       socket.setTimeout(2500, () => socket.destroy(new Error('watchdog de release MCP')));
-      socket.once('connect', () => socket.write('release\n'));
+      socket.once('connect', () => socket.write(message + '\n'));
       socket.on('data', data => {
         ack += data;
         if (ack.length > 9) socket.destroy(new Error('ACK de release MCP inválido'));
@@ -171,14 +173,15 @@ async function launch(t, scenario, external, entry = [MCP], bootstrapName = 'boo
       socket.once('error', reject);
       socket.once('end', () => {
         ended = true;
-        if (ack === 'released\n') resolve();
+        if (ack === 'accepted\n') resolve();
         else reject(new Error('ACK de release MCP inválido'));
       });
       socket.once('close', () => { if (!ended) reject(new Error('release MCP cerrado sin ACK')); });
     });
   };
+  const control = native ? controlNative : message => child.send(message);
   return { root, child, send, response, until, exited, out: () => out, err: () => err,
-    release: native ? releaseNative : () => child.send('release') };
+    release: () => control('release'), advance: ms => control('advance:' + ms) };
 }
 
 const launchSignalFixture = (t, scenario, external, entry = [MCP]) =>
@@ -264,24 +267,16 @@ test('MCP EOF no oculta fallo de flush y guarda persistencia independiente', { t
   assert.doesNotMatch(c.err(), /PRIVATE_FLUSH/);
 });
 
-for (const scenario of ['work-deadline', 'late-deadline']) {
-  test(`${scenario}: EOF tiene un plazo total de cinco segundos, sin reinicio tras espera`, { timeout: 15000 }, async t => {
-    const c = await launch(t, scenario); await warm(c);
-    c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
-    assert.ok(await c.until(() => c.err().includes('FIXTURE:WORK')), c.err());
-    const start = Date.now(); c.child.stdin.end();
-    if (scenario === 'late-deadline') {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      c.release();
-      assert.ok(await c.until(() => c.err().includes('FIXTURE:FLUSH')), c.err());
-    }
-    assert.deepEqual(await c.exited(), { code: 1, signal: null });
-    assert.ok(Date.now() - start < 6500, 'deadline extendido tras solicitudes: ' + c.err());
-    assert.match(c.err(), /\[parada\] drenado MCP agotado/);
-    assert.doesNotMatch(c.err(), /PRIVATE_|\[parada\] drenado agotado/);
-    if (scenario === 'work-deadline') assert.doesNotMatch(c.err(), /FIXTURE:FLUSH/);
-  });
-}
+test('work-deadline: EOF tiene un plazo total de cinco segundos, sin reinicio tras espera', { timeout: 15000 }, async t => {
+  const c = await launch(t, 'work-deadline'); await warm(c);
+  c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
+  assert.ok(await c.until(() => c.err().includes('FIXTURE:WORK')), c.err());
+  const start = Date.now(); c.child.stdin.end();
+  assert.deepEqual(await c.exited(), { code: 1, signal: null });
+  assert.ok(Date.now() - start < 6500, 'deadline extendido tras solicitudes: ' + c.err());
+  assert.match(c.err(), /\[parada\] drenado MCP agotado/);
+  assert.doesNotMatch(c.err(), /PRIVATE_|FIXTURE:FLUSH|\[parada\] drenado agotado/);
+});
 
 test('MCP EOF externo espera respuesta aceptada y no cierra servidor ajeno', { timeout: 15000 }, async t => {
   let release; const gate = new Promise(resolve => { release = resolve; });
@@ -486,7 +481,7 @@ test('MCP señal plazo total startup-deadline no se reinicia por señal ni EOF',
   assert.deepEqual(registrations(), ['5000'], c.err());
   assert.doesNotMatch(c.err(), /FIXTURE:DEADLINE:(?:CLEAR|REFRESH|EXPIRE)/);
 
-  await c.release();
+  await c.advance(5000);
   assert.deepEqual(await c.exited(), { code: 1, signal: null }, c.err());
   assert.deepEqual(registrations(), ['5000'], c.err());
   assert.doesNotMatch(c.err(), /FIXTURE:DEADLINE:(?:CLEAR|REFRESH)/);
@@ -511,26 +506,56 @@ test('MCP startup deadline expires in a real process after signals and EOF', { t
   assert.doesNotMatch(c.err(), /PRIVATE_|FIXTURE:FLUSH|\[parada\] drenado agotado/);
 });
 
-for (const scenario of ['work-deadline', 'late-deadline']) {
-  test(`MCP señal plazo total ${scenario} no se reinicia por señal ni EOF`, { timeout: windowsTimeout(1, 15000) }, async t => {
-    const c = await launchSignalFixture(t, scenario);
+test('MCP señal plazo total work-deadline no se reinicia por señal ni EOF', { timeout: windowsTimeout(1, 15000) }, async t => {
+  const c = await launchSignalFixture(t, 'work-deadline');
+  await warm(c);
+  c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
+  assert.ok(await c.until(() => c.err().includes('FIXTURE:WORK')), c.err());
+  const start = Date.now(); await signal(c, 'SIGINT');
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  if (process.platform === 'win32') await signal(c, 'SIGTERM');
+  else c.child.kill('SIGTERM');
+  c.child.stdin.end();
+  assert.deepEqual(await c.exited(), { code: 1, signal: null });
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed >= 4500 && elapsed < 6500, 'deadline MCP anticipado o reiniciado: ' + elapsed + ' ' + c.err());
+  assert.match(c.err(), /\[parada\] drenado MCP agotado/);
+  assert.doesNotMatch(c.err(), /PRIVATE_|FIXTURE:FLUSH|\[parada\] drenado agotado/);
+});
+
+for (const first of ['señal', 'EOF']) {
+  test(`MCP ${first} plazo total late-deadline incluye trabajo y flush sin reinicio`, { timeout: windowsTimeout(1, 15000) }, async t => {
+    const c = await launchSignalFixture(t, 'late-deadline-probe');
     await warm(c);
     c.send(4, 'cambiar_config', { cambios: { tts: { rate: 1.75 } } });
     assert.ok(await c.until(() => c.err().includes('FIXTURE:WORK')), c.err());
-    const start = Date.now(); await signal(c, 'SIGINT');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    if (process.platform === 'win32') await signal(c, 'SIGTERM');
-    else c.child.kill('SIGTERM');
-    c.child.stdin.end();
-    if (scenario === 'late-deadline') {
-      await c.release(); assert.ok(await c.until(() => c.err().includes('FIXTURE:FLUSH')), c.err());
-    }
-    assert.deepEqual(await c.exited(), { code: 1, signal: null });
-    const elapsed = Date.now() - start;
-    assert.ok(elapsed >= 4500 && elapsed < 6500, 'deadline MCP anticipado o reiniciado: ' + elapsed + ' ' + c.err());
+    if (first === 'señal') await signal(c, 'SIGINT');
+    else c.child.stdin.end();
+    const registrations = () => [...c.err().matchAll(/FIXTURE:DEADLINE:REGISTER:([^\r\n]*)/g)].map(match => match[1]);
+    assert.ok(await c.until(() => registrations().length === 1), c.err());
+    assert.deepEqual(registrations(), ['5000'], c.err());
+    await c.advance(2000);
+    assert.ok(await c.until(() => c.err().includes('FIXTURE:DEADLINE:ADVANCE:2000')), c.err());
+    if (first === 'señal') { await signalAgain(c, 'SIGTERM'); c.child.stdin.end(); }
+    else await signal(c, 'SIGINT');
+    assert.ok(await c.until(() => c.err().includes('FIXTURE:DEADLINE:EOF')), c.err());
+    assert.equal(c.child.exitCode, null, c.err());
+    assert.doesNotMatch(c.err(), /FIXTURE:DEADLINE:(?:CLEAR|REFRESH|EXPIRE)|FIXTURE:FLUSH/);
+    await c.release();
+    assert.ok(await c.until(() => c.err().includes('FIXTURE:FLUSH') && !!c.response(4)), c.err());
+    assert.ok(!c.response(4).result.isError, c.out());
+    assert.equal(flushes(c), 1, c.err());
+    await c.advance(2999);
+    assert.ok(await c.until(() => c.err().includes('FIXTURE:DEADLINE:ADVANCE:2999')), c.err());
+    assert.equal(c.child.exitCode, null, c.err());
+    assert.doesNotMatch(c.err(), /FIXTURE:DEADLINE:(?:CLEAR|REFRESH|EXPIRE)/);
+    await c.advance(1);
+    assert.deepEqual(await c.exited(), { code: 1, signal: null }, c.err());
+    assert.deepEqual(registrations(), ['5000'], c.err());
+    assert.doesNotMatch(c.err(), /PRIVATE_|FIXTURE:DEADLINE:(?:CLEAR|REFRESH)|\[parada\] drenado agotado/);
+    assert.equal((c.err().match(/FIXTURE:DEADLINE:EXPIRE/g) || []).length, 1, c.err());
+    assert.ok(c.err().indexOf('FIXTURE:FLUSH') < c.err().indexOf('FIXTURE:DEADLINE:EXPIRE'), c.err());
     assert.match(c.err(), /\[parada\] drenado MCP agotado/);
-    assert.doesNotMatch(c.err(), /PRIVATE_|\[parada\] drenado agotado/);
-    if (scenario !== 'late-deadline') assert.doesNotMatch(c.err(), /FIXTURE:FLUSH/);
   });
 }
 
