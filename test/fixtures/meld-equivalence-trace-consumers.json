@@ -79,5 +79,16 @@
     {"label":"timer-disconnected-again","value":{"pausedOffStream":true,"nextInSec":60,"runs":1,"lines":0,"lastRun":true}},
     {"label":"reconnect-session","value":{"scenes":[{"id":"s1","name":"Cámara","current":true,"staged":false,"layers":[{"id":"l1","name":"Alertas","visible":true,"url":"https://example.invalid/overlay","effects":[{"id":"e1","name":"Brillo","enabled":true}]}]},{"id":"s2","name":"Pantalla","current":false,"staged":false,"layers":[]}],"tracks":[{"id":"t1","name":"Micro","muted":false,"monitoring":false,"parent":null,"gain":null}],"streaming":false,"recording":false}},
     {"label":"timer-reconnected","value":{"pausedOffStream":true,"nextInSec":60,"runs":1,"lines":0,"lastRun":true}}
+  ],
+  "order": [
+    {"event":"auto-session-start","row":{"pausedOffStream":true,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
+    {"sse":"status","meld":{"state":"conectado","streaming":true,"streamingKnown":true,"recording":false,"recordingKnown":true,"recordingWarning":null,"version":2,"error":null},"row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
+    {"event":"recording-on-start","row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
+    {"sse":"meld","meld":{"scenes":[{"id":"s1","name":"Cámara","current":true,"staged":false,"layers":[]}],"tracks":[],"streaming":true,"recording":false},"row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
+    {"sse":"status","meld":{"state":"conectado","streaming":true,"streamingKnown":true,"recording":false,"recordingKnown":true,"recordingWarning":null,"version":2,"error":null},"row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
+    {"sse":"meld","meld":{"scenes":[{"id":"s1","name":"Cámara","current":true,"staged":false,"layers":[]}],"tracks":[],"streaming":true,"recording":false},"row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
+    {"event":"live-settled","row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false},"changedId":true,"auto":true,"recordingCalls":[[12,"meld.startRecordingAction"]]},
+    {"sse":"status","meld":{"state":"desconectado","streaming":true,"streamingKnown":false,"recording":true,"recordingKnown":false,"recordingWarning":null,"version":2,"error":null},"row":{"pausedOffStream":true,"nextInSec":40,"runs":0,"lines":0,"lastRun":false}},
+    {"event":"disconnected-settled","row":{"pausedOffStream":true,"nextInSec":40,"runs":0,"lines":0,"lastRun":false}}
   ]
 }

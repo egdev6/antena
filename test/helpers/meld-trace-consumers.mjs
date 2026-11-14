@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fakeMeldRecording } from './fake-meld-recording.mjs';
 import { observeWire, panel } from './meld-trace.mjs';
+import { consumerOrderTrace } from './meld-trace-order.mjs';
 
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const close = server => new Promise(resolve => server.close(resolve));
@@ -192,5 +193,5 @@ export async function consumerTrace(t) {
   record('timer-reconnected', await row());
   await api('POST', '/api/meld/disconnect');
   await next('status', s => s.meld.state === 'desconectado');
-  return { wire: wire.messages, observations };
+  return { wire: wire.messages, observations, order: await consumerOrderTrace(t) };
 }

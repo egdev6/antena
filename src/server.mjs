@@ -17,7 +17,8 @@ import { YouTube } from './youtube.mjs';
 import { RawEventLog } from './raw-events.mjs';
 import { YouTubeAutoConnect } from './youtube-auto.mjs';
 import { TwitchChat } from './chat.mjs';
-import { Meld, MELD_COMMANDS, MELD_STREAM_EVENTS } from './meld.mjs';
+import { Meld } from './meld.mjs';
+import { createProgram, MELD_COMMANDS, MELD_STREAM_EVENTS } from './programs/index.mjs';
 import { Session, METRICS } from './session.mjs';
 import { Engine, burstCoalesce, SNAPSHOT_COALESCE_MS, SNAPSHOT_MAX_WAIT_MS } from './engine.mjs';
 import { createHeldRecovery } from './held-recovery.mjs';
@@ -173,6 +174,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   youtube.rawLog = twitch.rawLog = new RawEventLog(store.dir, { log });
   const chat = new TwitchChat(log);
   const meld = new Meld(log);
+  const program = createProgram('meld', { meld });
   // #68: la retención de archivados sale de la configuración (0 = sin límite); se lee
   // en vivo para que un cambio en config.json valga sin reiniciar.
   const protectedArchives = new Set();
@@ -1452,7 +1454,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
+  const app = { server, store, bus, twitch, youtube, chat, meld, program, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
   return app;
 }
 
@@ -1729,8 +1731,9 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
             // cierre físico bajo el mismo deadline; un fallo no omite la persistencia independiente.
             const meldCut = failed => {
               attemptDrain(() => app.meld.quiesceClose()).then(
-                () => drain(failed),
+                () => { app.program.dispose(); drain(failed); },
                 () => {
+                  app.program.dispose();
                   safeLog('[parada] No se pudo cerrar Meld.');
                   drain(true);
                 }

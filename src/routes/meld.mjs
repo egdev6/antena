@@ -7,9 +7,9 @@
 // estaban en server.mjs. ctx recibe: instancias vivas (store, meld) y la closure
 // scheduleLayerHide de createApp (ocultado diferido de capas, #119: se queda en
 // server.mjs porque es la cola de tareas que vigila el apagado). Las constantes del
-// área (MELD_COMMANDS, MELD_STREAM_EVENTS) vienen de src/meld.mjs; httpError de
+// área (MELD_COMMANDS, MELD_STREAM_EVENTS) vienen de src/programs; httpError de
 // src/http-util.mjs (se aceptan por ctx por compatibilidad con los tests).
-import { MELD_COMMANDS, MELD_STREAM_EVENTS } from '../meld.mjs';
+import { MELD_COMMANDS, MELD_STREAM_EVENTS } from '../programs/index.mjs';
 import { httpError as httpErrorBase } from '../http-util.mjs';
 import { createMeldRecording } from '../meld-recording.mjs';
 
