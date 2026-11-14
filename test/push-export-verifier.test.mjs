@@ -292,9 +292,12 @@ test('finding 7: startup reconciles beyond the 50-item listing and the 100-item 
   }
   let app;
   t.after(async () => { if (app) { app.viewers.halt(); await app.closeHttp(); } await fs.rm(root, { recursive: true, force: true }); });
-  // The intentionally held response cannot time out before this test's watchdog.
+  // The intentionally held response must outlive this whole test, not just the first wait:
+  // the 100-durable-documents wait, the release, and the drain check. A shorter sender
+  // watchdog (15 001 ms) can expire inside that window on a slow runner, retry, and add a
+  // request for an item that was already counted, so the 101-request assertion sees 100 ids.
   app = await createApp({ dataDir: data, mediaDir: path.join(root, 'media'), push: { url: r.url, token: TOKEN },
-    pushTimeoutMs: 15001, log: () => {} });
+    pushTimeoutMs: 120000, log: () => {} });
   await until(async () => {
     try { return held && JSON.parse(await fs.readFile(path.join(data, 'push-export.json'), 'utf8')).entries.length === 100; }
     catch { return false; }
