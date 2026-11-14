@@ -136,3 +136,14 @@ test('shutdown forwards Meld terminal status before disposing its adapter', asyn
   app.meld.setStatus({ error: 'after shutdown' });
   assert.deepEqual(events, ['close', 'desconectado', 'closed', 'dispose']);
 });
+
+test("timers react to Meld status before any later raw status listener", async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), "ant-program-timers-order-"));
+  const app = await createApp({ dataDir: path.join(dir, "data"), mediaDir: path.join(dir, "media"), push: {}, log: () => {} });
+  t.after(async () => { app.meld.stop(); app.program.dispose(); await rm(dir, { recursive: true, force: true }); });
+  const seen = [], sync = app.timers._syncLive.bind(app.timers);
+  app.timers._syncLive = (...a) => { seen.push("timers"); return sync(...a); };
+  app.meld.on("status", () => seen.push("late-raw"));
+  app.meld.setStatus({ streaming: true });
+  assert.deepEqual(seen.filter(x => x === "timers" || x === "late-raw").slice(0, 2), ["timers", "late-raw"]);
+});
