@@ -24,6 +24,10 @@ test('dock React: estado, pausa, pestañas sin atajos ni chat', { timeout: 12000
   try {
     chrome = await openChromePage(bin, `${base}/dock`);
     const c = chrome.cdp;
+    // This test checks the tab layout, so pin a narrow viewport instead of relying on
+    // headless Chrome's default width (wider than the 768 px three-column breakpoint).
+    await c.send('Emulation.setDeviceMetricsOverride', { width: 600, height: 900, deviceScaleFactor: 1, mobile: false });
+    await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 3`, { timeoutMs: 9000 });
     const ev = expr => import('./helpers/chrome-dom.mjs').then(m => m.evaluateChrome(c, expr));
     await waitDom(c, `!!(document.querySelector('.d-top') && document.querySelector('.d-grid'))`, { timeoutMs: 12000 });
 

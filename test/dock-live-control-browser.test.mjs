@@ -206,9 +206,11 @@ test('dock estrecho: pestañas Control/Audio/Interactivos, teclado, memoria y ca
   await c.send('Page.reload');
   await waitDom(c, `document.querySelector('#d-t-interactivos')?.getAttribute('aria-selected') === 'true' && document.querySelector('#d-i-sorteo')?.getAttribute('aria-selected') === 'true'`, { timeoutMs: 20000 });
 
-  // tablet en retrato: pestañas; apaisado ancho: columnas; vuelta a pestañas.
-  await resize(chrome, 768, 1024);
+  // por debajo de 768 px: pestañas; desde 768 (tablet en retrato incluida): columnas; vuelta a pestañas.
+  await resize(chrome, 767, 1024);
   await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 3 && document.querySelectorAll('.d-col').length === 0`, { timeoutMs: 9000 });
+  await resize(chrome, 768, 1024);
+  await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && document.querySelectorAll('[role="tablist"]').length === 1`, { timeoutMs: 9000 });
   await resize(chrome, 1256, 780);
   await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && document.querySelectorAll('[role="tablist"]').length === 1`, { timeoutMs: 9000 });
   await resize(chrome, 420, 780);

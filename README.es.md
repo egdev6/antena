@@ -45,7 +45,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Alerta de récord de espectadores** por plataforma (Twitch y YouTube), con freno anti-spam.
 - **Apariencia:** un solo tema para todo lo que sale en pantalla (alertas, widgets y créditos): colores, fuentes (también las tuyas), iconos por alerta, forma, posición, animación y sonido. El de serie es el de EGDEV.
 - **Atajos para Stream Deck** personalizables: cada uno encadena pasos (marca, pausa, escena, capa, chat, pestaña del prompter…) y tiene su dirección `/sd/custom/<id>`.
-- **Dock para Meld:** todo el manejo del directo menos la vista previa —escenas, pistas de audio de Meld, alertas, preguntas, votación, sorteo, teleprompter y créditos— y adaptable: tres columnas desde 1024 px de ancho, sin importar la orientación; por debajo, una pestaña por sección.
+- **Dock para Meld:** todo el manejo del directo menos la vista previa —escenas, pistas de audio de Meld, alertas, preguntas, votación, sorteo, teleprompter y créditos— y adaptable: tres columnas desde 768 px de ancho, sin importar la orientación; por debajo, una pestaña por sección.
 
 El servidor no tiene dependencias (Node ≥ 24). La interfaz es React compilada con esbuild y la app de escritorio es Tauri 2, que arranca ese servidor como *sidecar*. Todo se queda en tu PC.
 
@@ -410,7 +410,7 @@ Meld no admite paneles propios, pero su **panel de chat** carga una dirección. 
 - **Audio:** pistas globales y de las escenas al aire, con interruptor de mute y fader de **volumen real**. Si Meld no informa del volumen, el fader queda desactivado. En estrecho, la pestaña Audio avisa de pistas visibles silenciadas.
 - **Interactivos:** pestañas para preguntas (interruptor, pregunta actual, siguiente, ocultar y cola), votación de tier list (cerrar y colocar, cancelar) y sorteo (abrir/cerrar, sortear, participantes), con indicadores de estado.
 
-Desde **1024 px de ancho, sin importar la orientación**, las columnas son **Control | Audio | Interactivos**; por debajo de 1024 px son pestañas. Los dos niveles de pestañas admiten flechas y recuerdan la última selección. El dock no tiene chat, vista previa ni atajos; estos siguen en el panel y Stream Deck.
+Desde **768 px de ancho, sin importar la orientación**, las columnas son **Control | Audio | Interactivos**; por debajo de 768 px son pestañas. Los dos niveles de pestañas admiten flechas y recuerdan la última selección. El dock no tiene chat, vista previa ni atajos; estos siguen en el panel y Stream Deck.
 
 ### Panel
 
