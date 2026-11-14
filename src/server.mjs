@@ -214,7 +214,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return { names: selected.entries.map(({ name, platform }) => ({ name, platform })), anonymous: selected.anonymous.reduce((sum, a) => sum + a.count, 0) };
   };
   session.channelTotals = channelTotals;
-  const timers = new Timers({ store, engine, twitch, youtube, meld, session, log });
+  const timers = new Timers({ store, engine, twitch, youtube, meld: program, session, log });
   engine.timers = timers;
   const interactive = await new Interactive({ store, twitch, meld, log }).load();
   engine.interactive = interactive;

@@ -37,9 +37,15 @@ export async function consumerOrderTrace(t) {
       })]);
     } finally { clearTimeout(timer); }
   };
+  // A read-only projection of the already-initialized timer: snapshot() would
+  // call _syncLive and make a late status listener look as if it ran in time.
   const row = () => {
-    const [timer] = app.timers.snapshot(), r = timer.runtime;
-    return { pausedOffStream: r.pausedOffStream, nextInSec: r.nextInSec, runs: r.runs, lines: r.lines, lastRun: !!r.lastRunAt };
+    const [timer] = app.timers.list, state = app.timers.state.get(timer.id);
+    assert.ok(state, 'timer state must already exist');
+    const pausedOffStream = !!timer.onlyWhenLive && !app.timers.isLive();
+    const countAt = pausedOffStream ? Math.max(state.lastAt, state.offlineAt) : Date.now();
+    const nextInSec = Math.round(Math.max(0, state.lastAt + app.timers.intervalMs(timer) - countAt) / 1000);
+    return { pausedOffStream, nextInSec, runs: state.runs, lines: state.lines, lastRun: !!state.lastRunAt };
   };
   await api('POST', '/api/config/set', { path: 'meld.autoSession', value: true });
   await api('POST', '/api/config/set', { path: 'meld.recordOnStart', value: true });
@@ -57,8 +63,20 @@ export async function consumerOrderTrace(t) {
   // These public seams delegate immediately. Capture the same snapshots that are
   // actually sent to the panel, alongside the synchronous auto-session and
   // recording-on-start calls; then verify the real SSE reader received each one.
-  let capture = false;
+  let capture = false, statusDepth = 0;
   const send = app.bus.send.bind(app.bus), startNew = app.session.startNew.bind(app.session), command = app.meld.command.bind(app.meld);
+  const setStatus = app.meld.setStatus.bind(app.meld), syncLive = app.timers._syncLive.bind(app.timers);
+  // Store changes also sync timers, notably before disconnect; only record calls
+  // made synchronously while the real Meld status event is being dispatched.
+  app.meld.setStatus = (...args) => {
+    statusDepth++;
+    try { return setStatus(...args); } finally { statusDepth--; }
+  };
+  app.timers._syncLive = (...args) => {
+    const result = syncLive(...args);
+    if (capture && statusDepth) order.push({ event: 'timers-status', row: row() });
+    return result;
+  };
   app.bus.send = (name, data, kinds) => {
     if (capture && (name === 'status' || name === 'meld')) {
       const event = { sse: name, meld: structuredClone(name === 'status' ? data.meld : data) };

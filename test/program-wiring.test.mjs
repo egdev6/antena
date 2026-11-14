@@ -4,7 +4,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import { EventEmitter } from 'node:events';
 import { Meld, MELD_COMMANDS as rawCommands, MELD_STREAM_EVENTS as rawEvents } from '../src/meld.mjs';
+import { Timers } from '../src/timers.mjs';
 import { MeldAdapter } from '../src/programs/meld-adapter.mjs';
 import { createProgram, MELD_COMMANDS, MELD_STREAM_EVENTS } from '../src/programs/index.mjs';
 import { createApp, startServer } from '../src/server.mjs';
@@ -54,6 +56,59 @@ test('createApp keeps raw Meld and registers each adapter forwarder before every
   assert.deepEqual(order, ['program', 'broadcast', 'raw']);
   assert.strictEqual(app.program.status, app.meld.status);
   assert.equal(app.meld.status.error, 'observable');
+});
+
+test('timers react once to program status and to status forwarded from Meld', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-timers-'));
+  const app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    await app.drainAutoSession(); await app.session.flush(); app.meld.stop(); app.program.dispose();
+    await app.closeHttp(); await rm(dir, { recursive: true, force: true });
+  });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const post = async (url, body) => {
+    const response = await fetch(base + url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  await post('/api/config/set', { path: 'meld.autoSession', value: false });
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-01T00:00:00Z') });
+  const { timer } = await post('/api/timers', { name: 'Program', message: '', intervalMin: 1, minChatLines: 0 });
+  const syncLive = app.timers._syncLive.bind(app.timers);
+  let reactions = 0;
+  app.timers._syncLive = (...args) => { reactions++; return syncLive(...args); };
+  t.mock.timers.tick(120_000);
+  // Change the raw state without emitting there: only the program event can
+  // reset the overdue timer. Reading due() does not synchronize live state.
+  app.meld.status = { ...app.meld.status, state: 'conectado', streaming: true };
+  assert.equal(app.timers.due(timer), null);
+  app.program.emit('status', app.program.status);
+  assert.equal(app.timers.due(timer), 'aún no toca');
+  assert.equal(reactions, 1);
+  assert.strictEqual(app.timers.meld, app.program);
+  t.mock.timers.tick(60_000);
+  assert.equal(app.timers.due(timer), null);
+  app.meld.setStatus({ streaming: false });
+  assert.equal(app.timers.due(timer), 'no estás emitiendo');
+  t.mock.timers.tick(120_000);
+  app.meld.setStatus({ streaming: true });
+  assert.equal(app.timers.due(timer), 'aún no toca');
+  assert.equal(reactions, 3, 'one reaction per program or forwarded raw status');
+});
+
+test('legacy meld constructor input still accepts a duck-typed status emitter', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-01T00:00:00Z') });
+  const meld = new EventEmitter();
+  meld.connected = false; meld.status = { streaming: false };
+  const timer = { id: 'legacy', intervalMin: 1, minChatLines: 0, onlyWhenLive: true };
+  const timers = new Timers({ store: { config: { timers: [timer] } }, meld });
+  timers.snapshot(); // establish its initial off-stream interval
+  t.mock.timers.tick(120_000);
+  meld.connected = true; meld.status.streaming = true; meld.emit('status', meld.status);
+  assert.equal(timers.due(timer), 'aún no toca');
+  t.mock.timers.tick(60_000);
+  assert.equal(timers.due(timer), null);
 });
 
 test('shutdown forwards Meld terminal status before disposing its adapter', async t => {

@@ -82,12 +82,15 @@
   ],
   "order": [
     {"event":"auto-session-start","row":{"pausedOffStream":true,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
+    {"event":"timers-status","row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
     {"sse":"status","meld":{"state":"conectado","streaming":true,"streamingKnown":true,"recording":false,"recordingKnown":true,"recordingWarning":null,"version":2,"error":null},"row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
     {"event":"recording-on-start","row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
     {"sse":"meld","meld":{"scenes":[{"id":"s1","name":"Cámara","current":true,"staged":false,"layers":[]}],"tracks":[],"streaming":true,"recording":false},"row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
+    {"event":"timers-status","row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
     {"sse":"status","meld":{"state":"conectado","streaming":true,"streamingKnown":true,"recording":false,"recordingKnown":true,"recordingWarning":null,"version":2,"error":null},"row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
     {"sse":"meld","meld":{"scenes":[{"id":"s1","name":"Cámara","current":true,"staged":false,"layers":[]}],"tracks":[],"streaming":true,"recording":false},"row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
     {"event":"live-settled","row":{"pausedOffStream":false,"nextInSec":60,"runs":0,"lines":0,"lastRun":false},"changedId":true,"auto":true,"recordingCalls":[[12,"meld.startRecordingAction"]]},
+    {"event":"timers-status","row":{"pausedOffStream":true,"nextInSec":40,"runs":0,"lines":0,"lastRun":false}},
     {"sse":"status","meld":{"state":"desconectado","streaming":true,"streamingKnown":false,"recording":true,"recordingKnown":false,"recordingWarning":null,"version":2,"error":null},"row":{"pausedOffStream":true,"nextInSec":40,"runs":0,"lines":0,"lastRun":false}},
     {"event":"disconnected-settled","row":{"pausedOffStream":true,"nextInSec":40,"runs":0,"lines":0,"lastRun":false}}
   ]
