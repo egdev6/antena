@@ -139,9 +139,12 @@ async function releaseOwnedLock(lock, token, delay) {
     if (owned) {
       let file;
       try { file = lockFile(lock); }
-      catch (err) { if (TRANSIENT_LOCK_ERRORS.has(err.code) || err.code === 'ENOENT') return; throw err; }
-      unlinkLock(lock, file);
-      return;
+      catch (err) {
+        if (err.code === 'ENOENT') return;
+        if (!TRANSIENT_LOCK_ERRORS.has(err.code)) throw err;
+        file = null; // inspected a moment too early; retry below instead of abandoning our lock
+      }
+      if (file) { unlinkLock(lock, file); return; }
     }
     let present;
     try { fs.lstatSync(lock); present = true; }

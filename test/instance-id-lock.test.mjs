@@ -100,3 +100,35 @@ test('a stale lock pending deletion is reclaimed instead of aborting startup', a
     } finally { fs.readFileSync = read; }
   }
 });
+
+test('transient EPERM on the final lock inspection does not abandon our lock', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'lock-final-lstat-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'instance.json'), lock = file + '.repair.lock';
+  fs.writeFileSync(file, '{broken');
+  const originalLstat = fs.lstatSync, originalRename = fs.renameSync;
+  let quarantined = false, inspections = 0, injected = false;
+  fs.renameSync = function (from, to, ...args) {
+    const result = originalRename.call(this, from, to, ...args);
+    if (String(from) === file && String(to).startsWith(file + '.invalid-')) quarantined = true;
+    return result;
+  };
+  fs.lstatSync = function (target, ...args) {
+    if (String(target) === lock && quarantined && ++inspections === 2) {
+      injected = true;
+      throw Object.assign(new Error('synthetic EPERM final lstat'), { code: 'EPERM' });
+    }
+    return originalLstat.call(this, target, ...args);
+  };
+  try {
+    const id = await instanceId(dir);
+    await pause(150);
+    assert.equal(injected, true);
+    assert.match(id, /^[0-9a-f]{32}$/);
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).id, id);
+    assert.equal(fs.existsSync(lock), false, 'own lock must not be abandoned');
+  } finally {
+    fs.lstatSync = originalLstat;
+    fs.renameSync = originalRename;
+  }
+});
