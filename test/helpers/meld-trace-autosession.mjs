@@ -118,5 +118,59 @@ export async function autoSessionTrace(t) {
   fake.report({ streaming: true }); await wire.waitIdleAfter(idle);
   const fourth = await sessionWhere(s => s.id !== third.id && s.meldAutoSession === true); capture = false;
   trace.push({ nextChanged: fourth.id !== third.id, auto: fourth.meldAutoSession, ended: !!fourth.endedAt });
-  return { trace };
+
+  // Start a separate reading trace after the previous session is fully stopped.
+  idle = wire.idleCount(); fake.report({ streaming: false }); await wire.waitIdleAfter(idle);
+  await sessionWhere(s => s.id === fourth.id && !!s.endedAt);
+  await new Promise(resolve => setImmediate(resolve));
+  app.store.config.meld.autoSession = false;
+  app.store.config.youtube = { ...app.store.config.youtube, apiKey: 'fake', channelId: 'UCcanal' };
+  const youtube = [], yt = app.youtube, start = yt.start.bind(yt), stop = yt.stop.bind(yt);
+  let failStop = false, stopRejected;
+  yt.start = (...args) => { youtube.push('start'); return start(...args); };
+  yt.stop = (...args) => {
+    youtube.push('stop');
+    if (failStop) { youtube.push('stop-rejected'); stopRejected(); return Promise.reject(new Error('simulated stop failure')); }
+    return stop(...args);
+  };
+  yt.api = async name => {
+    if (name === '/channels') return { items: [] }; // unrelated channel totals
+    youtube.push(`api:${name}`);
+    if (name === '/search') return { items: [{ id: { videoId: 'abcdefghijk' } }] };
+    if (name === '/videos') return { items: [{ liveStreamingDetails: { activeLiveChatId: 'chat-1' }, snippet: { title: 'Directo' } }] };
+    throw new Error(`unexpected fake YouTube API: ${name}`);
+  };
+  yt.poll = () => { youtube.push('poll'); return Promise.resolve(); };
+  yt.on('status', status => youtube.push(`state:${status.state}`));
+  YouTubeAutoConnect.prototype.begin = function (...args) { youtube.push('begin'); return begin.apply(this, args); };
+  YouTubeAutoConnect.prototype.end = function (...args) { youtube.push('end'); return end.apply(this, args); };
+  const snapshot = ({ state, videoId, liveChatId, notice, retryAt, errors }) =>
+    ({ state, videoId, liveChatId, notice: notice ?? null, retryAt: retryAt ?? null, errors });
+  const youtubeWhere = async predicate => {
+    const deadline = performance.now() + 5000;
+    for (;;) {
+      const status = (await api('GET', '/api/status')).youtube;
+      if (predicate(status)) return snapshot(status);
+      assert.ok(performance.now() < deadline, 'YouTube reading did not settle');
+    }
+  };
+  const stream = async live => { const count = wire.idleCount(); fake.report({ streaming: live }); await wire.waitIdleAfter(count); };
+  const listening = s => s.state === 'escuchando' && s.liveChatId === 'chat-1';
+  const cleared = s => s.state === 'parado' && s.videoId === null && s.liveChatId === null;
+
+  youtube.push('stream-start'); await stream(true); youtube.push(await youtubeWhere(listening));
+  youtube.push('repeated-live-status'); app.meld.setStatus({ state: 'conectado', streaming: true });
+  youtube.push(await youtubeWhere(listening));
+  const rejected = new Promise(resolve => { stopRejected = resolve; });
+  youtube.push('stream-stop-failure'); failStop = true; await stream(false); await rejected;
+  await new Promise(resolve => setImmediate(resolve)); // an unhandled end rejection fails node:test
+  youtube.push(snapshot((await api('GET', '/api/status')).youtube));
+  youtube.push('recover-live'); failStop = false; await stream(true); youtube.push(await youtubeWhere(listening));
+  youtube.push('stream-stop'); await stream(false); youtube.push(await youtubeWhere(cleared));
+  await api('POST', '/api/meld/disconnect');
+  youtube.push('connect-already-live'); idle = wire.idleCount();
+  await api('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${fake.server.address().port}` });
+  await wire.waitIdleAfter(idle); youtube.push(await youtubeWhere(listening));
+  youtube.push('stop-after-connect'); await stream(false); youtube.push(await youtubeWhere(cleared));
+  return { trace, youtube };
 }
