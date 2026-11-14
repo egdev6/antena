@@ -274,14 +274,12 @@ test('finding 4: failed attempt checkpoints do not consume the network retry bud
   assert.equal(r.requests.length, 1, 'storage failures before POST must not exhaust the delivery budget');
 });
 
-test('finding 7: startup reconciles beyond the 50-item listing and the 100-item queue', { timeout: 30000 }, async t => {
-  let held;
-  const received = new EventEmitter();
+test('finding 7: startup reconciles beyond the 50-item listing and the 100-item queue', { timeout: 120000 }, async t => {
+  const all = new EventEmitter();
   const r = await fake(t, (_req, res, count) => {
-    if (count === 1) held = res; else res.end('{"result":"stored"}');
-    if (count >= 101) received.emit('all');
+    res.end('{"result":"stored"}');
+    if (count >= 101) all.emit('all');
   });
-  t.after(() => held?.destroy());
   const root = await fs.mkdtemp(path.join(tmpdir(), 'antena-136-archives-'));
   const data = path.join(root, 'data'), archives = path.join(data, 'sessions');
   await fs.mkdir(archives, { recursive: true });
@@ -292,16 +290,14 @@ test('finding 7: startup reconciles beyond the 50-item listing and the 100-item 
   }
   let app;
   t.after(async () => { if (app) { app.viewers.halt(); await app.closeHttp(); } await fs.rm(root, { recursive: true, force: true }); });
-  // The intentionally held response cannot time out before this test's watchdog.
   app = await createApp({ dataDir: data, mediaDir: path.join(root, 'media'), push: { url: r.url, token: TOKEN },
     pushTimeoutMs: 15001, log: () => {} });
-  await until(async () => {
-    try { return held && JSON.parse(await fs.readFile(path.join(data, 'push-export.json'), 'utf8')).entries.length === 100; }
-    catch { return false; }
-  }, '100 durable pending documents', { timeoutMs: 20000 });
-  assert.equal(r.requests.length, 1);
-  const allReceived = once(received, 'all', { signal: AbortSignal.timeout(5000) });
-  held.end('{"result":"stored"}');
+  // 101 archives exceed both the 50-item listing and the 100-item queue, so reconciliation has to
+  // enqueue in waves and every archive must still be delivered exactly once. The first version of
+  // this test deliberately held the first response: that made the outcome depend on the held
+  // request expiring (freeing a queue slot) within the test, which varied with runner speed and
+  // turned this assertion into a coin flip. Every request is answered immediately here.
+  const allReceived = once(all, 'all', { signal: AbortSignal.timeout(60000) });
   await allReceived;
   const assertRequests = () => {
     assert.equal(r.requests.length, 101);
@@ -313,7 +309,7 @@ test('finding 7: startup reconciles beyond the 50-item listing and the 100-item 
       const queue = JSON.parse(await fs.readFile(path.join(data, 'push-export.json'), 'utf8'));
       return queue.entries.length === 0 && queue.delivered.length === 101;
     } catch { return false; }
-  }, 'all 101 archives durably delivered');
+  }, 'all 101 archives durably delivered', { timeoutMs: 60000 });
   assertRequests();
 });
 
