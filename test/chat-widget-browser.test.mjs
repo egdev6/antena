@@ -57,7 +57,11 @@ test('chat overlay: vista previa en vivo, reverse con tope, anim none, fade e ic
     await put({ widgets: { chat: { reverse: true, maxMessages: 5 } } });
     await waitDom(c, `document.getElementById('root').className.includes('reverse')`, { timeoutMs: 12000 });
     for (let n = 201; n <= 208; n++) app.engine.handleChat(chat(n));
-    await waitDom(c, `document.querySelectorAll('.msg').length === 5`, { timeoutMs: 12000 });
+    // The count alone is not a readiness condition: expelling messages keep `.msg` (with `.out`)
+    // until their animation ends, so five nodes can be observed before the burst finished. Wait for
+    // the settled state in ONE evaluation: five nodes, the newest last, and nothing leaving.
+    await waitDom(c, `(() => { const m = document.querySelectorAll('.msg');
+      return m.length === 5 && m[m.length - 1].dataset.id === 'c-208' && !document.querySelector('.msg.out'); })()`, { timeoutMs: 12000, intervalMs: 20 });
     assert.ok(await dom(c, `Array.from(document.querySelectorAll('.msg')).at(-1).textContent.includes('Sintético 208')`), 'el más nuevo queda arriba (column-reverse)');
     assert.ok(await dom(c, `document.querySelector('.msg').textContent.includes('Sintético 204')`), 'el más antiguo se expulsa');
     await put({ widgets: { chat: { reverse: false, maxMessages: 12 } } });
