@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import childProcess, { spawn } from 'node:child_process';
 import { EventEmitter, once } from 'node:events';
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
@@ -90,6 +90,92 @@ test('close releases stderr and its data listener before waiting for process clo
     await closing;
     stderr.destroy();
   }
+});
+
+// Exercise ownership through the public launcher: a failed startup still owns its tree.
+async function fakeOwnedStartup(t, { platform = process.platform, pid = 45678, onSignal }) {
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { ...originalPlatform, value: platform });
+  const child = Object.assign(new EventEmitter(), {
+    pid, exitCode: null, signalCode: null, connected: false, stderr: new PassThrough(),
+    kill: () => assert.fail('owned Chrome must not be signalled as an unrelated child'),
+  });
+  const heldStream = { closed: false };
+  child.stdio = [null, heldStream, child.stderr];
+  const calls = [];
+  t.mock.method(process, 'kill', (target, signal) => { calls.push([target, signal]); return onSignal?.(child, heldStream, signal); });
+  t.mock.method(childProcess, 'spawn', (bin, args, options) => {
+    if (bin === 'taskkill') {
+      calls.push([bin, args, options]);
+      const killer = new EventEmitter();
+      setImmediate(() => { onSignal?.(child, heldStream, 'taskkill'); killer.emit('close', 0, null); });
+      return killer;
+    }
+    assert.equal(options.detached, platform !== 'win32');
+    setImmediate(() => child.emit('error', new Error('startup failure')));
+    return child;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll(); syncBuiltinESMExports();
+    Object.defineProperty(process, 'platform', originalPlatform);
+    child.stderr.destroy();
+  });
+  return { child, heldStream, calls };
+}
+
+test('owned POSIX Chrome signals its group even after the leader exits and waits for close', { skip: process.platform === 'win32' }, async t => {
+  const { calls } = await fakeOwnedStartup(t, { onSignal(child, stream, signal) {
+    if (signal === 'SIGTERM') { child.exitCode = 0; child.emit('exit', 0, null); }
+    if (signal === 'SIGKILL') { stream.closed = true; child.emit('close', 0, null); }
+    return true;
+  } });
+  await assert.rejects(openChromePage('fake-chrome', 'about:blank'), error => {
+    assert.equal(error.message, 'startup failure');
+    assert.equal(error.cleanupError, undefined);
+    return true;
+  });
+  assert.deepEqual(calls, [[-45678, 'SIGTERM'], [-45678, 'SIGKILL']]);
+});
+
+test('owned Windows Chrome uses taskkill for its tree and waits for the child close', async t => {
+  const { calls } = await fakeOwnedStartup(t, { platform: 'win32', onSignal(child, stream, signal) {
+    if (signal === 'taskkill') { child.exitCode = 1; stream.closed = true; child.emit('close', 1, null); }
+    return true;
+  } });
+  await assert.rejects(openChromePage('fake-chrome', 'about:blank'), error => {
+    assert.equal(error.message, 'startup failure');
+    assert.equal(error.cleanupError, undefined);
+    return true;
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'taskkill');
+  assert.deepEqual(calls[0][1], ['/PID', '45678', '/T', '/F']);
+  assert.equal(calls[0][2].shell, false);
+});
+
+test('invalid owned PID never signals a group or tree', { timeout: 10000 }, async t => {
+  const { child, calls } = await fakeOwnedStartup(t, { pid: 0 });
+  setTimeout(() => { child.exitCode = 1; child.stdio[1].closed = true; child.emit('close', 1, null); }, 200).unref();
+  await assert.rejects(openChromePage('fake-chrome', 'about:blank'), /startup failure/);
+  assert.deepEqual(calls, []);
+});
+
+test('failed owned shutdown reports bounded sanitized stream and kill diagnostics', { timeout: 10000, skip: process.platform === 'win32' }, async t => {
+  const { calls } = await fakeOwnedStartup(t, { onSignal(child, _stream, signal) {
+    if (signal === 'SIGTERM') { child.exitCode = 7; child.emit('exit', 7, null); }
+    throw Object.assign(new Error('PRIVATE_CANARY /private/path'), { code: 'EPERM' });
+  } });
+  await assert.rejects(openChromePage('fake-chrome', 'about:blank'), error => {
+    const cleanup = error.cleanupError;
+    assert.match(cleanup.message, /Chrome process did not close after forced shutdown/);
+    assert.deepEqual(cleanup.diagnostic, { exitCode: 7, signalCode: null, openStdio: [1],
+      kills: [{ signal: 'SIGTERM', result: 'EPERM' }, { signal: 'SIGKILL', result: 'EPERM' }] });
+    assert.ok(cleanup.message.length < 1000);
+    assert.doesNotMatch(cleanup.message, /PRIVATE_CANARY|\/private/);
+    return true;
+  });
+  assert.deepEqual(calls, [[-45678, 'SIGTERM'], [-45678, 'SIGKILL']]);
 });
 
 test('closeAll runs every cleanup step in order and rethrows the first error', async () => {

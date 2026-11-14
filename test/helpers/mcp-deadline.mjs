@@ -3,13 +3,14 @@ const mcpUrl = new URL('../../src/mcp.mjs', import.meta.url).href;
 const nativeSetTimeout = globalThis.setTimeout;
 const nativeClearTimeout = globalThis.clearTimeout;
 const deadlines = new Set();
+let now = 0;
 
 globalThis.setTimeout = function (callback, delay, ...args) {
   const caller = new Error().stack?.split('\n')[2] ?? '';
   if (!caller.includes(`${mcpUrl}:`)) return nativeSetTimeout(callback, delay, ...args);
 
   const timer = {
-    callback, delay, args, active: true,
+    callback, delay, args, due: now + delay, active: true,
     ref() { return this; },
     unref() { return this; },
     hasRef() { return true; },
@@ -29,10 +30,13 @@ globalThis.clearTimeout = function (timer) {
 // A deferred marker confirms readline has handled EOF before the clock advances.
 process.stdin.once('end', () => setImmediate(() => console.error('FIXTURE:DEADLINE:EOF')));
 process.on('message', message => {
-  if (message !== 'release') return;
-  console.error('FIXTURE:DEADLINE:ADVANCE:5000');
+  const match = /^advance:(\d+)$/.exec(message);
+  if (!match) return;
+  const amount = Number(match[1]);
+  now += amount;
+  console.error('FIXTURE:DEADLINE:ADVANCE:' + amount);
   for (const timer of deadlines) {
-    if (!timer.active || timer.delay > 5000) continue;
+    if (!timer.active || timer.due > now) continue;
     timer.active = false;
     console.error('FIXTURE:DEADLINE:EXPIRE');
     timer.callback.apply(timer, timer.args);
