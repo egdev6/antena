@@ -124,12 +124,12 @@ test('dock breakpoint: initial viewport and live resize', { timeout: 120000 }, a
   chrome = await openChromePage(bin, 'about:blank');
 
   for (const [width, height, wide] of [
-    [1000, 700, false],
-    [1023, 700, false],
-    [1024, 700, true],
-    [1024, 1400, true],
-    [900, 1400, false],
-    [768, 1024, false],
+    [600, 900, false],
+    [767, 700, false],
+    [767, 1024, false],
+    [768, 700, true],
+    [768, 1024, true],
+    [900, 1400, true],
     [1256, 780, true],
   ]) {
     await t.test(`${width}×${height}: ${wide ? 'three columns' : 'tabs'}`, async () => {
@@ -141,18 +141,18 @@ test('dock breakpoint: initial viewport and live resize', { timeout: 120000 }, a
     });
   }
 
-  await t.test('resizing across 1024 preserves the selected section', async () => {
-    await resize(chrome, 900, 1400);
+  await t.test('resizing across 768 preserves the selected section', async () => {
+    await resize(chrome, 700, 1400);
     await waitDom(chrome.cdp, `!!document.querySelector('#d-t-audio')`);
     await evaluateChrome(chrome.cdp, `document.querySelector('#d-t-audio').click()`);
     await waitDom(chrome.cdp, `document.querySelector('#d-t-audio')?.getAttribute('aria-selected') === 'true' && !document.querySelector('#d-p-audio').hidden`);
-    await resize(chrome, 1024, 1400);
+    await resize(chrome, 768, 1400);
     await waitDom(chrome.cdp, `document.querySelectorAll('.d-cols > .d-col').length === 3`, { timeoutMs: 2000 });
-    assertLayout(await layout(chrome), 1024, 1400, true);
-    await resize(chrome, 1023, 700);
+    assertLayout(await layout(chrome), 768, 1400, true);
+    await resize(chrome, 767, 700);
     await waitDom(chrome.cdp, `document.querySelector('#d-t-audio')?.getAttribute('aria-selected') === 'true' && !document.querySelector('#d-p-audio').hidden`);
     const actual = await layout(chrome);
-    assert.deepEqual(actual.viewport, [1023, 700]);
+    assert.deepEqual(actual.viewport, [767, 700]);
     assert.deepEqual(actual.tabs, ['Control', 'Audio', 'Interactivos']);
     assert.deepEqual(actual.selected, ['Audio']);
     assert.deepEqual(actual.panels, ['d-p-audio']);

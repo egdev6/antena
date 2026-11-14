@@ -1,4 +1,4 @@
-/* Dock del directo: tres columnas (Control | Audio | Interactivos) desde 1024 px de ancho,
+/* Dock del directo: tres columnas (Control | Audio | Interactivos) desde 768 px de ancho,
    sin importar la orientación; por debajo, una pestaña por sección con Control primero.
    Dock.tsx decide la vista. Sin chat ni vista previa. EGDEV Foundation. */
 :root{
@@ -36,7 +36,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-warn.soft{--st:var(--warn)}
 .d-warn.big{font:800 13px/1 var(--font-display);text-transform:uppercase;padding:6px 10px;border-radius:var(--radius-md);background:var(--gradient-btn-primary);color:var(--color-action-primary-solid-fg);border-color:transparent;animation:blink 1.2s infinite}
 @keyframes blink{50%{opacity:.4}}
-/* ---------- pestañas (ancho < 1024 px) ---------- */
+/* ---------- pestañas (ancho < 768 px) ---------- */
 .d-tabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:var(--s0)}
 .d-tabs button,.d-itabs button{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:8px 12px;min-height:40px;border-radius:var(--radius-md) var(--radius-md) 0 0;font:700 13px/1 var(--font-display);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
 .d-tabs button[aria-selected="true"],.d-itabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--red)}
@@ -49,7 +49,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-badge{font:600 11px/1 var(--font-mono);letter-spacing:0;color:var(--muted)}
 .d-panels{display:grid;min-height:0}
 [role="tabpanel"][hidden]{display:none!important}
-/* ---------- tres columnas (ancho ≥ 1024 px) ---------- */
+/* ---------- tres columnas (ancho ≥ 768 px) ---------- */
 .d-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1.2fr);min-height:0}
 .d-col{display:grid;grid-template-rows:auto 1fr;min-height:0;border-right:1px solid var(--line)}
 .d-col:last-child{border-right:0}

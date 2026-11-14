@@ -1,5 +1,5 @@
 // Dock del directo: todo el manejo del directo menos la vista previa (S1) y sin chat (S12).
-// Desde 1024 px de ancho se ven las tres columnas Control | Audio | Interactivos, sin importar
+// Desde 768 px de ancho se ven las tres columnas Control | Audio | Interactivos, sin importar
 // la orientación; por debajo, una pestaña por sección, con Control primero.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { post } from '../lib/api';
@@ -15,7 +15,7 @@ import type { MeldTrack, TeleprompterState, TimelineItem, ViewerPlatform, Viewer
 const DOCK_TAB = 'egdev.dock.tab';
 const INTERACTIVE_TAB = 'egdev.dock.interactive.tab';
 /** Único punto de corte para renderizar las tres columnas y aplicar la clase dock-wide. */
-const WIDE_MEDIA = '(min-width: 1024px)';
+const WIDE_MEDIA = '(min-width: 768px)';
 
 function useNow(ms = 1000) {
   const [now, setNow] = useState(() => Date.now());

@@ -45,7 +45,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Viewers record alert** per platform (Twitch and YouTube), with anti-spam brakes.
 - **Appearance:** one theme for everything that goes on screen (alerts, widgets and credits): colors, fonts (including yours), icons per alert, shape, position, animation and sound. The default one is the EGDEV theme.
 - **Customizable Stream Deck shortcuts:** each one chains steps (bookmark, pause, scene, layer, chat, prompter tab…) and has its own `/sd/custom/<id>` endpoint.
-- **Dock for Meld:** the whole live show minus the preview — scenes, Meld's audio tracks, alerts, questions, vote, giveaway, teleprompter, and credits — adaptable: three columns from 1024 px wide regardless of orientation, one tab per section below that.
+- **Dock for Meld:** the whole live show minus the preview — scenes, Meld's audio tracks, alerts, questions, vote, giveaway, teleprompter, and credits — adaptable: three columns from 768 px wide regardless of orientation, one tab per section below that.
 
 The server has no dependencies (Node ≥ 24). The interface is React compiled with esbuild and the desktop app is Tauri 2, which starts that server as a *sidecar*. Everything stays on your PC.
 
@@ -410,7 +410,7 @@ Meld does not support custom panels, but its **chat panel** loads a URL. Put `ht
 - **Audio:** global tracks and those of the on-air scenes, each with a mute switch and a fader for the **real gain**. If Meld does not report a track's volume, its fader is disabled. The narrow Audio tab signals muted listed tracks.
 - **Interactivos:** tabs for questions (switch, current, next, hide and queue), tier list vote (close and place, cancel) and giveaway (open/close, draw, participants), with status badges.
 
-At **1024 px wide or more, regardless of orientation**, the columns are **Control | Audio | Interactivos**; below 1024 px they become tabs. Both tab levels support arrow keys and remember the last selection. There is no chat, preview or shortcuts module in the dock; shortcuts remain in the panel and Stream Deck.
+At **768 px wide or more, regardless of orientation**, the columns are **Control | Audio | Interactivos**; below 768 px they become tabs. Both tab levels support arrow keys and remember the last selection. There is no chat, preview or shortcuts module in the dock; shortcuts remain in the panel and Stream Deck.
 
 ### Panel
 
