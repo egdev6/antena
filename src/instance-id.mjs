@@ -77,6 +77,11 @@ function staleLock(text) {
   } catch { return true; }
 }
 
+// A lock is a hard-linked file or a directory. Another process may be removing it while we
+// inspect it: Windows then reports EPERM/EACCES/EBUSY instead of ENOENT. That says nothing about
+// staleness, so it must neither abort startup nor count as ownership; the caller retries.
+const TRANSIENT_LOCK_ERRORS = new Set(['ENOENT', 'EPERM', 'EACCES', 'EBUSY']);
+
 function lockFile(lock) { return fs.lstatSync(lock).isDirectory() ? path.join(lock, 'owner.json') : lock; }
 function unlinkLock(lock, file) { fs.unlinkSync(file); if (file !== lock) fs.rmdirSync(lock); }
 
@@ -85,7 +90,7 @@ function ownsLock(lock, token) {
   try {
     const text = fs.readFileSync(lockFile(lock), 'utf8');
     return JSON.parse(text).token === token && !staleLock(text);
-  } catch (err) { if (err.code === 'ENOENT' || err instanceof SyntaxError) return false; throw err; }
+  } catch (err) { if (TRANSIENT_LOCK_ERRORS.has(err.code) || err instanceof SyntaxError) return false; throw err; }
 }
 
 function removeStaleLock(lock) {
@@ -102,7 +107,7 @@ function removeStaleLock(lock) {
       try { JSON.parse(first); } catch { if (Date.now() - fs.statSync(lock).mtimeMs < LOCK_MAX_AGE_MS) return; }
     }
     if (staleLock(first) && fs.readFileSync(file, 'utf8') === first) unlinkLock(lock, file);
-  } catch (err) { if (err.code !== 'ENOENT') throw err; }
+  } catch (err) { if (!TRANSIENT_LOCK_ERRORS.has(err.code)) throw err; }
 }
 
 // Known limitation (accepted in #124): the ownership check and the rename below are not atomic.

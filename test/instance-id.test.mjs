@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { realpathSync } from 'node:fs';
+import fs, { realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -275,4 +275,28 @@ test('different data directories receive different ids', async t => {
   const b = JSON.parse(await readFile(second.file, 'utf8'));
   validRecord(a, first.dataDir); validRecord(b, second.dataDir);
   assert.notEqual(a.id, b.id);
+});
+
+test('a repair lock pending deletion is not stolen and does not abort startup', { timeout: 15000 }, async t => {
+  const { dataDir, file } = await fixture(t);
+  const lock = `${file}.repair.lock`;
+  await writeFile(file, '{broken');
+  // Stale by age, so it would be reclaimed once it can be read.
+  await writeFile(lock, JSON.stringify({ pid: 2 ** 22, createdAt: 0, token: 'synthetic-lock' }));
+  const { instanceId } = await import('../src/instance-id.mjs');
+  const original = fs.readFileSync;
+  let reads = 0;
+  // Windows reports EPERM when opening a file another process already unlinked.
+  fs.readFileSync = function patched(target, ...rest) {
+    if (String(target) === lock && reads++ === 0) {
+      throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM', syscall: 'open', path: lock });
+    }
+    return original.call(this, target, ...rest);
+  };
+  t.after(() => { fs.readFileSync = original; });
+  const id = await instanceId(dataDir);
+  assert.match(id, /^[0-9a-f]{32}$/);
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).id, id);
+  assert.equal((await readdir(dataDir)).some(name => name.includes('.repair.lock')), false, 'lock released');
+  assert.equal(reads > 0, true);
 });
