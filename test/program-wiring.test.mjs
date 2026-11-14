@@ -184,6 +184,65 @@ test('panel status broadcast follows timers and precedes later raw listeners', a
   }
 });
 
+test('automatic session reacts to program status after broadcast and before later raw status', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-auto-status-'));
+  const app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
+  t.after(async () => {
+    await app.drainAutoSession(); await app.session.flush(); app.meld.stop(); app.program.dispose();
+    await app.closeHttp(); await rm(dir, { recursive: true, force: true });
+  });
+  const order = [], send = app.bus.send.bind(app.bus);
+  const start = app.session.startNew.bind(app.session), end = app.session.endCurrent.bind(app.session);
+  app.bus.send = (name, ...args) => { if (name === 'status') order.push('broadcast'); return send(name, ...args); };
+  app.session.startNew = (...args) => { order.push('start'); return start(...args); };
+  app.session.endCurrent = (...args) => { order.push('end'); return end(...args); };
+  app.meld.on('status', () => order.push('later-raw'));
+  app.meld.status = { ...app.meld.status, state: 'conectado', streaming: true, streamingKnown: true };
+  app.program.emit('status', app.program.status);
+  assert.deepEqual(order, ['broadcast', 'start']);
+  await app.session.transitionChain;
+  assert.equal(app.session.data.meldAutoSession, true);
+  order.length = 0;
+  app.meld.setStatus({ streaming: false });
+  assert.deepEqual(order, ['broadcast', 'end', 'later-raw']);
+  await app.session.transitionChain;
+  assert.ok(app.session.data.endedAt);
+  order.length = 0;
+  app.meld.setStatus({ streaming: true });
+  assert.deepEqual(order, ['broadcast', 'start', 'later-raw']);
+  await app.session.transitionChain;
+  assert.equal(app.session.data.meldAutoSession, true);
+  assert.equal(app.session.data.endedAt, undefined);
+});
+
+test('automatic session reacts to program streaming before later raw streaming listeners', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-auto-stream-'));
+  const app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
+  t.after(async () => {
+    await app.drainAutoSession(); await app.session.flush(); app.meld.stop(); app.program.dispose();
+    await app.closeHttp(); await rm(dir, { recursive: true, force: true });
+  });
+  const order = [], start = app.session.startNew.bind(app.session), end = app.session.endCurrent.bind(app.session);
+  app.session.startNew = (...args) => { order.push('start'); return start(...args); };
+  app.session.endCurrent = (...args) => { order.push('end'); return end(...args); };
+  app.meld.on('streaming', () => order.push('later-raw'));
+  app.program.emit('streaming', true);
+  assert.deepEqual(order, ['start']);
+  await app.session.transitionChain;
+  assert.equal(app.session.data.meldAutoSession, true);
+  order.length = 0;
+  app.meld.emit('streaming', false);
+  assert.deepEqual(order, ['end', 'later-raw']);
+  await app.session.transitionChain;
+  assert.ok(app.session.data.endedAt);
+  order.length = 0;
+  app.meld.emit('streaming', true);
+  assert.deepEqual(order, ['start', 'later-raw']);
+  await app.session.transitionChain;
+  assert.equal(app.session.data.meldAutoSession, true);
+  assert.equal(app.session.data.endedAt, undefined);
+});
+
 test('panel session broadcast preserves payload before later raw listeners', async t => {
   const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-session-broadcast-'));
   const app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
