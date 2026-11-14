@@ -6,6 +6,9 @@ import { writeJson } from './json-file.mjs';
 
 const pending = new Map();
 const LOCK_MAX_AGE_MS = 10000;
+const LOCK_EPERM_RETRIES = 5;
+const LOCK_EPERM_DELAY_MS = 20;
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function valid(record, directory) {
   if (!record || typeof record !== 'object' || Array.isArray(record)
@@ -26,7 +29,7 @@ async function readRecord(file, directory) {
   return { invalid: true, text };
 }
 
-async function publishExclusive(file, record) {
+async function publishExclusive(file, record, delay) {
   const candidate = `${file}.candidate-${randomBytes(16).toString('hex')}`;
   try {
     await writeJson(candidate, record);
@@ -35,7 +38,15 @@ async function publishExclusive(file, record) {
       if (err.code === 'EEXIST') return false;
       if (!['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EXDEV', 'ENOSYS'].includes(err.code)) throw err;
       if (file.endsWith('.repair.lock')) {
-        try { fs.mkdirSync(file); } catch (e) { if (e.code === 'EEXIST') return false; throw e; }
+        for (let retries = 0; ; retries++) {
+          try { fs.mkdirSync(file); break; }
+          catch (e) {
+            if (e.code === 'EEXIST') return false;
+            // Windows may report EPERM while a removed directory is still pending deletion.
+            if (e.code !== 'EPERM' || retries >= LOCK_EPERM_RETRIES) throw e;
+            await delay(LOCK_EPERM_DELAY_MS);
+          }
+        }
         try { fs.writeFileSync(path.join(file, 'owner.json'), JSON.stringify(record), { flag: 'wx', mode: 0o600 }); }
         catch (e) { fs.rmdirSync(file); throw e; }
         return true;
@@ -44,7 +55,7 @@ async function publishExclusive(file, record) {
         if (!(await readRecord(file, record.directory)).missing || !ownsLock(lock, token)) return false;
         fs.renameSync(candidate, file);
         return true;
-      });
+      }, delay);
     }
   } finally {
     await unlink(candidate).catch(err => { if (err.code !== 'ENOENT') throw err; });
@@ -99,10 +110,10 @@ function removeStaleLock(lock) {
 // reclaimed and move a newly valid identity aside. The file stays valid and consistent, but a
 // server that already reported the previous id no longer matches it, so the desktop app shows a
 // (false) conflict until that server restarts. No data is lost.
-async function withRepairLock(file, action) {
+async function withRepairLock(file, action, delay) {
   const lock = `${file}.repair.lock`;
   const token = randomBytes(16).toString('hex');
-  if (!(await publishExclusive(lock, { pid: process.pid, createdAt: Date.now(), token }))) {
+  if (!(await publishExclusive(lock, { pid: process.pid, createdAt: Date.now(), token }, delay))) {
     removeStaleLock(lock);
     return false;
   }
@@ -113,7 +124,7 @@ async function withRepairLock(file, action) {
   }
 }
 
-async function quarantineInvalid(file, directory) {
+async function quarantineInvalid(file, directory, delay) {
   return withRepairLock(file, async (lock, token) => {
     const observed = await readRecord(file, directory);
     if (!observed.invalid || !ownsLock(lock, token)) return true;
@@ -125,10 +136,10 @@ async function quarantineInvalid(file, directory) {
       }
     } catch (err) { if (err.code !== 'ENOENT') throw err; }
     return true;
-  });
+  }, delay);
 }
 
-async function load(dir) {
+async function load(dir, delay) {
   await mkdir(dir, { recursive: true });
   const directory = fs.realpathSync.native(dir);
   const file = path.join(directory, 'instance.json');
@@ -137,18 +148,18 @@ async function load(dir) {
     if (record.id) return record.id;
     if (record.missing) {
       const id = randomBytes(16).toString('hex');
-      if (await publishExclusive(file, { id, createdAt: new Date().toISOString(), directory })) return id;
-    } else if (!(await quarantineInvalid(file, directory))) {
+      if (await publishExclusive(file, { id, createdAt: new Date().toISOString(), directory }, delay)) return id;
+    } else if (!(await quarantineInvalid(file, directory, delay))) {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
   }
 }
 
 // Concurrent app factories in this process must not replace each other's new identity.
-export function instanceId(dir) {
+export function instanceId(dir, { delay = wait } = {}) {
   const resolved = path.resolve(dir);
   if (pending.has(resolved)) return pending.get(resolved);
-  const job = load(resolved).finally(() => pending.delete(resolved));
+  const job = load(resolved, delay).finally(() => pending.delete(resolved));
   pending.set(resolved, job);
   return job;
 }

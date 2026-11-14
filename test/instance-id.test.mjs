@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { realpathSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
@@ -166,6 +166,104 @@ test('unsupported hard links still publish one identity across processes', { tim
       assert.deepEqual([...new Set(ids)], [record.id]);
     });
   }
+});
+
+async function runWithRepairMkdirFault(dataDir, mode) {
+  const moduleUrl = new URL('../src/instance-id.mjs', import.meta.url).href;
+  const program = `
+    import fs from 'node:fs';
+    import path from 'node:path';
+    import { syncBuiltinESMExports } from 'node:module';
+    const [dir, mode] = process.argv.slice(1);
+    fs.promises.link = async () => { throw Object.assign(new Error('unsupported'), { code: 'ENOTSUP' }); };
+    syncBuiltinESMExports();
+    const mkdir = fs.mkdirSync, rmdir = fs.rmdirSync, rename = fs.renameSync;
+    const fault = Object.assign(new Error('synthetic mkdir fault'), { code: mode === 'other' ? 'EACCES' : 'EPERM' });
+    let attempts = 0, owners = 0, activeOwners = 0, peakOwners = 0, publications = 0;
+    const delays = [];
+    let releaseOwner;
+    const ownerAcquired = new Promise(resolve => { releaseOwner = resolve; });
+    fs.mkdirSync = function(file, ...args) {
+      if (String(file).endsWith('.repair.lock')) {
+        attempts++;
+        if (mode !== 'transient' || attempts === 1) throw fault;
+        const result = mkdir.call(this, file, ...args);
+        owners++; activeOwners++; peakOwners = Math.max(peakOwners, activeOwners);
+        releaseOwner();
+        return result;
+      }
+      return mkdir.call(this, file, ...args);
+    };
+    fs.rmdirSync = function(file, ...args) {
+      const result = rmdir.call(this, file, ...args);
+      if (String(file).endsWith('.repair.lock')) activeOwners--;
+      return result;
+    };
+    fs.renameSync = function(from, to) {
+      const result = rename.call(this, from, to);
+      if (String(to) === path.join(fs.realpathSync.native(dir), 'instance.json')) publications++;
+      return result;
+    };
+    const delay = async ms => { delays.push(ms); if (mode === 'transient') await ownerAcquired; };
+    if (mode === 'transient') {
+      // Separate module instances have independent pending maps, like separate processes.
+      const first = await import(${JSON.stringify(moduleUrl)} + '?fault-first');
+      const second = await import(${JSON.stringify(moduleUrl)} + '?fault-second');
+      const ids = await Promise.all([first.instanceId(dir, { delay }), second.instanceId(dir, { delay })]);
+      console.log(JSON.stringify({ ids, attempts, owners, activeOwners, peakOwners, publications, delays }));
+    } else {
+      const { instanceId } = await import(${JSON.stringify(moduleUrl)});
+      let caught;
+      try { await instanceId(dir, { delay }); } catch (error) { caught = error; }
+      console.log(JSON.stringify({ sameError: caught === fault, code: caught?.code, attempts, delays, owners }));
+    }
+  `;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', program, dataDir, mode],
+    { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', chunk => { stdout += chunk; });
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  const [exit, signal] = await once(child, 'close');
+  assert.equal(exit, 0, stderr); assert.equal(signal, null); assert.equal(stderr, '');
+  return JSON.parse(stdout);
+}
+
+test('transient repair-lock EPERM retries without overlapping owners or publishing twice', async t => {
+  const { dataDir, file } = await fixture(t);
+  const result = await runWithRepairMkdirFault(dataDir, 'transient');
+  const record = JSON.parse(await readFile(file, 'utf8'));
+  validRecord(record, dataDir);
+  assert.deepEqual(result.ids, [record.id, record.id]);
+  assert.ok(result.attempts >= 2);
+  assert.ok(result.owners >= 1);
+  assert.equal(result.peakOwners, 1);
+  assert.equal(result.activeOwners, 0);
+  assert.equal(result.publications, 1);
+  assert.equal(result.delays.length, 1);
+  assert.ok(result.delays[0] > 0 && result.delays[0] <= 100);
+  assert.deepEqual(await readdir(dataDir), ['instance.json']);
+});
+
+test('persistent repair-lock EPERM is bounded and unrelated errors still fail immediately', async t => {
+  for (const mode of ['persistent', 'other']) await t.test(mode, async t => {
+    const original = mode === 'persistent' ? '{broken' : undefined;
+    const { dataDir, file } = await fixture(t, original);
+    const result = await runWithRepairMkdirFault(dataDir, mode);
+    assert.equal(result.sameError, true);
+    assert.equal(result.code, mode === 'other' ? 'EACCES' : 'EPERM');
+    assert.equal(result.owners, 0);
+    if (mode === 'persistent') {
+      assert.ok(result.attempts > 1 && result.attempts <= 10);
+      assert.equal(result.delays.length, result.attempts - 1);
+      assert.ok(result.delays.every(ms => ms > 0 && ms <= 100));
+      assert.equal(await readFile(file, 'utf8'), original);
+      assert.deepEqual(await readdir(dataDir), ['instance.json']);
+    } else {
+      assert.equal(result.attempts, 1);
+      assert.deepEqual(result.delays, []);
+      assert.deepEqual(await readdir(dataDir), []);
+    }
+  });
 });
 
 test('different data directories receive different ids', async t => {
