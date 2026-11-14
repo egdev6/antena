@@ -138,7 +138,7 @@ test('panel creates a saved-default snapshot, edits one variant manually and pre
   await setValue(c, 'Nombre de la variante', 'Programa');
   await click(c, 'Crear variante');
   await waitDom(c, `${selected}?.value === 'programa' && !(${selected}).disabled`, { timeoutMs: 10000 });
-  assert.deepEqual(await f.ok('GET', route), [{ ...baseline, id: 'programa', name: 'Programa' }]);
+  assert.deepEqual(await f.ok('GET', route), [{ ...baseline, css: '', id: 'programa', name: 'Programa' }]);
   assert.deepEqual((await dom(c, `window.__requests.filter(r => r.method === 'POST')`)).at(-1), { url: route, method: 'POST', body: { name: 'Programa' }, status: 200 });
   assert.equal(await dom(c, `document.querySelector('main .browser-source code').textContent`), f.base + '/widget/chat?variant=programa');
   assert.equal(await dom(c, `${frame}.getAttribute('src')`), '/widget/chat?variant=programa&demo');
@@ -161,7 +161,7 @@ test('panel creates a saved-default snapshot, edits one variant manually and pre
   await check(c, 'Chat invertido', false);
   await setValue(c, 'Animación de entrada', 'flip'); await setValue(c, 'Animación al desaparecer', 'fade');
   await setValue(c, 'CSS personalizado', '.msg { color: lime; }');
-  assert.deepEqual(await f.ok('GET', route), [{ ...baseline, id: 'programa', name: 'Programa' }], 'no autosave');
+  assert.deepEqual(await f.ok('GET', route), [{ ...baseline, css: '', id: 'programa', name: 'Programa' }], 'no autosave');
   await save(c);
   const expected = { ...baseline, id: 'programa', name: 'Programa', layout: 'horizontal', maxMessages: 7, fontSize: 41, fadeAfterSec: 5,
     platforms: ['twitch'], hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'flip', animOut: 'fade', css: '.msg { color: lime; }' };
@@ -186,8 +186,9 @@ test('panel creates a saved-default snapshot, edits one variant manually and pre
   assert.deepEqual(await dom(c, `[${frame}.style.width, ${frame}.style.height]`), ['600px', '900px']);
   await choose(c, 'programa');
   assert.equal(await dom(c, `${field('Tamaño de letra')}.value`), '41');
-  await dom(c, `location.reload()`);
-  await waitDom(c, `!!(${selected}) && !(${selected}).disabled`, { timeoutMs: 15000 });
+  // Mark the old document so the wait cannot pass on it while the reload is still navigating.
+  await dom(c, `window.__beforeReload = true; location.reload(); true`);
+  await waitDom(c, `!window.__beforeReload && !!(${selected}) && !(${selected}).disabled`, { timeoutMs: 15000 });
   await choose(c, 'programa');
   assert.equal(await dom(c, `${field('Disposición')}.value`), 'horizontal');
   assert.equal(await dom(c, `${field('CSS personalizado')}.value`), expected.css);
