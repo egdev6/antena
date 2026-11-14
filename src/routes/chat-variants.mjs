@@ -1,6 +1,6 @@
-// Variantes de chat: copiar el predeterminado al crear y validar antes de tocar el store.
+// Variantes de chat: copiar el predeterminado sin CSS y validar antes de tocar el store.
 import { isDeepStrictEqual } from 'node:util';
-import { CONFIG_SCHEMA, validatePatch, chatVariantId } from '../config-schema.mjs';
+import { CONFIG_SCHEMA, validatePatch, chatVariantId, NEW_CHAT_VARIANT_CSS_ERROR } from '../config-schema.mjs';
 import { httpError } from '../http-util.mjs';
 
 const CHAT_FIELDS = Object.keys(CONFIG_SCHEMA.widgets.chat);
@@ -43,12 +43,13 @@ export function registerChatVariantsRoutes({ route, store }) {
     const variants = variantsOf();
     const id = chatVariantId(name, variants);
     if (Object.hasOwn(body, 'id') && body.id !== id) throw httpError(400, 'El id de la variante nueva se genera a partir del nombre');
+    if (Object.hasOwn(body, 'css') && body.css !== '') throw httpError(400, NEW_CHAT_VARIANT_CSS_ERROR);
     for (const field of CHAT_FIELDS) {
-      if (Object.hasOwn(body, field) && !isDeepStrictEqual(body[field], store.config.widgets.chat?.[field])) {
+      if (field !== 'css' && Object.hasOwn(body, field) && !isDeepStrictEqual(body[field], store.config.widgets.chat?.[field])) {
         throw httpError(400, `El campo «${field}» de una variante nueva se copia del chat predeterminado y no puede ser distinto`);
       }
     }
-    const variant = { ...structuredClone(store.config.widgets.chat), id, name };
+    const variant = { ...structuredClone(store.config.widgets.chat), css: '', id, name };
     validate(variant);
     await save([...variants, variant]);
     return { variant };

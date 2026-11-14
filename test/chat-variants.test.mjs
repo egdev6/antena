@@ -13,7 +13,7 @@ const ROUTE = '/api/widgets/chat/variants';
 const CHAT = {
   platforms: ['youtube'], maxMessages: 37, fadeAfterSec: 23, fontSize: 41,
   hideCommands: false, hideOwner: false, showPlatform: false, reverse: true,
-  animIn: 'bounce', animOut: 'zoom', layout: 'horizontal', css: '.chat { color: red; }',
+  animIn: 'bounce', animOut: 'zoom', layout: 'horizontal', css: '.root{inset:15px 5px auto auto;width:430px;height:600px}',
 };
 
 async function fixture(t) {
@@ -87,19 +87,81 @@ async function stream(base, t, client) {
   };
 }
 
-test('crear copia todos los campos del chat y queda independiente de cambios posteriores', async t => {
+test('CSS S1: crear copia los demás campos y no hereda el CSS ni cambios posteriores', async t => {
   const f = await fixture(t);
   const saved = await f.ok('PUT', '/api/widgets', { chat: CHAT });
   assert.deepEqual(saved.widgets.chat, CHAT, 'PUT existente conserva el merge del chat');
   const { variant } = await f.ok('POST', ROUTE, { name: '  Programa  ' });
-  assert.deepEqual(variant, { id: 'programa', name: 'Programa', ...CHAT });
+  assert.deepEqual(variant, { id: 'programa', name: 'Programa', ...CHAT, css: '' });
   assert.deepEqual(await f.ok('GET', ROUTE), [variant]);
+  assert.deepEqual((await f.ok('GET', '/api/widgets')).widgets.chat, CHAT, 'el chat predeterminado no cambia');
   await f.ok('POST', '/api/config/set', { path: 'widgets.chat.platforms.0', value: 'twitch' });
   assert.deepEqual(await f.ok('GET', ROUTE), [variant], 'mutar el array original no afecta a la copia');
   await f.ok('PUT', '/api/widgets', { chat: { platforms: ['twitch'], css: 'otro', layout: 'vertical', fontSize: 12 } });
   assert.deepEqual(await f.ok('GET', ROUTE), [variant], 'los campos y la lista platforms no heredan cambios');
   assert.deepEqual((await f.ok('GET', '/api/widgets')).widgets.chat, { ...CHAT, platforms: ['twitch'], css: 'otro', layout: 'vertical', fontSize: 12 });
 });
+
+// Solo la interfaz pública: lista, configuración y contadores visibles al rechazar una escritura.
+async function publicState(f) {
+  return {
+    variants: await f.ok('GET', ROUTE),
+    widgets: (await f.ok('GET', '/api/widgets')).widgets,
+    persistence: (await f.ok('GET', '/api/status')).persistence,
+  };
+}
+
+test('CSS S2: crear acepta CSS explícitamente vacío con los demás campos iguales', async t => {
+  const f = await fixture(t);
+  await f.ok('PUT', '/api/widgets', { chat: CHAT });
+  const variant = (await f.ok('POST', ROUTE, { name: 'Vacío', ...CHAT, css: '' })).variant;
+  assert.deepEqual(variant, { ...CHAT, css: '', id: 'vacio', name: 'Vacío' });
+  assert.deepEqual(await f.ok('GET', ROUTE), [variant]);
+  assert.deepEqual((await f.ok('GET', '/api/widgets')).widgets.chat, CHAT);
+});
+
+test('CSS S2: crear rechaza CSS no vacío sin cambiar lista, predeterminado ni contadores', async t => {
+  const f = await fixture(t);
+  await f.ok('PUT', '/api/widgets', { chat: CHAT });
+  const before = await publicState(f);
+  for (const css of [CHAT.css, '.msg{color:red}']) {
+    const result = await f.request('POST', ROUTE, { name: 'No válida', css });
+    assert.deepEqual(result, { status: 400, body: { error: 'El CSS de una variante nueva empieza vacío' } });
+    assert.deepEqual(await publicState(f), before);
+  }
+});
+
+test('CSS PRESERVE: un campo distinto se rechaza con el mensaje anterior sin mutar', async t => {
+  const f = await fixture(t);
+  await f.ok('PUT', '/api/widgets', { chat: CHAT });
+  const before = await publicState(f);
+  const result = await f.request('POST', ROUTE, { name: 'No válida', css: '', fontSize: 30 });
+  assert.deepEqual(result, { status: 400, body: { error: 'El campo «fontSize» de una variante nueva se copia del chat predeterminado y no puede ser distinto' } });
+  assert.deepEqual(await publicState(f), before);
+});
+
+for (const [label, method, endpoint, wrap] of [
+  ['widgets', 'PUT', '/api/widgets', value => ({ chatVariants: value })],
+  ['config', 'PUT', '/api/config', value => ({ widgets: { chatVariants: value } })],
+  ['config/set lista', 'POST', '/api/config/set', value => ({ path: 'widgets.chatVariants', value })],
+  ['config/set sección', 'POST', '/api/config/set', (value, widgets) => ({ path: 'widgets', value: { ...widgets, chatVariants: value } })],
+]) {
+  test(`CSS S1/S2: ${label} exige CSS vacío en variantes nuevas y conserva las existentes`, async t => {
+    const f = await fixture(t);
+    await f.ok('PUT', '/api/widgets', { chat: CHAT });
+    const first = (await f.ok('POST', ROUTE, { name: 'Primera' })).variant;
+    const existing = (await f.ok('PUT', `${ROUTE}/${first.id}`, { css: '.legacy{color:blue}' })).variant;
+    const candidate = { ...CHAT, css: '', id: 'segunda', name: 'Segunda' };
+    const before = await publicState(f);
+    const rejected = await f.request(method, endpoint, wrap([existing, { ...candidate, css: CHAT.css }], before.widgets));
+    assert.equal(rejected.status, 400);
+    assert.deepEqual(rejected.body, { error: 'El CSS de una variante nueva empieza vacío' });
+    assert.deepEqual(await publicState(f), before);
+    await f.ok(method, endpoint, wrap([existing, candidate], before.widgets));
+    assert.deepEqual(await f.ok('GET', ROUTE), [existing, candidate]);
+    assert.deepEqual((await f.ok('GET', '/api/widgets')).widgets.chat, CHAT);
+  });
+}
 
 test('ids son slugs sin acentos, únicos y nunca usan el reservado default', async t => {
   const f = await fixture(t);
