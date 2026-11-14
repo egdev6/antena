@@ -12,7 +12,7 @@ const close = server => new Promise(resolve => server.close(resolve));
 // Observe every client-to-server Qt WebChannel text message, including init, signal
 // subscriptions, idle and observer RPCs (not just fakeMeld.state.calls). WebSocket
 // control frames are transport, not WebChannel messages. Reassemble TCP chunks.
-function observeWire(server) {
+export function observeWire(server) {
   const messages = [], signal = new EventEmitter();
   server.prependListener('upgrade', (_req, socket) => {
     let buffer = Buffer.alloc(0);
@@ -47,7 +47,7 @@ function observeWire(server) {
   };
 }
 
-async function panel(base, observations) {
+export async function panel(base, observations) {
   const abort = new AbortController();
   const response = await fetch(`${base}/api/stream?client=panel`, { signal: abort.signal });
   assert.equal(response.status, 200);
