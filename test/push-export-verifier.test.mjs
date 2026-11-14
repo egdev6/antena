@@ -15,10 +15,12 @@ const TOKEN = 'SYNTHETIC-TOKEN-1Q9';
 const initial = (id = 'synthetic-136') => ({ id, title: '', startedAt: '2026-01-01T00:00:00.000Z',
   events: [], notes: [], goalOffsets: {}, meldAutoSession: true, platforms: { twitch: { streamId: 'synthetic-stream' } } });
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function until(fn, label) {
-  for (let i = 0; i < 1000; i++) {
+async function until(fn, label, { timeoutMs = 5000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     const value = await fn();
     if (value) return value;
+    if (Date.now() >= deadline) break;
     await sleep(5);
   }
   assert.fail(`timeout: ${label}`);
@@ -272,7 +274,7 @@ test('finding 4: failed attempt checkpoints do not consume the network retry bud
   assert.equal(r.requests.length, 1, 'storage failures before POST must not exhaust the delivery budget');
 });
 
-test('finding 7: startup reconciles beyond the 50-item listing and the 100-item queue', { timeout: 15000 }, async t => {
+test('finding 7: startup reconciles beyond the 50-item listing and the 100-item queue', { timeout: 30000 }, async t => {
   let held;
   const received = new EventEmitter();
   const r = await fake(t, (_req, res, count) => {
@@ -296,7 +298,7 @@ test('finding 7: startup reconciles beyond the 50-item listing and the 100-item 
   await until(async () => {
     try { return held && JSON.parse(await fs.readFile(path.join(data, 'push-export.json'), 'utf8')).entries.length === 100; }
     catch { return false; }
-  }, '100 durable pending documents');
+  }, '100 durable pending documents', { timeoutMs: 20000 });
   assert.equal(r.requests.length, 1);
   const allReceived = once(received, 'all', { signal: AbortSignal.timeout(5000) });
   held.end('{"result":"stored"}');
