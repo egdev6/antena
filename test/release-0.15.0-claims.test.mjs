@@ -43,3 +43,24 @@ test('S1: se avisa de la falta de firma y se enlazan créditos y cambios técnic
   assert.match(notes, /### Agradecimientos/);
   assert.match(notes, /https:\/\/github\.com\/egdev6\/antena\/compare\/v0\.14\.1\.\.\./);
 });
+
+test('S1: ambas acciones piden confirmación antes de controlar la emisión', () => {
+  assert.match(notes, /con confirmación antes de cada acción/i);
+});
+
+test('S1: el compare apunta al main fusionado, no a otro commit', () => {
+  assert.match(notes, /https:\/\/github\.com\/egdev6\/antena\/compare\/v0\.14\.1\.\.\.c9818687ce70622b0fdfd2c44ed72d6156ae66d1\)/);
+});
+
+test('S1: el arreglo de Windows describe la carrera de identidad y el reintento acotado', () => {
+  assert.match(notes, /varios procesos de antena preparaban a la vez la identidad de la instalación/i);
+  assert.match(notes, /error temporal de permisos.*reintenta unas pocas veces/i);
+});
+
+test('S1: el dock muestra tres columnas desde 1024 px en ambas orientaciones', () => {
+  assert.match(notes, /tres columnas desde 1024 px de ancho, tanto en horizontal como en vertical/i);
+});
+
+test('S1: los temporizadores esperan un intervalo completo al volver al directo', () => {
+  assert.match(notes, /se pausan fuera del directo y, al empezar a emitir, esperan un intervalo completo antes de volver a enviarse/i);
+});
