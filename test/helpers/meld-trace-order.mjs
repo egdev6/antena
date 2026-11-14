@@ -64,6 +64,33 @@ export async function consumerOrderTrace(t) {
   // actually sent to the panel, alongside the synchronous auto-session and
   // recording-on-start calls; then verify the real SSE reader received each one.
   let capture = false, statusDepth = 0;
+  // Preserve the existing raw registration order while observing the entry to
+  // each later consumer, including branches that do not produce an SSE event.
+  const laterConsumers = [
+    ['auto-session-status', 'const connectedNow ='],
+    ['youtube-auto-status', 'youtubeAuto.begin()'],
+    ['recording-status', 'const op = operation;'],
+    ['route-guard-status', 'pending.keys()'],
+  ];
+  const listeners = app.meld.listeners('status');
+  const labels = new Map(laterConsumers.map(([label, source]) => {
+    const matches = listeners.filter(listener => listener.toString().includes(source));
+    assert.equal(matches.length, 1, `expected one raw ${label} listener`);
+    return [matches[0], label];
+  }));
+  for (const listener of listeners) app.meld.off('status', listener);
+  for (const listener of listeners) {
+    const label = labels.get(listener);
+    app.meld.on('status', label ? function (...args) {
+      if (capture) order.push({ event: label });
+      return listener.apply(this, args);
+    } : listener);
+  }
+  // No other raw session consumers exist today. This sentinel detects whether
+  // the exact session sent to the panel has already been broadcast on entry.
+  app.meld.on('session', data => {
+    if (capture) order.push({ event: 'later-raw-session', meld: structuredClone(data) });
+  });
   const send = app.bus.send.bind(app.bus), startNew = app.session.startNew.bind(app.session), command = app.meld.command.bind(app.meld);
   const setStatus = app.meld.setStatus.bind(app.meld), syncLive = app.timers._syncLive.bind(app.timers);
   // Store changes also sync timers, notably before disconnect; only record calls

@@ -50,7 +50,7 @@ test('createApp keeps raw Meld and registers each adapter forwarder before every
   }
   const order = [], send = app.bus.send.bind(app.bus);
   app.bus.send = (name, ...args) => { if (name === 'status') order.push('broadcast'); return send(name, ...args); };
-  app.program.on('status', () => order.push('program'));
+  app.program.prependListener('status', () => order.push('program'));
   app.meld.on('status', () => order.push('raw'));
   app.meld.setStatus({ error: 'observable' });
   assert.deepEqual(order, ['program', 'broadcast', 'raw']);
@@ -146,4 +146,67 @@ test("timers react to Meld status before any later raw status listener", async t
   app.meld.on("status", () => seen.push("late-raw"));
   app.meld.setStatus({ streaming: true });
   assert.deepEqual(seen.filter(x => x === "timers" || x === "late-raw").slice(0, 2), ["timers", "late-raw"]);
+});
+
+test('panel status broadcast follows timers and precedes later raw listeners', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-status-broadcast-'));
+  const app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
+  t.after(async () => {
+    await app.drainAutoSession(); await app.session.flush(); app.meld.stop(); app.program.dispose();
+    await app.closeHttp(); await rm(dir, { recursive: true, force: true });
+  });
+  const order = [], sent = [], send = app.bus.send.bind(app.bus), sync = app.timers._syncLive.bind(app.timers);
+  app.timers._syncLive = (...args) => { order.push('timers'); return sync(...args); };
+  app.bus.send = (name, data, kinds) => {
+    if (name === 'status') { order.push('broadcast'); sent.push({ data, kinds }); }
+    return send(name, data, kinds);
+  };
+  app.meld.on('status', () => order.push('late-raw'));
+  app.meld.setStatus({ error: 'broadcast probe' });
+  assert.deepEqual(order, ['timers', 'broadcast', 'late-raw']);
+  assert.equal(sent.length, 1);
+  assert.strictEqual(sent[0].data.meld, app.meld.status);
+  assert.deepEqual(sent[0].kinds, ['panel']);
+  order.length = 0; sent.length = 0;
+  app.program.emit('status', app.program.status);
+  assert.deepEqual(order, ['timers', 'broadcast']);
+  assert.equal(sent.length, 1);
+  assert.strictEqual(sent[0].data.meld, app.meld.status);
+  assert.deepEqual(sent[0].kinds, ['panel']);
+  // The unchanged non-Meld sources still each publish exactly once.
+  for (const name of ['twitch', 'youtube', 'chat']) {
+    order.length = 0; sent.length = 0;
+    app[name].emit('status', app[name].status);
+    assert.deepEqual(order, ['broadcast'], name);
+    assert.equal(sent.length, 1, name);
+    assert.strictEqual(sent[0].data[name], app[name].status, name);
+    assert.deepEqual(sent[0].kinds, ['panel'], name);
+  }
+});
+
+test('panel session broadcast preserves payload before later raw listeners', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-session-broadcast-'));
+  const app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
+  t.after(async () => {
+    await app.drainAutoSession(); await app.session.flush(); app.meld.stop(); app.program.dispose();
+    await app.closeHttp(); await rm(dir, { recursive: true, force: true });
+  });
+  const order = [], sent = [], send = app.bus.send.bind(app.bus);
+  app.bus.send = (name, data, kinds) => {
+    if (name === 'meld') { order.push('broadcast'); sent.push({ data, kinds }); }
+    return send(name, data, kinds);
+  };
+  const session = { scenes: [{ id: 'probe', layers: [] }], tracks: [], streaming: true, recording: false };
+  app.meld.on('session', data => { order.push('late-raw'); assert.strictEqual(data, session); });
+  app.meld.emit('session', session);
+  assert.deepEqual(order, ['broadcast', 'late-raw']);
+  assert.equal(sent.length, 1);
+  assert.strictEqual(sent[0].data, session);
+  assert.deepEqual(sent[0].kinds, ['panel']);
+  order.length = 0; sent.length = 0;
+  app.program.emit('session', session);
+  assert.deepEqual(order, ['broadcast']);
+  assert.equal(sent.length, 1);
+  assert.strictEqual(sent[0].data, session);
+  assert.deepEqual(sent[0].kinds, ['panel']);
 });

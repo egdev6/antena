@@ -260,7 +260,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
   const pushStatus = () => bus.send('status', status(), ['panel']);
   notifyPushStatus = pushStatus;
-  for (const src of [twitch, youtube, chat, meld]) src.on('status', pushStatus);
+  for (const src of [twitch, youtube, chat, program]) src.on('status', pushStatus);
 
   // eventos de plataforma → motor
   // #132: el total del canal se complementa con el evento real de la plataforma, aunque su
@@ -438,7 +438,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
   // la persistencia puede fallar sin emitir 'change' (o estar en vuelo): el panel necesita su propio canal
   store.on('persistence', state => bus.send('persistence', state, ['panel']));
-  meld.on('session', s => bus.send('meld', s, ['panel']));
+  program.on('session', s => bus.send('meld', s, ['panel']));
   // S2/S12: el panel ve qué acción de chat falló (total o parcialmente) y en qué plataforma; los éxitos no se reenvían.
   engine.on('chatResult', r => { if (!r.ok) bus.send('chatResult', r, ['panel']); });
   // Capturar antes de invocar startNew: sus listeners síncronos pueden iniciar el cierre.
