@@ -397,15 +397,28 @@ test('emisión: estado, start, stop, toggle y transiciones', { timeout: 5000 }, 
   status = await c.request('GetStreamStatus');
   assert.equal(status.responseData.outputActive, false);
   assert.deepEqual(eventData(c, 'StreamStateChanged', OUTPUTS), [
-    { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTING' },
+    { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTING' },
     { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED' },
     { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPING' },
     { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPED' },
-    { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTING' },
+    { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTING' },
     { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED' },
     { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPING' },
     { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPED' },
   ]);
+});
+
+test('stream rejects redundant start and stop with the official codes, without changes or events', { timeout: 5000 }, async t => {
+  const { url } = await start(t, fixtures());
+  const { c } = await connect(url, { subscriptions: OUTPUTS });
+  assert.equal((await c.request('StopStream')).requestStatus.code, 501);
+  assert.equal((await c.request('GetStreamStatus')).responseData.outputActive, false);
+  assert.deepEqual(c.events('StreamStateChanged'), []);
+  success(await c.request('StartStream'));
+  const events = c.events('StreamStateChanged').length;
+  assert.equal((await c.request('StartStream')).requestStatus.code, 500);
+  assert.equal((await c.request('GetStreamStatus')).responseData.outputActive, true);
+  assert.equal(c.events('StreamStateChanged').length, events);
 });
 
 test('grabación: estado, start, stop y ruta solo al parar', { timeout: 5000 }, async t => {

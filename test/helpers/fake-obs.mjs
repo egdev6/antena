@@ -147,7 +147,7 @@ export function fakeObs(options = {}) {
   }
   let program = options.currentProgramSceneName === undefined
     ? scenes[0] ?? null : lookup(scenes, options.currentProgramSceneName, undefined, 'sceneName', 'sceneUuid');
-  let streaming = false, recording = false;
+  let streaming = options.streaming === true, recording = false, pendingStream = null;
   const requests = [], clients = new Set(), sockets = new Set();
   const failures = new Map(), delays = new Map();
   let closePromise;
@@ -202,15 +202,18 @@ export function fakeObs(options = {}) {
   const sceneList = () => scenes.map(({ sceneIndex, sceneName, sceneUuid }) => ({ sceneIndex, sceneName, sceneUuid }));
   const volume = input => ({ inputVolumeMul: input.inputVolumeMul, inputVolumeDb: inputDb(input.inputVolumeMul) });
   const outputTime = () => ({ outputTimecode: '00:00:00.000', outputDuration: 0 });
-  function setOutput(kind, active) {
-    const previous = kind === 'Stream' ? streaming : recording;
-    if (previous === active) throw failure(active ? 501 : 502, `${kind} already ${active ? 'active' : 'inactive'}`);
+  function completeOutput(kind, active) {
     if (kind === 'Stream') streaming = active; else recording = active;
-    const eventType = `${kind}StateChanged`;
-    emit(eventType, { outputActive: active, outputState: `OBS_WEBSOCKET_OUTPUT_${active ? 'STARTING' : 'STOPPING'}` });
     const data = { outputActive: active, outputState: `OBS_WEBSOCKET_OUTPUT_${active ? 'STARTED' : 'STOPPED'}` };
     if (kind === 'Record' && !active) data.outputPath = OUTPUT_PATH;
-    emit(eventType, data);
+    emit(`${kind}StateChanged`, data);
+  }
+  function setOutput(kind, active) {
+    const previous = kind === 'Stream' ? streaming : recording;
+    if (previous === active) throw failure(active ? 500 : 501, `${kind} already ${active ? 'active' : 'inactive'}`);
+    emit(`${kind}StateChanged`, { outputActive: kind === 'Stream' ? false : active, outputState: `OBS_WEBSOCKET_OUTPUT_${active ? 'STARTING' : 'STOPPING'}` });
+    if (kind === 'Stream' && options.deferStreamConfirmation) pendingStream = active;
+    else completeOutput(kind, active);
   }
   const handlers = {
     GetVersion: () => ({ obsVersion: '30.2.3', obsWebSocketVersion: WS_VERSION, rpcVersion: RPC_VERSION,
@@ -336,7 +339,7 @@ export function fakeObs(options = {}) {
     GetStreamStatus: () => ({ outputActive: streaming, outputReconnecting: false, ...outputTime(), outputCongestion: 0, outputBytes: 0, outputSkippedFrames: 0, outputTotalFrames: 0 }),
     StartStream: () => { setOutput('Stream', true); },
     StopStream: () => { setOutput('Stream', false); },
-    ToggleStream: () => { setOutput('Stream', !streaming); return { outputActive: streaming }; },
+    ToggleStream: () => { const active = !streaming; setOutput('Stream', active); return { outputActive: active }; },
     GetRecordStatus: () => ({ outputActive: recording, outputPaused: false, ...outputTime(), outputBytes: 0 }),
     StartRecord: () => { setOutput('Record', true); },
     StopRecord: () => { setOutput('Record', false); return { outputPath: OUTPUT_PATH }; },
@@ -486,6 +489,10 @@ export function fakeObs(options = {}) {
       emit('InputNameChanged', { ...inputIdentity(input), oldInputName: inputName });
     },
     setVolumeMeters: inputs => emit('InputVolumeMeters', { inputs }),
+    confirmStream() {
+      if (pendingStream === null) throw new Error('No pending stream transition');
+      const active = pendingStream; pendingStream = null; completeOutput('Stream', active);
+    },
     invalidateSession() { for (const client of clients) client.close(4011, 'Session invalidated'); },
     // Hooks persistentes; null/0 los desactiva. El fallo puede limitarse a un UUID de entrada.
     // El registro refleja la llegada, no la respuesta.

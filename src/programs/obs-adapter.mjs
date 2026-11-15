@@ -4,6 +4,9 @@ import { Program } from './program.mjs';
 const OBS_EVENTS = (1 << 2) | (1 << 3) | (1 << 5) | (1 << 6) | (1 << 7);
 const hash = value => createHash('sha256').update(value).digest('base64');
 const unavailable = () => { throw new Error('Acción todavía no disponible con OBS.'); };
+const STREAM_COMMANDS = { 'meld.startStreamingAction': 'StartStream', 'meld.stopStreamingAction': 'StopStream',
+  'meld.toggleStreamingAction': 'ToggleStream' };
+const RECORD_COMMANDS = new Set(['meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction']);
 // Meld gain and OBS inputVolumeMul are both linear amplitude: gain = clamp(mul, 0, 1),
 // mul = clamp(gain, 0, 1). Thus 0 = silence, 0.1 = -20 dB, 1 = 0 dB; OBS boost > 1 displays as 1.
 const gainOf = value => Math.max(0, Math.min(1, Number(value)));
@@ -27,11 +30,17 @@ export class ObsAdapter extends Program {
     this.attempts = 0;
     this.scenes = [];
     this.tracks = [];
-    for (const capability of ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks']) this.capabilities.add(capability);
+    for (const capability of ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks', 'streaming']) this.capabilities.add(capability);
   }
 
   get status() { return this._status; }
-  setStatus(patch) { this._status = { ...this.status, ...patch }; this.emit('status', this.status); }
+  setStatus(patch) {
+    const status = { ...this.status, ...patch };
+    // Like Meld, an unknown output is false; a previous socket cannot confirm this one.
+    if (!status.streamingKnown) status.streaming = false;
+    if (!status.recordingKnown) status.recording = false;
+    this._status = status; this.emit('status', this.status);
+  }
   session() { return { scenes: structuredClone(this.scenes), tracks: structuredClone(this.tracks), streaming: this.status.streaming, recording: this.status.recording }; }
 
   start(url) {
@@ -234,12 +243,17 @@ export class ObsAdapter extends Program {
         const initial = { ...revisions };
         void Promise.allSettled([request('GetVersion'), request('GetStreamStatus'), request('GetRecordStatus'), refreshScenes(), refreshTracks()]).then(results => {
           if (!current()) return;
+          const outputs = [[1, 'streaming', 'OBS no informó el estado de la emisión.'],
+            [2, 'recording', 'OBS no informó el estado de la grabación.']];
+          const failed = outputs.find(([index]) => results[index].status !== 'fulfilled' || typeof results[index].value?.outputActive !== 'boolean');
+          if (failed) { this.stopSocket(); this.retry(failed[2]); return; }
           const version = results[0].value?.obsVersion;
           if (typeof version === 'string') this._status = { ...this.status, version };
-          for (const [index, field] of [[1, 'streaming'], [2, 'recording']]) {
-            const value = results[index].value?.outputActive;
-            if (revisions[field] === initial[field] && typeof value === 'boolean')
-              this._status = { ...this.status, [field]: value, [field + 'Known']: true };
+          for (const [index, field, error] of outputs) {
+            if (revisions[field] === initial[field])
+              this._status = { ...this.status, [field]: results[index].value.outputActive, [field + 'Known']: true };
+            // A transition during the query invalidates its snapshot, but is not itself a confirmation.
+            if (!this.status[field + 'Known']) { this.stopSocket(); this.retry(error); return; }
           }
           this.attempts = 0;
           this.setStatus({ state: 'conectado', error: null });
@@ -258,9 +272,18 @@ export class ObsAdapter extends Program {
       } else if (message.op === 5) {
         const field = d.eventType === 'StreamStateChanged' ? 'streaming' : d.eventType === 'RecordStateChanged' ? 'recording' : null;
         if (field) {
-          const value = d.eventData?.outputActive;
+          let value = d.eventData?.outputActive;
           if (typeof value !== 'boolean') return;
           revisions[field]++;
+          if (field === 'streaming') {
+            // OBS reports outputActive=false for STARTING, STOPPING and RECONNECTING.
+            // Keep the last confirmed boolean and Known flag during those transitions;
+            // only STARTED/RECONNECTED or STOPPED can open/close a live session.
+            const state = d.eventData?.outputState;
+            if (state === 'OBS_WEBSOCKET_OUTPUT_STARTED' || state === 'OBS_WEBSOCKET_OUTPUT_RECONNECTED') value = true;
+            else if (state === 'OBS_WEBSOCKET_OUTPUT_STOPPED') value = false;
+            else return;
+          }
           if (field === 'streaming' && this.connected && value !== this.status.streaming) this.emit('streaming', value);
           this.setStatus({ [field]: value, [field + 'Known']: true });
           if (this.connected) this.emit('session', this.session());
@@ -282,14 +305,14 @@ export class ObsAdapter extends Program {
     };
   }
 
-  retry() {
+  retry(error = 'No se puede conectar con OBS.') {
     if (this.stopped || this.closePromise) return;
     const wait = this.retryDelays[this.attempts++];
     if (wait === undefined) {
-      this.setStatus({ state: 'error', streamingKnown: false, recordingKnown: false, error: 'No se puede conectar con OBS.' });
+      this.setStatus({ state: 'error', streamingKnown: false, recordingKnown: false, error });
       return;
     }
-    this.setStatus({ state: 'reintentando', streamingKnown: false, recordingKnown: false, error: 'No se puede conectar con OBS.' });
+    this.setStatus({ state: 'reintentando', streamingKnown: false, recordingKnown: false, error });
     this.retryTimer = setTimeout(() => { this.retryTimer = null; this.connect(); }, wait);
     this.retryTimer.unref?.();
   }
@@ -334,7 +357,13 @@ export class ObsAdapter extends Program {
     if (!effect) throw new Error(`No encuentro el efecto «${effectRef}»`);
     await this.requestObs('SetSourceFilterEnabled', { sourceName: found.layer.name, filterName: effect.name, filterEnabled: !effect.enabled });
   }
-  command() { return unavailable(); }
+  command(command) {
+    if (Object.hasOwn(STREAM_COMMANDS, command) || RECORD_COMMANDS.has(command)) {
+      try { this.emit('controlCommand', command); } catch { /* a listener must not change the RPC */ }
+    }
+    if (!Object.hasOwn(STREAM_COMMANDS, command)) return unavailable();
+    return this.requestObs(STREAM_COMMANDS[command]).then(() => undefined);
+  }
   streamEvent() { return unavailable(); }
   async toggleMute(ref) {
     const track = this.findTrack(ref); if (!track) throw new Error(`No encuentro la pista «${ref}»`);
