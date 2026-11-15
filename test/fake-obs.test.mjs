@@ -200,7 +200,7 @@ test('GetVersion anuncia las peticiones implementadas', { timeout: 5000 }, async
   assert.deepEqual(new Set(response.responseData.availableRequests), new Set([
     'GetVersion', 'GetSceneList', 'CreateScene', 'RemoveScene', 'GetCurrentProgramScene', 'SetCurrentProgramScene', 'GetSceneItemList',
     'GetSceneItemId', 'SetSceneItemEnabled', 'GetSourceFilterList', 'CreateSourceFilter', 'RemoveSourceFilter', 'SetSourceFilterName', 'SetSourceFilterEnabled', 'GetInputList',
-    'GetInputMute', 'SetInputMute', 'ToggleInputMute', 'GetInputVolume', 'SetInputVolume',
+    'GetInputAudioTracks', 'GetInputMute', 'SetInputMute', 'ToggleInputMute', 'GetInputVolume', 'SetInputVolume',
     'GetInputAudioMonitorType', 'SetInputAudioMonitorType', 'TriggerMediaInputAction', 'SetMediaInputCursor', 'GetMediaInputStatus', 'GetStreamStatus',
     'StartStream', 'StopStream', 'ToggleStream', 'GetRecordStatus', 'StartRecord', 'StopRecord',
   ]));
@@ -276,6 +276,7 @@ test('filtros, entradas, audio y acción multimedia', { timeout: 5000 }, async t
     { inputName: 'Music', inputUuid: 'input-music', inputKind: 'ffmpeg_source' },
   ]);
   assert.deepEqual((await c.request('GetInputList', { inputKind: 'ffmpeg_source' })).responseData.inputs.map(i => i.inputName), ['Music']);
+  success(await c.request('GetInputAudioTracks', { inputName: 'Micro' }), { inputAudioTracks: { 1: true, 2: true, 3: true, 4: true, 5: true, 6: true } });
   success(await c.request('GetInputMute', { inputName: 'Micro' }), { inputMuted: false });
   success(await c.request('SetInputMute', { inputName: 'Micro', inputMuted: true }));
   success(await c.request('GetInputMute', { inputName: 'Micro' }), { inputMuted: true });
@@ -313,6 +314,13 @@ test('filtros, entradas, audio y acción multimedia', { timeout: 5000 }, async t
   assert.deepEqual(eventData(c, 'InputAudioMonitorTypeChanged', INPUTS), [
     { inputName: 'Micro', inputUuid: 'input-micro', monitorType: 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT' },
   ]);
+});
+
+test('GetInputAudioTracks distingue entradas con y sin audio', { timeout: 5000 }, async t => {
+  const { url } = await start(t, { inputs: [{ inputName: 'Voice' }, { inputName: 'Picture', audio: false }] });
+  const { c } = await connect(url);
+  success(await c.request('GetInputAudioTracks', { inputName: 'Voice' }), { inputAudioTracks: { 1: true, 2: true, 3: true, 4: true, 5: true, 6: true } });
+  assert.equal((await c.request('GetInputAudioTracks', { inputName: 'Picture' })).requestStatus.code, 602);
 });
 
 test('filtros externos y cursor multimedia conservan estado, eventos y rechazan entradas inválidas', { timeout: 5000 }, async t => {
