@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import net from 'node:net';
 import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
 import { Meld, MELD_COMMANDS as rawCommands, MELD_STREAM_EVENTS as rawEvents } from '../src/meld.mjs';
@@ -11,7 +10,7 @@ import { Timers } from '../src/timers.mjs';
 import { Interactive, DEFAULT_INTERACTIVE_CONFIG } from '../src/interactive.mjs';
 import { MeldAdapter } from '../src/programs/meld-adapter.mjs';
 import { createProgram, MELD_COMMANDS, MELD_STREAM_EVENTS } from '../src/programs/index.mjs';
-import { createApp, startServer } from '../src/server.mjs';
+import { createApp } from '../src/server.mjs';
 import { YouTubeAutoConnect } from '../src/youtube-auto.mjs';
 import { observeStatusConsumers } from './helpers/meld-trace-order.mjs';
 
@@ -118,28 +117,45 @@ test('legacy meld constructor input still accepts a duck-typed status emitter', 
 
 test('shutdown forwards Meld terminal status before disposing its adapter', async t => {
   const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-shutdown-'));
-  const old = { data: process.env.ANTENA_DATA, media: process.env.ANTENA_MEDIA };
-  const originalListen = net.Server.prototype.listen;
-  process.env.ANTENA_DATA = path.join(dir, 'data'); process.env.ANTENA_MEDIA = path.join(dir, 'media');
-  net.Server.prototype.listen = function (_port, host, callback) { return originalListen.call(this, 0, host, callback); };
-  t.after(async () => {
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const script = `
+    import assert from 'node:assert/strict';
+    import net from 'node:net';
+    import path from 'node:path';
+    import { DATA } from './src/store.mjs';
+    import { startServer } from './src/server.mjs';
+    assert.equal(DATA, process.env.ANTENA_DATA, 'server data must be isolated before startup');
+    assert.notEqual(path.resolve(DATA), path.resolve('data'));
+    assert.notEqual(path.resolve(process.env.ANTENA_MEDIA), path.resolve('media'));
+    const originalListen = net.Server.prototype.listen;
+    net.Server.prototype.listen = function (_port, host, callback) { return originalListen.call(this, 0, host, callback); };
+    const app = await startServer({ quiet: true, handleSignals: false, log: () => {} });
     net.Server.prototype.listen = originalListen;
-    if (old.data === undefined) delete process.env.ANTENA_DATA; else process.env.ANTENA_DATA = old.data;
-    if (old.media === undefined) delete process.env.ANTENA_MEDIA; else process.env.ANTENA_MEDIA = old.media;
-    await rm(dir, { recursive: true, force: true });
+    const names = ${JSON.stringify(names)};
+    const events = [], close = app.meld.quiesceClose.bind(app.meld), dispose = app.program.dispose.bind(app.program);
+    const counts = names.map(name => app.meld.listenerCount(name));
+    app.program.on('status', status => events.push(status.state));
+    app.meld.quiesceClose = () => { events.push('close'); return close().then(() => { events.push('closed'); }); };
+    app.program.dispose = () => { events.push('dispose'); return dispose(); };
+    const code = await app.close();
+    const afterClose = [...events], afterCounts = names.map(name => app.meld.listenerCount(name));
+    app.meld.setStatus({ error: 'after shutdown' });
+    console.log(JSON.stringify({ code, afterClose, counts, afterCounts, afterLateStatus: events,
+      dataDir: app.store.dir, mediaDir: app.mediaDir }));
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: process.cwd(), encoding: 'utf8', timeout: 20000,
+    env: { PATH: process.env.PATH || '', ANTENA_DATA: path.join(dir, 'data'), ANTENA_MEDIA: path.join(dir, 'media') },
   });
-  const app = await startServer({ quiet: true, handleSignals: false, log: () => {} });
-  net.Server.prototype.listen = originalListen;
-  const events = [], close = app.meld.quiesceClose.bind(app.meld), dispose = app.program.dispose.bind(app.program);
-  const counts = names.map(name => app.meld.listenerCount(name));
-  app.program.on('status', status => events.push(status.state));
-  app.meld.quiesceClose = () => { events.push('close'); return close().then(() => { events.push('closed'); }); };
-  app.program.dispose = () => { events.push('dispose'); return dispose(); };
-  assert.equal(await app.close(), 0);
-  assert.deepEqual(events, ['close', 'desconectado', 'closed', 'dispose']);
-  assert.deepEqual(names.map(name => app.meld.listenerCount(name)), counts.map(n => n - 1));
-  app.meld.setStatus({ error: 'after shutdown' });
-  assert.deepEqual(events, ['close', 'desconectado', 'closed', 'dispose']);
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.equal(result.stderr, '');
+  const { code, afterClose, counts, afterCounts, afterLateStatus, dataDir, mediaDir } = JSON.parse(result.stdout);
+  assert.equal(dataDir, path.join(dir, 'data'));
+  assert.equal(mediaDir, path.join(dir, 'media'));
+  assert.equal(code, 0);
+  assert.deepEqual(afterClose, ['close', 'desconectado', 'closed', 'dispose']);
+  assert.deepEqual(afterCounts, counts.map(n => n - 1));
+  assert.deepEqual(afterLateStatus, ['close', 'desconectado', 'closed', 'dispose']);
 });
 
 test("timers react to Meld status before any later raw status listener", async t => {
