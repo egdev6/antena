@@ -10,6 +10,8 @@ import { Timers } from '../src/timers.mjs';
 import { MeldAdapter } from '../src/programs/meld-adapter.mjs';
 import { createProgram, MELD_COMMANDS, MELD_STREAM_EVENTS } from '../src/programs/index.mjs';
 import { createApp, startServer } from '../src/server.mjs';
+import { YouTubeAutoConnect } from '../src/youtube-auto.mjs';
+import { observeStatusConsumers } from './helpers/meld-trace-order.mjs';
 
 const names = ['status', 'session', 'streaming', 'controlCommand'];
 
@@ -268,4 +270,59 @@ test('panel session broadcast preserves payload before later raw listeners', asy
   assert.equal(sent.length, 1);
   assert.strictEqual(sent[0].data, session);
   assert.deepEqual(sent[0].kinds, ['panel']);
+});
+
+async function youtubeWiring(t) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-youtube-'));
+  const app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
+  const order = [], begin = YouTubeAutoConnect.prototype.begin, end = YouTubeAutoConnect.prototype.end;
+  YouTubeAutoConnect.prototype.begin = function () { order.push('youtube-begin'); };
+  YouTubeAutoConnect.prototype.end = function () { order.push('youtube-end'); return Promise.resolve(); };
+  for (const [method, label] of [['startNew', 'session-start'], ['endCurrent', 'session-end'], ['captureIdentity', 'identity-check']]) {
+    const original = app.session[method].bind(app.session);
+    app.session[method] = (...args) => { order.push(label); return original(...args); };
+  }
+  t.after(async () => {
+    YouTubeAutoConnect.prototype.begin = begin; YouTubeAutoConnect.prototype.end = end;
+    await app.drainAutoSession(); await app.session.flush(); app.meld.stop(); app.program.dispose();
+    await app.closeHttp(); await rm(dir, { recursive: true, force: true });
+  });
+  return { app, order };
+}
+
+test('YouTube auto reacts to program streaming after auto-session and before later raw listeners', async t => {
+  const { app, order } = await youtubeWiring(t);
+  app.meld.on('streaming', () => order.push('later-raw'));
+  for (const [emitter, live, expected] of [
+    [app.program, true, ['session-start', 'youtube-begin']],
+    [app.program, false, ['session-end', 'youtube-end']],
+    [app.meld, true, ['session-start', 'youtube-begin', 'later-raw']],
+    [app.meld, false, ['session-end', 'youtube-end', 'later-raw']],
+  ]) {
+    order.length = 0; emitter.emit('streaming', live);
+    assert.deepEqual(order, expected);
+    await app.session.transitionChain;
+  }
+});
+
+test('YouTube auto reacts to live program status after auto-session and before raw recording', async t => {
+  const { app, order } = await youtubeWiring(t);
+  const send = app.bus.send.bind(app.bus);
+  app.bus.send = (name, ...args) => { if (name === 'status') order.push('broadcast'); return send(name, ...args); };
+  observeStatusConsumers(app, label => { if (label === 'recording-status') order.push('recording'); });
+  app.meld.on('status', () => order.push('later-raw'));
+  app.meld.status = { ...app.meld.status, state: 'conectado', streaming: true, streamingKnown: true };
+  app.program.emit('status', app.program.status);
+  assert.deepEqual(order, ['broadcast', 'session-start', 'youtube-begin']);
+  await app.session.transitionChain;
+  app.store.config.meld.autoSession = false;
+  for (const status of [{ state: 'desconectado', streaming: true }, { state: 'reintentando', streaming: true },
+    { state: 'conectado', streaming: false }]) {
+    order.length = 0; app.program.emit('status', status);
+    assert.deepEqual(order, ['broadcast']);
+  }
+  app.store.config.meld.autoSession = true;
+  app.meld.setStatus({ state: 'reintentando' }); order.length = 0;
+  app.meld.setStatus({ state: 'conectado', streaming: true });
+  assert.deepEqual(order, ['broadcast', 'identity-check', 'youtube-begin', 'recording', 'later-raw']);
 });

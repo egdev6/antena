@@ -653,8 +653,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // #73: al empezar el directo se conecta sola la lectura del chat de YouTube, también si
   // antena arranca con el directo ya en marcha (onInit no emite «streaming»).
   const youtubeAuto = new YouTubeAutoConnect(youtube, { log });
-  meld.on('streaming', live => { if (live) youtubeAuto.begin(); else youtubeAuto.end().catch(() => {}); });
-  meld.on('status', st => { if (st.state === 'conectado' && st.streaming) youtubeAuto.begin(); });
+  program.on('streaming', live => { if (live) youtubeAuto.begin(); else youtubeAuto.end().catch(() => {}); });
+  program.on('status', st => { if (st.state === 'conectado' && st.streaming) youtubeAuto.begin(); });
   // al conectar Twitch se lee su chat (o el canal indicado)
   twitch.on('status', st => {
     const ch = store.config.chat.twitchChannel || st.user;
