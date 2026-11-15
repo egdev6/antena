@@ -1369,7 +1369,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         if (r.method !== req.method) continue;
         const m = r.re.exec(url.pathname);
         if (!m) continue;
-        const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream') : {};
+        const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream' || url.pathname === '/api/program/stream') : {};
         // rutas con parámetros: fn(params, body, url) · sin parámetros: fn(body, _, url)
         return json(res, 200, await (m.groups ? r.fn(m.groups, body, url, req) : r.fn(body, null, url, req)));
       }

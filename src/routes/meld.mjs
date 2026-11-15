@@ -40,7 +40,12 @@ function repeatedAction(raw = '') {
 
 const STREAM_PENDING_MS = 20000;
 
-export function registerMeldRoutes({ route, store, meld, scheduleLayerHide, httpError = httpErrorBase, now = () => performance.now(), recordingTimers }) {
+export function registerMeldRoutes({ route: register, store, meld, scheduleLayerHide, httpError = httpErrorBase, now = () => performance.now(), recordingTimers }) {
+  // Permanent aliases share the exact handler and all per-instance state.
+  const route = (method, pattern, handler) => {
+    register(method, pattern, handler);
+    register(method, pattern.replace('/api/meld', '/api/program'), handler);
+  };
   const recording = createMeldRecording({ meld, enabled: () => store.config.meld.recordOnStart === true, timers: recordingTimers });
   const needMeld = () => { if (!meld.connected) throw httpError(409, 'Meld no está conectado. Actívalo en Ajustes › Avanzado › «Allow remote connections» y pulsa Conectar.'); };
   // Por instancia, compartido entre todos los clientes HTTP; no se borra al desconectar.
