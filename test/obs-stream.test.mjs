@@ -129,8 +129,8 @@ test('confirmed OBS states drive session, live-only timer and YouTube; reconnect
   await f.emit('STARTING');
   assert.deepEqual(await f.session(), initial); assert.equal(await paused(), true); assert.deepEqual(f.trace, []);
   await f.emit('STARTED');
-  const live = await f.sessionWhere(s => s.id !== initial.id && s.meldAutoSession === true);
   await until(async () => (await yt()).state === 'escuchando', 'YouTube live');
+  const live = await f.sessionWhere(s => s.id !== initial.id && s.meldAutoSession === true && s.platforms?.youtube?.videoId === 'abcdefghijk');
   assert.equal(await paused(), false); assert.deepEqual(f.trace.slice(0, 4), ['start', 'stop', '/search', '/videos']);
   await f.emit('RECONNECTING');
   assert.deepEqual(await f.session(), live); assert.equal(await paused(), false);

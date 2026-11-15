@@ -134,6 +134,43 @@ test('pre-existing recording, externally started streams and disabled setting ar
   assert.deepEqual(disabled.calls(), ['StartStream', 'StopStream']);
 });
 
+test('stream RECONNECTING keeps ownership; an external stream stop never stops the recording', async t => {
+  const f = await fixture(t); await startOwned(f);
+  for (const state of ['RECONNECTING', 'RECONNECTED']) {
+    f.fake.emit('StreamStateChanged', { outputActive: state === 'RECONNECTED', outputState: `OBS_WEBSOCKET_OUTPUT_${state}` });
+    await f.recordEvent('STARTED', true);
+    assert.deepEqual([(await f.status()).streaming, (await f.status()).recording], [true, true]);
+  }
+  assert.deepEqual(await f.stream('stop'), stopped);
+  await until(() => f.calls().includes('StopRecord'), 'StopRecord');
+  await until(async () => !(await f.status()).recording, 'record stopped');
+  assert.deepEqual(f.calls(), ['StartStream', 'StartRecord', 'StopStream', 'StopRecord']);
+  const g = await fixture(t); await startOwned(g);
+  g.fake.emit('StreamStateChanged', { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPED' });
+  await g.recordEvent('STARTED', true);
+  await until(async () => !(await g.status()).streaming, 'external stop');
+  assert.equal((await g.status()).recording, true);
+  assert.deepEqual(g.calls(), ['StartStream', 'StartRecord']);
+});
+
+test('a recording started in OBS before stream confirmation is not taken over', async t => {
+  const f = await fixture(t, { deferStreamConfirmation: true });
+  assert.deepEqual(await f.stream('start'), started);
+  await f.recordEvent('STARTED', true);
+  assert.deepEqual([(await f.status()).streaming, (await f.status()).recording], [false, true]);
+  assert.deepEqual(f.calls(), ['StartStream']);
+  f.fake.confirmStream();
+  await until(async () => (await f.status()).streaming, 'live');
+  await f.recordEvent('STARTED', true);
+  assert.deepEqual(f.calls(), ['StartStream']);
+  assert.deepEqual(await f.stream('stop'), stopped);
+  f.fake.confirmStream();
+  await until(async () => !(await f.status()).streaming, 'stopped');
+  await f.recordEvent('STARTED', true);
+  assert.equal((await f.status()).recording, true);
+  assert.deepEqual(f.calls(), ['StartStream', 'StopStream']);
+});
+
 test('a manual recording command revokes ownership before the RPC, including a rejected command', async t => {
   for (const rejected of [false, true]) {
     const f = await fixture(t); await startOwned(f);
