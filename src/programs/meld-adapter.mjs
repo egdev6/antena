@@ -1,5 +1,8 @@
 import { Program } from './program.mjs';
 
+const MELD_CAPABILITIES = ['scene-layers', 'layer-effects', 'audio-tracks', 'streaming', 'recording',
+  'widget-events', 'confetti', 'clips', 'media-controls', 'raw-meld-rpc'];
+
 // Wrap the existing instance: do not translate values, arguments, or promises.
 export class MeldAdapter extends Program {
   #meld;
@@ -8,13 +11,21 @@ export class MeldAdapter extends Program {
   constructor(meld) {
     super();
     this.#meld = meld;
-    this.capabilities = new Set(['scene-layers', 'layer-effects', 'audio-tracks', 'streaming', 'recording',
-      'widget-events', 'confetti', 'clips', 'media-controls', 'raw-meld-rpc']);
+    this.capabilities = new Set(MELD_CAPABILITIES);
     for (const event of ['status', 'session', 'streaming', 'controlCommand']) {
       const forward = (...args) => this.emit(event, ...args);
       this.#forwarders.set(event, forward);
       meld.on(event, forward);
     }
+  }
+
+  // Preserve the facade and consumer listener order while changing its active target.
+  select(target) {
+    if (target === this.#meld) return;
+    for (const [event, forward] of this.#forwarders) this.#meld.off(event, forward);
+    this.#meld = target;
+    this.capabilities = target.capabilities ?? new Set(MELD_CAPABILITIES);
+    for (const [event, forward] of this.#forwarders) target.on(event, forward);
   }
 
   // Compatibility for tests and diagnostics; consumers use the program interface.

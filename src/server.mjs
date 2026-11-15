@@ -17,7 +17,7 @@ import { YouTube } from './youtube.mjs';
 import { RawEventLog } from './raw-events.mjs';
 import { YouTubeAutoConnect } from './youtube-auto.mjs';
 import { TwitchChat } from './chat.mjs';
-import { createProgram, noticeObsUnavailable, MELD_COMMANDS, MELD_STREAM_EVENTS } from './programs/index.mjs';
+import { createProgram, MELD_COMMANDS, MELD_STREAM_EVENTS } from './programs/index.mjs';
 import { Session, METRICS } from './session.mjs';
 import { Engine, burstCoalesce, SNAPSHOT_COALESCE_MS, SNAPSHOT_MAX_WAIT_MS } from './engine.mjs';
 import { createHeldRecovery } from './held-recovery.mjs';
@@ -172,9 +172,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Registro en bruto de todo lo que envían las plataformas (data/raw-events.jsonl).
   youtube.rawLog = twitch.rawLog = new RawEventLog(store.dir, { log });
   const chat = new TwitchChat(log);
-  const program = createProgram(store.config.program.kind, { log });
-  let selectedProgram = store.config.program.kind;
+  // A stable facade keeps all consumer subscriptions and their ordering on kind changes.
+  const program = createProgram('meld', { log });
   const meld = program.raw; // tests and diagnostics retain the underlying Meld instance
+  const obs = createProgram('obs', { getPassword: () => store.secrets.obs?.password });
+  let selectedProgram = store.config.program.kind;
+  if (selectedProgram === 'obs') program.select(obs);
   // #68: la retención de archivados sale de la configuración (0 = sin límite); se lee
   // en vivo para que un cambio en config.json valga sin reiniciar.
   const protectedArchives = new Set();
@@ -848,6 +851,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (keys[0] === 'obs' && keys[1] === 'passwordSet') throw httpError(400, 'obs.passwordSet: es de solo lectura');
     if (keys.length === 2 && keys[0] === 'obs' && keys[1] === 'password') {
       await setObsPassword(value);
+      afterConfig({ obs: true });
       return { path: p, passwordSet: !!store.secrets.obs?.password };
     }
     const hasPassword = keys.length === 1 && keys[0] === 'obs' && value && typeof value === 'object' && Object.hasOwn(value, 'password');
@@ -1164,10 +1168,15 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
 
   function afterConfig(patch) {
     if (store.config.program.kind !== selectedProgram) {
+      program.stop();
       selectedProgram = store.config.program.kind;
-      if (selectedProgram === 'obs') noticeObsUnavailable(log);
+      program.select(selectedProgram === 'obs' ? obs : meld);
+      program.start(selectedProgram === 'obs' ? store.config.obs.url : store.config.meld.url);
+    } else if (selectedProgram === 'obs' && patch.obs) {
+      program.stop(); program.start(store.config.obs.url);
+    } else if (selectedProgram === 'meld' && patch.meld) {
+      if (store.config.meld.enabled) { program.stop(); program.start(store.config.meld.url); } else program.stop();
     }
-    if (patch.meld) { if (store.config.meld.enabled) { program.stop(); program.start(store.config.meld.url); } else program.stop(); }
     if (patch.chat && store.config.chat.twitchChannel) chat.join(store.config.chat.twitchChannel);
     if (patch.paused !== undefined) engine.pushPause();
   }
@@ -1622,7 +1631,8 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
   app.followersStartup = setTimeout(() => { app.refreshFollowers('twitch'); app.refreshFollowers('youtube'); }, followersDelayMs);
   app.followersStartup.unref?.();
   if (app.store.config.chat.twitchChannel) app.chat.join(app.store.config.chat.twitchChannel);
-  if (app.store.config.meld.enabled) app.program.start(app.store.config.meld.url);
+  if (app.store.config.program.kind === 'obs') app.program.start(app.store.config.obs.url);
+  else if (app.store.config.meld.enabled) app.program.start(app.store.config.meld.url);
   const onUnhandledRejection = e => log('[error]', e?.message || e);
   process.on('unhandledRejection', onUnhandledRejection);
   // Parada acotada: el primer cierre corta admisión HTTP general y abre solo continuaciones ACK.

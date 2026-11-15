@@ -1,0 +1,154 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createProgram } from '../src/programs/index.mjs';
+import { fakeObs } from './helpers/fake-obs.mjs';
+import { programContract, waitFor } from './helpers/program-contract.mjs';
+
+const initialStatus = { state: 'desconectado', streaming: false, streamingKnown: false, recording: false,
+  recordingKnown: false, recordingWarning: null, version: null, error: null };
+const connectedStatus = { ...initialStatus, state: 'conectado', streamingKnown: true, recordingKnown: true, version: '30.2.3' };
+const methods = ['showScene', 'setLayer', 'toggleEffect', 'command', 'streamEvent', 'toggleMute', 'setGain', 'media', 'setProperty', 'call'];
+const actions = Object.fromEntries(methods.map(name => [name, [{ args: ['test'], calls: [], error: /todavía no disponible con OBS/i }]]));
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fakeServer(t, options = {}) {
+  const fake = fakeObs(options), sockets = new Set();
+  let upgrades = 0;
+  fake.server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+  fake.server.on('upgrade', () => upgrades++);
+  await new Promise(resolve => fake.server.listen(0, '127.0.0.1', resolve));
+  if (t) t.after(() => fake.close());
+  return { fake, url: `ws://127.0.0.1:${fake.server.address().port}`, upgrades: () => upgrades,
+    drop: () => { for (const socket of sockets) socket.destroy(); } };
+}
+function makeProgram(t, options = {}) {
+  const logs = [], program = createProgram('obs', { getPassword: () => '', retryDelays: [10, 20],
+    ...options, log: (...args) => logs.push(args.join(' ')) });
+  t.after(async () => { await program.quiesceClose(); program.dispose(); });
+  return { program, logs };
+}
+function until(program, predicate) {
+  if (predicate(program.status)) return Promise.resolve([program.status]);
+  return waitFor(program, 'status', predicate);
+}
+async function connected(program, url) {
+  const ready = until(program, s => s.state === 'conectado' && s.streamingKnown && s.recordingKnown);
+  program.start(url);
+  await ready;
+}
+
+async function makeDriver() {
+  const { fake, url } = await fakeServer();
+  return { url, capabilities: [], initialStatus, connectedStatus, actions,
+    ready: async () => {}, settle: async () => {}, calls: () => fake.requests,
+    report: ({ streaming, recording }) => {
+      fake.emit('StreamStateChanged', { outputActive: streaming });
+      fake.emit('RecordStateChanged', { outputActive: recording });
+    },
+    close: () => fake.close() };
+}
+programContract(() => createProgram('obs', { getPassword: () => '', retryDelays: [10, 20] }), makeDriver, { statusOnly: true });
+
+test('OBS connects without a password and queries status and version', async t => {
+  const { fake, url } = await fakeServer(t), { program } = makeProgram(t);
+  await connected(program, url);
+  assert.deepEqual(program.status, connectedStatus);
+  assert.deepEqual(fake.requests.map(r => r.requestType).sort(), ['GetRecordStatus', 'GetStreamStatus', 'GetVersion']);
+  assert.deepEqual(program.session(), { scenes: [], tracks: [], streaming: false, recording: false });
+});
+
+test('OBS uses the current password at each connection, including restart', async t => {
+  const secret = 'OBS_TEST_PASSWORD', { url } = await fakeServer(t, { password: secret });
+  let password = 'wrong', reads = 0;
+  const { program, logs } = makeProgram(t, { getPassword: () => { reads++; return password; } });
+  const error = until(program, s => s.state === 'error');
+  program.start(url); await error;
+  assert.equal(program.status.error, 'Contraseña de OBS incorrecta.');
+  password = secret;
+  await connected(program, url);
+  assert.ok(reads >= 2);
+  assert.equal(program.status.error, null);
+  assert.ok(!JSON.stringify(program.status).includes(secret));
+  assert.ok(!logs.join('\n').includes(secret));
+});
+
+test('4009 is a terminal authentication error, without a retry loop', async t => {
+  const server = await fakeServer(t, { password: 'correct' });
+  const { program } = makeProgram(t, { getPassword: () => 'wrong' });
+  const error = until(program, s => s.state === 'error');
+  program.start(server.url); await error;
+  assert.equal(program.status.error, 'Contraseña de OBS incorrecta.');
+  assert.equal(program.connected, false);
+  await delay(150);
+  assert.equal(server.upgrades(), 1);
+  assert.deepEqual(server.fake.requests, []);
+});
+
+test('4011 invalidation does not reconnect automatically but permits explicit restart', async t => {
+  const server = await fakeServer(t), { program } = makeProgram(t);
+  await connected(program, server.url);
+  const error = until(program, s => s.state === 'error');
+  server.fake.invalidateSession(); await error;
+  assert.equal(program.status.error, 'La sesión de OBS ha sido invalidada.');
+  assert.equal(program.status.streamingKnown, false);
+  assert.equal(program.status.recordingKnown, false);
+  await delay(150);
+  assert.equal(server.upgrades(), 1);
+  await connected(program, server.url);
+  assert.equal(server.upgrades(), 2);
+});
+
+test('unexpected disconnect reconnects and status events are forwarded in order', async t => {
+  const server = await fakeServer(t), { program } = makeProgram(t), streamingEvents = [];
+  program.on('streaming', value => streamingEvents.push(value));
+  await connected(program, server.url);
+  const retry = until(program, s => s.state === 'reintentando');
+  server.drop(); await retry;
+  assert.equal(program.status.streamingKnown, false);
+  assert.equal(program.status.recordingKnown, false);
+  await until(program, s => s.state === 'conectado' && s.streamingKnown && s.recordingKnown);
+  assert.equal(server.upgrades(), 2);
+  const live = until(program, s => s.streaming && s.recording);
+  server.fake.emit('StreamStateChanged', { outputActive: true });
+  server.fake.emit('RecordStateChanged', { outputActive: true });
+  await live;
+  assert.deepEqual(streamingEvents, [true]);
+  assert.deepEqual(program.session(), { scenes: [], tracks: [], streaming: true, recording: true });
+});
+
+test('failed status requests stay unknown and a later event establishes the state', async t => {
+  const { fake, url } = await fakeServer(t), { program } = makeProgram(t);
+  fake.failRequest('GetStreamStatus');
+  const ready = until(program, s => s.state === 'conectado');
+  program.start(url); await ready;
+  assert.equal(program.status.streamingKnown, false);
+  assert.equal(program.status.recordingKnown, true);
+  const live = until(program, s => s.streamingKnown && s.streaming);
+  fake.emit('StreamStateChanged', { outputActive: true }); await live;
+});
+
+test('an event received during initial queries is not overwritten by a stale response', async t => {
+  const { fake, url } = await fakeServer(t), { program } = makeProgram(t);
+  fake.delayRequest('GetStreamStatus', 120);
+  program.start(url);
+  const deadline = Date.now() + 3000;
+  while (!fake.requests.some(r => r.requestType === 'GetStreamStatus')) {
+    assert.ok(Date.now() < deadline, 'initial status request was not sent');
+    await delay(5);
+  }
+  fake.emit('StreamStateChanged', { outputActive: true });
+  await until(program, s => s.state === 'conectado');
+  assert.equal(program.status.streamingKnown, true);
+  assert.equal(program.status.streaming, true);
+});
+
+test('reconnect attempts are bounded with backoff and can be restarted explicitly', async t => {
+  const server = await fakeServer(t), { program } = makeProgram(t);
+  server.fake.server.on('upgrade', (_req, socket) => socket.destroy());
+  const error = until(program, s => s.state === 'error');
+  program.start(server.url); await error;
+  assert.equal(program.status.error, 'No se puede conectar con OBS.');
+  assert.equal(server.upgrades(), 3);
+  await delay(150);
+  assert.equal(server.upgrades(), 3);
+});
