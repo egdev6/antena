@@ -396,3 +396,9 @@ test('HTTP Meld routes invoke program actions including connect and disconnect',
   assert.deepEqual(await post('/api/meld/disconnect', {}), { status: 200, body: status });
   assert.deepEqual(calls, [['scene', 'requested'], 'stop', ['start', url], 'stop']);
 });
+
+test("only adapter forwarders remain on raw Meld status and controlCommand", async t => {
+  const { app } = await routeWiring(t);
+  assert.equal(app.meld.listenerCount("status"), 1);
+  assert.equal(app.meld.listenerCount("controlCommand"), 1);
+});
