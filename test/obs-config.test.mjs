@@ -8,6 +8,16 @@ import { fakeMeld } from './helpers/fake-meld.mjs';
 import { fakeObs } from './helpers/fake-obs.mjs';
 
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+async function bounded(promise, label) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}: timeout`)), 2000); })]); }
+  finally { clearTimeout(timer); }
+}
+function trackSockets(server) {
+  const sockets = new Set();
+  server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+  return () => { for (const socket of sockets) socket.destroy(); };
+}
 async function fixture(t, seed = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'ant-obs-config-'));
   const dataDir = path.join(root, 'data'), mediaDir = path.join(root, 'media');
@@ -25,8 +35,15 @@ async function fixture(t, seed = {}) {
   const close = async () => {
     if (!app) return;
     const current = app; app = null;
-    await current.drainAutoSession(); await current.session.flush(); await current.program.quiesceClose(); current.program.dispose();
-    await current.closeHttp();
+    try {
+      await bounded((async () => {
+        await current.drainAutoSession(); await current.session.flush(); await current.program.quiesceClose();
+      })(), 'app close');
+    } finally {
+      current.program.stop(); current.meld.stop(); current.program.dispose();
+      current.server.closeAllConnections(); current.closeUpgradedConnections();
+      await bounded(current.closeHttp(), 'HTTP close');
+    }
   };
   t.after(async () => { try { await close(); } finally { await rm(root, { recursive: true, force: true }); } });
   await open();
@@ -235,10 +252,22 @@ test('config/set still writes and clears obs.password but rejects passwordSet', 
 
 test('selecting OBS replaces the Meld connection and removes the temporary fallback notice', async t => {
   const fake = fakeMeld(), obs = fakeObs(); let upgrades = 0;
+  const destroyMeld = trackSockets(fake.server), destroyObs = trackSockets(obs.server);
   fake.server.on('upgrade', () => upgrades++);
+  // Register before the app fixture: even an abandoned switched-out socket cannot block its teardown.
+  t.after(async () => {
+    destroyMeld(); destroyObs();
+    const results = await Promise.allSettled([
+      bounded(obs.close(), 'OBS server close'),
+      bounded(new Promise((resolve, reject) => fake.server.close(error => {
+        if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') reject(error); else resolve();
+      })), 'Meld server close'),
+    ]);
+    const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
+    if (errors.length) throw new AggregateError(errors, 'fake server teardown failed');
+  });
   await listen(fake.server); await listen(obs.server);
   const f = await fixture(t);
-  t.after(async () => { await obs.close(); await new Promise(resolve => fake.server.close(resolve)); });
   assert.equal((await f.call('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${fake.server.address().port}` })).status, 200);
   const wait = async version => {
     const deadline = Date.now() + 5000;

@@ -1171,7 +1171,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       program.stop();
       selectedProgram = store.config.program.kind;
       program.select(selectedProgram === 'obs' ? obs : meld);
-      program.start(selectedProgram === 'obs' ? store.config.obs.url : store.config.meld.url);
+      if (selectedProgram === 'obs') program.start(store.config.obs.url);
+      else if (store.config.meld.enabled) program.start(store.config.meld.url);
     } else if (selectedProgram === 'obs' && patch.obs) {
       program.stop(); program.start(store.config.obs.url);
     } else if (selectedProgram === 'meld' && patch.meld) {
