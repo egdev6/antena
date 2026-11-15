@@ -305,11 +305,14 @@ test('YouTube auto reacts to program streaming after auto-session and before lat
   }
 });
 
-test('YouTube auto reacts to live program status after auto-session and before raw recording', async t => {
+test('YouTube auto reacts to live program status after auto-session and before forwarded recording', async t => {
   const { app, order } = await youtubeWiring(t);
   const send = app.bus.send.bind(app.bus);
   app.bus.send = (name, ...args) => { if (name === 'status') order.push('broadcast'); return send(name, ...args); };
-  observeStatusConsumers(app, label => { if (label === 'recording-status') order.push('recording'); });
+  // This existing assertion tracks recording on forwarded raw statuses; the
+  // program-only recording reaction is asserted separately below.
+  let forwarded = false;
+  observeStatusConsumers(app, label => { if (forwarded && label === 'recording-status') order.push('recording'); });
   app.meld.on('status', () => order.push('later-raw'));
   app.meld.status = { ...app.meld.status, state: 'conectado', streaming: true, streamingKnown: true };
   app.program.emit('status', app.program.status);
@@ -321,8 +324,81 @@ test('YouTube auto reacts to live program status after auto-session and before r
     order.length = 0; app.program.emit('status', status);
     assert.deepEqual(order, ['broadcast']);
   }
-  app.store.config.meld.autoSession = true;
+  app.store.config.meld.autoSession = true; forwarded = true;
   app.meld.setStatus({ state: 'reintentando' }); order.length = 0;
   app.meld.setStatus({ state: 'conectado', streaming: true });
   assert.deepEqual(order, ['broadcast', 'identity-check', 'youtube-begin', 'recording', 'later-raw']);
+});
+
+async function routeWiring(t) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-routes-'));
+  const app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await app.drainAutoSession(); await app.session.flush(); app.meld.stop(); app.program.dispose(); await app.closeHttp(); await rm(dir, { recursive: true, force: true }); });
+  app.store.config.meld.autoSession = false;
+  app.meld.status = { ...app.meld.status, state: 'conectado', streaming: false, streamingKnown: true, recording: false, recordingKnown: true };
+  const calls = [];
+  app.meld.command = command => { calls.push(command); app.meld.emit('controlCommand', command); return Promise.resolve(); };
+  const post = async (url, body) => {
+    const r = await fetch(`http://127.0.0.1:${app.server.address().port}${url}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: r.status, body: await r.json() };
+  };
+  const report = streaming => { app.meld.status = { ...app.meld.status, streaming }; app.program.emit('status', app.meld.status); };
+  return { app, calls, post, report };
+}
+
+test('recording and guard react to program status after YouTube', async t => {
+  const { app, calls, post, report } = await routeWiring(t), order = [];
+  app.store.config.meld.recordOnStart = true;
+  const begin = YouTubeAutoConnect.prototype.begin;
+  YouTubeAutoConnect.prototype.begin = () => order.push('youtube');
+  t.after(() => { YouTubeAutoConnect.prototype.begin = begin; });
+  observeStatusConsumers(app, label => { if (['recording-status', 'route-guard-status'].includes(label)) order.push(label); });
+  assert.deepEqual(await post('/api/meld/stream', { action: 'start' }), { status: 200, body: { requested: 'start', streaming: false } });
+  report(true);
+  assert.deepEqual(order, ['youtube', 'recording-status', 'route-guard-status']);
+  assert.deepEqual(calls, ['meld.startStreamingAction', 'meld.startRecordingAction']);
+});
+
+test('program controlCommand revokes an owned recording', async t => {
+  const { app, calls, post } = await routeWiring(t);
+  app.store.config.meld.recordOnStart = true;
+  assert.equal((await post('/api/meld/stream', { action: 'start' })).status, 200);
+  app.meld.setStatus({ streaming: true }); app.meld.setStatus({ recording: true });
+  await new Promise(resolve => setImmediate(resolve)); // recording acknowledgement plus confirmation
+  app.program.emit('controlCommand', 'meld.toggleRecordingAction');
+  assert.equal((await post('/api/meld/stream', { action: 'stop' })).status, 200);
+  app.meld.setStatus({ streaming: false });
+  assert.deepEqual(calls, ['meld.startStreamingAction', 'meld.startRecordingAction', 'meld.stopStreamingAction']);
+});
+
+test('program confirmations clear both pending route guards', async t => {
+  const { post, report } = await routeWiring(t);
+  const stream = action => post('/api/meld/stream', { action });
+  const pending = { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación de Meld.' } };
+  assert.deepEqual(await stream('start'), { status: 200, body: { requested: 'start', streaming: false } });
+  assert.deepEqual(await stream('start'), pending); report(true);
+  assert.deepEqual(await stream('stop'), { status: 200, body: { requested: 'stop', streaming: true } });
+  assert.deepEqual(await stream('stop'), pending); report(false);
+  assert.deepEqual(await stream('start'), { status: 200, body: { requested: 'start', streaming: false } });
+  report(true);
+  assert.deepEqual(await stream('stop'), { status: 200, body: { requested: 'stop', streaming: true } });
+});
+
+test('HTTP Meld routes invoke program actions including connect and disconnect', async t => {
+  const { app, post } = await routeWiring(t), calls = [];
+  app.program.showScene = async scene => { calls.push(['scene', scene]); return { name: 'program scene' }; };
+  assert.deepEqual(await post('/api/meld/scene', { scene: 'requested' }), { status: 200, body: { scene: 'program scene' } });
+  app.program.stop = () => calls.push('stop'); app.program.start = url => calls.push(['start', url]);
+  const status = app.meld.status, url = 'ws://127.0.0.1:1';
+  assert.strictEqual(app.program.status, status);
+  assert.deepEqual(await post('/api/meld/connect', { url }), { status: 200, body: status });
+  assert.deepEqual(await post('/api/meld/disconnect', {}), { status: 200, body: status });
+  assert.deepEqual(calls, [['scene', 'requested'], 'stop', ['start', url], 'stop']);
+});
+
+test("only adapter forwarders remain on raw Meld status and controlCommand", async t => {
+  const { app } = await routeWiring(t);
+  assert.equal(app.meld.listenerCount("status"), 1);
+  assert.equal(app.meld.listenerCount("controlCommand"), 1);
 });
