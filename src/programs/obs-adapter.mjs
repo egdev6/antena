@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Program } from './program.mjs';
 
-const OUTPUT_EVENTS = 1 << 6;
+const OBS_EVENTS = (1 << 2) | (1 << 3) | (1 << 6) | (1 << 7);
 const hash = value => createHash('sha256').update(value).digest('base64');
 const unavailable = () => { throw new Error('Acción todavía no disponible con OBS.'); };
 
@@ -21,11 +21,13 @@ export class ObsAdapter extends Program {
     this.retryTimer = null;
     this.closePromise = null;
     this.attempts = 0;
+    this.scenes = [];
+    this.capabilities.add('scene-layers');
   }
 
   get status() { return this._status; }
   setStatus(patch) { this._status = { ...this.status, ...patch }; this.emit('status', this.status); }
-  session() { return { scenes: [], tracks: [], streaming: this.status.streaming, recording: this.status.recording }; }
+  session() { return { scenes: structuredClone(this.scenes), tracks: [], streaming: this.status.streaming, recording: this.status.recording }; }
 
   start(url) {
     if (this.closePromise) return;
@@ -78,28 +80,64 @@ export class ObsAdapter extends Program {
     this.sockets.add(ws);
     this.setStatus({ state: 'conectando', streamingKnown: false, recordingKnown: false, error: null });
     const pending = new Map(), revisions = { streaming: 0, recording: 0 };
-    let id = 0, initializing = false;
+    let id = 0, sceneRevision = 0, refreshing = null;
+    this.scenes = [];
     let handshake = setTimeout(() => { try { ws.close(); } catch {} }, this.requestTimeout);
     handshake.unref?.();
+    const current = () => !this.stopped && this.ws === ws;
     ws.clearPending = () => {
       clearTimeout(handshake); handshake = null;
-      for (const entry of pending.values()) clearTimeout(entry.timer);
+      for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error('OBS se ha desconectado.')); }
       pending.clear();
     };
-    const current = () => !this.stopped && this.ws === ws;
-    const finish = () => {
-      if (!current() || !initializing || pending.size) return;
-      initializing = false;
-      this.attempts = 0;
-      this.setStatus({ state: 'conectado', error: null });
-      this.emit('session', this.session());
-    };
-    const request = (name, field) => {
-      const requestId = String(++id), revision = field ? revisions[field] : 0;
-      const timer = setTimeout(() => { pending.delete(requestId); finish(); }, this.requestTimeout);
+    const request = (name, data) => new Promise((resolve, reject) => {
+      if (!current() || ws.readyState !== 1) return reject(new Error('OBS se ha desconectado.'));
+      const requestId = String(++id);
+      const timer = setTimeout(() => { pending.delete(requestId); reject(new Error('OBS no responde.')); }, this.requestTimeout);
       timer.unref?.();
-      pending.set(requestId, { name, field, revision, timer });
-      ws.send(JSON.stringify({ op: 6, d: { requestType: name, requestId } }));
+      pending.set(requestId, { resolve, reject, timer, name });
+      try { ws.send(JSON.stringify({ op: 6, d: { requestType: name, requestId, ...(data && { requestData: data }) } })); }
+      catch { clearTimeout(timer); pending.delete(requestId); reject(new Error('OBS se ha desconectado.')); }
+    });
+    this.requestObs = request;
+    const refreshScenes = () => {
+      sceneRevision++;
+      if (refreshing) return refreshing;
+      refreshing = (async () => {
+        while (current()) {
+          const revision = sceneRevision, list = await request('GetSceneList');
+          const scenes = await Promise.all(list.scenes.map(async scene => {
+            const id = scene.sceneUuid ?? scene.sceneName;
+            const items = await request('GetSceneItemList', { sceneName: scene.sceneName });
+            return { id, name: scene.sceneName, current: scene.sceneUuid && list.currentProgramSceneUuid ? scene.sceneUuid === list.currentProgramSceneUuid : scene.sceneName === list.currentProgramSceneName,
+              layers: items.sceneItems.map(item => ({ id: `${id}:${item.sceneItemId}`, name: item.sourceName, visible: item.sceneItemEnabled })) };
+          }));
+          if (!current()) return;
+          if (revision !== sceneRevision) continue;
+          this.scenes = scenes;
+          if (this.connected) this.emit('session', this.session());
+          return;
+        }
+      })().finally(() => { refreshing = null; });
+      return refreshing;
+    };
+    const sceneEvent = d => {
+      const data = d.eventData ?? {};
+      if (d.eventType === 'CurrentProgramSceneChanged') {
+        sceneRevision++;
+        const scene = this.scenes.find(s => data.sceneUuid ? s.id === data.sceneUuid : s.name === data.sceneName);
+        if (!scene) { if (!refreshing) void refreshScenes().catch(() => {}); return; }
+        this.scenes = this.scenes.map(s => ({ ...s, current: s === scene }));
+      } else if (d.eventType === 'SceneItemEnableStateChanged') {
+        sceneRevision++;
+        const scene = this.scenes.find(s => data.sceneUuid ? s.id === data.sceneUuid : s.name === data.sceneName);
+        const layer = scene?.layers.find(l => l.id === `${scene.id}:${data.sceneItemId}`);
+        if (!layer || typeof data.sceneItemEnabled !== 'boolean') { if (!refreshing) void refreshScenes().catch(() => {}); return; }
+        layer.visible = data.sceneItemEnabled;
+      } else {
+        void refreshScenes().catch(() => {}); return;
+      }
+      if (this.connected) this.emit('session', this.session());
     };
     ws.onmessage = event => {
       if (!current()) return;
@@ -108,7 +146,7 @@ export class ObsAdapter extends Program {
       const d = message?.d;
       if (!d || typeof d !== 'object') return;
       if (message.op === 0) {
-        const identify = { rpcVersion: 1, eventSubscriptions: OUTPUT_EVENTS };
+        const identify = { rpcVersion: 1, eventSubscriptions: OBS_EVENTS };
         if (d.authentication) {
           try {
             const password = String(this.getPassword() ?? '');
@@ -118,27 +156,36 @@ export class ObsAdapter extends Program {
         ws.send(JSON.stringify({ op: 1, d: identify }));
       } else if (message.op === 2) {
         clearTimeout(handshake); handshake = null;
-        initializing = true;
-        request('GetVersion'); request('GetStreamStatus', 'streaming'); request('GetRecordStatus', 'recording');
+        const initial = { ...revisions };
+        void Promise.allSettled([request('GetVersion'), request('GetStreamStatus'), request('GetRecordStatus'), refreshScenes()]).then(results => {
+          if (!current()) return;
+          const version = results[0].value?.obsVersion;
+          if (typeof version === 'string') this._status = { ...this.status, version };
+          for (const [index, field] of [[1, 'streaming'], [2, 'recording']]) {
+            const value = results[index].value?.outputActive;
+            if (revisions[field] === initial[field] && typeof value === 'boolean')
+              this._status = { ...this.status, [field]: value, [field + 'Known']: true };
+          }
+          this.attempts = 0;
+          this.setStatus({ state: 'conectado', error: null });
+          this.emit('session', this.session());
+        });
       } else if (message.op === 7) {
         const entry = pending.get(d.requestId);
         if (!entry) return;
         clearTimeout(entry.timer); pending.delete(d.requestId);
-        if (d.requestStatus?.result === true) {
-          if (entry.name === 'GetVersion' && typeof d.responseData?.obsVersion === 'string')
-            this._status = { ...this.status, version: d.responseData.obsVersion };
-          else if (entry.field && revisions[entry.field] === entry.revision && typeof d.responseData?.outputActive === 'boolean')
-            this._status = { ...this.status, [entry.field]: d.responseData.outputActive, [entry.field + 'Known']: true };
-        }
-        finish();
+        if (d.requestStatus?.result === true) entry.resolve(d.responseData ?? {});
+        else entry.reject(new Error(`OBS rechazó la petición «${entry.name}».`));
       } else if (message.op === 5) {
         const field = d.eventType === 'StreamStateChanged' ? 'streaming' : d.eventType === 'RecordStateChanged' ? 'recording' : null;
-        const value = d.eventData?.outputActive;
-        if (!field || typeof value !== 'boolean') return;
-        revisions[field]++;
-        if (field === 'streaming' && this.connected && value !== this.status.streaming) this.emit('streaming', value);
-        this.setStatus({ [field]: value, [field + 'Known']: true });
-        if (this.connected) this.emit('session', this.session());
+        if (field) {
+          const value = d.eventData?.outputActive;
+          if (typeof value !== 'boolean') return;
+          revisions[field]++;
+          if (field === 'streaming' && this.connected && value !== this.status.streaming) this.emit('streaming', value);
+          this.setStatus({ [field]: value, [field + 'Known']: true });
+          if (this.connected) this.emit('session', this.session());
+        } else if (/^(CurrentProgramSceneChanged|SceneCreated|SceneRemoved|SceneNameChanged|SceneListChanged|SceneItemCreated|SceneItemRemoved|SceneItemListReindexed|SceneItemEnableStateChanged|InputNameChanged)$/.test(d.eventType)) sceneEvent(d);
       }
     };
     ws.onerror = () => {}; // No raw transport errors, URLs, close reasons or credentials in logs/status.
@@ -166,8 +213,34 @@ export class ObsAdapter extends Program {
     this.retryTimer.unref?.();
   }
 
-  showScene() { return unavailable(); }
-  setLayer() { return unavailable(); }
+  findScene(ref) {
+    const scenes = this.session().scenes, name = String(ref ?? '').toLowerCase();
+    return scenes.find(s => s.id === ref) || scenes.find(s => s.name.toLowerCase() === name) || null;
+  }
+  findLayer(sceneRef, layerRef) {
+    const scenes = sceneRef ? [this.findScene(sceneRef)].filter(Boolean) : this.session().scenes;
+    const name = String(layerRef ?? '').toLowerCase();
+    for (const scene of scenes) {
+      const layer = scene.layers.find(l => l.id === layerRef) || scene.layers.find(l => l.name.toLowerCase() === name);
+      if (layer) return { scene, layer };
+    }
+    return null;
+  }
+  async showScene(ref) {
+    const scene = this.findScene(ref);
+    if (!scene) throw new Error(`No encuentro la escena «${ref}» en Meld`);
+    await this.requestObs('SetCurrentProgramScene', { sceneName: scene.name });
+    return scene;
+  }
+  async setLayer(sceneRef, layerRef, visible) {
+    const found = this.findLayer(sceneRef, layerRef);
+    if (!found) throw new Error(`No encuentro la capa «${layerRef}»`);
+    if (visible === undefined || found.layer.visible !== visible) {
+      const sceneItemId = Number(found.layer.id.slice(found.layer.id.lastIndexOf(':') + 1));
+      await this.requestObs('SetSceneItemEnabled', { sceneName: found.scene.name, sceneItemId, sceneItemEnabled: visible ?? !found.layer.visible });
+    }
+    return found;
+  }
   toggleEffect() { return unavailable(); }
   command() { return unavailable(); }
   streamEvent() { return unavailable(); }

@@ -7,8 +7,24 @@ import { programContract, waitFor } from './helpers/program-contract.mjs';
 const initialStatus = { state: 'desconectado', streaming: false, streamingKnown: false, recording: false,
   recordingKnown: false, recordingWarning: null, version: null, error: null };
 const connectedStatus = { ...initialStatus, state: 'conectado', streamingKnown: true, recordingKnown: true, version: '30.2.3' };
-const methods = ['showScene', 'setLayer', 'toggleEffect', 'command', 'streamEvent', 'toggleMute', 'setGain', 'media', 'setProperty', 'call'];
+const methods = ['toggleEffect', 'command', 'streamEvent', 'toggleMute', 'setGain', 'media', 'setProperty', 'call'];
 const actions = Object.fromEntries(methods.map(name => [name, [{ args: ['test'], calls: [], error: /todavía no disponible con OBS/i }]]));
+const initialSession = { scenes: [
+  { id: 'scene-a', name: 'Camera', current: true, layers: [{ id: 'scene-a:7', name: 'Logo', visible: false }] },
+  { id: 'scene-b', name: 'Slides', current: false, layers: [] },
+], tracks: [], streaming: false, recording: false };
+const changedSession = structuredClone(initialSession);
+changedSession.scenes[0].current = false; changedSession.scenes[1].current = true;
+const layerSession = structuredClone(changedSession);
+layerSession.scenes[0].layers[0].visible = true;
+actions.showScene = [
+  { args: ['slides'], calls: [{ requestType: 'SetCurrentProgramScene', requestData: { sceneName: 'Slides' } }], session: changedSession },
+  { args: ['missing'], calls: [], error: { message: 'No encuentro la escena «missing» en Meld' } },
+];
+actions.setLayer = [
+  { args: ['Camera', 'Logo', true], calls: [{ requestType: 'SetSceneItemEnabled', requestData: { sceneName: 'Camera', sceneItemId: 7, sceneItemEnabled: true } }], session: layerSession },
+  { args: ['Camera', 'Logo', true], calls: [], session: layerSession },
+];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fakeServer(t, options = {}) {
@@ -38,8 +54,12 @@ async function connected(program, url) {
 }
 
 async function makeDriver() {
-  const { fake, url } = await fakeServer();
-  return { url, capabilities: [], initialStatus, connectedStatus, actions,
+  const { fake, url } = await fakeServer(null, { scenes: [
+    { sceneName: 'Camera', sceneUuid: 'scene-a', sceneItems: [{ sourceName: 'Logo', sceneItemId: 7, sceneItemEnabled: false }] },
+    { sceneName: 'Slides', sceneUuid: 'scene-b' },
+  ] });
+  return { url, capabilities: ['scene-layers'], initialStatus, connectedStatus, initialSession, changedSession, actions,
+    changeSession: () => fake.emit('CurrentProgramSceneChanged', { sceneName: 'Slides', sceneUuid: 'scene-b' }),
     ready: async () => {}, settle: async () => {}, calls: () => fake.requests,
     report: ({ streaming, recording }) => {
       fake.emit('StreamStateChanged', { outputActive: streaming });
@@ -47,14 +67,15 @@ async function makeDriver() {
     },
     close: () => fake.close() };
 }
-programContract(() => createProgram('obs', { getPassword: () => '', retryDelays: [10, 20] }), makeDriver, { statusOnly: true });
+programContract(() => createProgram('obs', { getPassword: () => '', retryDelays: [10, 20] }), makeDriver, { statusOnly: true, sessions: true });
 
 test('OBS connects without a password and queries status and version', async t => {
   const { fake, url } = await fakeServer(t), { program } = makeProgram(t);
   await connected(program, url);
   assert.deepEqual(program.status, connectedStatus);
-  assert.deepEqual(fake.requests.map(r => r.requestType).sort(), ['GetRecordStatus', 'GetStreamStatus', 'GetVersion']);
-  assert.deepEqual(program.session(), { scenes: [], tracks: [], streaming: false, recording: false });
+  assert.deepEqual(fake.requests.map(r => r.requestType).sort(), ['GetRecordStatus', 'GetSceneItemList', 'GetSceneItemList', 'GetSceneList', 'GetStreamStatus', 'GetVersion']);
+  assert.deepEqual(program.session().scenes.map(s => [s.name, s.current, s.layers]), [['Camera', true, []], ['Slides', false, []]]);
+  assert.deepEqual(program.session().tracks, []);
 });
 
 test('OBS uses the current password at each connection, including restart', async t => {
@@ -113,7 +134,8 @@ test('unexpected disconnect reconnects and status events are forwarded in order'
   server.fake.emit('RecordStateChanged', { outputActive: true });
   await live;
   assert.deepEqual(streamingEvents, [true]);
-  assert.deepEqual(program.session(), { scenes: [], tracks: [], streaming: true, recording: true });
+  assert.deepEqual([program.session().streaming, program.session().recording], [true, true]);
+  assert.deepEqual(program.session().scenes.map(s => s.name), ['Camera', 'Slides']);
 });
 
 test('failed status requests stay unknown and a later event establishes the state', async t => {

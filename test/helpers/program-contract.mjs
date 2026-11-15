@@ -25,7 +25,7 @@ export function waitFor(emitter, event, predicate = () => true) {
   });
 }
 
-export function programContract(makeAdapter, makeDriver, { statusOnly = false } = {}) {
+export function programContract(makeAdapter, makeDriver, { statusOnly = false, sessions = !statusOnly } = {}) {
   async function setup(t) {
     const driver = await makeDriver(), program = makeAdapter(driver.program);
     t.after(async () => { if (statusOnly) await program.quiesceClose(); program.dispose(); await driver.close(); });
@@ -74,7 +74,7 @@ export function programContract(makeAdapter, makeDriver, { statusOnly = false } 
     assert.equal(program.status.recordingWarning, null);
   });
 
-  if (!statusOnly) test('program contract: ordered scenes, layers, effects and tracks follow the session', async t => {
+  if (sessions) test('program contract: ordered scenes, layers, effects and tracks follow the session', async t => {
     const { driver, program } = await setup(t);
     await connect(program, driver);
     assert.deepEqual(program.session(), driver.initialSession);

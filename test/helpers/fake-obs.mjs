@@ -32,7 +32,7 @@ events(1 << 18, 'InputShowStateChanged');
 events(1 << 19, 'SceneItemTransformChanged');
 
 const REQUEST_TYPES = [
-  'GetVersion', 'GetSceneList', 'GetCurrentProgramScene', 'SetCurrentProgramScene', 'GetSceneItemList',
+  'GetVersion', 'GetSceneList', 'CreateScene', 'RemoveScene', 'GetCurrentProgramScene', 'SetCurrentProgramScene', 'GetSceneItemList',
   'GetSceneItemId', 'SetSceneItemEnabled', 'GetSourceFilterList', 'SetSourceFilterEnabled', 'GetInputList',
   'GetInputMute', 'SetInputMute', 'ToggleInputMute', 'GetInputVolume', 'SetInputVolume',
   'GetInputAudioMonitorType', 'SetInputAudioMonitorType', 'TriggerMediaInputAction', 'GetStreamStatus',
@@ -179,6 +179,7 @@ export function fakeObs(options = {}) {
   const sceneIdentity = scene => ({ sceneName: scene.sceneName, sceneUuid: scene.sceneUuid });
   const inputIdentity = input => ({ inputName: input.inputName, inputUuid: input.inputUuid });
   const currentScene = () => ({ currentProgramSceneName: program?.sceneName ?? null, currentProgramSceneUuid: program?.sceneUuid ?? null });
+  const sceneList = () => scenes.map(({ sceneIndex, sceneName, sceneUuid }) => ({ sceneIndex, sceneName, sceneUuid }));
   const volume = input => ({ inputVolumeMul: input.inputVolumeMul, inputVolumeDb: inputDb(input.inputVolumeMul) });
   const outputTime = () => ({ outputTimecode: '00:00:00.000', outputDuration: 0 });
   function setOutput(kind, active) {
@@ -194,8 +195,24 @@ export function fakeObs(options = {}) {
   const handlers = {
     GetVersion: () => ({ obsVersion: '30.2.3', obsWebSocketVersion: WS_VERSION, rpcVersion: RPC_VERSION,
       availableRequests: [...REQUEST_TYPES], supportedImageFormats: ['png', 'jpg'], platform: 'fake', platformDescription: 'Fake OBS' }),
-    GetSceneList: () => ({ ...currentScene(), currentPreviewSceneName: null, currentPreviewSceneUuid: null,
-      scenes: scenes.map(({ sceneIndex, sceneName, sceneUuid }) => ({ sceneIndex, sceneName, sceneUuid })) }),
+    GetSceneList: () => ({ ...currentScene(), currentPreviewSceneName: null, currentPreviewSceneUuid: null, scenes: sceneList() }),
+    CreateScene(data) {
+      const sceneName = required(data.sceneName, 'sceneName');
+      if (scenes.some(scene => scene.sceneName === sceneName)) throw failure(601, 'sceneName already exists');
+      const scene = { sceneName, sceneUuid: randomUUID(), sceneIndex: scenes.length, filters: [], sceneItems: [] };
+      scenes.push(scene);
+      emit('SceneCreated', { ...sceneIdentity(scene), isGroup: false });
+      emit('SceneListChanged', { scenes: sceneList() });
+      return { sceneUuid: scene.sceneUuid };
+    },
+    RemoveScene(data) {
+      const scene = sceneFor(data);
+      if (scene === program) throw failure(501, 'Cannot remove current scene');
+      scenes.splice(scenes.indexOf(scene), 1);
+      scenes.forEach((entry, index) => { entry.sceneIndex = index; });
+      emit('SceneRemoved', { ...sceneIdentity(scene), isGroup: false });
+      emit('SceneListChanged', { scenes: sceneList() });
+    },
     GetCurrentProgramScene: currentScene,
     SetCurrentProgramScene(data) {
       const next = sceneFor(data);
