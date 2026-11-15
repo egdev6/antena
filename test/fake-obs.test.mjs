@@ -458,11 +458,13 @@ test('suscripciones independientes, Reidentify y medidores de alto volumen', { t
   assert.equal(meters.events('CurrentProgramSceneChanged').length, 0);
   assert.deepEqual(eventData(meters, 'InputVolumeMeters', METERS), [{ inputs: levels }, { inputs: levels }]);
   scenes.reidentify(); // Una Reidentify vacía conserva las suscripciones actuales.
+  assert.deepEqual((await scenes.identified()).d, { negotiatedRpcVersion: 1 });
   await barrier(scenes);
   fake.emit('CurrentProgramSceneChanged', { sceneName: 'Camera', sceneUuid: 'scene-camera' });
   await barrier(scenes);
   assert.equal(scenes.events('CurrentProgramSceneChanged').length, 2);
   scenes.reidentify(METERS);
+  assert.deepEqual((await scenes.identified()).d, { negotiatedRpcVersion: 1 });
   await barrier(scenes);
   fake.emit('CurrentProgramSceneChanged', { sceneName: 'Camera', sceneUuid: 'scene-camera' });
   fake.setVolumeMeters(levels);

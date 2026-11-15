@@ -148,7 +148,7 @@ export function fakeObs(options = {}) {
   let program = options.currentProgramSceneName === undefined
     ? scenes[0] ?? null : lookup(scenes, options.currentProgramSceneName, undefined, 'sceneName', 'sceneUuid');
   let streaming = options.streaming === true, recording = false, pendingStream = null;
-  const requests = [], clients = new Set(), sockets = new Set();
+  const requests = [], identifications = [], clients = new Set(), sockets = new Set();
   const failures = new Map(), delays = new Map();
   let closePromise;
   const server = http.createServer((_req, res) => { res.writeHead(426); res.end(); });
@@ -418,6 +418,7 @@ export function fakeObs(options = {}) {
           client.close(4005, 'Invalid event subscriptions'); return;
         }
         client.subscriptions = data.eventSubscriptions ?? DEFAULT_SUBSCRIPTIONS;
+        identifications.push({ op: 1, eventSubscriptions: client.subscriptions });
         client.identified = true;
         client.send({ op: 2, d: { negotiatedRpcVersion: RPC_VERSION } });
       } else if (!client.identified) client.close(4007, 'Not identified');
@@ -425,6 +426,10 @@ export function fakeObs(options = {}) {
         if (data.eventSubscriptions !== undefined) {
           if (!Number.isInteger(data.eventSubscriptions) || data.eventSubscriptions < 0) client.close(4005, 'Invalid event subscriptions');
           else client.subscriptions = data.eventSubscriptions;
+        }
+        if (!client.closing) {
+          identifications.push({ op: 3, eventSubscriptions: client.subscriptions });
+          client.send({ op: 2, d: { negotiatedRpcVersion: RPC_VERSION } });
         }
       } else if (message.op === 6) handleRequest(client, data);
       else client.close(4006, 'Unknown opcode');
@@ -471,7 +476,7 @@ export function fakeObs(options = {}) {
   });
 
   return {
-    server, requests, emit,
+    server, requests, identifications, emit,
     addInput(options) {
       const input = makeInput(options);
       if (inputs.some(i => i.inputName === input.inputName || i.inputUuid === input.inputUuid)) throw new Error('Duplicate input');

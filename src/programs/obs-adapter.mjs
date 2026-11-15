@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Program } from './program.mjs';
 
 const OBS_EVENTS = (1 << 2) | (1 << 3) | (1 << 5) | (1 << 6) | (1 << 7);
+const OBS_METERS = 1 << 16;
 const hash = value => createHash('sha256').update(value).digest('base64');
 const unavailable = () => { throw new Error('Acción todavía no disponible con OBS.'); };
 const STREAM_COMMANDS = { 'meld.startStreamingAction': 'StartStream', 'meld.stopStreamingAction': 'StopStream',
@@ -30,6 +31,8 @@ export class ObsAdapter extends Program {
     this.attempts = 0;
     this.scenes = [];
     this.tracks = [];
+    this.metersWanted = false;
+    this.syncMeters = null;
     for (const capability of ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks', 'streaming']) this.capabilities.add(capability);
   }
 
@@ -42,6 +45,12 @@ export class ObsAdapter extends Program {
     this._status = status; this.emit('status', this.status);
   }
   session() { return { scenes: structuredClone(this.scenes), tracks: structuredClone(this.tracks), streaming: this.status.streaming, recording: this.status.recording }; }
+
+  // The high-volume bit is never part of Identify; it is added only for viewers.
+  watchMeters(wanted) {
+    this.metersWanted = !!wanted;
+    this.syncMeters?.();
+  }
 
   start(url) {
     if (this.closePromise) return;
@@ -57,6 +66,7 @@ export class ObsAdapter extends Program {
     this.retryTimer = null;
     const ws = this.ws;
     this.ws = null;
+    this.syncMeters = null;
     if (ws) {
       ws.clearPending?.();
       try { ws.close(); } catch { /* already closed */ }
@@ -100,6 +110,14 @@ export class ObsAdapter extends Program {
     let handshake = setTimeout(() => { try { ws.close(); } catch {} }, this.requestTimeout);
     handshake.unref?.();
     const current = () => !this.stopped && this.ws === ws;
+    let identified = false, metersSubscribed = false;
+    this.syncMeters = () => {
+      if (!identified || !current() || metersSubscribed === this.metersWanted) return;
+      try {
+        ws.send(JSON.stringify({ op: 3, d: { eventSubscriptions: OBS_EVENTS | (this.metersWanted ? OBS_METERS : 0) } }));
+        metersSubscribed = this.metersWanted;
+      } catch { /* socket close/retry owns recovery */ }
+    };
     ws.clearPending = () => {
       clearTimeout(handshake); handshake = null;
       for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error('OBS se ha desconectado.')); }
@@ -239,6 +257,10 @@ export class ObsAdapter extends Program {
         }
         ws.send(JSON.stringify({ op: 1, d: identify }));
       } else if (message.op === 2) {
+        // OBS also answers every Reidentify with Identified: do not repeat initialization.
+        if (identified) return;
+        identified = true;
+        this.syncMeters?.();
         clearTimeout(handshake); handshake = null;
         const initial = { ...revisions };
         void Promise.allSettled([request('GetVersion'), request('GetStreamStatus'), request('GetRecordStatus'), refreshScenes(), refreshTracks()]).then(results => {
@@ -270,6 +292,26 @@ export class ObsAdapter extends Program {
           entry.reject(error);
         }
       } else if (message.op === 5) {
+        if (d.eventType === 'InputVolumeMeters') {
+          if (!this.metersWanted || !Array.isArray(d.eventData?.inputs)) return;
+          const levels = [];
+          for (const input of d.eventData.inputs) {
+            const track = this.tracks.find(t => input?.inputUuid ? t.id === input.inputUuid : t.name === input?.inputName);
+            if (!track || !Array.isArray(input.inputLevelsMul)) continue;
+            let peak = 0, clipping = false;
+            for (const channel of input.inputLevelsMul) {
+              if (!Array.isArray(channel)) continue;
+              if (Number.isFinite(channel[1])) peak = Math.max(peak, channel[1]);
+              if (Number.isFinite(channel[2]) && channel[2] >= 1) clipping = true;
+            }
+            // OBS supplies linear amplitude: 0.001 = -60 dB => 0, 0.01 => 1/3,
+            // 0.1 => 2/3, 1 = 0 dB => 1. The third value is the pre-fader input peak.
+            const level = peak > 0 ? Math.max(0, Math.min(1, (20 * Math.log10(peak) + 60) / 60)) : 0;
+            levels.push({ id: track.id, level, clipping });
+          }
+          this.emit('meters', levels);
+          return;
+        }
         const field = d.eventType === 'StreamStateChanged' ? 'streaming' : d.eventType === 'RecordStateChanged' ? 'recording' : null;
         if (field) {
           let value = d.eventData?.outputActive;
@@ -298,6 +340,7 @@ export class ObsAdapter extends Program {
       ws.clearPending();
       if (!current()) return;
       this.ws = null;
+      this.syncMeters = null;
       if (event.code === 4009 || event.code === 4011) {
         this.setStatus({ state: 'error', streamingKnown: false, recordingKnown: false,
           error: event.code === 4009 ? 'Contraseña de OBS incorrecta.' : 'La sesión de OBS ha sido invalidada.' });
