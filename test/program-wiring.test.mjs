@@ -402,3 +402,19 @@ test("only adapter forwarders remain on raw Meld status and controlCommand", asy
   assert.equal(app.meld.listenerCount("status"), 1);
   assert.equal(app.meld.listenerCount("controlCommand"), 1);
 });
+
+test('an alert action reaches the program rather than bypassing it', async t => {
+  const { app, calls: rawCalls, post } = await routeWiring(t), programCalls = [];
+  app.program.command = command => { programCalls.push(command); return Promise.resolve(); };
+  const response = await post('/api/alert/custom', { title: 'Wiring', actions: [{ kind: 'command', command: 'meld.recordClip' }] });
+  assert.equal(response.status, 200);
+  assert.ok(response.body.alert?.id);
+  await app.engine.drainActions();
+  assert.deepEqual(programCalls, ['meld.recordClip']);
+  assert.deepEqual(rawCalls, []);
+});
+
+test('the engine retains the program as its action provider', async t => {
+  const { app } = await routeWiring(t);
+  assert.strictEqual(app.engine.meld, app.program);
+});
