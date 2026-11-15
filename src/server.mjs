@@ -1068,7 +1068,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   registerMetricsRoutes({ route, session });
 
   // Meld
-  registerMeldRoutes({ route, store, meld, scheduleLayerHide, recordingTimers });
+  registerMeldRoutes({ route, store, meld: program, scheduleLayerHide, recordingTimers });
   route('POST', '/api/actions/run', async ({ actions = [], vars = {} }) => { checkActions(actions); await engine.runActions(actions, vars); return { ok: true }; });
 
   // conexiones
