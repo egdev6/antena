@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CUSTOM_OVERLAY_ACTION_KINDS } from './custom-overlays.mjs';
+import { MELD_COMMANDS, MELD_STREAM_EVENTS } from './programs/index.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // La versión anunciada sale de package.json (única fuente de verdad, sin duplicar el número).
@@ -335,22 +336,30 @@ tool('borrar_atajo', 'Borra un atajo personalizado.', { id: S.str('Id o nombre')
 tool('lanzar_atajo', 'Ejecuta un atajo personalizado ahora.', { id: S.str('Id o nombre') }, ({ id }) => post('/api/shortcuts/' + enc(id) + '/run'), ['id']);
 tool('fuentes_meld', 'URL y tamaño de cada capa de navegador para añadir en Meld (alertas, chat, objetivos, preguntas…), y las vistas de dock, prompter y teleprompter.', {}, () => get('/api/sources'));
 
-// Meld
-tool('meld_estado', 'Estado de Meld y sus escenas, capas (con efectos) y pistas de audio.', {}, () => get('/api/meld'));
-tool('meld_conectar', 'Conecta con Meld (Ajustes › Avanzado › «Allow remote connections»).', { url: S.str('Por defecto ws://127.0.0.1:13376') }, ({ url }) => post('/api/meld/connect', { url }));
-tool('meld_desconectar', 'Desconecta de Meld.', {}, () => post('/api/meld/disconnect'));
-tool('meld_escena', 'Cambia a una escena (por nombre o id).', { escena: S.str('Escena') }, ({ escena }) => post('/api/meld/scene', { scene: escena }), ['escena']);
-tool('meld_capa', 'Muestra, oculta o alterna una capa. Con «segundos», la muestra ese tiempo y la vuelve a ocultar.', { escena: S.str('Escena (opcional si el nombre de capa es único)'), capa: S.str('Capa'), visible: S.bool('true mostrar, false ocultar; sin indicar, alterna'), segundos: S.num('Mostrar durante') },
-  ({ escena, capa, visible, segundos }) => post('/api/meld/layer', { scene: escena, layer: capa, visible, seconds: segundos }), ['capa']);
-tool('meld_efecto', 'Activa o desactiva un efecto de una capa.', { escena: S.str('Escena'), capa: S.str('Capa'), efecto: S.str('Efecto') }, ({ escena, capa, efecto }) => post('/api/meld/effect', { scene: escena, layer: capa, effect: efecto }), ['capa', 'efecto']);
-tool('meld_comando', 'Lanza un comando de Meld.', { comando: S.enum('Comando', ['meld.screenshot', 'meld.screenshot.vertical', 'meld.startStreamingAction', 'meld.stopStreamingAction', 'meld.toggleStreamingAction', 'meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction', 'meld.toggleVirtualCameraAction', 'meld.recordClip', 'meld.replay.show', 'meld.replay.dismiss']) }, ({ comando }) => post('/api/meld/command', { command: comando }), ['comando']);
-tool('meld_evento', 'Dispara un evento de los widgets de Meld (confeti, ruleta, contador, cronómetros…).', { evento: S.enum('Evento', ['CONFETTIFALL_TRIGGER', 'CONFETTIPOP_TRIGGER', 'WHEELSPIN_SPIN', 'COUNTER_INCREMENT', 'COUNTER_DECREMENT', 'STOPWATCH_RESET', 'STOPWATCH_PAUSE', 'STOPWATCH_RESUME', 'COUNTDOWN_RESET', 'COUNTDOWN_PAUSE', 'COUNTDOWN_RESUME', 'SUBATHONTIMER_RESET', 'SUBATHONTIMER_PAUSE', 'SUBATHONTIMER_RESUME', 'SUBATHONTIMER_ADDTIME']), cantidad: S.num('Para SUBATHONTIMER_ADDTIME') },
-  ({ evento, cantidad }) => post('/api/meld/event', { event: evento, amount: cantidad }), ['evento']);
-tool('meld_audio', 'Silencia o fija el volumen de una pista de audio de Meld.', { pista: S.str('Pista (nombre o id)'), accion: S.enum('Acción', ['mute', 'gain']), ganancia: S.num('0–1 para «gain»') }, ({ pista, accion, ganancia }) => post('/api/meld/track', { track: pista, action: accion, gain: ganancia }), ['pista']);
-tool('meld_media', 'Controla una capa de vídeo de Meld.', { capa: S.str('Capa'), accion: S.enum('Acción', ['play', 'pause', 'seekTo']), segundos: S.num('Para seekTo') }, ({ capa, accion, segundos }) => post('/api/meld/media', { layer: capa, command: accion, seconds: segundos }), ['capa', 'accion']);
-tool('meld_propiedad', 'Cambia una propiedad de un objeto de Meld (API v2: x, y, width, height, rotation, visible, name…).', { id: S.str('Id del objeto'), propiedad: S.str('Propiedad'), valor: { description: 'Valor' } }, ({ id, propiedad, valor }) => post('/api/meld/property', { id, property: propiedad, value: valor }), ['id', 'propiedad', 'valor']);
-tool('meld_llamar', 'Llama a cualquier método de la API de Meld (para lo que no tenga herramienta propia).', { metodo: S.str('Método (showScene, toggleLayer, setStagedScene, showStagedScene, toggleRecord, toggleStream…)'), args: S.arr('Argumentos') }, ({ metodo, args }) => post('/api/meld/call', { method: metodo, args: args || [] }), ['metodo']);
+// Permanent Meld aliases and generic names use the same call and input schema.
+const programAliases = [];
+const programTool = (name, description, properties, call, required = []) => {
+  tool(`meld_${name}`, description, properties, args => call('/api/meld', args), required);
+  const generic = 'Control del programa de emisión: ' + description.replaceAll('de Meld', 'del programa de emisión').replaceAll('con Meld', 'con el programa de emisión').replaceAll('Meld', 'programa de emisión');
+  programAliases.push(() => tool(`programa_${name}`, generic, properties, args => call('/api/program', args), required));
+};
+programTool('estado', 'Estado de Meld y sus escenas, capas (con efectos) y pistas de audio.', {}, root => get(root));
+programTool('conectar', 'Conecta con Meld (Ajustes › Avanzado › «Allow remote connections»).', { url: S.str('Por defecto ws://127.0.0.1:13376') }, (root, { url }) => post(root + '/connect', { url }));
+programTool('desconectar', 'Desconecta de Meld.', {}, root => post(root + '/disconnect'));
+programTool('escena', 'Cambia a una escena (por nombre o id).', { escena: S.str('Escena') }, (root, { escena }) => post(root + '/scene', { scene: escena }), ['escena']);
+programTool('capa', 'Muestra, oculta o alterna una capa. Con «segundos», la muestra ese tiempo y la vuelve a ocultar.', { escena: S.str('Escena (opcional si el nombre de capa es único)'), capa: S.str('Capa'), visible: S.bool('true mostrar, false ocultar; sin indicar, alterna'), segundos: S.num('Mostrar durante') },
+  (root, { escena, capa, visible, segundos }) => post(root + '/layer', { scene: escena, layer: capa, visible, seconds: segundos }), ['capa']);
+programTool('efecto', 'Activa o desactiva un efecto de una capa.', { escena: S.str('Escena'), capa: S.str('Capa'), efecto: S.str('Efecto') }, (root, { escena, capa, efecto }) => post(root + '/effect', { scene: escena, layer: capa, effect: efecto }), ['capa', 'efecto']);
+// Today Meld is the only active program; OBS (#182) will supply its own catalogues.
+programTool('comando', 'Lanza un comando de Meld.', { comando: S.enum('Comando', MELD_COMMANDS) }, (root, { comando }) => post(root + '/command', { command: comando }), ['comando']);
+programTool('evento', 'Dispara un evento de los widgets de Meld (confeti, ruleta, contador, cronómetros…).', { evento: S.enum('Evento', MELD_STREAM_EVENTS), cantidad: S.num('Para SUBATHONTIMER_ADDTIME') },
+  (root, { evento, cantidad }) => post(root + '/event', { event: evento, amount: cantidad }), ['evento']);
+programTool('audio', 'Silencia o fija el volumen de una pista de audio de Meld.', { pista: S.str('Pista (nombre o id)'), accion: S.enum('Acción', ['mute', 'gain']), ganancia: S.num('0–1 para «gain»') }, (root, { pista, accion, ganancia }) => post(root + '/track', { track: pista, action: accion, gain: ganancia }), ['pista']);
+programTool('media', 'Controla una capa de vídeo de Meld.', { capa: S.str('Capa'), accion: S.enum('Acción', ['play', 'pause', 'seekTo']), segundos: S.num('Para seekTo') }, (root, { capa, accion, segundos }) => post(root + '/media', { layer: capa, command: accion, seconds: segundos }), ['capa', 'accion']);
+programTool('propiedad', 'Cambia una propiedad de un objeto de Meld (API v2: x, y, width, height, rotation, visible, name…).', { id: S.str('Id del objeto'), propiedad: S.str('Propiedad'), valor: { description: 'Valor' } }, (root, { id, propiedad, valor }) => post(root + '/property', { id, property: propiedad, value: valor }), ['id', 'propiedad', 'valor']);
+programTool('llamar', 'Llama a cualquier método de la API de Meld (para lo que no tenga herramienta propia).', { metodo: S.str('Método (showScene, toggleLayer, setStagedScene, showStagedScene, toggleRecord, toggleStream…)'), args: S.arr('Argumentos') }, (root, { metodo, args }) => post(root + '/call', { method: metodo, args: args || [] }), ['metodo']);
 tool('ejecutar_acciones', 'Ejecuta ahora una lista de acciones (las mismas que puede llevar una alerta).', { acciones: S.arr('Acciones', { type: 'object' }), datos: S.obj('Variables para las plantillas') }, ({ acciones, datos }) => post('/api/actions/run', { actions: acciones, vars: datos }), ['acciones']);
+for (const registerAlias of programAliases) registerAlias();
 
 // conexiones y acceso
 tool('twitch_conectar', 'Inicia el login de Twitch: devuelve el código y la web donde introducirlo.', {}, () => post('/api/twitch/connect'));

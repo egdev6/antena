@@ -46,7 +46,7 @@ function fakeCtx({ connected = false } = {}) {
   return { ctx, routes, find };
 }
 
-test('registra exactamente las rutas de Meld', () => {
+test('registra exactamente las rutas de Meld y sus alias genéricos', () => {
   const { routes } = fakeCtx();
   assert.deepEqual(routes.map(r => `${r.method} ${r.pattern}`), [
     'GET /api/meld', 'POST /api/meld/connect', 'POST /api/meld/disconnect',
@@ -54,7 +54,7 @@ test('registra exactamente las rutas de Meld', () => {
     'POST /api/meld/stream',
     'POST /api/meld/command', 'POST /api/meld/event', 'POST /api/meld/track',
     'POST /api/meld/media', 'POST /api/meld/property', 'POST /api/meld/call',
-  ]);
+  ].flatMap(r => [r, r.replace('/api/meld', '/api/program')]));
 });
 
 test('GET /api/meld y connect/disconnect tocan la config', async () => {
