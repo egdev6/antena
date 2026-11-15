@@ -1,15 +1,14 @@
+import { createRequire } from 'node:module';
 import { Meld } from '../meld.mjs';
 import { MeldAdapter } from './meld-adapter.mjs';
 
+// Keep Meld-only consumers and copied MCP fixtures independent of the dormant OBS module.
+const require = createRequire(import.meta.url);
+
 export { MELD_COMMANDS, MELD_STREAM_EVENTS } from '../meld.mjs';
 
-export function noticeObsUnavailable(log) {
-  try { log?.('[programa] OBS aún no está disponible; se mantiene Meld hasta #182.'); } catch { /* aviso no esencial */ }
-}
-
-// #182 añadirá el adaptador y el cambio real; elegir OBS no detiene Meld todavía.
-export function createProgram(kind, { meld, log } = {}) {
-  if (kind === 'obs') noticeObsUnavailable(log);
-  if (kind === 'meld' || kind === 'obs') return new MeldAdapter(meld ?? new Meld(log));
+export function createProgram(kind, { meld, log, ...obsOptions } = {}) {
+  if (kind === 'meld') return new MeldAdapter(meld ?? new Meld(log));
+  if (kind === 'obs') return new (require('./obs-adapter.mjs').ObsAdapter)(obsOptions);
   throw new Error(`Unsupported program: ${kind}`);
 }

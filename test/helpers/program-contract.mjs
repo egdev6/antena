@@ -25,10 +25,10 @@ export function waitFor(emitter, event, predicate = () => true) {
   });
 }
 
-export function programContract(makeAdapter, makeDriver) {
+export function programContract(makeAdapter, makeDriver, { statusOnly = false } = {}) {
   async function setup(t) {
     const driver = await makeDriver(), program = makeAdapter(driver.program);
-    t.after(async () => { program.dispose(); await driver.close(); });
+    t.after(async () => { if (statusOnly) await program.quiesceClose(); program.dispose(); await driver.close(); });
     return { driver, program };
   }
   async function connect(program, driver) {
@@ -74,7 +74,7 @@ export function programContract(makeAdapter, makeDriver) {
     assert.equal(program.status.recordingWarning, null);
   });
 
-  test('program contract: ordered scenes, layers, effects and tracks follow the session', async t => {
+  if (!statusOnly) test('program contract: ordered scenes, layers, effects and tracks follow the session', async t => {
     const { driver, program } = await setup(t);
     await connect(program, driver);
     assert.deepEqual(program.session(), driver.initialSession);
@@ -109,7 +109,7 @@ export function programContract(makeAdapter, makeDriver) {
     }
   });
 
-  test('program contract: all events preserve ordering, arguments and identity', async t => {
+  if (!statusOnly) test('program contract: all events preserve ordering, arguments and identity', async t => {
     const { driver, program } = await setup(t), seen = [];
     const events = ['status', 'session', 'streaming', 'controlCommand'];
     for (const name of events) program.on(name, (...args) => seen.push([name, ...args]));
@@ -124,7 +124,19 @@ export function programContract(makeAdapter, makeDriver) {
     }
   });
 
-  test('program contract: stop, reconnect, terminal close and teardown', async t => {
+  if (statusOnly) test('program contract: stop, restart and terminal close', async t => {
+    const { driver, program } = await setup(t);
+    await connect(program, driver);
+    program.stop();
+    assert.equal(program.status.state, 'desconectado');
+    assert.equal(program.connected, false);
+    await connect(program, driver);
+    await program.quiesceClose();
+    assert.equal(program.status.state, 'desconectado');
+    assert.equal(program.connected, false);
+  });
+
+  if (!statusOnly) test('program contract: stop, reconnect, terminal close and teardown', async t => {
     const { driver, program } = await setup(t);
     await connect(program, driver);
     const stopped = waitFor(program, 'status', s => s.state === 'desconectado');

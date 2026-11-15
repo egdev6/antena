@@ -5,8 +5,19 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { fakeMeld } from './helpers/fake-meld.mjs';
+import { fakeObs } from './helpers/fake-obs.mjs';
 
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+async function bounded(promise, label) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}: timeout`)), 2000); })]); }
+  finally { clearTimeout(timer); }
+}
+function trackSockets(server) {
+  const sockets = new Set();
+  server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+  return () => { for (const socket of sockets) socket.destroy(); };
+}
 async function fixture(t, seed = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'ant-obs-config-'));
   const dataDir = path.join(root, 'data'), mediaDir = path.join(root, 'media');
@@ -24,8 +35,15 @@ async function fixture(t, seed = {}) {
   const close = async () => {
     if (!app) return;
     const current = app; app = null;
-    await current.drainAutoSession(); await current.session.flush(); current.meld.stop(); current.program.dispose();
-    await current.closeHttp();
+    try {
+      await bounded((async () => {
+        await current.drainAutoSession(); await current.session.flush(); await current.program.quiesceClose();
+      })(), 'app close');
+    } finally {
+      current.program.stop(); current.meld.stop(); current.program.dispose();
+      current.server.closeAllConnections(); current.closeUpgradedConnections();
+      await bounded(current.closeHttp(), 'HTTP close');
+    }
   };
   t.after(async () => { try { await close(); } finally { await rm(root, { recursive: true, force: true }); } });
   await open();
@@ -232,27 +250,44 @@ test('config/set still writes and clears obs.password but rejects passwordSet', 
   }
 });
 
-test('selecting OBS leaves the live Meld connection and controls alone; restart warns once', async t => {
-  const fake = fakeMeld(); let upgrades = 0;
+test('selecting OBS replaces the Meld connection and removes the temporary fallback notice', async t => {
+  const fake = fakeMeld(), obs = fakeObs(); let upgrades = 0;
+  const destroyMeld = trackSockets(fake.server), destroyObs = trackSockets(obs.server);
   fake.server.on('upgrade', () => upgrades++);
-  await listen(fake.server);
+  // Register before the app fixture: even an abandoned switched-out socket cannot block its teardown.
+  t.after(async () => {
+    destroyMeld(); destroyObs();
+    const results = await Promise.allSettled([
+      bounded(obs.close(), 'OBS server close'),
+      bounded(new Promise((resolve, reject) => fake.server.close(error => {
+        if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') reject(error); else resolve();
+      })), 'Meld server close'),
+    ]);
+    const errors = results.filter(result => result.status === 'rejected').map(result => result.reason);
+    if (errors.length) throw new AggregateError(errors, 'fake server teardown failed');
+  });
+  await listen(fake.server); await listen(obs.server);
   const f = await fixture(t);
-  t.after(() => new Promise(resolve => fake.server.close(resolve)));
   assert.equal((await f.call('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${fake.server.address().port}` })).status, 200);
-  const deadline = Date.now() + 5000;
-  while ((await f.call('GET', '/api/meld')).body.status.state !== 'conectado') {
-    assert.ok(Date.now() < deadline, 'Meld did not connect');
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
+  const wait = async version => {
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      const status = (await f.call('GET', '/api/meld')).body.status;
+      if (status.state === 'conectado' && status.version === version) return;
+      assert.ok(Date.now() < deadline, `program ${version} did not connect`);
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  };
+  await wait(2);
   assert.deepEqual(await f.call('POST', '/api/meld/scene', { scene: 'Pantalla' }), { status: 200, body: { scene: 'Pantalla' } });
-  assert.equal((await f.call('PUT', '/api/config', { program: { kind: 'obs' } })).status, 200);
-  assert.equal((await f.call('PUT', '/api/config', { obs: { url: 'ws://localhost:4455' } })).status, 200);
-  assert.deepEqual(await f.call('POST', '/api/meld/scene', { scene: 'Cámara' }), { status: 200, body: { scene: 'Cámara' } });
-  assert.equal((await f.call('GET', '/api/meld')).body.status.state, 'conectado');
+  assert.equal((await f.call('PUT', '/api/config', { program: { kind: 'obs' }, obs: { url: `ws://127.0.0.1:${obs.server.address().port}` } })).status, 200);
+  await wait('30.2.3');
+  assert.deepEqual(await f.call('POST', '/api/meld/scene', { scene: 'Cámara' }),
+    { status: 500, body: { error: 'Acción todavía no disponible con OBS.' } });
   assert.equal(upgrades, 1);
-  assert.deepEqual(fake.state.calls.filter(c => c[0] === 10).map(c => c[1]), ['s2', 's1']);
-  assert.equal(f.logs.filter(x => /OBS.*Meld/.test(x)).length, 1);
+  assert.deepEqual(fake.state.calls.filter(c => c[0] === 10).map(c => c[1]), ['s2']);
+  assert.equal(f.logs.filter(x => /OBS.*Meld/.test(x)).length, 0);
   const restarted = await fixture(t, { program: { kind: 'obs' } });
   assert.equal((await restarted.call('GET', '/api/config')).body.program.kind, 'obs');
-  assert.equal(restarted.logs.filter(x => /OBS.*Meld/.test(x)).length, 1);
+  assert.equal(restarted.logs.filter(x => /OBS.*Meld/.test(x)).length, 0);
 });

@@ -11,6 +11,7 @@
 // src/http-util.mjs (se aceptan por ctx por compatibilidad con los tests).
 import { MELD_COMMANDS, MELD_STREAM_EVENTS } from '../programs/index.mjs';
 import { httpError as httpErrorBase } from '../http-util.mjs';
+import { validatePath } from '../config-schema.mjs';
 import { createMeldRecording } from '../meld-recording.mjs';
 
 // El cuerpo ya es JSON válido. Solo se cuentan claves del objeto superior, decodificando
@@ -55,8 +56,21 @@ export function registerMeldRoutes({ route: register, store, meld, scheduleLayer
     for (const action of pending.keys()) if (st.streaming === (action === 'start')) pending.delete(action);
   });
   route('GET', '/api/meld', async () => ({ status: meld.status, ...meld.session(), commands: MELD_COMMANDS, events: MELD_STREAM_EVENTS }));
-  route('POST', '/api/meld/connect', async ({ url } = {}) => { await store.patchConfig({ meld: { enabled: true, ...(url ? { url } : {}) } }); meld.stop(); meld.start(store.config.meld.url); return meld.status; });
-  route('POST', '/api/meld/disconnect', async () => { await store.patchConfig({ meld: { enabled: false } }); meld.stop(); return meld.status; });
+  route('POST', '/api/meld/connect', async ({ url } = {}) => {
+    if (store.config.program?.kind === 'obs') {
+      if (url) {
+        const [error] = validatePath('obs.url', url);
+        if (error) throw httpError(400, error.message);
+        await store.patchConfig({ obs: { url } });
+      }
+      meld.stop(); meld.start(store.config.obs.url); return meld.status;
+    }
+    await store.patchConfig({ meld: { enabled: true, ...(url ? { url } : {}) } }); meld.stop(); meld.start(store.config.meld.url); return meld.status;
+  });
+  route('POST', '/api/meld/disconnect', async () => {
+    if (store.config.program?.kind !== 'obs') await store.patchConfig({ meld: { enabled: false } });
+    meld.stop(); return meld.status;
+  });
   route('POST', '/api/meld/scene', async ({ scene }) => { needMeld(); const s = await meld.showScene(scene); return { scene: s.name }; });
   route('POST', '/api/meld/layer', async ({ scene, layer, visible, seconds }) => {
     needMeld();
