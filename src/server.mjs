@@ -799,6 +799,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const hasOverlays = Object.hasOwn(patch, 'customOverlays');
     const overlaysInput = patch.customOverlays;
     delete patch.customOverlays;
+    // El panel puede devolver la proyección pública, pero no modificar el indicador.
+    if (patch.obs && typeof patch.obs === 'object' && !Array.isArray(patch.obs) &&
+        Object.hasOwn(patch.obs, 'passwordSet') && patch.obs.passwordSet !== !!store.secrets.obs?.password)
+      throw httpError(400, 'obs.passwordSet: es de solo lectura');
     // #106: validación por esquema antes de guardar nada; las claves desconocidas se aceptan y se avisan.
     const errors = validatePatch(patch);
     if (errors.length) throw httpError(400, errors.map(e => e.message).join('; '));
@@ -835,10 +839,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       await customOverlays.setPath(p, value);
       return { path: p, value: store.getPath(p) };
     }
+    const keys = configPathKeys(p);
+    const clearObs = keys.length === 1 && keys[0] === 'obs' && value == null;
+    if (clearObs) value = undefined; // null y ausencia borran la sección por igual
     // #106: el valor se valida contra el esquema en su ruta; las rutas nuevas se aceptan.
     const [error] = validatePath(p, value);
     if (error) throw httpError(400, error.message);
-    const keys = configPathKeys(p);
     if (keys[0] === 'obs' && keys[1] === 'passwordSet') throw httpError(400, 'obs.passwordSet: es de solo lectura');
     if (keys.length === 2 && keys[0] === 'obs' && keys[1] === 'password') {
       await setObsPassword(value);
@@ -851,7 +857,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (keys[0] === 'obs') { delete value.password; delete value.passwordSet; }
     }
     await store.setPath(p, value);
-    if (hasPassword) await setObsPassword(password);
+    if (hasPassword || (clearObs && store.secrets.obs !== undefined)) await setObsPassword(password);
     const onlyRecording = keys.length === 2 && keys[0] === 'meld' && keys[1] === 'recordOnStart';
     afterConfig({ [p.split('.')[0]]: !onlyRecording });
     return { path: p, value: store.getPath(p, keys[0] === 'obs' ? store.publicConfig() : store.config) };

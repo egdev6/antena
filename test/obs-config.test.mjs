@@ -14,19 +14,30 @@ async function fixture(t, seed = {}) {
   const file = path.join(dataDir, 'config.json');
   const original = JSON.stringify({ access: { key: 'fake-access' }, ...seed });
   await writeFile(file, original);
-  const logs = [], app = await createApp({ dataDir, mediaDir, push: {}, log: (...a) => logs.push(a.join(' ')) });
-  await listen(app.server);
-  t.after(async () => {
-    await app.drainAutoSession(); await app.session.flush(); app.meld.stop(); app.program.dispose();
-    await app.closeHttp(); await rm(root, { recursive: true, force: true });
-  });
-  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const logs = [];
+  let app, base;
+  const open = async () => {
+    app = await createApp({ dataDir, mediaDir, push: {}, log: (...a) => logs.push(a.join(' ')) });
+    await listen(app.server);
+    base = `http://127.0.0.1:${app.server.address().port}`;
+  };
+  const close = async () => {
+    if (!app) return;
+    const current = app; app = null;
+    await current.drainAutoSession(); await current.session.flush(); current.meld.stop(); current.program.dispose();
+    await current.closeHttp();
+  };
+  t.after(async () => { try { await close(); } finally { await rm(root, { recursive: true, force: true }); } });
+  await open();
   const call = async (method, url, body) => {
     const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(5000) });
     return { status: r.status, body: await r.json() };
   };
-  return { root, file, original, logs, call };
+  return { root, file, original, logs, call,
+    restart: async () => { await close(); await open(); },
+    seedYouTube: value => app.store.setSecret('youtube', value),
+    youtubeAccessToken: () => app.youtube.accessToken() };
 }
 
 test('meld-only config retains its values and disk bytes while OBS defaults are supplied', async t => {
@@ -74,8 +85,10 @@ test('OBS URLs accept ws/wss and bad URLs or kinds leave config and counters unc
     assert.deepEqual((await f.call('GET', '/api/config')).body, config);
     assert.deepEqual((await f.call('GET', '/api/status')).body.persistence, counters);
   }
-  for (const section of ['program', 'obs']) for (const [method, endpoint, body] of [
-    ['PUT', '/api/config', { [section]: null }], ['POST', '/api/config/set', { path: section, value: null }],
+  for (const [method, endpoint, body, section] of [
+    ['PUT', '/api/config', { program: null }, 'program'],
+    ['POST', '/api/config/set', { path: 'program', value: null }, 'program'],
+    ['PUT', '/api/config', { obs: null }, 'obs'],
   ]) {
     assert.deepEqual(await f.call(method, endpoint, body), { status: 400, body: { error: `${section}: se esperaba un objeto` } });
     assert.equal(await readFile(f.file, 'utf8'), before);
@@ -114,6 +127,109 @@ test('invalid OBS configuration on disk is repaired in memory without rewriting 
   assert.equal(await readFile(f.file, 'utf8'), f.original);
   assert.ok(warnings.some(w => w.includes('program.kind')));
   assert.ok(warnings.some(w => w.includes('obs.url')));
+});
+
+async function publicSnapshot(f) {
+  const config = await f.call('GET', '/api/config');
+  const status = await f.call('GET', '/api/status');
+  assert.equal(config.status, 200); assert.equal(status.status, 200);
+  return { config: config.body, persistence: status.body.persistence };
+}
+
+test('PUT accepts the public OBS section unchanged when passwordSet matches', async t => {
+  const f = await fixture(t);
+  for (const state of [false, true]) {
+    if (state) assert.deepEqual(await f.call('POST', '/api/config/set', { path: 'obs.password', value: 'PW_ORIGINAL' }),
+      { status: 200, body: { path: 'obs.password', passwordSet: true } });
+    const before = await publicSnapshot(f);
+    assert.equal(before.config.obs.passwordSet, state);
+    assert.deepEqual(await f.call('PUT', '/api/config', { obs: before.config.obs }),
+      { status: 200, body: { config: before.config } });
+    assert.deepEqual(await publicSnapshot(f), before);
+  }
+});
+
+for (const state of [false, true]) {
+  test(`PUT rejects passwordSet values that differ from the current ${state} state`, async t => {
+    const f = await fixture(t);
+    if (state) assert.equal((await f.call('PUT', '/api/config', { obs: { password: 'PW_ORIGINAL' } })).status, 200);
+    const before = await publicSnapshot(f);
+    assert.equal(before.config.obs.passwordSet, state);
+    for (const value of [!state, null, String(state), Number(state)]) {
+      const r = await f.call('PUT', '/api/config', {
+        obs: { passwordSet: value, password: 'PW_REPLACEMENT', url: 'wss://localhost:4455' }, overlay: { volume: 0.123 },
+      });
+      assert.deepEqual(r, { status: 400, body: { error: 'obs.passwordSet: es de solo lectura' } });
+      assert.deepEqual(await publicSnapshot(f), before);
+    }
+    await f.restart();
+    assert.deepEqual(await publicSnapshot(f), before);
+  });
+}
+
+for (const [label, clear] of [['delete', { path: 'obs' }], ['null', { path: 'obs', value: null }]]) {
+  test(`config/set ${label} of obs clears its password across restart`, async t => {
+    const f = await fixture(t);
+    assert.deepEqual(await f.call('POST', '/api/config/set', { path: 'obs', value: { url: 'wss://localhost:4455', password: 'PW_CLEAR' } }),
+      { status: 200, body: { path: 'obs', value: { url: 'wss://localhost:4455', passwordSet: true } } });
+    assert.equal((await publicSnapshot(f)).config.obs.passwordSet, true);
+    const expected = { url: 'ws://127.0.0.1:4455', passwordSet: false };
+    assert.deepEqual(await f.call('POST', '/api/config/set', clear), { status: 200, body: { path: 'obs', value: expected } });
+    assert.deepEqual((await publicSnapshot(f)).config.obs, expected);
+    await f.restart();
+    assert.deepEqual((await publicSnapshot(f)).config.obs, expected);
+  });
+}
+
+test('a request rejected after schema validation never stores the OBS password', async t => {
+  const f = await fixture(t);
+  const before = await publicSnapshot(f);
+  assert.equal(before.config.obs.passwordSet, false);
+  const invalidVariant = { ...before.config.widgets.chat, id: 'variante', name: 'Variante', css: '.bad{}' };
+  for (const [extra, error] of [
+    [{ customOverlays: 'nope' }, 'customOverlays tiene que ser una lista de overlays'],
+    [{ customOverlays: [{ id: 'Bad Id!' }] }, 'Id de overlay no válido: "Bad Id!" (solo minúsculas, números y guiones)'],
+    [{ customOverlays: [{ id: 'Bad Id!' }], widgets: { chatVariants: [] } }, 'Id de overlay no válido: "Bad Id!" (solo minúsculas, números y guiones)'],
+    [{ widgets: { chatVariants: [invalidVariant] } }, 'El CSS de una variante nueva empieza vacío'],
+  ]) {
+    const r = await f.call('PUT', '/api/config', { obs: { password: 'PW_REJECTED' }, ...extra });
+    assert.deepEqual(r, { status: 400, body: { error } });
+    assert.deepEqual(await publicSnapshot(f), before);
+  }
+});
+
+test('setting and clearing OBS preserves a separately stored YouTube credential', async t => {
+  const f = await fixture(t);
+  const account = { access: 'YT_FAKE_ACCESS', refresh: 'YT_FAKE_REFRESH', expiresAt: 4102444800000, channel: 'Canal de prueba' };
+  await f.seedYouTube(account);
+  await f.restart();
+  const checkYouTube = async () => {
+    const status = await f.call('GET', '/api/status');
+    assert.equal(status.status, 200); assert.equal(status.body.youtube.account, account.channel);
+    assert.equal(await f.youtubeAccessToken(), account.access);
+  };
+  await checkYouTube();
+  assert.equal((await f.call('PUT', '/api/config', { obs: { password: 'PW_SET' } })).status, 200);
+  assert.equal((await publicSnapshot(f)).config.obs.passwordSet, true);
+  await checkYouTube();
+  assert.deepEqual(await f.call('POST', '/api/config/set', { path: 'obs' }),
+    { status: 200, body: { path: 'obs', value: { url: 'ws://127.0.0.1:4455', passwordSet: false } } });
+  assert.equal((await publicSnapshot(f)).config.obs.passwordSet, false);
+  await checkYouTube();
+  await f.restart();
+  assert.equal((await publicSnapshot(f)).config.obs.passwordSet, false);
+  await checkYouTube();
+});
+
+test('config/set still writes and clears obs.password but rejects passwordSet', async t => {
+  const f = await fixture(t);
+  for (const [value, expected] of [['PW_PATH', true], ['', false]]) {
+    assert.deepEqual(await f.call('POST', '/api/config/set', { path: 'obs.password', value }),
+      { status: 200, body: { path: 'obs.password', passwordSet: expected } });
+    assert.equal((await publicSnapshot(f)).config.obs.passwordSet, expected);
+    assert.deepEqual(await f.call('POST', '/api/config/set', { path: 'obs.passwordSet', value: expected }),
+      { status: 400, body: { error: 'obs.passwordSet: es de solo lectura' } });
+  }
 });
 
 test('selecting OBS leaves the live Meld connection and controls alone; restart warns once', async t => {
