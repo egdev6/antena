@@ -198,7 +198,7 @@ test('GetVersion anuncia las peticiones implementadas', { timeout: 5000 }, async
   assert.equal(typeof response.responseData.obsWebSocketVersion, 'string');
   assert.ok(Array.isArray(response.responseData.supportedImageFormats));
   assert.deepEqual(new Set(response.responseData.availableRequests), new Set([
-    'GetVersion', 'GetSceneList', 'GetCurrentProgramScene', 'SetCurrentProgramScene', 'GetSceneItemList',
+    'GetVersion', 'GetSceneList', 'CreateScene', 'RemoveScene', 'GetCurrentProgramScene', 'SetCurrentProgramScene', 'GetSceneItemList',
     'GetSceneItemId', 'SetSceneItemEnabled', 'GetSourceFilterList', 'SetSourceFilterEnabled', 'GetInputList',
     'GetInputMute', 'SetInputMute', 'ToggleInputMute', 'GetInputVolume', 'SetInputVolume',
     'GetInputAudioMonitorType', 'SetInputAudioMonitorType', 'TriggerMediaInputAction', 'GetStreamStatus',
@@ -243,6 +243,20 @@ test('escenas y elementos: respuestas, cambios, eventos y rechazo sin mutación'
   assert.deepEqual(eventData(c, 'SceneItemEnableStateChanged', SCENE_ITEMS), [
     { sceneName: 'Camera', sceneUuid: 'scene-camera', sceneItemId: 11, sceneItemEnabled: true },
   ]);
+});
+
+test('escenas creadas y eliminadas cambian la lista y emiten eventos', { timeout: 5000 }, async t => {
+  const { url } = await start(t, fixtures());
+  const { c } = await connect(url, { subscriptions: SCENES });
+  const created = await c.request('CreateScene', { sceneName: 'Overlay' });
+  assert.equal(created.requestStatus.result, true);
+  assert.equal(typeof created.responseData.sceneUuid, 'string');
+  assert.deepEqual((await c.request('GetSceneList')).responseData.scenes.map(s => s.sceneName), ['Camera', 'Slides', 'Overlay']);
+  success(await c.request('RemoveScene', { sceneName: 'Overlay' }));
+  assert.deepEqual((await c.request('GetSceneList')).responseData.scenes.map(s => s.sceneName), ['Camera', 'Slides']);
+  assert.deepEqual(c.events('SceneCreated').map(e => e.eventData.sceneName), ['Overlay']);
+  assert.deepEqual(c.events('SceneRemoved').map(e => e.eventData.sceneName), ['Overlay']);
+  assert.equal(c.events('SceneListChanged').length, 2);
 });
 
 test('filtros, entradas, audio y acción multimedia', { timeout: 5000 }, async t => {

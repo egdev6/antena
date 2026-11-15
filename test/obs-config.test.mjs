@@ -282,7 +282,9 @@ test('selecting OBS replaces the Meld connection and removes the temporary fallb
   assert.deepEqual(await f.call('POST', '/api/meld/scene', { scene: 'Pantalla' }), { status: 200, body: { scene: 'Pantalla' } });
   assert.equal((await f.call('PUT', '/api/config', { program: { kind: 'obs' }, obs: { url: `ws://127.0.0.1:${obs.server.address().port}` } })).status, 200);
   await wait('30.2.3');
-  assert.deepEqual(await f.call('POST', '/api/meld/scene', { scene: 'Cámara' }),
+  assert.deepEqual(await f.call('POST', '/api/meld/scene', { scene: 'Camera' }),
+    { status: 200, body: { scene: 'Camera' } });
+  assert.deepEqual(await f.call('POST', '/api/meld/effect', { scene: 'Camera', layer: 'Logo', effect: 'Blur' }),
     { status: 500, body: { error: 'Acción todavía no disponible con OBS.' } });
   assert.equal(upgrades, 1);
   assert.deepEqual(fake.state.calls.filter(c => c[0] === 10).map(c => c[1]), ['s2']);
