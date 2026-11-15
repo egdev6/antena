@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import { EventEmitter } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { Meld, MELD_COMMANDS as rawCommands, MELD_STREAM_EVENTS as rawEvents } from '../src/meld.mjs';
 import { Timers } from '../src/timers.mjs';
 import { Interactive, DEFAULT_INTERACTIVE_CONFIG } from '../src/interactive.mjs';
@@ -42,6 +43,7 @@ test('createApp keeps raw Meld and registers each adapter forwarder before every
   });
   assert.ok(app.meld instanceof Meld);
   assert.ok(app.program instanceof MeldAdapter);
+  assert.strictEqual(app.program.raw, app.meld);
   assert.strictEqual(app.program.status, app.meld.status);
   for (const name of names) {
     const value = {}, extra = {};
@@ -454,6 +456,98 @@ test('giveaway confetti reaches the program only while connected', async t => {
   } finally {
     try { await app.interactive.drainDraws(); } finally { await app.interactive.flush(); }
   }
+});
+
+test('status snapshots use the program status', async t => {
+  const { app } = await routeWiring(t);
+  const status = { ...app.meld.status, error: 'program status' };
+  Object.defineProperty(app.program, 'status', { get: () => status });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  assert.deepEqual((await (await fetch(base + '/api/status')).json()).meld, status);
+  assert.deepEqual((await (await fetch(base + '/api/state')).json()).status.meld, status);
+});
+
+test('state snapshot uses the program session', async t => {
+  const { app } = await routeWiring(t);
+  const session = { scenes: [{ id: 'program', layers: [] }], tracks: [], streaming: false, recording: false };
+  app.program.session = () => session;
+  const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/state`);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).meld.session, session);
+});
+
+test('manual end checks live program status without changing the session on rejection', async t => {
+  const { app, post } = await routeWiring(t);
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const before = await (await fetch(base + '/api/session')).json();
+  const persistence = (await (await fetch(base + '/api/status')).json()).persistence;
+  Object.defineProperty(app.program, 'status', { get: () => ({ ...app.meld.status, streaming: true }) });
+  assert.deepEqual(await post('/api/session/end', { id: before.id }),
+    { status: 409, body: { error: 'No se puede terminar el directo mientras Meld está emitiendo.' } });
+  assert.deepEqual(await (await fetch(base + '/api/session')).json(), before);
+  assert.deepEqual((await (await fetch(base + '/api/status')).json()).persistence, persistence);
+});
+
+test('configuration changes restart the program, except recordOnStart alone', async t => {
+  const { app, post } = await routeWiring(t), calls = [];
+  app.program.stop = () => calls.push('stop');
+  app.program.start = url => calls.push(['start', url]);
+  const url = 'ws://127.0.0.1:12345';
+  assert.equal((await post('/api/config/set', { path: 'meld.url', value: url })).status, 200);
+  assert.deepEqual(calls.splice(0), ['stop']);
+  assert.equal((await post('/api/config/set', { path: 'meld.enabled', value: true })).status, 200);
+  assert.deepEqual(calls.splice(0), ['stop', ['start', url]]);
+  const response = await fetch(`http://127.0.0.1:${app.server.address().port}/api/config`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ meld: { recordOnStart: true } }),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, []);
+  assert.equal((await post('/api/config/set', { path: 'meld.enabled', value: false })).status, 200);
+  assert.deepEqual(calls, ['stop']);
+});
+
+test('a timed layer hide is dispatched through the program at expiry', async t => {
+  const { app, post } = await routeWiring(t), calls = [];
+  app.program.setLayer = async (...args) => {
+    calls.push(args);
+    return { scene: { id: 'scene-1', name: 'Escena' }, layer: { id: 'layer-1', name: 'Capa' } };
+  };
+  assert.deepEqual(await post('/api/meld/layer', { scene: 'Escena', layer: 'Capa', visible: true, seconds: 0.01 }),
+    { status: 200, body: { scene: 'Escena', layer: 'Capa' } });
+  await app.drainLayerHides();
+  assert.deepEqual(calls, [['Escena', 'Capa', true], ['scene-1', 'layer-1', false]]);
+});
+
+test('startup and terminal shutdown use the program and retain close-before-dispose order', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ant-program-lifecycle-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const script = `
+    import assert from 'node:assert/strict';
+    import net from 'node:net';
+    import { Store } from './src/store.mjs';
+    import { Meld } from './src/meld.mjs';
+    import { MeldAdapter } from './src/programs/meld-adapter.mjs';
+    import { startServer } from './src/server.mjs';
+    const store = await new Store().load();
+    await store.patchConfig({ meld: { enabled: true, url: 'ws://127.0.0.1:12345' } });
+    const listen = net.Server.prototype.listen;
+    net.Server.prototype.listen = function (_port, host, cb) { return listen.call(this, 0, host, cb); };
+    const events = [], close = MeldAdapter.prototype.quiesceClose, dispose = MeldAdapter.prototype.dispose;
+    Meld.prototype.start = () => events.push('raw-start');
+    MeldAdapter.prototype.start = url => events.push(['program-start', url]);
+    MeldAdapter.prototype.quiesceClose = function () { events.push('program-close'); return close.call(this); };
+    MeldAdapter.prototype.dispose = function () { events.push('dispose'); return dispose.call(this); };
+    const app = await startServer({ quiet: true, handleSignals: false, log: () => {} });
+    app.program.on('status', status => events.push(['status', status.state]));
+    assert.equal(await app.close(), 0);
+    assert.deepEqual(events, [['program-start', 'ws://127.0.0.1:12345'], 'program-close', ['status', 'desconectado'], 'dispose']);
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: process.cwd(), encoding: 'utf8', timeout: 20000,
+    env: { PATH: process.env.PATH || '', ANTENA_DATA: path.join(dir, 'data'), ANTENA_MEDIA: path.join(dir, 'media') },
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.equal(result.stdout, ''); assert.equal(result.stderr, '');
 });
 
 test('legacy Interactive constructor still accepts a duck-typed Meld provider', async t => {

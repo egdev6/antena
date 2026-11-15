@@ -269,5 +269,35 @@ export async function consumerTrace(t) {
   const disconnected = await drawWithoutConfetti(true, 'desconectado');
   assert.deepEqual(disconnected, disabled, 'draw result and SSE are unchanged');
   record('draw-meld-disconnected', disconnected);
+
+  // Arm while connected, disconnect and reconnect, then fire the ORIGINAL timer.
+  // The post-reconnect hide must reach the new WebChannel and the public session.
+  await connect();
+  record('reconnect-hide-armed', await action('/api/meld/layer',
+    { scene: 'Cámara', layer: 'Alertas', visible: true, seconds: 1234 }, s => s.scenes[0].layers[0].visible));
+  assert.equal(scheduled.length, 1);
+  await api('POST', '/api/meld/disconnect');
+  record('reconnect-hide-disconnected', (await next('status', s => s.meld.state === 'desconectado')).meld);
+  await connect();
+  const state = async () => (await api('GET', '/api/state')).meld.session;
+  const beforeHideState = await state();
+  record('reconnect-hide-before', beforeHideState);
+  assert.equal(beforeHideState.scenes[0].layers[0].visible, true);
+  const beforeReconnectHide = wire.idleCount(); scheduled.shift()();
+  record('reconnect-hide-sse', await next('meld', s => !s.scenes[0].layers[0].visible));
+  await wire.waitIdleAfter(beforeReconnectHide);
+  record('reconnect-hide-http', await state());
+
+  // An external fader move uses the fake's real gainUpdated signal, not setGain.
+  assert.equal(fake.emitGain('t1', 0.375, false), true);
+  record('external-gain-sse', await next('meld', s => s.tracks[0].gain === 0.375));
+  record('external-gain-http', await state());
+  // Meld supplies enabled:false in its session update; no command or fake effect
+  // toggle is involved. Capture both SSE and the server's state snapshot.
+  fake.state.session.items.e1.enabled = false;
+  const beforeEffect = wire.idleCount(); fake.setCurrentScenes(['s1']);
+  record('external-effect-disabled-sse', await next('meld', s => s.scenes[0].layers[0].effects[0].enabled === false));
+  await wire.waitIdleAfter(beforeEffect);
+  record('external-effect-disabled-http', await state());
   return { wire: wire.messages, observations, order: await consumerOrderTrace(t) };
 }
