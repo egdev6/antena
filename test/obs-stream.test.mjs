@@ -129,8 +129,8 @@ test('confirmed OBS states drive session, live-only timer and YouTube; reconnect
   await f.emit('STARTING');
   assert.deepEqual(await f.session(), initial); assert.equal(await paused(), true); assert.deepEqual(f.trace, []);
   await f.emit('STARTED');
-  const live = await f.sessionWhere(s => s.id !== initial.id && s.meldAutoSession === true);
   await until(async () => (await yt()).state === 'escuchando', 'YouTube live');
+  const live = await f.sessionWhere(s => s.id !== initial.id && s.meldAutoSession === true && s.platforms?.youtube?.videoId === 'abcdefghijk');
   assert.equal(await paused(), false); assert.deepEqual(f.trace.slice(0, 4), ['start', 'stop', '/search', '/videos']);
   await f.emit('RECONNECTING');
   assert.deepEqual(await f.session(), live); assert.equal(await paused(), false);
@@ -224,18 +224,16 @@ test('an unknown reconnect does not invent live or end the session; a later live
   assert.equal((await f.ok('GET', '/api/sessions')).past.filter(s => s.id === first.id).length, 0);
 });
 
-test('record-on-start warns without interrupting OBS streaming; recording commands remain unavailable', async t => {
+test('record-on-start warns on OBS failure without interrupting streaming', async t => {
   const f = await fixture(t, { recordOnStart: true });
+  f.fake.failRequest('StartRecord');
   const before = await f.session();
   assert.deepEqual(await f.api('POST', '/api/program/stream', { action: 'start' }), { status: 200, body: { requested: 'start', streaming: false } });
   await f.sessionWhere(s => s.id !== before.id && s.meldAutoSession === true);
   await until(async () => !!(await f.status()).recordingWarning, 'recording warning');
   assert.deepEqual([(await f.status()).streaming, (await f.status()).recordingWarning], [true, 'No se pudo iniciar la grabación en Meld. Comprueba la grabación.']);
-  for (const command of ['meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction']) {
-    assert.deepEqual(await f.api('POST', '/api/meld/command', { command }), { status: 500, body: { error: 'Acción todavía no disponible con OBS.' } });
-  }
   assert.deepEqual(f.streamCalls(), [{ requestType: 'StartStream', requestData: {} }]);
-  assert.equal(fakeRecordCalls(f.fake).length, 0);
+  assert.deepEqual(fakeRecordCalls(f.fake), [{ requestType: 'StartRecord', requestData: {} }]);
 });
 const fakeRecordCalls = fake => fake.requests.filter(r => ['StartRecord', 'StopRecord'].includes(r.requestType));
 

@@ -36,7 +36,7 @@ const REQUEST_TYPES = [
   'GetSceneItemId', 'SetSceneItemEnabled', 'GetSourceFilterList', 'CreateSourceFilter', 'RemoveSourceFilter', 'SetSourceFilterName', 'SetSourceFilterEnabled', 'GetInputList',
   'GetInputAudioTracks', 'GetInputMute', 'SetInputMute', 'ToggleInputMute', 'GetInputVolume', 'SetInputVolume',
   'GetInputAudioMonitorType', 'SetInputAudioMonitorType', 'TriggerMediaInputAction', 'SetMediaInputCursor', 'GetMediaInputStatus', 'GetStreamStatus',
-  'StartStream', 'StopStream', 'ToggleStream', 'GetRecordStatus', 'StartRecord', 'StopRecord',
+  'StartStream', 'StopStream', 'ToggleStream', 'GetRecordStatus', 'StartRecord', 'StopRecord', 'ToggleRecord',
 ];
 
 const hash = value => createHash('sha256').update(value).digest('base64');
@@ -147,7 +147,7 @@ export function fakeObs(options = {}) {
   }
   let program = options.currentProgramSceneName === undefined
     ? scenes[0] ?? null : lookup(scenes, options.currentProgramSceneName, undefined, 'sceneName', 'sceneUuid');
-  let streaming = options.streaming === true, recording = false, pendingStream = null;
+  let streaming = options.streaming === true, recording = options.recording === true, pendingStream = null, pendingRecord = null;
   const requests = [], identifications = [], clients = new Set(), sockets = new Set();
   const failures = new Map(), delays = new Map();
   let closePromise;
@@ -205,14 +205,16 @@ export function fakeObs(options = {}) {
   function completeOutput(kind, active) {
     if (kind === 'Stream') streaming = active; else recording = active;
     const data = { outputActive: active, outputState: `OBS_WEBSOCKET_OUTPUT_${active ? 'STARTED' : 'STOPPED'}` };
-    if (kind === 'Record' && !active) data.outputPath = OUTPUT_PATH;
+    if (kind === 'Record') data.outputPath = OUTPUT_PATH;
     emit(`${kind}StateChanged`, data);
   }
   function setOutput(kind, active) {
     const previous = kind === 'Stream' ? streaming : recording;
-    if (previous === active) throw failure(active ? 500 : 501, `${kind} already ${active ? 'active' : 'inactive'}`);
-    emit(`${kind}StateChanged`, { outputActive: kind === 'Stream' ? false : active, outputState: `OBS_WEBSOCKET_OUTPUT_${active ? 'STARTING' : 'STOPPING'}` });
+    if (previous === active) throw failure(active ? 500 : 501, kind === 'Record' ? '' : `${kind} already ${active ? 'active' : 'inactive'}`);
+    emit(`${kind}StateChanged`, { outputActive: false, outputState: `OBS_WEBSOCKET_OUTPUT_${active ? 'STARTING' : 'STOPPING'}`,
+      ...(kind === 'Record' && { outputPath: null }) });
     if (kind === 'Stream' && options.deferStreamConfirmation) pendingStream = active;
+    else if (kind === 'Record' && options.deferRecordConfirmation) pendingRecord = active;
     else completeOutput(kind, active);
   }
   const handlers = {
@@ -343,6 +345,7 @@ export function fakeObs(options = {}) {
     GetRecordStatus: () => ({ outputActive: recording, outputPaused: false, ...outputTime(), outputBytes: 0 }),
     StartRecord: () => { setOutput('Record', true); },
     StopRecord: () => { setOutput('Record', false); return { outputPath: OUTPUT_PATH }; },
+    ToggleRecord: () => { const active = !recording; setOutput('Record', active); return { outputActive: active }; },
   };
 
   function handleRequest(client, data) {
@@ -360,7 +363,7 @@ export function fakeObs(options = {}) {
         d.requestStatus = { result: true, code: 100 };
         if (responseData !== undefined) d.responseData = responseData;
       } catch (error) {
-        d.requestStatus = { result: false, code: error.code ?? 500, comment: error.message };
+        d.requestStatus = { result: false, code: error.code ?? 500, ...(error.message && { comment: error.message }) };
       }
       client.send({ op: 7, d });
     };
@@ -497,6 +500,10 @@ export function fakeObs(options = {}) {
     confirmStream() {
       if (pendingStream === null) throw new Error('No pending stream transition');
       const active = pendingStream; pendingStream = null; completeOutput('Stream', active);
+    },
+    confirmRecord() {
+      if (pendingRecord === null) throw new Error('No pending record transition');
+      const active = pendingRecord; pendingRecord = null; completeOutput('Record', active);
     },
     invalidateSession() { for (const client of clients) client.close(4011, 'Session invalidated'); },
     // Hooks persistentes; null/0 los desactiva. El fallo puede limitarse a un UUID de entrada.

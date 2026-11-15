@@ -7,7 +7,8 @@ const hash = value => createHash('sha256').update(value).digest('base64');
 const unavailable = () => { throw new Error('Acción todavía no disponible con OBS.'); };
 const STREAM_COMMANDS = { 'meld.startStreamingAction': 'StartStream', 'meld.stopStreamingAction': 'StopStream',
   'meld.toggleStreamingAction': 'ToggleStream' };
-const RECORD_COMMANDS = new Set(['meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction']);
+const RECORD_COMMANDS = { 'meld.startRecordingAction': 'StartRecord', 'meld.stopRecordingAction': 'StopRecord',
+  'meld.toggleRecordingAction': 'ToggleRecord' };
 // Meld gain and OBS inputVolumeMul are both linear amplitude: gain = clamp(mul, 0, 1),
 // mul = clamp(gain, 0, 1). Thus 0 = silence, 0.1 = -20 dB, 1 = 0 dB; OBS boost > 1 displays as 1.
 const gainOf = value => Math.max(0, Math.min(1, Number(value)));
@@ -33,7 +34,7 @@ export class ObsAdapter extends Program {
     this.tracks = [];
     this.metersWanted = false;
     this.syncMeters = null;
-    for (const capability of ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks', 'streaming']) this.capabilities.add(capability);
+    for (const capability of ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks', 'streaming', 'recording']) this.capabilities.add(capability);
   }
 
   get status() { return this._status; }
@@ -325,6 +326,13 @@ export class ObsAdapter extends Program {
             if (state === 'OBS_WEBSOCKET_OUTPUT_STARTED' || state === 'OBS_WEBSOCKET_OUTPUT_RECONNECTED') value = true;
             else if (state === 'OBS_WEBSOCKET_OUTPUT_STOPPED') value = false;
             else return;
+          } else {
+            // STARTING/STOPPING retain the last confirmation. OBS sends PAUSED with
+            // outputActive=false, but the recording remains active and still owned.
+            const state = d.eventData?.outputState;
+            if (['OBS_WEBSOCKET_OUTPUT_STARTED', 'OBS_WEBSOCKET_OUTPUT_PAUSED', 'OBS_WEBSOCKET_OUTPUT_RESUMED'].includes(state)) value = true;
+            else if (state === 'OBS_WEBSOCKET_OUTPUT_STOPPED') value = false;
+            else return;
           }
           if (field === 'streaming' && this.connected && value !== this.status.streaming) this.emit('streaming', value);
           this.setStatus({ [field]: value, [field + 'Known']: true });
@@ -401,9 +409,10 @@ export class ObsAdapter extends Program {
     await this.requestObs('SetSourceFilterEnabled', { sourceName: found.layer.name, filterName: effect.name, filterEnabled: !effect.enabled });
   }
   command(command) {
-    if (Object.hasOwn(STREAM_COMMANDS, command) || RECORD_COMMANDS.has(command)) {
+    if (Object.hasOwn(STREAM_COMMANDS, command) || Object.hasOwn(RECORD_COMMANDS, command)) {
       try { this.emit('controlCommand', command); } catch { /* a listener must not change the RPC */ }
     }
+    if (Object.hasOwn(RECORD_COMMANDS, command)) return this.requestObs(RECORD_COMMANDS[command]).then(() => undefined);
     if (!Object.hasOwn(STREAM_COMMANDS, command)) return unavailable();
     return this.requestObs(STREAM_COMMANDS[command]).then(() => undefined);
   }

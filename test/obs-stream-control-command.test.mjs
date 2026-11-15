@@ -10,9 +10,12 @@ test('OBS command emits controlCommand for the six control commands before the R
   program.start(`ws://127.0.0.1:${fake.server.address().port}`);
   for (let i = 0; i < 300 && program.status.state !== 'conectado'; i++) await delay(10);
   const seen = [];
-  program.on('controlCommand', c => seen.push([c, fake.requests.filter(r => /Stream$/.test(r.requestType)).length]));
-  await program.command('meld.toggleStreamingAction');
-  for (const c of ['meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction', 'meld.unknownAction'])
-    assert.throws(() => program.command(c), { message: 'Acción todavía no disponible con OBS.' });
-  assert.deepEqual(seen, [['meld.toggleStreamingAction', 0], ['meld.startRecordingAction', 1], ['meld.stopRecordingAction', 1], ['meld.toggleRecordingAction', 1]]);
+  program.on('controlCommand', c => seen.push([c, fake.requests.filter(r => /(Stream|Record)$/.test(r.requestType)).length]));
+  const commands = ['meld.startStreamingAction', 'meld.stopStreamingAction', 'meld.toggleStreamingAction',
+    'meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction'];
+  for (const command of commands) assert.equal(await program.command(command), undefined);
+  assert.throws(() => program.command('meld.unknownAction'), { message: 'Acción todavía no disponible con OBS.' });
+  assert.deepEqual(seen, commands.map((command, index) => [command, index]));
+  assert.deepEqual(fake.requests.filter(r => /(Stream|Record)$/.test(r.requestType)).map(r => r.requestType),
+    ['StartStream', 'StopStream', 'ToggleStream', 'StartRecord', 'StopRecord', 'ToggleRecord']);
 });
