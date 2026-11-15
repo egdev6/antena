@@ -7,16 +7,19 @@ import { programContract, waitFor } from './helpers/program-contract.mjs';
 const initialStatus = { state: 'desconectado', streaming: false, streamingKnown: false, recording: false,
   recordingKnown: false, recordingWarning: null, version: null, error: null };
 const connectedStatus = { ...initialStatus, state: 'conectado', streamingKnown: true, recordingKnown: true, version: '30.2.3' };
-const methods = ['toggleEffect', 'command', 'streamEvent', 'toggleMute', 'setGain', 'media', 'setProperty', 'call'];
+const methods = ['command', 'streamEvent', 'toggleMute', 'setGain', 'setProperty', 'call'];
 const actions = Object.fromEntries(methods.map(name => [name, [{ args: ['test'], calls: [], error: /todavía no disponible con OBS/i }]]));
 const initialSession = { scenes: [
-  { id: 'scene-a', name: 'Camera', current: true, layers: [{ id: 'scene-a:7', name: 'Logo', visible: false }] },
+  { id: 'scene-a', name: 'Camera', current: true, layers: [{ id: 'scene-a:7', name: 'Logo', visible: false,
+    effects: [{ id: 'Blur', name: 'Blur', enabled: true }] }] },
   { id: 'scene-b', name: 'Slides', current: false, layers: [] },
 ], tracks: [], streaming: false, recording: false };
 const changedSession = structuredClone(initialSession);
 changedSession.scenes[0].current = false; changedSession.scenes[1].current = true;
 const layerSession = structuredClone(changedSession);
 layerSession.scenes[0].layers[0].visible = true;
+const effectSession = structuredClone(layerSession);
+effectSession.scenes[0].layers[0].effects[0].enabled = false;
 actions.showScene = [
   { args: ['slides'], calls: [{ requestType: 'SetCurrentProgramScene', requestData: { sceneName: 'Slides' } }], session: changedSession },
   { args: ['missing'], calls: [], error: { message: 'No encuentro la escena «missing» en Meld' } },
@@ -25,6 +28,10 @@ actions.setLayer = [
   { args: ['Camera', 'Logo', true], calls: [{ requestType: 'SetSceneItemEnabled', requestData: { sceneName: 'Camera', sceneItemId: 7, sceneItemEnabled: true } }], session: layerSession },
   { args: ['Camera', 'Logo', true], calls: [], session: layerSession },
 ];
+actions.toggleEffect = [{ args: ['Camera', 'Logo', 'Blur'], calls: [{ requestType: 'SetSourceFilterEnabled',
+  requestData: { sourceName: 'Logo', filterName: 'Blur', filterEnabled: false } }], session: effectSession }];
+actions.media = [{ args: ['Logo', 'play'], calls: [{ requestType: 'TriggerMediaInputAction',
+  requestData: { inputName: 'Logo', mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY' } }], session: effectSession }];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fakeServer(t, options = {}) {
@@ -57,8 +64,8 @@ async function makeDriver() {
   const { fake, url } = await fakeServer(null, { scenes: [
     { sceneName: 'Camera', sceneUuid: 'scene-a', sceneItems: [{ sourceName: 'Logo', sceneItemId: 7, sceneItemEnabled: false }] },
     { sceneName: 'Slides', sceneUuid: 'scene-b' },
-  ] });
-  return { url, capabilities: ['scene-layers'], initialStatus, connectedStatus, initialSession, changedSession, actions,
+  ], inputs: [{ inputName: 'Logo', inputKind: 'ffmpeg_source', filters: [{ filterName: 'Blur' }] }] });
+  return { url, capabilities: ['scene-layers', 'layer-effects', 'media-controls'], initialStatus, connectedStatus, initialSession, changedSession, actions,
     changeSession: () => fake.emit('CurrentProgramSceneChanged', { sceneName: 'Slides', sceneUuid: 'scene-b' }),
     ready: async () => {}, settle: async () => {}, calls: () => fake.requests,
     report: ({ streaming, recording }) => {

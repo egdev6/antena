@@ -199,9 +199,9 @@ test('GetVersion anuncia las peticiones implementadas', { timeout: 5000 }, async
   assert.ok(Array.isArray(response.responseData.supportedImageFormats));
   assert.deepEqual(new Set(response.responseData.availableRequests), new Set([
     'GetVersion', 'GetSceneList', 'CreateScene', 'RemoveScene', 'GetCurrentProgramScene', 'SetCurrentProgramScene', 'GetSceneItemList',
-    'GetSceneItemId', 'SetSceneItemEnabled', 'GetSourceFilterList', 'SetSourceFilterEnabled', 'GetInputList',
+    'GetSceneItemId', 'SetSceneItemEnabled', 'GetSourceFilterList', 'CreateSourceFilter', 'RemoveSourceFilter', 'SetSourceFilterName', 'SetSourceFilterEnabled', 'GetInputList',
     'GetInputMute', 'SetInputMute', 'ToggleInputMute', 'GetInputVolume', 'SetInputVolume',
-    'GetInputAudioMonitorType', 'SetInputAudioMonitorType', 'TriggerMediaInputAction', 'GetStreamStatus',
+    'GetInputAudioMonitorType', 'SetInputAudioMonitorType', 'TriggerMediaInputAction', 'SetMediaInputCursor', 'GetMediaInputStatus', 'GetStreamStatus',
     'StartStream', 'StopStream', 'ToggleStream', 'GetRecordStatus', 'StartRecord', 'StopRecord',
   ]));
 });
@@ -313,6 +313,28 @@ test('filtros, entradas, audio y acción multimedia', { timeout: 5000 }, async t
   assert.deepEqual(eventData(c, 'InputAudioMonitorTypeChanged', INPUTS), [
     { inputName: 'Micro', inputUuid: 'input-micro', monitorType: 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT' },
   ]);
+});
+
+test('filtros externos y cursor multimedia conservan estado, eventos y rechazan entradas inválidas', { timeout: 5000 }, async t => {
+  const { fake, url } = await start(t, fixtures());
+  const { c } = await connect(url, { subscriptions: FILTERS });
+  success(await c.request('CreateSourceFilter', { sourceName: 'Micro', filterName: 'Glow', filterKind: 'fake_filter' }));
+  assert.deepEqual((await c.request('GetSourceFilterList', { sourceName: 'Micro' })).responseData.filters.map(f => f.filterName), ['Compressor', 'Glow']);
+  success(await c.request('SetSourceFilterName', { sourceName: 'Micro', filterName: 'Glow', newFilterName: 'Light' }));
+  assert.deepEqual((await c.request('GetSourceFilterList', { sourceName: 'Micro' })).responseData.filters.map(f => f.filterName), ['Compressor', 'Light']);
+  success(await c.request('RemoveSourceFilter', { sourceName: 'Micro', filterName: 'Light' }));
+  assert.deepEqual((await c.request('GetSourceFilterList', { sourceName: 'Micro' })).responseData.filters.map(f => f.filterName), ['Compressor']);
+  assert.deepEqual(c.events('SourceFilterCreated').map(e => e.eventData.filterName), ['Glow']);
+  assert.deepEqual(c.events('SourceFilterNameChanged').map(e => [e.eventData.oldFilterName, e.eventData.filterName]), [['Glow', 'Light']]);
+  assert.deepEqual(c.events('SourceFilterRemoved').map(e => e.eventData.filterName), ['Light']);
+  success(await c.request('SetMediaInputCursor', { inputName: 'Music', mediaCursor: 1234 }));
+  assert.deepEqual(fake.requests.at(-1), { requestType: 'SetMediaInputCursor', requestData: { inputName: 'Music', mediaCursor: 1234 } });
+  for (const [type, data] of [
+    ['SetMediaInputCursor', { inputName: 'Micro', mediaCursor: 0 }],
+    ['TriggerMediaInputAction', { inputName: 'Micro', mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY' }],
+  ]) assert.equal((await c.request(type, data)).requestStatus.code, 602);
+  assert.equal((await c.request('SetMediaInputCursor', { inputName: 'Music', mediaCursor: -1 })).requestStatus.result, false);
+  success(await c.request('GetMediaInputStatus', { inputName: 'Music' }), { mediaState: 'OBS_MEDIA_STATE_STOPPED', mediaDuration: 0, mediaCursor: 1234 });
 });
 
 test('emisión: estado, start, stop, toggle y transiciones', { timeout: 5000 }, async t => {

@@ -19,8 +19,8 @@ const scenes = [
 ];
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const url = server => `ws://127.0.0.1:${server.address().port}`;
-async function startProgram(t, fake) {
-  const program = createProgram('obs', { retryDelays: [10, 20] });
+async function startProgram(t, fake, options = {}) {
+  const program = createProgram('obs', { retryDelays: [10, 20], ...options });
   t.after(async () => { await program.quiesceClose(); program.dispose(); });
   const ready = waitFor(program, 'status', status => status.state === 'conectado');
   program.start(url(fake.server)); await ready;
@@ -37,14 +37,75 @@ async function until(predicate) {
   while (!predicate()) { assert.ok(Date.now() < deadline, 'observable state did not arrive'); await new Promise(r => setTimeout(r, 5)); }
 }
 
+test('input rename events are subscribed and refresh the scene list', async t => {
+  const { fake, program } = await fixture(t);
+  const before = fake.requests.filter(r => r.requestType === 'GetSceneList').length;
+  const published = waitFor(program, 'session');
+  fake.emit('InputNameChanged', { inputName: 'Logo', oldInputName: 'Old Logo' });
+  assert.deepEqual((await published)[0], program.session());
+  assert.equal(fake.requests.filter(r => r.requestType === 'GetSceneList').length, before + 1);
+});
+
+test('each scene, item, list and input event publishes exactly one session', async t => {
+  const { fake, program } = await fixture(t), snapshots = [];
+  program.on('session', session => snapshots.push(session));
+  for (const [type, data] of [
+    ['CurrentProgramSceneChanged', { sceneName: 'Slides', sceneUuid: 'slides' }],
+    ['SceneItemEnableStateChanged', { sceneName: 'Camera', sceneUuid: 'cam', sceneItemId: 7, sceneItemEnabled: true }],
+    ['SceneListChanged', { scenes: [] }],
+    ['InputNameChanged', { inputName: 'Logo', oldInputName: 'Old Logo' }],
+  ]) {
+    const before = snapshots.length, published = waitFor(program, 'session');
+    fake.emit(type, data);
+    await published;
+    await program.requestObs('GetVersion'); // Response barrier for queued notifications.
+    assert.equal(snapshots.length, before + 1, type);
+    assert.deepEqual(snapshots.at(-1), program.session());
+  }
+});
+
+test('unknown current scene causes exactly one scene-list refresh', async t => {
+  const { fake, program } = await fixture(t);
+  const before = fake.requests.filter(r => r.requestType === 'GetSceneList').length;
+  const published = waitFor(program, 'session');
+  fake.emit('CurrentProgramSceneChanged', { sceneName: 'New', sceneUuid: 'new' });
+  await published;
+  await program.requestObs('GetVersion');
+  assert.equal(fake.requests.filter(r => r.requestType === 'GetSceneList').length, before + 1);
+  assert.deepEqual(program.session().scenes.map(s => s.name), ['Camera', 'Slides']);
+});
+
+test('setLayer uses the new OBS socket after reconnect', async t => {
+  const first = fakeObs({ scenes });
+  t.after(() => first.close());
+  await listen(first.server);
+  const port = first.server.address().port;
+  const program = await startProgram(t, first, { retryDelays: [100, 200, 300, 400, 500, 600] });
+  const retry = waitFor(program, 'status', s => s.state === 'reintentando');
+  await first.close(); await retry;
+  const second = fakeObs({ scenes });
+  t.after(() => second.close());
+  await new Promise((resolve, reject) => {
+    second.server.once('error', reject);
+    second.server.listen(port, '127.0.0.1', resolve);
+  });
+  await waitFor(program, 'status', s => s.state === 'conectado');
+  const oldCount = first.requests.length;
+  await program.setLayer('Camera', 'Logo', true);
+  assert.equal(first.requests.length, oldCount);
+  assert.deepEqual(second.requests.at(-1), { requestType: 'SetSceneItemEnabled',
+    requestData: { sceneName: 'Camera', sceneItemId: 7, sceneItemEnabled: true } });
+  assert.equal(program.session().scenes[0].layers[0].visible, true);
+});
+
 test('OBS scene and item actions use stable scoped ids, names and visibility semantics', async t => {
   const { fake, program } = await fixture(t);
   assert.deepEqual(program.session().scenes, [
     { id: 'cam', name: 'Camera', current: true, layers: [
-      { id: 'cam:7', name: 'Logo', visible: false },
-      { id: 'cam:8', name: 'Logo', visible: true },
+      { id: 'cam:7', name: 'Logo', visible: false, effects: [] },
+      { id: 'cam:8', name: 'Logo', visible: true, effects: [] },
     ] },
-    { id: 'slides', name: 'Slides', current: false, layers: [{ id: 'slides:7', name: 'Video', visible: true }] },
+    { id: 'slides', name: 'Slides', current: false, layers: [{ id: 'slides:7', name: 'Video', visible: true, effects: [] }] },
   ]);
   const copy = program.session(); copy.scenes[0].layers[0].visible = true;
   assert.equal(program.session().scenes[0].layers[0].visible, false);
