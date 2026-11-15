@@ -4,6 +4,10 @@ import { Program } from './program.mjs';
 const OBS_EVENTS = (1 << 2) | (1 << 3) | (1 << 5) | (1 << 6) | (1 << 7);
 const hash = value => createHash('sha256').update(value).digest('base64');
 const unavailable = () => { throw new Error('Acción todavía no disponible con OBS.'); };
+// Meld gain and OBS inputVolumeMul are both linear amplitude: gain = clamp(mul, 0, 1),
+// mul = clamp(gain, 0, 1). Thus 0 = silence, 0.1 = -20 dB, 1 = 0 dB; OBS boost > 1 displays as 1.
+const gainOf = value => Math.max(0, Math.min(1, Number(value)));
+const inputRef = track => track.id === track.name ? { inputName: track.name } : { inputUuid: track.id };
 
 // Node >=24 already provides the WebSocket client (including masking, fragmentation and TLS).
 export class ObsAdapter extends Program {
@@ -22,12 +26,13 @@ export class ObsAdapter extends Program {
     this.closePromise = null;
     this.attempts = 0;
     this.scenes = [];
-    for (const capability of ['scene-layers', 'layer-effects', 'media-controls']) this.capabilities.add(capability);
+    this.tracks = [];
+    for (const capability of ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks']) this.capabilities.add(capability);
   }
 
   get status() { return this._status; }
   setStatus(patch) { this._status = { ...this.status, ...patch }; this.emit('status', this.status); }
-  session() { return { scenes: structuredClone(this.scenes), tracks: [], streaming: this.status.streaming, recording: this.status.recording }; }
+  session() { return { scenes: structuredClone(this.scenes), tracks: structuredClone(this.tracks), streaming: this.status.streaming, recording: this.status.recording }; }
 
   start(url) {
     if (this.closePromise) return;
@@ -80,8 +85,9 @@ export class ObsAdapter extends Program {
     this.sockets.add(ws);
     this.setStatus({ state: 'conectando', streamingKnown: false, recordingKnown: false, error: null });
     const pending = new Map(), revisions = { streaming: 0, recording: 0 };
-    let id = 0, sceneRevision = 0, refreshing = null;
+    let id = 0, sceneRevision = 0, refreshing = null, sceneNeedsEmit = false, trackRevision = 0, refreshingTracks = null;
     this.scenes = [];
+    this.tracks = [];
     let handshake = setTimeout(() => { try { ws.close(); } catch {} }, this.requestTimeout);
     handshake.unref?.();
     const current = () => !this.stopped && this.ws === ws;
@@ -100,8 +106,9 @@ export class ObsAdapter extends Program {
       catch { clearTimeout(timer); pending.delete(requestId); reject(new Error('OBS se ha desconectado.')); }
     });
     this.requestObs = request;
-    const refreshScenes = () => {
+    const refreshScenes = (notify = true) => {
       sceneRevision++;
+      sceneNeedsEmit ||= notify;
       if (refreshing) return refreshing;
       refreshing = (async () => {
         while (current()) {
@@ -120,11 +127,62 @@ export class ObsAdapter extends Program {
           if (!current()) return;
           if (revision !== sceneRevision) continue;
           this.scenes = scenes;
-          if (this.connected) this.emit('session', this.session());
+          if (sceneNeedsEmit && this.connected) this.emit('session', this.session());
+          sceneNeedsEmit = false;
           return;
         }
       })().finally(() => { refreshing = null; });
       return refreshing;
+    };
+    const refreshTracks = () => {
+      trackRevision++;
+      if (refreshingTracks) return refreshingTracks;
+      refreshingTracks = (async () => {
+        while (current()) {
+          const revision = trackRevision, list = await request('GetInputList');
+          const tracks = await Promise.all(list.inputs.map(async input => {
+            const ref = input.inputUuid ? { inputUuid: input.inputUuid } : { inputName: input.inputName };
+            let mute, volume, monitor;
+            try {
+              await request('GetInputAudioTracks', ref);
+              [mute, volume, monitor] = await Promise.all([
+                request('GetInputMute', ref), request('GetInputVolume', ref), request('GetInputAudioMonitorType', ref),
+              ]);
+            } catch {
+              // One unavailable input (including non-audio 604 or disappeared 600/602)
+              // must not prevent the remaining inputs from being enumerated.
+              return null;
+            }
+            return { id: input.inputUuid ?? input.inputName, name: input.inputName, muted: mute.inputMuted,
+              monitoring: monitor.monitorType !== 'OBS_MONITORING_TYPE_NONE', parent: null, gain: gainOf(volume.inputVolumeMul) };
+          }));
+          if (!current()) return;
+          if (revision !== trackRevision) continue;
+          this.tracks = tracks.filter(Boolean);
+          return;
+        }
+      })().finally(() => { refreshingTracks = null; });
+      return refreshingTracks;
+    };
+    const trackEvent = d => {
+      const data = d.eventData ?? {};
+      const track = this.tracks.find(t => data.inputUuid ? t.id === data.inputUuid : t.name === (data.oldInputName ?? data.inputName));
+      if (d.eventType === 'InputCreated') {
+        void refreshTracks().catch(() => {}).then(() => { if (current() && this.connected) this.emit('session', this.session()); });
+        return;
+      }
+      trackRevision++;
+      if (d.eventType === 'InputNameChanged') {
+        if (track) { if (track.id === track.name) track.id = data.inputName; track.name = data.inputName; }
+        for (const scene of this.scenes) for (const layer of scene.layers) if (layer.name === data.oldInputName) layer.name = data.inputName;
+        void refreshScenes(false).catch(() => {}).then(() => { if (current() && this.connected) this.emit('session', this.session()); });
+        return;
+      }
+      if (d.eventType === 'InputRemoved') this.tracks = this.tracks.filter(t => t !== track);
+      else if (track && d.eventType === 'InputMuteStateChanged' && typeof data.inputMuted === 'boolean') track.muted = data.inputMuted;
+      else if (track && d.eventType === 'InputVolumeChanged' && Number.isFinite(data.inputVolumeMul)) track.gain = gainOf(data.inputVolumeMul);
+      else if (track && d.eventType === 'InputAudioMonitorTypeChanged' && typeof data.monitorType === 'string') track.monitoring = data.monitorType !== 'OBS_MONITORING_TYPE_NONE';
+      if (this.connected) this.emit('session', this.session());
     };
     const sceneEvent = d => {
       const data = d.eventData ?? {};
@@ -174,7 +232,7 @@ export class ObsAdapter extends Program {
       } else if (message.op === 2) {
         clearTimeout(handshake); handshake = null;
         const initial = { ...revisions };
-        void Promise.allSettled([request('GetVersion'), request('GetStreamStatus'), request('GetRecordStatus'), refreshScenes()]).then(results => {
+        void Promise.allSettled([request('GetVersion'), request('GetStreamStatus'), request('GetRecordStatus'), refreshScenes(), refreshTracks()]).then(results => {
           if (!current()) return;
           const version = results[0].value?.obsVersion;
           if (typeof version === 'string') this._status = { ...this.status, version };
@@ -194,7 +252,7 @@ export class ObsAdapter extends Program {
         if (d.requestStatus?.result === true) entry.resolve(d.responseData ?? {});
         else {
           const error = new Error(`OBS rechazó la petición «${entry.name}».`);
-          if (entry.name === 'TriggerMediaInputAction' || entry.name === 'SetMediaInputCursor') error.obsCode = d.requestStatus?.code;
+          if (['TriggerMediaInputAction', 'SetMediaInputCursor', 'GetInputAudioTracks', 'GetInputMute', 'GetInputVolume', 'GetInputAudioMonitorType'].includes(entry.name)) error.obsCode = d.requestStatus?.code;
           entry.reject(error);
         }
       } else if (message.op === 5) {
@@ -206,7 +264,8 @@ export class ObsAdapter extends Program {
           if (field === 'streaming' && this.connected && value !== this.status.streaming) this.emit('streaming', value);
           this.setStatus({ [field]: value, [field + 'Known']: true });
           if (this.connected) this.emit('session', this.session());
-        } else if (/^(CurrentProgramSceneChanged|SceneCreated|SceneRemoved|SceneNameChanged|SceneListChanged|SceneItemCreated|SceneItemRemoved|SceneItemListReindexed|SceneItemEnableStateChanged|InputNameChanged)$/.test(d.eventType)) sceneEvent(d);
+        } else if (/^(InputCreated|InputRemoved|InputNameChanged|InputMuteStateChanged|InputVolumeChanged|InputAudioMonitorTypeChanged)$/.test(d.eventType)) trackEvent(d);
+        else if (/^(CurrentProgramSceneChanged|SceneCreated|SceneRemoved|SceneNameChanged|SceneListChanged|SceneItemCreated|SceneItemRemoved|SceneItemListReindexed|SceneItemEnableStateChanged)$/.test(d.eventType)) sceneEvent(d);
         else if (/^(SourceFilterEnableStateChanged|SourceFilterCreated|SourceFilterRemoved|SourceFilterNameChanged|SourceFilterListReindexed)$/.test(d.eventType)) filterEvent(d);
       }
     };
@@ -248,6 +307,10 @@ export class ObsAdapter extends Program {
     }
     return null;
   }
+  findTrack(ref) {
+    const name = String(ref ?? '').toLowerCase();
+    return this.session().tracks.find(t => t.id === ref || t.name.toLowerCase() === name) || null;
+  }
   async showScene(ref) {
     const scene = this.findScene(ref);
     if (!scene) throw new Error(`No encuentro la escena «${ref}» en Meld`);
@@ -273,8 +336,18 @@ export class ObsAdapter extends Program {
   }
   command() { return unavailable(); }
   streamEvent() { return unavailable(); }
-  toggleMute() { return unavailable(); }
-  setGain() { return unavailable(); }
+  async toggleMute(ref) {
+    const track = this.findTrack(ref); if (!track) throw new Error(`No encuentro la pista «${ref}»`);
+    await this.requestObs('ToggleInputMute', inputRef(track));
+  }
+  async setGain(ref, gain) {
+    const track = this.findTrack(ref); if (!track) throw new Error(`No encuentro la pista «${ref}»`);
+    const value = gainOf(gain);
+    await this.requestObs('SetInputVolume', { ...inputRef(track), inputVolumeMul: value });
+    const current = this.tracks.find(t => t.id === track.id);
+    if (current && current.gain !== value) { current.gain = value; if (this.connected) this.emit('session', this.session()); }
+    return value;
+  }
   async media(layerRef, command, seconds) {
     const found = this.findLayer(null, layerRef);
     if (!found) throw new Error(`No encuentro la capa «${layerRef}»`);

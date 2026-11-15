@@ -7,13 +7,13 @@ import { programContract, waitFor } from './helpers/program-contract.mjs';
 const initialStatus = { state: 'desconectado', streaming: false, streamingKnown: false, recording: false,
   recordingKnown: false, recordingWarning: null, version: null, error: null };
 const connectedStatus = { ...initialStatus, state: 'conectado', streamingKnown: true, recordingKnown: true, version: '30.2.3' };
-const methods = ['command', 'streamEvent', 'toggleMute', 'setGain', 'setProperty', 'call'];
+const methods = ['command', 'streamEvent', 'setProperty', 'call'];
 const actions = Object.fromEntries(methods.map(name => [name, [{ args: ['test'], calls: [], error: /todavía no disponible con OBS/i }]]));
 const initialSession = { scenes: [
   { id: 'scene-a', name: 'Camera', current: true, layers: [{ id: 'scene-a:7', name: 'Logo', visible: false,
     effects: [{ id: 'Blur', name: 'Blur', enabled: true }] }] },
   { id: 'scene-b', name: 'Slides', current: false, layers: [] },
-], tracks: [], streaming: false, recording: false };
+], tracks: [{ id: 'logo-id', name: 'Logo', muted: false, monitoring: false, parent: null, gain: 1 }], streaming: false, recording: false };
 const changedSession = structuredClone(initialSession);
 changedSession.scenes[0].current = false; changedSession.scenes[1].current = true;
 const layerSession = structuredClone(changedSession);
@@ -30,8 +30,12 @@ actions.setLayer = [
 ];
 actions.toggleEffect = [{ args: ['Camera', 'Logo', 'Blur'], calls: [{ requestType: 'SetSourceFilterEnabled',
   requestData: { sourceName: 'Logo', filterName: 'Blur', filterEnabled: false } }], session: effectSession }];
+const mutedSession = structuredClone(effectSession); mutedSession.tracks[0].muted = true;
+const gainSession = structuredClone(mutedSession); gainSession.tracks[0].gain = 0.25;
+actions.toggleMute = [{ args: ['Logo'], calls: [{ requestType: 'ToggleInputMute', requestData: { inputUuid: 'logo-id' } }], result: undefined, session: mutedSession }];
+actions.setGain = [{ args: ['logo-id', 0.25], calls: [{ requestType: 'SetInputVolume', requestData: { inputUuid: 'logo-id', inputVolumeMul: 0.25 } }], result: 0.25, session: gainSession }];
 actions.media = [{ args: ['Logo', 'play'], calls: [{ requestType: 'TriggerMediaInputAction',
-  requestData: { inputName: 'Logo', mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY' } }], session: effectSession }];
+  requestData: { inputName: 'Logo', mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY' } }], session: gainSession }];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fakeServer(t, options = {}) {
@@ -64,8 +68,8 @@ async function makeDriver() {
   const { fake, url } = await fakeServer(null, { scenes: [
     { sceneName: 'Camera', sceneUuid: 'scene-a', sceneItems: [{ sourceName: 'Logo', sceneItemId: 7, sceneItemEnabled: false }] },
     { sceneName: 'Slides', sceneUuid: 'scene-b' },
-  ], inputs: [{ inputName: 'Logo', inputKind: 'ffmpeg_source', filters: [{ filterName: 'Blur' }] }] });
-  return { url, capabilities: ['scene-layers', 'layer-effects', 'media-controls'], initialStatus, connectedStatus, initialSession, changedSession, actions,
+  ], inputs: [{ inputName: 'Logo', inputUuid: 'logo-id', inputKind: 'ffmpeg_source', filters: [{ filterName: 'Blur' }] }] });
+  return { url, capabilities: ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks'], initialStatus, connectedStatus, initialSession, changedSession, actions,
     changeSession: () => fake.emit('CurrentProgramSceneChanged', { sceneName: 'Slides', sceneUuid: 'scene-b' }),
     ready: async () => {}, settle: async () => {}, calls: () => fake.requests,
     report: ({ streaming, recording }) => {
@@ -77,10 +81,10 @@ async function makeDriver() {
 programContract(() => createProgram('obs', { getPassword: () => '', retryDelays: [10, 20] }), makeDriver, { statusOnly: true, sessions: true });
 
 test('OBS connects without a password and queries status and version', async t => {
-  const { fake, url } = await fakeServer(t), { program } = makeProgram(t);
+  const { fake, url } = await fakeServer(t, { inputs: [] }), { program } = makeProgram(t);
   await connected(program, url);
   assert.deepEqual(program.status, connectedStatus);
-  assert.deepEqual(fake.requests.map(r => r.requestType).sort(), ['GetRecordStatus', 'GetSceneItemList', 'GetSceneItemList', 'GetSceneList', 'GetStreamStatus', 'GetVersion']);
+  assert.deepEqual(fake.requests.map(r => r.requestType).sort(), ['GetInputList', 'GetRecordStatus', 'GetSceneItemList', 'GetSceneItemList', 'GetSceneList', 'GetStreamStatus', 'GetVersion']);
   assert.deepEqual(program.session().scenes.map(s => [s.name, s.current, s.layers]), [['Camera', true, []], ['Slides', false, []]]);
   assert.deepEqual(program.session().tracks, []);
 });
