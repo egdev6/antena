@@ -24,7 +24,10 @@ actions.command = [
   ...[['meld.startStreamingAction', 'StartStream'], ['meld.stopStreamingAction', 'StopStream'],
     ['meld.toggleStreamingAction', 'ToggleStream'], ['meld.toggleStreamingAction', 'ToggleStream']]
     .map(([command, requestType]) => ({ args: [command], calls: [{ requestType, requestData: {} }] })),
-  { args: ['meld.startRecordingAction'], calls: [], error: /todavía no disponible con OBS/i },
+  ...[['meld.startRecordingAction', 'StartRecord'], ['meld.stopRecordingAction', 'StopRecord'],
+    ['meld.toggleRecordingAction', 'ToggleRecord'], ['meld.toggleRecordingAction', 'ToggleRecord']]
+    .map(([command, requestType]) => ({ args: [command], calls: [{ requestType, requestData: {} }] })),
+  { args: ['meld.unknownAction'], calls: [], error: /todavía no disponible con OBS/i },
 ];
 actions.showScene = [
   { args: ['slides'], calls: [{ requestType: 'SetCurrentProgramScene', requestData: { sceneName: 'Slides' } }], session: changedSession },
@@ -75,12 +78,12 @@ async function makeDriver() {
     { sceneName: 'Camera', sceneUuid: 'scene-a', sceneItems: [{ sourceName: 'Logo', sceneItemId: 7, sceneItemEnabled: false }] },
     { sceneName: 'Slides', sceneUuid: 'scene-b' },
   ], inputs: [{ inputName: 'Logo', inputUuid: 'logo-id', inputKind: 'ffmpeg_source', filters: [{ filterName: 'Blur' }] }] });
-  return { url, capabilities: ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks', 'streaming'], initialStatus, connectedStatus, initialSession, changedSession, actions,
+  return { url, capabilities: ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks', 'streaming', 'recording'], initialStatus, connectedStatus, initialSession, changedSession, actions,
     changeSession: () => fake.emit('CurrentProgramSceneChanged', { sceneName: 'Slides', sceneUuid: 'scene-b' }),
     ready: async () => {}, settle: async () => {}, calls: () => fake.requests,
     report: ({ streaming, recording }) => {
       fake.emit('StreamStateChanged', { outputActive: streaming, outputState: `OBS_WEBSOCKET_OUTPUT_${streaming ? 'STARTED' : 'STOPPED'}` });
-      fake.emit('RecordStateChanged', { outputActive: recording });
+      fake.emit('RecordStateChanged', { outputActive: recording, outputState: `OBS_WEBSOCKET_OUTPUT_${recording ? 'STARTED' : 'STOPPED'}`, outputPath: null });
     },
     close: () => fake.close() };
 }
@@ -148,7 +151,7 @@ test('unexpected disconnect reconnects and status events are forwarded in order'
   assert.equal(server.upgrades(), 2);
   const live = until(program, s => s.streaming && s.recording);
   server.fake.emit('StreamStateChanged', { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED' });
-  server.fake.emit('RecordStateChanged', { outputActive: true });
+  server.fake.emit('RecordStateChanged', { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED', outputPath: null });
   await live;
   assert.deepEqual(streamingEvents, [true]);
   assert.deepEqual([program.session().streaming, program.session().recording], [true, true]);

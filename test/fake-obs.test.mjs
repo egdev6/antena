@@ -202,7 +202,7 @@ test('GetVersion anuncia las peticiones implementadas', { timeout: 5000 }, async
     'GetSceneItemId', 'SetSceneItemEnabled', 'GetSourceFilterList', 'CreateSourceFilter', 'RemoveSourceFilter', 'SetSourceFilterName', 'SetSourceFilterEnabled', 'GetInputList',
     'GetInputAudioTracks', 'GetInputMute', 'SetInputMute', 'ToggleInputMute', 'GetInputVolume', 'SetInputVolume',
     'GetInputAudioMonitorType', 'SetInputAudioMonitorType', 'TriggerMediaInputAction', 'SetMediaInputCursor', 'GetMediaInputStatus', 'GetStreamStatus',
-    'StartStream', 'StopStream', 'ToggleStream', 'GetRecordStatus', 'StartRecord', 'StopRecord',
+    'StartStream', 'StopStream', 'ToggleStream', 'GetRecordStatus', 'StartRecord', 'StopRecord', 'ToggleRecord',
   ]));
 });
 
@@ -436,11 +436,32 @@ test('grabación: estado, start, stop y ruta solo al parar', { timeout: 5000 }, 
   status = await c.request('GetRecordStatus');
   assert.equal(status.responseData.outputActive, false);
   assert.deepEqual(eventData(c, 'RecordStateChanged', OUTPUTS), [
-    { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTING' },
-    { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED' },
-    { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPING' },
+    { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTING', outputPath: null },
+    { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED', outputPath: stopped.responseData.outputPath },
+    { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPING', outputPath: null },
     { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPED', outputPath: stopped.responseData.outputPath },
   ]);
+});
+
+test('record rejects redundant requests with OBS codes and toggles without extra events', { timeout: 5000 }, async t => {
+  const { url } = await start(t, fixtures());
+  const { c } = await connect(url, { subscriptions: OUTPUTS });
+  const stopped = await c.request('StopRecord');
+  assert.deepEqual(stopped.requestStatus, { result: false, code: 501 });
+  assert.equal(stopped.responseData, undefined);
+  assert.equal((await c.request('GetRecordStatus')).responseData.outputActive, false);
+  assert.deepEqual(c.events('RecordStateChanged'), []);
+  success(await c.request('StartRecord'));
+  const events = c.events('RecordStateChanged').length;
+  const started = await c.request('StartRecord');
+  assert.deepEqual(started.requestStatus, { result: false, code: 500 });
+  assert.equal(started.responseData, undefined);
+  assert.equal((await c.request('GetRecordStatus')).responseData.outputActive, true);
+  assert.equal(c.events('RecordStateChanged').length, events);
+  success(await c.request('ToggleRecord'), { outputActive: false });
+  success(await c.request('ToggleRecord'), { outputActive: true });
+  assert.equal((await c.request('GetRecordStatus')).responseData.outputActive, true);
+  assert.equal(c.events('RecordStateChanged').length, events + 4);
 });
 
 test('suscripciones independientes, Reidentify y medidores de alto volumen', { timeout: 5000 }, async t => {
