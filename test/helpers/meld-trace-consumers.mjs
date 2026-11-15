@@ -48,7 +48,7 @@ export async function consumerTrace(t) {
   });
   const { createApp } = await import('../../src/server.mjs');
   let app, events;
-  const scheduled = [], originalSetTimeout = globalThis.setTimeout;
+  const scheduled = [], engineScheduled = [], originalSetTimeout = globalThis.setTimeout;
   t.after(async () => {
     globalThis.setTimeout = originalSetTimeout;
     events?.stop();
@@ -110,11 +110,22 @@ export async function consumerTrace(t) {
   await api('POST', '/api/config/set', { path: 'meld.autoSession', value: false });
   events = await panel(base, []); await next('status');
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-01T00:00:00Z') });
-  // A uniquely long delay is intercepted only for /api/meld/layer; advancing it is
-  // explicit and cannot race HTTP, WebSocket, real transport timeouts or the draw.
+  // Unique long delays leave HTTP, WebSocket, transport timeouts and the draw alone.
   globalThis.setTimeout = (fn, ms, ...args) => {
     if (ms === 1234000) { scheduled.push(() => fn(...args)); return { ref() {}, unref() {} }; }
+    if (ms === 2345000 || ms === 3456000) {
+      const timer = { at: Date.now() + ms, fire: () => fn(...args), ref() {}, unref() {} };
+      engineScheduled.push(timer); return timer;
+    }
     return originalSetTimeout(fn, ms, ...args);
+  };
+  const advanceEngine = ms => {
+    const end = Date.now() + ms;
+    while (engineScheduled.length && engineScheduled[0].at <= end) {
+      const timer = engineScheduled.shift();
+      t.mock.timers.tick(timer.at - Date.now()); timer.fire();
+    }
+    t.mock.timers.tick(end - Date.now());
   };
   const timer = (await api('POST', '/api/timers', { name: 'Live', message: '', intervalMin: 1, minChatLines: 0 })).timer;
   const fire = `/api/timers/${timer.id}/fire`;
@@ -191,6 +202,37 @@ export async function consumerTrace(t) {
   await connect();
   record('reconnect-session', (({ scenes, tracks, streaming, recording }) => ({ scenes, tracks, streaming, recording }))(await api('GET', '/api/meld')));
   record('timer-reconnected', await row());
+
+  // Append a second raid so all prior wire messages and observations stay intact.
+  // The layer is visible and Cámara is current at this point after reconnection.
+  await api('PUT', '/api/alerts/raid', { actions: [
+    { kind: 'toggleLayer', scene: 'Cámara', layer: 'Alertas' },
+    { kind: 'scene', scene: 'Pantalla', returnAfterSec: 2345 },
+    { kind: 'layer', scene: 'Cámara', layer: 'Alertas', seconds: 3456 },
+    { kind: 'streamEvent', event: 'COUNTER_INCREMENT', amount: '7' },
+  ] });
+  const beforeEngine = wire.idleCount();
+  const timedAlert = await api('POST', '/api/simulate', { type: 'raid', vars: { user: 'Trace', amount: 20 } });
+  record('engine-timed-alert', { hasId: !!timedAlert.alert?.id });
+  const view = s => ({ currentScene: s.scenes.find(scene => scene.current)?.id, visible: s.scenes[0].layers[0].visible });
+  record('engine-toggle', view(await next('meld', s => !s.scenes[0].layers[0].visible)));
+  record('engine-scene', view(await next('meld', s => s.scenes[1].current)));
+  record('engine-layer-show', view(await next('meld', s => s.scenes[0].layers[0].visible)));
+  record('engine-stream-event', view(await next('meld')));
+  await wire.waitIdleAfter(beforeEngine + 3);
+  assert.deepEqual(engineScheduled.map(timer => timer.at - Date.now()), [2345000, 3456000]);
+  advanceEngine(2344999);
+  record('engine-before-return', view(await api('GET', '/api/meld')));
+  let beforeExpiry = wire.idleCount(); advanceEngine(1);
+  record('engine-return', view(await next('meld', s => s.scenes[0].current)));
+  await wire.waitIdleAfter(beforeExpiry);
+  advanceEngine(1110999);
+  record('engine-before-hide', view(await api('GET', '/api/meld')));
+  beforeExpiry = wire.idleCount(); advanceEngine(1);
+  record('engine-layer-hidden', view(await next('meld', s => !s.scenes[0].layers[0].visible)));
+  await wire.waitIdleAfter(beforeExpiry);
+  assert.equal(engineScheduled.length, 0);
+
   await api('POST', '/api/meld/disconnect');
   await next('status', s => s.meld.state === 'desconectado');
   return { wire: wire.messages, observations, order: await consumerOrderTrace(t) };

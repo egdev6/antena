@@ -189,7 +189,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     session._applyRetention().catch(() => {});
   };
   session._applyRetention().catch(() => {});   // unclassified archives stay protected until reconciliation
-  const engine = new Engine({ store, bus, session, meld, twitch, youtube, log });
+  const engine = new Engine({ store, bus, session, meld: program, twitch, youtube, log });
   // #132: barras de objetivo con el total real del canal (persisten entre directos)
   const channelTotals = await new ChannelTotals({ dir: store.dir, twitch, youtube, log }).load();
   const followers = await new FollowerRegistry({ dir: store.dir, twitch, youtube, log }).load();

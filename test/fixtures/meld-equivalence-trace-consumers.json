@@ -53,6 +53,18 @@
     {"type":7,"object":"meld","signal":8},
     {"type":4},
     {"type":6,"object":"meld","method":17,"args":["antena","t1"],"id":20},
+    {"type":4},
+    {"type":6,"object":"meld","method":11,"args":["s1","l1"],"id":21},
+    {"type":4},
+    {"type":6,"object":"meld","method":10,"args":["s2"],"id":22},
+    {"type":4},
+    {"type":6,"object":"meld","method":11,"args":["s1","l1"],"id":23},
+    {"type":4},
+    {"type":6,"object":"meld","method":13,"args":["COUNTER_INCREMENT",{"amount":7}],"id":24},
+    {"type":4},
+    {"type":6,"object":"meld","method":10,"args":["s1"],"id":25},
+    {"type":4},
+    {"type":6,"object":"meld","method":11,"args":["s1","l1"],"id":26},
     {"type":4}
   ],
   "observations": [
@@ -78,7 +90,16 @@
     {"label":"status-http","value":{"state":"conectado","streaming":true,"streamingKnown":true,"recording":false,"recordingKnown":true,"recordingWarning":null,"version":2,"error":null}},
     {"label":"timer-disconnected-again","value":{"pausedOffStream":true,"nextInSec":60,"runs":1,"lines":0,"lastRun":true}},
     {"label":"reconnect-session","value":{"scenes":[{"id":"s1","name":"Cámara","current":true,"staged":false,"layers":[{"id":"l1","name":"Alertas","visible":true,"url":"https://example.invalid/overlay","effects":[{"id":"e1","name":"Brillo","enabled":true}]}]},{"id":"s2","name":"Pantalla","current":false,"staged":false,"layers":[]}],"tracks":[{"id":"t1","name":"Micro","muted":false,"monitoring":false,"parent":null,"gain":null}],"streaming":false,"recording":false}},
-    {"label":"timer-reconnected","value":{"pausedOffStream":true,"nextInSec":60,"runs":1,"lines":0,"lastRun":true}}
+    {"label":"timer-reconnected","value":{"pausedOffStream":true,"nextInSec":60,"runs":1,"lines":0,"lastRun":true}},
+    {"label":"engine-timed-alert","value":{"hasId":true}},
+    {"label":"engine-toggle","value":{"currentScene":"s1","visible":false}},
+    {"label":"engine-scene","value":{"currentScene":"s2","visible":false}},
+    {"label":"engine-layer-show","value":{"currentScene":"s2","visible":true}},
+    {"label":"engine-stream-event","value":{"currentScene":"s2","visible":true}},
+    {"label":"engine-before-return","value":{"currentScene":"s2","visible":true}},
+    {"label":"engine-return","value":{"currentScene":"s1","visible":true}},
+    {"label":"engine-before-hide","value":{"currentScene":"s1","visible":true}},
+    {"label":"engine-layer-hidden","value":{"currentScene":"s1","visible":false}}
   ],
   "order": [
     {"event":"auto-session-start","row":{"pausedOffStream":true,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
