@@ -418,6 +418,16 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       media: store.config.alerts[type]?.media || '',
     }]));
   };
+  // Once program settings change, include their public snapshot in every config event:
+  // the bus coalesces by event type, so a later chat/alert update must not erase it.
+  let includeProgramConfig = false;
+  const pushPanelConfig = () => {
+    const config = store.publicConfig();
+    bus.send('config', {
+      prompter: store.config.prompter, chat: store.config.chat, alerts: config.alerts,
+      ...(includeProgramConfig ? { program: config.program, obs: config.obs } : {}),
+    }, ['panel']);
+  };
   store.on('change', patch => {
     if (patch.youtube || patch.all) followers.updateYouTubePolling();
     if (patch.theme || patch.all) bus.send('theme', publicTheme(store.config.theme), ['overlay', 'preview', 'widget']);
@@ -435,9 +445,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }
     // El Bus sustituye config por tipo: cada envío debe conservar todas sus secciones.
     // Incluye alertas editadas fuera de este panel (MCP, otra ventana, el móvil).
-    if (patch.prompter || patch.chat || patch.alerts || patch.all) bus.send('config', {
-      prompter: store.config.prompter, chat: store.config.chat, alerts: store.publicConfig().alerts,
-    }, ['panel']);
+    if (patch.prompter || patch.chat || patch.alerts || patch.all) pushPanelConfig();
   });
   // la persistencia puede fallar sin emitir 'change' (o estar en vuelo): el panel necesita su propio canal
   store.on('persistence', state => bus.send('persistence', state, ['panel']));
@@ -1180,6 +1188,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }
     if (patch.chat && store.config.chat.twitchChannel) chat.join(store.config.chat.twitchChannel);
     if (patch.paused !== undefined) engine.pushPause();
+    // Publish only after password changes have completed; publicConfig masks the value.
+    if (patch.program || patch.obs) { includeProgramConfig = true; pushPanelConfig(); }
   }
 
   // ---------- subida de archivos (cuerpo = archivo; nombre en ?name=) ----------

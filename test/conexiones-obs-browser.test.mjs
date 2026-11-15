@@ -21,21 +21,40 @@ const radio = name => `([...document.querySelectorAll('[role="radiogroup"][aria-
 const card = name => `[...document.querySelectorAll('.lv-conn')].find(x => x.querySelector('b')?.textContent.trim() === ${JSON.stringify(name)})`;
 const saveButton = label => `Array.from(document.querySelectorAll('.lv-savebar button')).find(b => b.textContent.trim() === ${JSON.stringify(label)})`;
 const setInput = (selector, value) => `(() => { const e = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, ${JSON.stringify(value)}); e.dispatchEvent(new Event('input', { bubbles: true })); })()`;
-let panelBuild;
-async function buildPanel(dist) {
-  panelBuild ||= build({ entryPoints: [fileURLToPath(new URL('../app/src/panel/main.tsx', import.meta.url))],
+const panelBuilds = new Map();
+async function buildPanel(dist, withDock = false) {
+  if (!panelBuilds.has(withDock)) panelBuilds.set(withDock, build({
+    ...(withDock ? { stdin: { resolveDir: fileURLToPath(new URL('../app/src/panel/', import.meta.url)), loader: 'tsx', contents: `
+      import './main.tsx';
+      import React from 'react';
+      import { createRoot } from 'react-dom/client';
+      import { DockQuestions } from '../dock/DockQuestions';
+      function mountDock() {
+        if (!document.querySelector('#programa-emision')) return setTimeout(mountDock, 20);
+        const host = document.createElement('div'); host.id = 'fixture-dock'; document.body.append(host);
+        createRoot(host).render(React.createElement(DockQuestions));
+      }
+      mountDock();` } } : { entryPoints: [fileURLToPath(new URL('../app/src/panel/main.tsx', import.meta.url))] }),
     outfile: path.join(tmpdir(), 'antena-selector-panel.js'), bundle: true, format: 'esm', minify: true, write: false,
     target: ['chrome110', 'edge110', 'safari16'], jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' },
-    external: ['/fonts/*', '/ds/*'], logLevel: 'silent' });
+    external: ['/fonts/*', '/ds/*'], logLevel: 'silent' }));
   const assets = path.join(dist, 'assets'); await mkdir(assets, { recursive: true });
-  const result = await panelBuild;
+  const result = await panelBuilds.get(withDock);
   await Promise.all([...result.outputFiles.map(file => writeFile(path.join(assets, 'panel' + path.extname(file.path)), file.contents)),
     writeFile(path.join(dist, 'index.html'), '<!doctype html><html lang="es"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/ds/tokens.css"><link rel="stylesheet" href="/ds/bundle.css"><link rel="stylesheet" href="/assets/panel.css"></head><body><div id="root"></div><script type="module" src="/assets/panel.js"></script></body></html>')]);
 }
 
 // Observe fetch responses and the panel's WebSocket/SSE messages, not only the save response.
 const observePage = `(() => {
-  window.__received = []; window.__requests = []; window.__pending = 0;
+  window.__received = []; window.__requests = []; window.__pending = 0; window.__console = [];
+  for (const name of Object.getOwnPropertyNames(console)) {
+    if (typeof console[name] !== 'function') continue;
+    const original = console[name].bind(console);
+    console[name] = (...args) => {
+      window.__console.push(args.map(value => { try { return typeof value === 'string' ? value : JSON.stringify(value); } catch { return String(value); } }));
+      return original(...args);
+    };
+  }
   const original = window.fetch;
   window.fetch = (...args) => {
     const url = new URL(String(args[0]), location.href);
@@ -58,7 +77,7 @@ const observePage = `(() => {
   } };
 })()`;
 
-async function fixture(t) {
+async function fixture(t, { withDock = false } = {}) {
   const bin = await findChrome();
   if (!bin) { t.skip('sin Chrome local; define CHROME_PATH'); return null; }
   const root = await mkdtemp(path.join(tmpdir(), 'antena-selector-'));
@@ -73,7 +92,7 @@ async function fixture(t) {
   () => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })));
   await new Promise(resolve => obs.server.listen(0, '127.0.0.1', resolve));
   await new Promise(resolve => meld.server.listen(0, '127.0.0.1', resolve));
-  const dist = path.join(root, 'dist'); await buildPanel(dist);
+  const dist = path.join(root, 'dist'); await buildPanel(dist, withDock);
   app = await createApp({ dataDir: path.join(root, 'data'), mediaDir: path.join(root, 'media'), appDist: dist, push: {}, log: () => {} });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -121,6 +140,21 @@ test('selector experimental guarda la elección y restaura la tarjeta y conexió
   await wait(page, `/Conectado/i.test((${card('Meld Studio')}).textContent)`);
 });
 
+test('al volver de OBS inaccesible Meld no muestra el error anterior', { timeout: 60000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const { page, api, choose, input, save } = f;
+  await api('PUT', '/api/config', { meld: { enabled: false } });
+  await choose('OBS'); await wait(page, `!!document.querySelector('#obs-url')`);
+  await input('#obs-url', 'ws://127.0.0.1:1'); await save();
+  await wait(page, `!!(${card('OBS')}) && /No se puede conectar con OBS/.test((${card('OBS')}).textContent)`);
+  await choose('Meld'); await save();
+  await wait(page, `!!(${card('Meld Studio')})`);
+  const status = await api('GET', '/api/status');
+  assert.equal(status.meld.state, 'desconectado');
+  assert.equal(status.meld.error, null);
+  assert.doesNotMatch(await dom(page, `(${card('Meld Studio')}).textContent`), /No se puede conectar con OBS/);
+});
+
 test('URL inválida muestra el 400 exacto y no guarda ni programa ni contraseña', { timeout: 60000 }, async t => {
   const f = await fixture(t); if (!f) return;
   const { page, api, obsUrl, choose, input, save } = f;
@@ -151,17 +185,26 @@ test('contraseña es de solo escritura, se puede cambiar y borrar sin filtrarla'
   const { page, api, obsUrl, choose, input, save } = f;
   await wait(page, `!!${radio('OBS')}`); await choose('OBS');
   await wait(page, `!!document.querySelector('#obs-password')`);
+  const assertNoLeaks = async () => {
+    const observed = await dom(page, `({ html: document.documentElement.outerHTML, logs: window.__console,
+      local: Object.entries(localStorage), session: Object.entries(sessionStorage) })`);
+    for (const secret of [password, wrong]) for (const [name, value] of Object.entries(observed))
+      assert.equal(JSON.stringify(value).includes(secret), false, `contraseña ausente de ${name}`);
+  };
+  await dom(page, `console.debug('selector-observer-probe'); localStorage.setItem('selector-probe', 'local'); sessionStorage.setItem('selector-probe', 'session')`);
+  assert.equal(await dom(page, `window.__console.some(args => args.includes('selector-observer-probe'))`), true);
+  assert.equal(await dom(page, `localStorage.getItem('selector-probe') + '/' + sessionStorage.getItem('selector-probe')`), 'local/session');
   await input('#obs-url', obsUrl); await input('#obs-password', password);
-  assert.equal(await dom(page, `document.documentElement.outerHTML.includes(${JSON.stringify(password)})`), false);
+  await assertNoLeaks();
   await save();
   await wait(page, `!!(${card('OBS')}) && /Conectado/i.test((${card('OBS')}).textContent)`);
   assert.equal((await api('GET', '/api/config')).obs.passwordSet, true);
   assert.equal(await dom(page, `document.querySelector('#obs-password').value`), '');
   assert.match(await dom(page, `document.querySelector('#programa-emision').textContent`), /Contraseña guardada/);
-  await input('#obs-password', wrong); await save();
+  await input('#obs-password', wrong); await assertNoLeaks(); await save();
   await wait(page, `/Contraseña de OBS incorrecta\./.test((${card('OBS')}).textContent)`);
   assert.equal(await dom(page, `document.querySelector('#obs-password').value`), '');
-  await input('#obs-password', password); await save();
+  await input('#obs-password', password); await assertNoLeaks(); await save();
   await wait(page, `/Conectado/i.test((${card('OBS')}).textContent)`);
   await clickWhen(page.cdp, `Array.from(document.querySelectorAll('#programa-emision button')).find(b => b.textContent.trim() === 'Quitar contraseña')`);
   await save();
@@ -170,6 +213,7 @@ test('contraseña es de solo escritura, se puede cambiar y borrar sin filtrarla'
   assert.equal(await dom(page, `document.querySelector('#obs-password').value`), '');
   assert.doesNotMatch(await dom(page, `document.querySelector('#programa-emision').textContent`), /Contraseña guardada/);
   await wait(page, `window.__pending === 0 && window.__received.some(r => r.path === 'websocket')`);
+  await assertNoLeaks();
   const traffic = await dom(page, `({ received: window.__received, requests: window.__requests })`);
   for (const secret of [password, wrong]) {
     assert.equal(JSON.stringify(traffic.received).includes(secret), false, 'ninguna respuesta o evento devuelve la contraseña');
@@ -182,6 +226,55 @@ test('contraseña es de solo escritura, se puede cambiar y borrar sin filtrarla'
   await dom(page, `window.__beforeReload = true`); await page.cdp.send('Page.reload');
   await wait(page, `!window.__beforeReload && !!document.querySelector('#obs-password') && ${radio('OBS')}?.getAttribute('aria-checked') === 'true'`);
   assert.equal(await dom(page, `document.querySelector('#obs-password').value`), '');
+});
+
+test('vaciar el campo no cambia la contraseña; solo Quitar contraseña la borra', { timeout: 60000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const { page, api, obsUrl, choose, input, save } = f;
+  await api('PUT', '/api/config', { obs: { password } });
+  await choose('OBS'); await wait(page, `!!document.querySelector('#obs-password')`);
+  await input('#obs-url', obsUrl); await save();
+  await wait(page, `!!(${card('OBS')}) && /Conectado/i.test((${card('OBS')}).textContent)`);
+  await input('#obs-password', 'x'); await input('#obs-password', '');
+  const before = await dom(page, `window.__requests.length`);
+  await save();
+  assert.equal((await api('GET', '/api/config')).obs.passwordSet, true);
+  const writes = await dom(page, `window.__requests.slice(${before}).filter(r => r.path === '/api/config' && r.method === 'PUT').map(r => JSON.parse(r.body))`);
+  assert.ok(writes.every(body => !Object.hasOwn(body.obs || {}, 'password')), 'no se envía contraseña vacía');
+  await clickWhen(page.cdp, `Array.from(document.querySelectorAll('#programa-emision button')).find(b => b.textContent.trim() === 'Quitar contraseña')`);
+  await save();
+  assert.equal((await api('GET', '/api/config')).obs.passwordSet, false);
+});
+
+test('la conexión de Meld no vuelve a pedir config durante los eventos de estado', { timeout: 60000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const { page } = f;
+  await wait(page, `!!(${card('Meld Studio')}) && window.__pending === 0`);
+  await new Promise(resolve => setTimeout(resolve, 700));
+  const before = await dom(page, `({ gets: window.__requests.filter(r => r.path === '/api/config' && r.method === 'GET').length,
+    events: window.__received.filter(r => r.path === 'websocket' && r.text.startsWith('event: status\\n')).length })`);
+  await clickWhen(page.cdp, `(${card('Meld Studio')}).querySelector('button')`);
+  await wait(page, `/Conectado/i.test((${card('Meld Studio')}).textContent)`);
+  await new Promise(resolve => setTimeout(resolve, 700));
+  const after = await dom(page, `({ gets: window.__requests.filter(r => r.path === '/api/config' && r.method === 'GET').length,
+    events: window.__received.filter(r => r.path === 'websocket' && r.text.startsWith('event: status\\n')).length })`);
+  assert.ok(after.events > before.events, 'la conexión produjo eventos de estado');
+  assert.equal(after.gets - before.gets, 0, 'el estado no debe volver a pedir config');
+});
+
+test('un ajuste ajeno se autoguarda mientras Programa de emisión tiene un borrador', { timeout: 60000 }, async t => {
+  const f = await fixture(t, { withDock: true }); if (!f) return;
+  const { page, api, choose, save } = f;
+  await wait(page, `!!document.querySelector('#fixture-dock [aria-label="Preguntas del chat"]')`);
+  const before = (await api('GET', '/api/state')).interactive.config.questions.enabled;
+  await choose('OBS');
+  await wait(page, `!!document.querySelector('.lv-savebar.is-open')`);
+  await clickWhen(page.cdp, `document.querySelector('#fixture-dock [aria-label="Preguntas del chat"]')`);
+  await wait(page, `window.__received.some(r => r.path === '/api/interactive/config' && r.status === 200)`);
+  assert.equal((await api('GET', '/api/state')).interactive.config.questions.enabled, !before);
+  assert.equal((await api('GET', '/api/config')).program.kind, 'meld', 'el selector sigue en borrador');
+  await save();
+  assert.equal((await api('GET', '/api/config')).program.kind, 'obs');
 });
 
 test('el estado corresponde al programa activo aunque se edite durante un guardado', { timeout: 60000 }, async t => {

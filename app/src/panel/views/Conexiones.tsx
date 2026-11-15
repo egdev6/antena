@@ -20,7 +20,6 @@ const cap = (x?: string) => (x ? x[0].toUpperCase() + x.slice(1) : 'Sin conectar
 const PHONE: IconData = [['rect', { x: '7', y: '2', width: '10', height: '20', rx: '2' }], ['path', { d: 'M11 18h2' }]];
 /** Conexiones (v3): el catálogo de servicios en tarjetas, por grupos. Si la app suma uno, entra en su grupo. */
 export function Conexiones({ parts }: { parts: string[] }) {
-  useManualSave();
   const draftVersion = useDraftVersion();
   const st = useLive(s => s.status);
   const c = useLive(s => s.config);
@@ -29,15 +28,15 @@ export function Conexiones({ parts }: { parts: string[] }) {
   const password = useRef<HTMLInputElement>(null);
   const wasSaving = useRef(false), savedLoad = useRef(0);
   const saving = isSaving();
-  const switching = saving && !!live.configSource.keys?.().includes('program');
+  const switching = saving && !!live.programSource.keys?.().includes('program');
   // A draft may differ from the active program, including edits made during a save.
   // Never restore the password input from either the public config or the draft.
-  const passwordPending = Object.hasOwn(c.obs || {}, 'password');
+  const passwordPending = typeof c.obs?.password === 'string';
   useEffect(() => {
     if (saving) { wasSaving.current = true; savedLoad.current++; }
     else {
       const finished = wasSaving.current; wasSaving.current = false;
-      if (!live.configSource.dirty()) { savedLoad.current++; setActiveKind(kind); }
+      if (!live.programSource.dirty()) { savedLoad.current++; setActiveKind(kind); }
       else if (finished) {
         const request = ++savedLoad.current;
         setActiveKind(null);
@@ -48,24 +47,26 @@ export function Conexiones({ parts }: { parts: string[] }) {
     }
     if (!passwordPending && password.current) password.current.value = '';
   }, [kind, passwordPending, draftVersion, saving]);
-  // Program status can also change through another panel or the API. Reload via
-  // Live's normal snapshot merge, without overwriting an in-progress local draft.
+  // Config events, unlike status churn, identify external changes to the selector.
   useEffect(() => {
-    if (saving) return;
     let active = true;
+    const off = live.on('config', saved => {
+      if (!saved.program) return;
+      savedLoad.current++;
+      setActiveKind(saved.program.kind || 'meld');
+    });
     const request = ++savedLoad.current;
     get<Config>('/api/config').then(saved => {
       if (!active || request !== savedLoad.current || isSaving()) return;
       setActiveKind(saved.program?.kind || 'meld');
       const current = live.state?.config;
-      if (!live.configSource.dirty() && current && (current.program?.kind !== saved.program?.kind ||
+      if (!live.programSource.dirty() && current && (current.program?.kind !== saved.program?.kind ||
           current.obs?.url !== saved.obs?.url || current.obs?.passwordSet !== saved.obs?.passwordSet)) {
-        live.load().catch(() => {});
+        live.update(s => ({ config: { ...s.config, program: saved.program, obs: saved.obs } }));
       }
     }).catch(() => {});
-    return () => { active = false; };
-  }, [st.meld, saving]);
-  useEffect(() => () => { savedLoad.current++; }, []);
+    return () => { active = false; savedLoad.current++; off(); live.programSource.discard(); };
+  }, []);
   const scenes = useLive(s => s.meld?.session?.scenes || []);
   const access = useLive(s => s.access || { lan: false, urls: [] });
   const tw = st.twitch || {}, yt = st.youtube || {}, md = st.meld || {};
@@ -81,16 +82,16 @@ export function Conexiones({ parts }: { parts: string[] }) {
       <article className="panel" id="programa-emision">
         <header><h2>Programa de emisión</h2><span className="lv-tag">Experimental</span></header>
         <SegField label="Programa de emisión" value={kind} options={[[ 'meld', 'Meld' ], [ 'obs', 'OBS' ]]}
-          onChange={value => live.patchConfig({ program: { kind: value } })} />
+          onChange={value => live.patchProgram({ program: { kind: value } })} />
         {kind === 'obs' && <>
           <label>URL de OBS<input id="obs-url" value={c.obs?.url ?? 'ws://127.0.0.1:4455'} spellCheck={false}
-            onChange={e => live.patchConfig({ obs: { url: e.target.value } })} /></label>
+            onChange={e => live.patchProgram({ obs: { url: e.target.value } })} /></label>
           <label>Contraseña de OBS<input id="obs-password" ref={password} type="password" autoComplete="new-password" spellCheck={false}
-            onChange={e => live.patchConfig({ obs: { password: e.target.value } })} /></label>
+            onChange={e => live.patchProgram({ obs: { password: e.target.value || undefined } })} /></label>
           {c.obs?.passwordSet && <p className="hint">Contraseña guardada</p>}
           <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => {
             if (password.current) password.current.value = '';
-            live.patchConfig({ obs: { password: '' } });
+            live.patchProgram({ obs: { password: '' } });
           }}>Quitar contraseña</button>
         </>}
         {passwordPending && <p className="hint">La contraseña de OBS cambiará al guardar.</p>}

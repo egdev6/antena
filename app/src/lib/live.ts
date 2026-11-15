@@ -65,7 +65,9 @@ class Live {
   private statusTouched: Record<string, number> = {};
   private cfgTimer: ReturnType<typeof setTimeout> | undefined;
   private configDraft: ManualDraft<Record<string, unknown>, Config>;
+  private programDraft: ManualDraft<Record<string, unknown>, Config>;
   readonly configSource: DraftSource;
+  readonly programSource: DraftSource;
 
   constructor() {
     this.configDraft = new ManualDraft({
@@ -84,6 +86,24 @@ class Live {
       discard: () => this.discardConfig(), protect: this.configDraft.protect,
     };
     registerDraft('config', this.configSource);
+    // The selector is a manual editing unit, without holding unrelated autosaves.
+    this.programDraft = new ManualDraft({
+      empty: () => ({}), merge: deepMerge,
+      take: () => this.state!.config,
+      persist: async patch => {
+        // An erased input is undefined; only the explicit clear action sends ''.
+        const sent = JSON.parse(JSON.stringify(patch)) as Record<string, unknown>;
+        if (sent.obs && typeof sent.obs === 'object' && !Object.keys(sent.obs).length) delete sent.obs;
+        return Object.keys(sent).length ? (await api<{ config: Config }>('PUT', '/api/config', sent)).config
+          : await api<Config>('GET', '/api/config');
+      },
+      publish: (saved, newer) => this.update(() => ({ config: deepMerge(saved, newer) })),
+      restore: (saved, discarded) => this.update(s => ({ config: { ...s.config,
+        ...Object.fromEntries(Object.entries(saved).filter(([key]) => Object.hasOwn(discarded, key))) } })),
+      protect: (state, intent) => ({ ...state, config: deepMerge(state.config, intent) }),
+    });
+    this.programSource = this.programDraft;
+    registerDraft('program', this.programSource);
   }
 
   subscribe = (fn: Listener) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
@@ -189,6 +209,11 @@ class Live {
     if (!holding() && this.configDraft.dirty()) {
       this.cfgTimer = setTimeout(() => this.flushConfig().catch(e => this.fire('error', e)), 400);
     }
+  }
+  /** Selector de programa: borrador explícito, independiente del guardado automático. */
+  patchProgram(patch: Record<string, unknown>) {
+    this.programDraft.push(patch);
+    this.update(s => ({ config: deepMerge(s.config, patch) }));
   }
   /** Guarda al momento, fuera del borrador manual: para marcas del propio panel (p. ej. el tour visto)
    *  que no son una edición del usuario y no deben esperar a «Guardar» ni perderse con «Descartar». */
