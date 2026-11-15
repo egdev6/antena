@@ -17,7 +17,7 @@ import { YouTube } from './youtube.mjs';
 import { RawEventLog } from './raw-events.mjs';
 import { YouTubeAutoConnect } from './youtube-auto.mjs';
 import { TwitchChat } from './chat.mjs';
-import { createProgram, MELD_COMMANDS, MELD_STREAM_EVENTS } from './programs/index.mjs';
+import { createProgram, noticeObsUnavailable, MELD_COMMANDS, MELD_STREAM_EVENTS } from './programs/index.mjs';
 import { Session, METRICS } from './session.mjs';
 import { Engine, burstCoalesce, SNAPSHOT_COALESCE_MS, SNAPSHOT_MAX_WAIT_MS } from './engine.mjs';
 import { createHeldRecovery } from './held-recovery.mjs';
@@ -172,7 +172,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Registro en bruto de todo lo que envían las plataformas (data/raw-events.jsonl).
   youtube.rawLog = twitch.rawLog = new RawEventLog(store.dir, { log });
   const chat = new TwitchChat(log);
-  const program = createProgram('meld', { log });
+  const program = createProgram(store.config.program.kind, { log });
+  let selectedProgram = store.config.program.kind;
   const meld = program.raw; // tests and diagnostics retain the underlying Meld instance
   // #68: la retención de archivados sale de la configuración (0 = sin límite); se lee
   // en vivo para que un cambio en config.json valga sin reiniciar.
@@ -784,8 +785,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const p = url.searchParams.get('path');
     return p ? { path: p, value: store.getPath(p, store.publicConfig()) } : store.publicConfig();
   });
+  const setObsPassword = value => store.setSecret('obs', value ? { password: value } : undefined);
   route('PUT', '/api/config', async body => {
     const patch = { ...body };
+    if (patch.obs && typeof patch.obs === 'object' && !Array.isArray(patch.obs)) patch.obs = { ...patch.obs };
     if (patch.youtube && (patch.youtube.apiKey === undefined || String(patch.youtube.apiKey).startsWith('••••'))) delete patch.youtube?.apiKey;
     // Igual que con apiKey: la máscara que devuelve publicConfig() no puede pisar el secreto real.
     if (patch.youtube && String(patch.youtube.clientSecret ?? '').startsWith('••••')) delete patch.youtube.clientSecret;
@@ -799,6 +802,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // #106: validación por esquema antes de guardar nada; las claves desconocidas se aceptan y se avisan.
     const errors = validatePatch(patch);
     if (errors.length) throw httpError(400, errors.map(e => e.message).join('; '));
+    const hasPassword = patch.obs && Object.hasOwn(patch.obs, 'password');
+    const password = hasPassword ? patch.obs.password : undefined;
+    if (patch.obs && typeof patch.obs === 'object') { delete patch.obs.password; delete patch.obs.passwordSet; }
     const hasVariants = patch.widgets && Object.hasOwn(patch.widgets, 'chatVariants');
     if (hasVariants) {
       const [error] = validateChatVariantsTransition(store.config.widgets?.chatVariants, patch.widgets.chatVariants, store.config.widgets?.chat);
@@ -815,6 +821,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (hasOverlays) await customOverlays.replaceAll(overlaysInput);
       await store.patchConfig(patch);
     }
+    if (hasPassword) await setObsPassword(password);
     // El borrador puede incluir otras secciones. Solo este campo de Meld no exige reconectar;
     // cualquier otra entrada de Meld conserva la semántica histórica, incluso si no cambia.
     const onlyRecording = patch.meld && typeof patch.meld === 'object' && !Array.isArray(patch.meld)
@@ -831,11 +838,23 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // #106: el valor se valida contra el esquema en su ruta; las rutas nuevas se aceptan.
     const [error] = validatePath(p, value);
     if (error) throw httpError(400, error.message);
-    await store.setPath(p, value);
     const keys = configPathKeys(p);
+    if (keys[0] === 'obs' && keys[1] === 'passwordSet') throw httpError(400, 'obs.passwordSet: es de solo lectura');
+    if (keys.length === 2 && keys[0] === 'obs' && keys[1] === 'password') {
+      await setObsPassword(value);
+      return { path: p, passwordSet: !!store.secrets.obs?.password };
+    }
+    const hasPassword = keys.length === 1 && keys[0] === 'obs' && value && typeof value === 'object' && Object.hasOwn(value, 'password');
+    const password = hasPassword ? value.password : undefined;
+    if (keys.length === 1 && ['obs', 'program'].includes(keys[0]) && value && typeof value === 'object') {
+      value = deepMerge(DEFAULT_CONFIG[keys[0]], value);
+      if (keys[0] === 'obs') { delete value.password; delete value.passwordSet; }
+    }
+    await store.setPath(p, value);
+    if (hasPassword) await setObsPassword(password);
     const onlyRecording = keys.length === 2 && keys[0] === 'meld' && keys[1] === 'recordOnStart';
     afterConfig({ [p.split('.')[0]]: !onlyRecording });
-    return { path: p, value: store.getPath(p) };
+    return { path: p, value: store.getPath(p, keys[0] === 'obs' ? store.publicConfig() : store.config) };
   });
 
   // alertas
@@ -1138,6 +1157,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   }
 
   function afterConfig(patch) {
+    if (store.config.program.kind !== selectedProgram) {
+      selectedProgram = store.config.program.kind;
+      if (selectedProgram === 'obs') noticeObsUnavailable(log);
+    }
     if (patch.meld) { if (store.config.meld.enabled) { program.stop(); program.start(store.config.meld.url); } else program.stop(); }
     if (patch.chat && store.config.chat.twitchChannel) chat.join(store.config.chat.twitchChannel);
     if (patch.paused !== undefined) engine.pushPause();

@@ -25,6 +25,8 @@ export const DEFAULT_CONFIG = {
   overlay: { volume: 0.6, gapMs: 700, css: '', queueMax: 20 },   // css: común a todas las alertas; queueMax (#66): tope de la cola del overlay, 0 = sin tope
   tts: { enabled: true, voice: '', rate: 1, pitch: 1, volume: 1, maxChars: 200 },
   filters: DEFAULT_FILTERS,
+  program: { kind: 'meld' },
+  obs: { url: 'ws://127.0.0.1:4455' },
   meld: { enabled: false, url: 'ws://127.0.0.1:13376', autoSession: true, recordOnStart: false },
   panel: { onboardingDone: false },   // bienvenida del panel con tarjetas; true = ya la vio (se relanza desde General)
   access: { lan: false, key: '' },   // acceso desde el móvil en la red local
@@ -151,6 +153,8 @@ export class Store extends EventEmitter {
   async load() {
     // copia profunda: cada alerta tiene sus propias listas (variaciones, acciones)
     this.config = deepMerge(structuredClone(DEFAULT_CONFIG), await readJson(this.cfgFile, {}));
+    // Nunca importar una contraseña de config.json a las vistas o a guardados posteriores.
+    if (this.config.obs && typeof this.config.obs === 'object') delete this.config.obs.password;
     // #128: los objetivos legacy (barra única) se convierten en cajas con barras ANTES de
     // sanear (el esquema nuevo valida cajas). La conversión es idempotente; si cambió algo,
     // se persiste aquí mismo: un fallo de escritura rechaza la carga (no se silencia).
@@ -279,6 +283,8 @@ export class Store extends EventEmitter {
   /** Config apta para el panel: oculta la API key de YouTube. */
   publicConfig() {
     const c = structuredClone(this.config);
+    c.obs = { ...c.obs, passwordSet: !!this.secrets.obs?.password };
+    delete c.obs.password;
     c.youtube.apiKeySet = !!c.youtube.apiKey;
     c.youtube.apiKey = c.youtube.apiKey ? '••••' + c.youtube.apiKey.slice(-4) : '';
     c.youtube.clientSecretSet = !!c.youtube.clientSecret;
