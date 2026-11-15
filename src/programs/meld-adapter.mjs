@@ -26,6 +26,7 @@ export class MeldAdapter extends Program {
     this.#meld = target;
     this.capabilities = target.capabilities ?? new Set(MELD_CAPABILITIES);
     for (const [event, forward] of this.#forwarders) target.on(event, forward);
+    this.emit('status', target.status);
   }
 
   // Compatibility for tests and diagnostics; consumers use the program interface.

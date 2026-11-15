@@ -1,10 +1,12 @@
-import { post } from '../../lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { get, post } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { cx, fmtTime, guard, LazyInput, toast } from '../../lib/ui';
-import { saveAll, useManualSave } from '../../lib/draft';
+import { cx, fmtTime, guard, LazyInput, SegField, toast } from '../../lib/ui';
+import { isSaving, saveAll, useDraftVersion, useManualSave } from '../../lib/draft';
 import { Card, CardGroup, CardSwitch, Dot, PageHead, SaveBar, Slide } from '../../lib/layout';
 import { Icon, PfIcon } from '../../lib/ui';
 import { IC, type IconData } from '../../lib/icons';
+import type { Config } from '../../lib/types';
 
 export function stateClass(s?: string) {
   if (s && ['conectado', 'escuchando'].includes(s)) return 'ok';
@@ -18,8 +20,53 @@ const cap = (x?: string) => (x ? x[0].toUpperCase() + x.slice(1) : 'Sin conectar
 const PHONE: IconData = [['rect', { x: '7', y: '2', width: '10', height: '20', rx: '2' }], ['path', { d: 'M11 18h2' }]];
 /** Conexiones (v3): el catálogo de servicios en tarjetas, por grupos. Si la app suma uno, entra en su grupo. */
 export function Conexiones({ parts }: { parts: string[] }) {
+  const draftVersion = useDraftVersion();
   const st = useLive(s => s.status);
   const c = useLive(s => s.config);
+  const kind = c.program?.kind || 'meld';
+  const [activeKind, setActiveKind] = useState<'meld' | 'obs' | null>(kind);
+  const password = useRef<HTMLInputElement>(null);
+  const wasSaving = useRef(false), savedLoad = useRef(0);
+  const saving = isSaving();
+  const switching = saving && !!live.programSource.keys?.().includes('program');
+  // A draft may differ from the active program, including edits made during a save.
+  // Never restore the password input from either the public config or the draft.
+  const passwordPending = typeof c.obs?.password === 'string';
+  useEffect(() => {
+    if (saving) { wasSaving.current = true; savedLoad.current++; }
+    else {
+      const finished = wasSaving.current; wasSaving.current = false;
+      if (!live.programSource.dirty()) { savedLoad.current++; setActiveKind(kind); }
+      else if (finished) {
+        const request = ++savedLoad.current;
+        setActiveKind(null);
+        get<Config>('/api/config').then(saved => {
+          if (request === savedLoad.current) setActiveKind(saved.program?.kind || 'meld');
+        }).catch(() => {});
+      }
+    }
+    if (!passwordPending && password.current) password.current.value = '';
+  }, [kind, passwordPending, draftVersion, saving]);
+  // Config events, unlike status churn, identify external changes to the selector.
+  useEffect(() => {
+    let active = true;
+    const off = live.on('config', saved => {
+      if (!saved.program) return;
+      savedLoad.current++;
+      setActiveKind(saved.program.kind || 'meld');
+    });
+    const request = ++savedLoad.current;
+    get<Config>('/api/config').then(saved => {
+      if (!active || request !== savedLoad.current || isSaving()) return;
+      setActiveKind(saved.program?.kind || 'meld');
+      const current = live.state?.config;
+      if (!live.programSource.dirty() && current && (current.program?.kind !== saved.program?.kind ||
+          current.obs?.url !== saved.obs?.url || current.obs?.passwordSet !== saved.obs?.passwordSet)) {
+        live.update(s => ({ config: { ...s.config, program: saved.program, obs: saved.obs } }));
+      }
+    }).catch(() => {});
+    return () => { active = false; savedLoad.current++; off(); live.programSource.discard(); };
+  }, []);
   const scenes = useLive(s => s.meld?.session?.scenes || []);
   const access = useLive(s => s.access || { lan: false, urls: [] });
   const tw = st.twitch || {}, yt = st.youtube || {}, md = st.meld || {};
@@ -32,6 +79,23 @@ export function Conexiones({ parts }: { parts: string[] }) {
   return <>
     <PageHead tour="conexiones-head" crumb={`Ajustes · ${nOk} de 4 conectadas`} title="Conexiones" desc="Conecta tus cuentas una vez; la sesión se guarda en tu PC. Pulsa una tarjeta para ver sus ajustes." />
     <div className="lv-groups">
+      <article className="panel" id="programa-emision">
+        <header><h2>Programa de emisión</h2><span className="lv-tag">Experimental</span></header>
+        <SegField label="Programa de emisión" value={kind} options={[[ 'meld', 'Meld' ], [ 'obs', 'OBS' ]]}
+          onChange={value => live.patchProgram({ program: { kind: value } })} />
+        {kind === 'obs' && <>
+          <label>URL de OBS<input id="obs-url" value={c.obs?.url ?? 'ws://127.0.0.1:4455'} spellCheck={false}
+            onChange={e => live.patchProgram({ obs: { url: e.target.value } })} /></label>
+          <label>Contraseña de OBS<input id="obs-password" ref={password} type="password" autoComplete="new-password" spellCheck={false}
+            onChange={e => live.patchProgram({ obs: { password: e.target.value || undefined } })} /></label>
+          {c.obs?.passwordSet && <p className="hint">Contraseña guardada</p>}
+          <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => {
+            if (password.current) password.current.value = '';
+            live.patchProgram({ obs: { password: '' } });
+          }}>Quitar contraseña</button>
+        </>}
+        {passwordPending && <p className="hint">La contraseña de OBS cambiará al guardar.</p>}
+      </article>
       <CardGroup title="Plataformas" count={2} note="De donde llegan las alertas y el chat" wide>
         <Card tour="conexiones-twitch" className="lv-conn" href="#/conexiones/twitch" label="Abrir Twitch" open={open === 'twitch'} warn={tw.state === 'error' || !!tw.errors?.length}
           title={<span className="lv-conn-h"><span className="lv-logo"><PfIcon platform="twitch" /></span><span><b>Twitch</b><small>Alertas, chat y marcas</small></span></span>}
@@ -52,14 +116,22 @@ export function Conexiones({ parts }: { parts: string[] }) {
         </Card>
       </CardGroup>
       <CardGroup title="Producción y acceso" count={2} note="Lo que controla la app y desde dónde la manejas" wide>
-        <Card className="lv-conn" href="#/meld/conexion" label="Abrir Meld Studio"
+        {switching || activeKind === null ? <Card className="lv-conn" label="Estado del programa activo"
+          title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={IC.monitor} /></span><span><b>Programa activo</b></span></span>}>
+          <Dot tone={tone(md.state)}>{cap(md.state)}</Dot>
+          {md.error ? <p className="lv-cnote is-warn">{md.error}</p> : null}
+        </Card> : activeKind === 'meld' ? <Card className="lv-conn" href="#/meld/conexion" label="Abrir Meld Studio"
           title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={IC.monitor} /></span><span><b>Meld Studio</b><small>Escenas, capas y efectos</small></span></span>}
           foot={<><span className="lv-cnote">{mdOk ? 'Se reconecta solo si cierras Meld' : 'Activa «Allow remote connections» en Meld'}</span><span className="sp" />
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/meld/connect', { url: meldUrl }), 'Conectando con Meld…')}>{mdOk ? 'Reconectar' : 'Conectar'}</button></>}>
           <Dot tone={mdOk ? 'ok' : md.state === 'error' ? 'warn' : 'off'}>{cap(md.state)}</Dot>
           <dl className="lv-kv"><dt>Dirección</dt><dd>{meldUrl}</dd><dt>Escenas</dt><dd>{scenes.length ? `${scenes.length}${scene ? ` · en directo «${scene.name}»` : ''}` : '—'}</dd><dt>Al emitir</dt><dd>{c.meld?.autoSession ? 'Empieza un directo nuevo' : 'Sigue el directo actual'}</dd></dl>
           {md.error ? <p className="lv-cnote is-warn">{md.error}</p> : null}
-        </Card>
+        </Card> : <Card className="lv-conn" label="Estado de OBS"
+          title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={IC.monitor} /></span><span><b>OBS</b><small>Conexión experimental</small></span></span>}>
+          <Dot tone={tone(md.state)}>{cap(md.state)}</Dot>
+          {md.error ? <p className="lv-cnote is-warn">{md.error}</p> : null}
+        </Card>}
         <Card className="lv-conn" href="#/general/movil" label="Abrir acceso desde el móvil"
           title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={PHONE} /></span><span><b>Acceso desde el móvil</b><small>El panel en la misma wifi, con clave</small></span></span>}
           foot={<><span className="lv-cnote">Se aplica al momento</span><span className="sp" />
@@ -69,7 +141,7 @@ export function Conexiones({ parts }: { parts: string[] }) {
         </Card>
       </CardGroup>
     </div>
-    {open === 'twitch' || open === 'youtube' ? <ConexionSlide key={open} which={open} /> : null}
+    {open === 'twitch' || open === 'youtube' ? <ConexionSlide key={open} which={open} /> : <SaveBar />}
   </>;
 }
 function ConexionSlide({ which }: { which: 'twitch' | 'youtube' }) {

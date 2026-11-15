@@ -172,6 +172,30 @@ test('live switching preserves the facade, disconnects the old program and masks
   assert.deepEqual(await http(base, 'POST', '/api/meld/scene', { scene: 'Pantalla' }), { status: 200, body: { scene: 'Pantalla' } });
 });
 
+for (const endpoint of ['PUT', 'POST']) {
+  test(`unreachable OBS → disabled Meld publishes the new status through ${endpoint}`, { timeout: 20000 }, async t => {
+    const { app, base } = await liveFixture(t);
+    const events = [];
+    app.program.on('status', status => events.push({ ...status }));
+    assert.equal((await http(base, 'PUT', '/api/config', {
+      program: { kind: 'obs' }, obs: { url: 'ws://127.0.0.1:1' }, meld: { enabled: false },
+    })).status, 200);
+    const deadline = Date.now() + 5000;
+    while (app.program.status.error !== 'No se puede conectar con OBS.' && Date.now() < deadline) await delay(10);
+    assert.equal(app.program.status.error, 'No se puede conectar con OBS.');
+    const changed = endpoint === 'PUT'
+      ? await http(base, 'PUT', '/api/config', { program: { kind: 'meld' } })
+      : await http(base, 'POST', '/api/config/set', { path: 'program.kind', value: 'meld' });
+    assert.equal(changed.status, 200);
+    const status = await http(base, 'GET', '/api/status');
+    assert.equal(status.status, 200);
+    assert.equal(status.body.meld.state, 'desconectado');
+    assert.equal(status.body.meld.error, null);
+    assert.deepEqual(app.program.status, status.body.meld);
+    assert.deepEqual(events.at(-1), status.body.meld, 'listeners receive the selected target, not the stopped OBS status');
+  });
+}
+
 test('startup with OBS selected connects OBS, never starts enabled Meld, and closes cleanly', { timeout: 20000 }, async t => {
   const f = await startupFixture(t, 'obs', true);
   await ready(f.base, '30.2.3');

@@ -155,6 +155,10 @@ Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. C
 
 **Custom overlays** show up in that same list as «Overlay · name», with their `/custom/<id>` URL and their size.
 
+### OBS (experimental)
+
+In OBS 28 or newer, enable **Tools › WebSocket Server Settings**, use port `4455` and set a password. In antena, choose **OBS** under **Conexiones**, enter the URL and password, and save. OBS scenes, audio, streaming and recording controls are coming in later versions.
+
 ### Meld Studio
 
 1. In Meld: **Settings › Advanced › Allow remote connections**.
