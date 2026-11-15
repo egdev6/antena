@@ -744,10 +744,12 @@ test('MCP ver_widgets conserva las URLs anteriores y expone las de cada variante
   // El mismo MCP real desde una ruta URI con espacios y caracteres no ASCII.
   const dir = await mkdtemp(path.join(tmpdir(), 'antena-mcp á espacio-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  await mkdir(path.join(dir, 'src'));
+  await mkdir(path.join(dir, 'src', 'programs'), { recursive: true });
   await Promise.all([
     copyFile(new URL('../package.json', import.meta.url), path.join(dir, 'package.json')),
-    ...['mcp.mjs', 'custom-overlays.mjs', 'http-util.mjs', 'meld.mjs'].map(file => copyFile(new URL(`../src/${file}`, import.meta.url), path.join(dir, 'src', file))),
+    ...['mcp.mjs', 'custom-overlays.mjs', 'http-util.mjs', 'meld.mjs',
+      'programs/index.mjs', 'programs/meld-adapter.mjs', 'programs/program.mjs']
+      .map(file => copyFile(new URL(`../src/${file}`, import.meta.url), path.join(dir, 'src', file))),
   ]);
   for (const entry of [undefined, pathToFileURL(path.join(dir, 'src', 'mcp.mjs'))]) {
     const rpc = await mcpClient(t, f.base, entry);

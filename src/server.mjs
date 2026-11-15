@@ -17,7 +17,6 @@ import { YouTube } from './youtube.mjs';
 import { RawEventLog } from './raw-events.mjs';
 import { YouTubeAutoConnect } from './youtube-auto.mjs';
 import { TwitchChat } from './chat.mjs';
-import { Meld } from './meld.mjs';
 import { createProgram, MELD_COMMANDS, MELD_STREAM_EVENTS } from './programs/index.mjs';
 import { Session, METRICS } from './session.mjs';
 import { Engine, burstCoalesce, SNAPSHOT_COALESCE_MS, SNAPSHOT_MAX_WAIT_MS } from './engine.mjs';
@@ -173,8 +172,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Registro en bruto de todo lo que envían las plataformas (data/raw-events.jsonl).
   youtube.rawLog = twitch.rawLog = new RawEventLog(store.dir, { log });
   const chat = new TwitchChat(log);
-  const meld = new Meld(log);
-  const program = createProgram('meld', { meld });
+  const program = createProgram('meld', { log });
+  const meld = program.raw; // tests and diagnostics retain the underlying Meld instance
   // #68: la retención de archivados sale de la configuración (0 = sin límite); se lee
   // en vivo para que un cambio en config.json valga sin reiniciar.
   const protectedArchives = new Set();
@@ -248,7 +247,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
 
   // ---------- estado ----------
   const status = () => ({
-    twitch: twitch.status, youtube: youtube.status, chat: chat.status, meld: meld.status,
+    twitch: twitch.status, youtube: youtube.status, chat: chat.status, meld: program.status,
     overlays: bus.overlayCount(), pause: engine.pauseState(),
     persistence: store.persistenceState(),
     channelTotals: channelTotals.snapshot(),
@@ -607,7 +606,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const expectedId = id ?? session.data.id;
     if (expectedId !== session.data.id) throw httpError(409, 'La sesión actual ha cambiado. Actualiza antes de terminar el directo.');
     // Check and enqueue without an await: a live observation cannot slip between them.
-    if (meld.status.state === 'conectado' && meld.status.streaming)
+    if (program.status.state === 'conectado' && program.status.streaming)
       throw httpError(409, 'No se puede terminar el directo mientras Meld está emitiendo.');
     return closeAutoSession({ expectedId }).then(async closed => {
       // An idempotent retry after a failed checkpoint must be durable before success.
@@ -717,7 +716,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
 
   // ---------- ocultado diferido de capas Meld ----------
   // El horario aceptado por POST /api/meld/layer no se toca: el temporizador original sigue
-  // referenciado y el await completo de meld.setLayer se sigue como una única tarea. La captura
+  // referenciado y el await completo de program.setLayer se sigue como una única tarea. La captura
   // empieza SÍNCRONA en la primera señal: solo entran las tareas vivas en ese instante y las que
   // programen handlers ya admitidos hasta sellar. Un fallo terminado antes de la señal no envenena.
   const pendingLayerHides = new Set();
@@ -737,7 +736,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     let fire;
     const timer = new Promise(resolve => { fire = resolve; });
     setTimeout(fire, ms);   // temporizador ORIGINAL, referenciado, ni adelantado ni cancelado
-    return trackLayerHide(timer.then(() => Promise.resolve().then(() => meld.setLayer(sceneId, layerId, false))));
+    return trackLayerHide(timer.then(() => Promise.resolve().then(() => program.setLayer(sceneId, layerId, false))));
   };
   // Inicio idempotente: sella el snapshot de tareas vivas; después del sello no revive.
   const beginLayerHideDrain = () => {
@@ -769,7 +768,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     config: store.publicConfig(), types: ALERT_TYPES, defaults: DEFAULT_ALERTS, lookDefaults: { ...LOOK_DEFAULTS, ...EXTRA_DEFAULTS },
     fields: ALERT_FIELDS, conditionDefaults: DEFAULT_CONDITIONS, commandDefaults: DEFAULT_COMMAND, samples: SAMPLES,
     status: status(), history: bus.history.slice(0, 50), media: await listMedia(), metrics: METRICS,
-    meld: { session: meld.session(), commands: MELD_COMMANDS, events: MELD_STREAM_EVENTS },
+    meld: { session: program.session(), commands: MELD_COMMANDS, events: MELD_STREAM_EVENTS },
     widgets: engine.widgetState(), access: accessInfo(), widgetNames: WIDGETS,
     timers: timers.snapshot(), timerDefaults: DEFAULT_TIMER, announceColors: ANNOUNCE_COLORS,
     interactive: interactive.snapshot(),
@@ -1139,7 +1138,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   }
 
   function afterConfig(patch) {
-    if (patch.meld) { if (store.config.meld.enabled) { meld.stop(); meld.start(store.config.meld.url); } else meld.stop(); }
+    if (patch.meld) { if (store.config.meld.enabled) { program.stop(); program.start(store.config.meld.url); } else program.stop(); }
     if (patch.chat && store.config.chat.twitchChannel) chat.join(store.config.chat.twitchChannel);
     if (patch.paused !== undefined) engine.pushPause();
   }
@@ -1594,7 +1593,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
   app.followersStartup = setTimeout(() => { app.refreshFollowers('twitch'); app.refreshFollowers('youtube'); }, followersDelayMs);
   app.followersStartup.unref?.();
   if (app.store.config.chat.twitchChannel) app.chat.join(app.store.config.chat.twitchChannel);
-  if (app.store.config.meld.enabled) app.meld.start(app.store.config.meld.url);
+  if (app.store.config.meld.enabled) app.program.start(app.store.config.meld.url);
   const onUnhandledRejection = e => log('[error]', e?.message || e);
   process.on('unhandledRejection', onUnhandledRejection);
   // Parada acotada: el primer cierre corta admisión HTTP general y abre solo continuaciones ACK.
@@ -1730,7 +1729,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
             // Meld sigue disponible para las acciones anteriores. Su corte terminal espera RPC y
             // cierre físico bajo el mismo deadline; un fallo no omite la persistencia independiente.
             const meldCut = failed => {
-              attemptDrain(() => app.meld.quiesceClose()).then(
+              attemptDrain(() => app.program.quiesceClose()).then(
                 () => { app.program.dispose(); drain(failed); },
                 () => {
                   app.program.dispose();

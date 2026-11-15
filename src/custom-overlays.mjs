@@ -7,7 +7,7 @@
 // only way back out is the action bridge (S11): the SDK posts a run request to this shell, which
 // forwards it to the overlay's own action route and answers with ok/error only.
 import { httpError, id8 } from './http-util.mjs';
-import { MELD_STREAM_EVENTS } from './meld.mjs';
+import { MELD_STREAM_EVENTS } from './programs/index.mjs';
 
 export const CUSTOM_OVERLAY_MAX_BYTES = 512_000;        // one overlay, as JSON
 export const CUSTOM_OVERLAYS_MAX_BYTES = 2_500_000;     // the whole list, as JSON

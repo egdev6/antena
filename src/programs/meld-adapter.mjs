@@ -17,6 +17,8 @@ export class MeldAdapter extends Program {
     }
   }
 
+  // Compatibility for tests and diagnostics; consumers use the program interface.
+  get raw() { return this.#meld; }
   get status() { return this.#meld.status; }
   get connected() { return this.#meld.connected; }
   start(...args) { return this.#meld.start(...args); }

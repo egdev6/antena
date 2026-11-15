@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Meld } from '../src/meld.mjs';
 import { MeldAdapter } from '../src/programs/meld-adapter.mjs';
+import { createProgram } from '../src/programs/index.mjs';
 import { fakeMeldRecording } from './helpers/fake-meld-recording.mjs';
 import { programContract, waitFor } from './helpers/program-contract.mjs';
 
@@ -132,6 +133,19 @@ async function makeDriver() {
 }
 
 programContract(program => new MeldAdapter(program), makeDriver);
+
+test('Meld adapter exposes its raw instance read-only for diagnostics', () => {
+  const log = () => {}, supplied = new Meld(log);
+  for (const [adapter, expected] of [[new MeldAdapter(supplied), supplied], [createProgram('meld', { log }), null]]) {
+    const raw = adapter.raw;
+    assert.ok(raw instanceof Meld);
+    if (expected) assert.strictEqual(raw, expected);
+    assert.strictEqual(raw.log, log);
+    assert.throws(() => { adapter.raw = new Meld(log); }, TypeError);
+    assert.strictEqual(adapter.raw, raw);
+    adapter.dispose();
+  }
+});
 
 test('Meld adapter delegates arguments, receiver, return/promise identity and failures', async () => {
   const meld = new Meld(() => {}), adapter = new MeldAdapter(meld), other = new MeldAdapter(new Meld(() => {}));
