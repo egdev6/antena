@@ -7,7 +7,7 @@ import { programContract, waitFor } from './helpers/program-contract.mjs';
 const initialStatus = { state: 'desconectado', streaming: false, streamingKnown: false, recording: false,
   recordingKnown: false, recordingWarning: null, version: null, error: null };
 const connectedStatus = { ...initialStatus, state: 'conectado', streamingKnown: true, recordingKnown: true, version: '30.2.3' };
-const methods = ['command', 'streamEvent', 'setProperty', 'call'];
+const methods = ['streamEvent', 'setProperty', 'call'];
 const actions = Object.fromEntries(methods.map(name => [name, [{ args: ['test'], calls: [], error: /todavía no disponible con OBS/i }]]));
 const initialSession = { scenes: [
   { id: 'scene-a', name: 'Camera', current: true, layers: [{ id: 'scene-a:7', name: 'Logo', visible: false,
@@ -20,6 +20,12 @@ const layerSession = structuredClone(changedSession);
 layerSession.scenes[0].layers[0].visible = true;
 const effectSession = structuredClone(layerSession);
 effectSession.scenes[0].layers[0].effects[0].enabled = false;
+actions.command = [
+  ...[['meld.startStreamingAction', 'StartStream'], ['meld.stopStreamingAction', 'StopStream'],
+    ['meld.toggleStreamingAction', 'ToggleStream'], ['meld.toggleStreamingAction', 'ToggleStream']]
+    .map(([command, requestType]) => ({ args: [command], calls: [{ requestType, requestData: {} }] })),
+  { args: ['meld.startRecordingAction'], calls: [], error: /todavía no disponible con OBS/i },
+];
 actions.showScene = [
   { args: ['slides'], calls: [{ requestType: 'SetCurrentProgramScene', requestData: { sceneName: 'Slides' } }], session: changedSession },
   { args: ['missing'], calls: [], error: { message: 'No encuentro la escena «missing» en Meld' } },
@@ -69,11 +75,11 @@ async function makeDriver() {
     { sceneName: 'Camera', sceneUuid: 'scene-a', sceneItems: [{ sourceName: 'Logo', sceneItemId: 7, sceneItemEnabled: false }] },
     { sceneName: 'Slides', sceneUuid: 'scene-b' },
   ], inputs: [{ inputName: 'Logo', inputUuid: 'logo-id', inputKind: 'ffmpeg_source', filters: [{ filterName: 'Blur' }] }] });
-  return { url, capabilities: ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks'], initialStatus, connectedStatus, initialSession, changedSession, actions,
+  return { url, capabilities: ['scene-layers', 'layer-effects', 'media-controls', 'audio-tracks', 'streaming'], initialStatus, connectedStatus, initialSession, changedSession, actions,
     changeSession: () => fake.emit('CurrentProgramSceneChanged', { sceneName: 'Slides', sceneUuid: 'scene-b' }),
     ready: async () => {}, settle: async () => {}, calls: () => fake.requests,
     report: ({ streaming, recording }) => {
-      fake.emit('StreamStateChanged', { outputActive: streaming });
+      fake.emit('StreamStateChanged', { outputActive: streaming, outputState: `OBS_WEBSOCKET_OUTPUT_${streaming ? 'STARTED' : 'STOPPED'}` });
       fake.emit('RecordStateChanged', { outputActive: recording });
     },
     close: () => fake.close() };
@@ -141,7 +147,7 @@ test('unexpected disconnect reconnects and status events are forwarded in order'
   await until(program, s => s.state === 'conectado' && s.streamingKnown && s.recordingKnown);
   assert.equal(server.upgrades(), 2);
   const live = until(program, s => s.streaming && s.recording);
-  server.fake.emit('StreamStateChanged', { outputActive: true });
+  server.fake.emit('StreamStateChanged', { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED' });
   server.fake.emit('RecordStateChanged', { outputActive: true });
   await live;
   assert.deepEqual(streamingEvents, [true]);
@@ -149,15 +155,66 @@ test('unexpected disconnect reconnects and status events are forwarded in order'
   assert.deepEqual(program.session().scenes.map(s => s.name), ['Camera', 'Slides']);
 });
 
-test('failed status requests stay unknown and a later event establishes the state', async t => {
-  const { fake, url } = await fakeServer(t), { program } = makeProgram(t);
-  fake.failRequest('GetStreamStatus');
-  const ready = until(program, s => s.state === 'conectado');
-  program.start(url); await ready;
-  assert.equal(program.status.streamingKnown, false);
-  assert.equal(program.status.recordingKnown, true);
-  const live = until(program, s => s.streamingKnown && s.streaming);
-  fake.emit('StreamStateChanged', { outputActive: true }); await live;
+for (const request of ['GetStreamStatus', 'GetRecordStatus']) {
+  test(`OBS stays connecting while ${request} is pending`, async t => {
+    const { fake, url } = await fakeServer(t), { program } = makeProgram(t);
+    fake.delayRequest(request, 250);
+    const ready = until(program, s => s.state === 'conectado');
+    program.start(url);
+    const deadline = Date.now() + 3000;
+    while (!fake.requests.some(r => r.requestType === request)) { assert.ok(Date.now() < deadline); await delay(5); }
+    assert.equal(program.status.state, 'conectando');
+    await ready;
+    assert.equal(program.status.streamingKnown, true); assert.equal(program.status.recordingKnown, true);
+  });
+}
+
+for (const [request, message] of [['GetStreamStatus', 'OBS no informó el estado de la emisión.'],
+  ['GetRecordStatus', 'OBS no informó el estado de la grabación.']]) {
+  test(`${request} failure retries before connected and recovers when both outputs are known`, async t => {
+    const { fake, url } = await fakeServer(t), { program } = makeProgram(t, { retryDelays: [500, 1000] });
+    const statuses = [];
+    program.on('status', s => statuses.push({ ...s }));
+    fake.failRequest(request);
+    const first = until(program, s => s.state === 'conectado' || s.state === 'reintentando');
+    program.start(url);
+    const [failed] = await first;
+    assert.equal(failed.state, 'reintentando'); assert.equal(failed.error, message);
+    assert.deepEqual([failed.streaming, failed.streamingKnown, failed.recording, failed.recordingKnown], [false, false, false, false]);
+    fake.failRequest(request, null);
+    await until(program, s => s.state === 'conectado');
+    assert.equal(program.status.streamingKnown, true); assert.equal(program.status.recordingKnown, true);
+    assert.ok(statuses.filter(s => s.state === 'conectado').every(s => s.streamingKnown && s.recordingKnown));
+  });
+}
+
+test('status request failures exhaust the existing backoff and allow explicit restart', async t => {
+  const server = await fakeServer(t), { program } = makeProgram(t);
+  server.fake.failRequest('GetStreamStatus');
+  const terminal = until(program, s => s.state === 'error');
+  program.start(server.url); await terminal;
+  assert.equal(server.upgrades(), 3); assert.equal(program.status.error, 'OBS no informó el estado de la emisión.');
+  assert.equal(server.fake.requests.filter(r => r.requestType === 'GetStreamStatus').length, 3);
+  server.fake.failRequest('GetStreamStatus', null);
+  await connected(program, server.url);
+  assert.equal(server.upgrades(), 4); assert.equal(program.status.error, null);
+});
+
+test('a transitional event during the initial stream query cannot establish a connected unknown state', async t => {
+  const { fake, url } = await fakeServer(t), { program } = makeProgram(t, { retryDelays: [500] });
+  fake.delayRequest('GetStreamStatus', 120);
+  const next = until(program, s => s.state === 'conectado' || s.state === 'reintentando');
+  program.start(url);
+  const deadline = Date.now() + 3000;
+  while (!fake.requests.some(r => r.requestType === 'GetStreamStatus')) {
+    assert.ok(Date.now() < deadline); await delay(5);
+  }
+  fake.emit('StreamStateChanged', { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTING' });
+  const [failed] = await next;
+  assert.equal(failed.state, 'reintentando'); assert.equal(failed.error, 'OBS no informó el estado de la emisión.');
+  fake.delayRequest('GetStreamStatus', 0);
+  await until(program, s => s.state === 'conectado');
+  assert.equal(program.status.streamingKnown, true); assert.equal(program.status.recordingKnown, true);
 });
 
 test('an event received during initial queries is not overwritten by a stale response', async t => {
@@ -169,7 +226,7 @@ test('an event received during initial queries is not overwritten by a stale res
     assert.ok(Date.now() < deadline, 'initial status request was not sent');
     await delay(5);
   }
-  fake.emit('StreamStateChanged', { outputActive: true });
+  fake.emit('StreamStateChanged', { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED' });
   await until(program, s => s.state === 'conectado');
   assert.equal(program.status.streamingKnown, true);
   assert.equal(program.status.streaming, true);
