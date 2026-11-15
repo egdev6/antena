@@ -242,6 +242,8 @@ export interface Config {
   chat: ChatConfig;
   overlay: OverlayConfig;
   meld: MeldConfig;
+  program?: { kind?: 'meld' | 'obs' };
+  obs?: { url?: string; passwordSet?: boolean; [key: string]: unknown };
   panel: { onboardingDone?: boolean };
   tts: TtsConfig;
   filters: FiltersConfig;
