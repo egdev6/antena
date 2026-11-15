@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
+import { eventClass } from '../src/events.mjs';
 import { createProgram } from '../src/programs/index.mjs';
 import { fakeObs } from './helpers/fake-obs.mjs';
 import { waitFor } from './helpers/program-contract.mjs';
@@ -70,6 +71,11 @@ function stream(base, query) {
 
 const masks = fake => fake.identifications.map(x => [x.op, x.eventSubscriptions]);
 
+test('meter and Meld session SSE events are distinct replaceable snapshots', () => {
+  assert.equal(eventClass('meters'), 'replaceable');
+  assert.equal(eventClass('meld'), 'replaceable');
+});
+
 test('OBS subscribes only on demand via Reidentify; acknowledgements do not restart initialization', async t => {
   const { fake, program } = await fixture(t); const events = [];
   program.on('meters', value => events.push(value));
@@ -121,11 +127,14 @@ test('server aggregates meter snapshots at most 10 Hz for watching streams only 
     await delay(50);
   }
   await until(() => a.events.length && a.events.at(-1).data.tracks?.[0].level === 1, 'latest levels');
-  const frames = a.events.filter(e => e.event === 'meld');
+  const frames = a.events.filter(e => e.event === 'meters');
   assert.ok(frames.length >= 3 && frames.length <= 7, `bounded frames: ${frames.length}`);
   for (let i = 1; i < frames.length; i++) assert.ok(frames[i].at - frames[i - 1].at >= 80, 'bounded spacing');
-  assert.deepEqual(frames.at(-1).data.tracks.map(x => x.id), ['mic', 'music']);
-  assert.equal(b.events.filter(e => e.event === 'meld').length, frames.length);
+  assert.deepEqual(frames.at(-1).data, { tracks: [
+    { id: 'mic', level: 1, clipping: false }, { id: 'music', level: 1 / 3, clipping: false },
+  ] });
+  assert.equal(b.events.filter(e => e.event === 'meters').length, frames.length);
+  assert.equal(a.events.some(e => e.event === 'meld') || b.events.some(e => e.event === 'meld'), false);
   assert.equal(panel.events.some(e => e.data?.tracks), false);
   assert.equal(overlay.events.some(e => e.data?.tracks), false);
   a.close(); await delay(100); assert.equal(masks(fake).length, 2);
@@ -133,6 +142,21 @@ test('server aggregates meter snapshots at most 10 Hz for watching streams only 
   assert.deepEqual(masks(fake).at(-1), [3, BASE]);
   fake.setVolumeMeters([level('Mic', 'mic', [1, 1, 1])]); await delay(150);
   assert.equal(panel.events.some(e => e.data?.tracks), false);
+});
+
+test('OBS session updates still reach the panel as meld without reaching the meter stream', async t => {
+  const { fake, base } = await fixture(t, true);
+  const panel = stream(base, 'client=panel'), watcher = stream(base, 'client=dock-meters');
+  t.after(() => { panel.close(); watcher.close(); });
+  await Promise.all([panel.ready, watcher.ready]);
+  await until(() => masks(fake).length === 2, 'watching');
+  fake.emit('InputMuteStateChanged', { inputName: 'Mic', inputUuid: 'mic', inputMuted: true });
+  await until(() => panel.events.some(e => e.event === 'meld' && e.data.tracks?.some(track => track.id === 'mic' && track.muted)), 'panel session update');
+  const session = panel.events.find(e => e.event === 'meld' && e.data.tracks?.some(track => track.id === 'mic' && track.muted)).data;
+  const response = await fetch(`${base}/api/meld`); assert.equal(response.status, 200);
+  const { scenes, tracks, streaming, recording } = await response.json();
+  assert.deepEqual(session, { scenes, tracks, streaming, recording });
+  assert.equal(watcher.events.some(e => e.event === 'meld'), false);
 });
 
 test('meter demand survives an OBS restart but never enters the Identify mask', async t => {
@@ -154,9 +178,9 @@ test('disconnect clears previously published levels for a still-watching dock', 
   const watcher = stream(base, 'client=dock-meters'); t.after(() => watcher.close()); await watcher.ready;
   await until(() => masks(fake).length === 2, 'watching');
   fake.setVolumeMeters([level('Mic', 'mic', [0, 1, 1])]);
-  await until(() => watcher.events.some(e => e.data?.tracks?.[0]?.level === 1), 'loud level');
+  await until(() => watcher.events.some(e => e.event === 'meters' && e.data?.tracks?.[0]?.level === 1), 'loud level');
   fake.invalidateSession();
-  await until(() => watcher.events.some(e => Array.isArray(e.data?.tracks) && e.data.tracks.length === 0), 'cleared on disconnect');
+  await until(() => watcher.events.some(e => e.event === 'meters' && Array.isArray(e.data?.tracks) && e.data.tracks.length === 0), 'cleared on disconnect');
 });
 
 test('switching to Meld disables meter collection even if a watcher remains', async t => {
@@ -167,5 +191,5 @@ test('switching to Meld disables meter collection even if a watcher remains', as
     body: JSON.stringify({ program: { kind: 'meld' }, meld: { enabled: false } }) });
   assert.equal(r.status, 200);
   fake.setVolumeMeters([level('Mic', 'mic', [1, 1, 1])]); await delay(150);
-  assert.equal(watcher.events.some(e => e.event === 'meld'), false);
+  assert.equal(watcher.events.some(e => e.event === 'meters' || e.event === 'meld'), false);
 });

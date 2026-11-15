@@ -179,7 +179,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   let selectedProgram = store.config.program.kind;
   if (selectedProgram === 'obs') program.select(obs);
   // GET /api/stream?client=dock-meters opts into meter demand. On that dedicated
-  // client kind the replaceable 'meld' event contains { tracks: [{ id, level, clipping }] };
+  // client kind the replaceable 'meters' event contains { tracks: [{ id, level, clipping }] };
   // ordinary panel snapshots and all other SSE clients remain unchanged.
   const meterWatchers = new Set();
   let meterTimer = null, meterTracks = [];
@@ -194,7 +194,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (meterTimer) return;
     meterTimer = setTimeout(() => {
       meterTimer = null;
-      if (selectedProgram === 'obs' && meterWatchers.size) bus.send('meld', { tracks: meterTracks }, ['dock-meters']);
+      if (selectedProgram === 'obs' && meterWatchers.size) bus.send('meters', { tracks: meterTracks }, ['dock-meters']);
     }, 100);
     meterTimer.unref?.();
   };

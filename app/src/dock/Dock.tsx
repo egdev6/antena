@@ -103,7 +103,7 @@ function useMeters(watching: boolean) {
       if (document.hidden) { stop(); return; }
       if (source) return;
       source = new EventSource(withKey('/api/stream?client=dock-meters'));
-      source.addEventListener('meld', (event: MessageEvent) => {
+      source.addEventListener('meters', (event: MessageEvent) => {
         try {
           const tracks = (JSON.parse(event.data) as { tracks: Meter[] }).tracks;
           if (Array.isArray(tracks)) setMeters(Object.fromEntries(tracks.map(t => [t.id, t])));

@@ -56,6 +56,10 @@ test('dock meters follow OBS audio visibility and never subscribe or render for 
   const meter = `document.querySelector('[role="meter"][aria-label="Nivel de Mic"]')`;
   fake.setVolumeMeters([{ inputName: 'Mic', inputUuid: 'mic', inputLevelsMul: [[0.05, 0.1, 1.2]] }]);
   await waitDom(c, `${meter}?.getAttribute('aria-valuenow') === '67'`);
+  await dom(`(Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }), document.dispatchEvent(new Event('visibilitychange')), true)`);
+  await until(() => fake.identifications.at(-1).eventSubscriptions === ((1 << 2) | (1 << 3) | (1 << 5) | (1 << 6) | (1 << 7)), 'hidden page unsubscribes');
+  await dom(`(Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }), document.dispatchEvent(new Event('visibilitychange')), true)`);
+  await until(() => (fake.identifications.at(-1).eventSubscriptions & (1 << 16)) !== 0, 'visible page resubscribes');
   assert.deepEqual(await dom(`({ min: ${meter}.getAttribute('aria-valuemin'), max: ${meter}.getAttribute('aria-valuemax'), live: ${meter}.closest('[aria-live]')?.getAttribute('aria-live') || null, transition: getComputedStyle(${meter}.firstElementChild).transitionDuration })`),
     { min: '0', max: '100', live: null, transition: '0s' });
   await clickWhen(c, `document.querySelector('#d-t-control')`);
