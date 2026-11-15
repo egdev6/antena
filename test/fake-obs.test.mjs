@@ -316,11 +316,48 @@ test('filtros, entradas, audio y acción multimedia', { timeout: 5000 }, async t
   ]);
 });
 
-test('GetInputAudioTracks distingue entradas con y sin audio', { timeout: 5000 }, async t => {
-  const { url } = await start(t, { inputs: [{ inputName: 'Voice' }, { inputName: 'Picture', audio: false }] });
-  const { c } = await connect(url);
+test('las peticiones de audio rechazan entradas sin audio con 604 sin emitir cambios', { timeout: 5000 }, async t => {
+  const { url } = await start(t, { inputs: [
+    { inputName: 'Voice', inputUuid: 'voice', inputVolumeMul: 0.5 },
+    { inputName: 'Picture', inputUuid: 'picture', inputKind: 'image_source' },
+    { inputName: 'Browser', inputUuid: 'browser', inputKind: 'browser_source', audio: false },
+  ] });
+  const { c } = await connect(url, { subscriptions: INPUTS });
+  const before = (await c.request('GetInputList')).responseData;
+  for (const [type, data] of [
+    ['GetInputAudioTracks', {}], ['GetInputMute', {}], ['SetInputMute', { inputMuted: true }],
+    ['ToggleInputMute', {}], ['GetInputVolume', {}], ['SetInputVolume', { inputVolumeMul: 0.25 }],
+    ['GetInputAudioMonitorType', {}], ['SetInputAudioMonitorType', { monitorType: 'OBS_MONITORING_TYPE_MONITOR_ONLY' }],
+  ]) {
+    await t.test(type, async () => {
+      for (const ref of [{ inputName: 'Picture' }, { inputUuid: 'browser' }]) {
+        const response = await c.request(type, { ...ref, ...data });
+        assert.deepEqual(response.requestStatus, { result: false, code: 604, comment: 'The specified input does not support audio.' });
+        assert.equal(response.responseData, undefined);
+      }
+    });
+  }
+  assert.deepEqual((await c.request('GetInputList')).responseData, before);
   success(await c.request('GetInputAudioTracks', { inputName: 'Voice' }), { inputAudioTracks: { 1: true, 2: true, 3: true, 4: true, 5: true, 6: true } });
-  assert.equal((await c.request('GetInputAudioTracks', { inputName: 'Picture' })).requestStatus.code, 602);
+  success(await c.request('GetInputMute', { inputName: 'Voice' }), { inputMuted: false });
+  success(await c.request('GetInputVolume', { inputName: 'Voice' }), { inputVolumeMul: 0.5, inputVolumeDb: 20 * Math.log10(0.5) });
+  success(await c.request('GetInputAudioMonitorType', { inputName: 'Voice' }), { monitorType: 'OBS_MONITORING_TYPE_NONE' });
+  assert.deepEqual(c.events('InputMuteStateChanged'), []);
+  assert.deepEqual(c.events('InputVolumeChanged'), []);
+  assert.deepEqual(c.events('InputAudioMonitorTypeChanged'), []);
+});
+
+test('el hook de fallo puede limitarse a una entrada sin afectar a las demás', { timeout: 5000 }, async t => {
+  const { fake, url } = await start(t, fixtures());
+  const { c } = await connect(url, { subscriptions: INPUTS });
+  fake.failRequest('GetInputMute', { code: 604, comment: 'scoped failure' }, { inputUuid: 'input-music' });
+  success(await c.request('GetInputMute', { inputUuid: 'input-micro' }), { inputMuted: false });
+  const rejected = await c.request('GetInputMute', { inputUuid: 'input-music' });
+  assert.deepEqual(rejected.requestStatus, { result: false, code: 604, comment: 'scoped failure' });
+  assert.equal(rejected.responseData, undefined);
+  fake.failRequest('GetInputMute', null);
+  success(await c.request('GetInputMute', { inputUuid: 'input-music' }), { inputMuted: true });
+  assert.deepEqual(c.events('InputMuteStateChanged'), []);
 });
 
 test('filtros externos y cursor multimedia conservan estado, eventos y rechazan entradas inválidas', { timeout: 5000 }, async t => {

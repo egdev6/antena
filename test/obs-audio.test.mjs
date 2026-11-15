@@ -51,6 +51,44 @@ test('OBS audio enumeration uses capability, linear gain, monitoring and immutab
   assert.equal(program.session().tracks.length, 5);
 });
 
+test('OBS keeps all audio tracks when image and browser inputs have no audio', async t => {
+  const { fake, program } = await fixture(t, { inputs: [
+    { inputName: 'Mic', inputUuid: 'mic', inputVolumeMul: 0.5 },
+    { inputName: 'Picture', inputUuid: 'picture', inputKind: 'image_source' },
+    { inputName: 'Music', inputUuid: 'music', inputMuted: true, inputVolumeMul: 0.25 },
+    { inputName: 'Browser', inputUuid: 'browser', inputKind: 'browser_source', audio: false },
+  ] });
+  assert.deepEqual(program.session().tracks, [
+    track('mic', 'Mic', false, false, 0.5), track('music', 'Music', true, false, 0.25),
+  ]);
+  assert.deepEqual(fake.requests.filter(r => r.requestType === 'GetInputAudioTracks').map(r => r.requestData.inputUuid),
+    ['mic', 'picture', 'music', 'browser']);
+});
+
+test('a rejected audio query for one input does not discard surviving tracks', async t => {
+  for (const type of ['GetInputAudioTracks', 'GetInputMute', 'GetInputVolume', 'GetInputAudioMonitorType']) {
+    for (const code of [600, 602, 604, 500]) {
+      await t.test(`${type}: ${code}`, async t => {
+        const fake = fakeObs({ scenes, inputs: [
+          { inputName: 'Mic', inputUuid: 'mic', inputVolumeMul: 0.5 },
+          { inputName: 'Unavailable', inputUuid: 'bad' },
+          { inputName: 'Music', inputUuid: 'music', inputMuted: true, inputVolumeMul: 0.25 },
+        ] });
+        const program = createProgram('obs', { retryDelays: [10] });
+        t.after(async () => { await program.quiesceClose(); program.dispose(); await fake.close(); });
+        fake.failRequest(type, { code, comment: 'scoped failure' }, { inputUuid: 'bad' });
+        await listen(fake.server);
+        const ready = waitFor(program, 'status', s => s.state === 'conectado');
+        program.start(url(fake)); await ready;
+        assert.deepEqual(program.session().tracks, [
+          track('mic', 'Mic', false, false, 0.5), track('music', 'Music', true, false, 0.25),
+        ]);
+        assert.deepEqual(fake.requests.filter(r => r.requestType === type).map(r => r.requestData.inputUuid), ['mic', 'bad', 'music']);
+      });
+    }
+  }
+});
+
 test('OBS mute and gain actions match Meld arguments, results, clamping and errors', async t => {
   const { fake, program } = await fixture(t), before = fake.requests.length;
   assert.equal(await program.toggleMute('mICRO'), undefined);
@@ -133,6 +171,24 @@ test('input created during initial enumeration is not lost', async t => {
   fake.addInput({ inputName: 'Guest', inputUuid: 'guest', inputVolumeMul: 0.75 });
   await ready;
   assert.deepEqual(program.session().tracks.at(-1), track('guest', 'Guest', false, false, 0.75));
+});
+
+test('input event during a track re-enumeration is not overwritten by stale values', async t => {
+  const fake = fakeObs({ scenes: [{ sceneName: 'S', sceneUuid: 's' }], inputs: [{ inputName: 'Mic', inputUuid: 'mic', inputVolumeMul: 0.5 }] });
+  const program = createProgram('obs', { retryDelays: [10] });
+  t.after(async () => { await program.quiesceClose(); program.dispose(); await fake.close(); });
+  await listen(fake.server);
+  const ready = waitFor(program, 'status', s => s.state === 'conectado');
+  program.start(url(fake)); await ready;
+  fake.delayRequest('GetInputVolume', 150);
+  const mark = fake.requests.length;
+  fake.addInput({ inputName: 'Guest', inputUuid: 'guest' });
+  await until(() => fake.requests.slice(mark).some(r => r.requestType === 'GetInputMute' && r.requestData.inputUuid === 'mic'));
+  await delay(20);
+  await program.toggleMute('mic');
+  fake.delayRequest('GetInputVolume', 0);
+  await delay(600);
+  assert.deepEqual(program.session().tracks.map(x => [x.id, x.muted]), [['mic', true], ['guest', false]]);
 });
 
 test('input removed while volume queries are pending does not discard surviving tracks', async t => {

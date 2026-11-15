@@ -142,14 +142,19 @@ export class ObsAdapter extends Program {
           const revision = trackRevision, list = await request('GetInputList');
           const tracks = await Promise.all(list.inputs.map(async input => {
             const ref = input.inputUuid ? { inputUuid: input.inputUuid } : { inputName: input.inputName };
+            let mute, volume, monitor;
             try {
               await request('GetInputAudioTracks', ref);
-              const [mute, volume, monitor] = await Promise.all([
+              [mute, volume, monitor] = await Promise.all([
                 request('GetInputMute', ref), request('GetInputVolume', ref), request('GetInputAudioMonitorType', ref),
               ]);
-              return { id: input.inputUuid ?? input.inputName, name: input.inputName, muted: mute.inputMuted,
-                monitoring: monitor.monitorType !== 'OBS_MONITORING_TYPE_NONE', parent: null, gain: gainOf(volume.inputVolumeMul) };
-            } catch (error) { if (error.obsCode === 600 || error.obsCode === 602) return null; throw error; }
+            } catch {
+              // One unavailable input (including non-audio 604 or disappeared 600/602)
+              // must not prevent the remaining inputs from being enumerated.
+              return null;
+            }
+            return { id: input.inputUuid ?? input.inputName, name: input.inputName, muted: mute.inputMuted,
+              monitoring: monitor.monitorType !== 'OBS_MONITORING_TYPE_NONE', parent: null, gain: gainOf(volume.inputVolumeMul) };
           }));
           if (!current()) return;
           if (revision !== trackRevision) continue;

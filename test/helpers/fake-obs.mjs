@@ -168,7 +168,7 @@ export function fakeObs(options = {}) {
   const inputFor = data => lookup(inputs, data.inputName, data.inputUuid, 'inputName', 'inputUuid');
   const audioFor = data => {
     const input = inputFor(data);
-    if (!input.audio) throw failure(602, 'Input has no audio');
+    if (!input.audio) throw failure(604, 'The specified input does not support audio.');
     return input;
   };
   function sourceFor(data) {
@@ -293,26 +293,26 @@ export function fakeObs(options = {}) {
     GetInputAudioTracks: data => { audioFor(data); return { inputAudioTracks: { 1: true, 2: true, 3: true, 4: true, 5: true, 6: true } }; },
     GetInputMute: data => ({ inputMuted: audioFor(data).inputMuted }),
     SetInputMute(data) {
-      const input = inputFor(data), muted = boolean(data.inputMuted, 'inputMuted');
+      const input = audioFor(data), muted = boolean(data.inputMuted, 'inputMuted');
       if (input.inputMuted !== muted) { input.inputMuted = muted; emit('InputMuteStateChanged', { ...inputIdentity(input), inputMuted: muted }); }
     },
     ToggleInputMute(data) {
-      const input = inputFor(data);
+      const input = audioFor(data);
       input.inputMuted = !input.inputMuted;
       emit('InputMuteStateChanged', { ...inputIdentity(input), inputMuted: input.inputMuted });
       return { inputMuted: input.inputMuted };
     },
-    GetInputVolume: data => volume(inputFor(data)),
+    GetInputVolume: data => volume(audioFor(data)),
     SetInputVolume(data) {
-      const input = inputFor(data);
+      const input = audioFor(data);
       if (data.inputVolumeMul === undefined && data.inputVolumeDb === undefined) throw failure(203, 'Missing inputVolumeMul or inputVolumeDb');
       const mul = data.inputVolumeMul === undefined ? 10 ** (data.inputVolumeDb / 20) : data.inputVolumeMul;
       if (typeof mul !== 'number' || !Number.isFinite(mul) || mul < 0) throw failure(400, 'Invalid input volume');
       if (input.inputVolumeMul !== mul) { input.inputVolumeMul = mul; emit('InputVolumeChanged', { ...inputIdentity(input), ...volume(input) }); }
     },
-    GetInputAudioMonitorType: data => ({ monitorType: inputFor(data).monitorType }),
+    GetInputAudioMonitorType: data => ({ monitorType: audioFor(data).monitorType }),
     SetInputAudioMonitorType(data) {
-      const input = inputFor(data), monitorType = required(data.monitorType, 'monitorType');
+      const input = audioFor(data), monitorType = required(data.monitorType, 'monitorType');
       if (!['OBS_MONITORING_TYPE_NONE', 'OBS_MONITORING_TYPE_MONITOR_ONLY', 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'].includes(monitorType)) throw failure(400, 'Invalid monitorType');
       if (input.monitorType !== monitorType) { input.monitorType = monitorType; emit('InputAudioMonitorTypeChanged', { ...inputIdentity(input), monitorType }); }
     },
@@ -352,7 +352,7 @@ export function fakeObs(options = {}) {
       try {
         if (!Object.hasOwn(handlers, requestType)) throw failure(204, `Unknown request type: ${requestType}`);
         const forced = failures.get(requestType);
-        if (forced) throw failure(forced.code, forced.comment);
+        if (forced && (forced.inputUuid === undefined || forced.inputUuid === requestData.inputUuid)) throw failure(forced.code, forced.comment);
         const responseData = handlers[requestType](requestData);
         d.requestStatus = { result: true, code: 100 };
         if (responseData !== undefined) d.responseData = responseData;
@@ -487,9 +487,10 @@ export function fakeObs(options = {}) {
     },
     setVolumeMeters: inputs => emit('InputVolumeMeters', { inputs }),
     invalidateSession() { for (const client of clients) client.close(4011, 'Session invalidated'); },
-    // Hooks persistentes; null/0 los desactiva. El registro refleja la llegada, no la respuesta.
-    failRequest(type, error = { code: 500, comment: 'Simulated failure' }) {
-      if (error === null) failures.delete(type); else failures.set(type, { code: error.code, comment: error.comment });
+    // Hooks persistentes; null/0 los desactiva. El fallo puede limitarse a un UUID de entrada.
+    // El registro refleja la llegada, no la respuesta.
+    failRequest(type, error = { code: 500, comment: 'Simulated failure' }, { inputUuid } = {}) {
+      if (error === null) failures.delete(type); else failures.set(type, { code: error.code, comment: error.comment, inputUuid });
     },
     delayRequest(type, ms) { if (ms > 0) delays.set(type, ms); else delays.delete(type); },
     close() {
