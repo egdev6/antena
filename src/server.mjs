@@ -178,6 +178,28 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const obs = createProgram('obs', { getPassword: () => store.secrets.obs?.password });
   let selectedProgram = store.config.program.kind;
   if (selectedProgram === 'obs') program.select(obs);
+  // GET /api/stream?client=dock-meters opts into meter demand. On that dedicated
+  // client kind the replaceable 'meters' event contains { tracks: [{ id, level, clipping }] };
+  // ordinary panel snapshots and all other SSE clients remain unchanged.
+  const meterWatchers = new Set();
+  let meterTimer = null, meterTracks = [];
+  const updateMeterInterest = () => {
+    const wanted = selectedProgram === 'obs' && meterWatchers.size > 0;
+    obs.watchMeters(wanted);
+    if (!wanted) { clearTimeout(meterTimer); meterTimer = null; meterTracks = []; }
+  };
+  const pushMeters = tracks => {
+    if (selectedProgram !== 'obs' || !meterWatchers.size) return;
+    meterTracks = tracks;
+    if (meterTimer) return;
+    meterTimer = setTimeout(() => {
+      meterTimer = null;
+      if (selectedProgram === 'obs' && meterWatchers.size) bus.send('meters', { tracks: meterTracks }, ['dock-meters']);
+    }, 100);
+    meterTimer.unref?.();
+  };
+  obs.on('meters', pushMeters);
+  obs.on('status', status => { if (status.state !== 'conectado') pushMeters([]); });
   // #68: la retención de archivados sale de la configuración (0 = sin límite); se lee
   // en vivo para que un cambio en config.json valga sin reiniciar.
   const protectedArchives = new Set();
@@ -1178,6 +1200,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (store.config.program.kind !== selectedProgram) {
       program.stop();
       selectedProgram = store.config.program.kind;
+      updateMeterInterest();
       program.select(selectedProgram === 'obs' ? obs : meld);
       if (selectedProgram === 'obs') program.start(store.config.obs.url);
       else if (store.config.meld.enabled) program.start(store.config.meld.url);
@@ -1317,8 +1340,13 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Ambos transportes comparten el alta, las instantáneas y la limpieza del ping.
   const stream = (res, url) => {
     const c = url.searchParams.get('client');
-    const kind = ['panel', 'preview', 'widget', 'teleprompter'].includes(c) ? c : 'overlay';
+    const kind = ['panel', 'preview', 'widget', 'teleprompter', 'dock-meters'].includes(c) ? c : 'overlay';
     bus.addClient(res, kind);
+    if (kind === 'dock-meters') {
+      meterWatchers.add(res);
+      updateMeterInterest();
+      res.on('close', () => { meterWatchers.delete(res); updateMeterInterest(); });
+    }
     res.on('close', pushStatus);
     const ping = setInterval(() => { if (!res.writableEnded && !res.destroyed) res.write(': ping\n\n'); }, 15000);
     const pingEntry = { res, timer: ping };
@@ -1333,7 +1361,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (kind === 'widget') res.write(`event: customOverlayVersions\ndata: ${JSON.stringify(customOverlays.versions())}\n\n`);
     if (kind === 'teleprompter') res.write(`event: teleprompter\ndata: ${JSON.stringify(teleprompter.snapshot())}\n\n`);
     if (kind === 'overlay') res.write(`event: pause\ndata: ${JSON.stringify(engine.pauseState())}\n\n`);
-    if (kind !== 'panel') {
+    if (kind !== 'panel' && kind !== 'dock-meters') {
       const d = url.searchParams.has('themeDraft') ? themeRoutes.getDraft() : null;
       res.write(`event: theme\ndata: ${JSON.stringify(d ? { ...publicTheme(d), draft: true } : publicTheme(store.config.theme))}\n\n`);
     }

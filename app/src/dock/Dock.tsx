@@ -2,7 +2,7 @@
 // Desde 768 px de ancho se ven las tres columnas Control | Audio | Interactivos, sin importar
 // la orientación; por debajo, una pestaña por sección, con Control primero.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { post } from '../lib/api';
+import { post, withKey } from '../lib/api';
 import { IC } from '../lib/icons';
 import { live, useLive, useLiveVersion } from '../lib/live';
 import { groupMeldScenes } from '../lib/meld-scenes';
@@ -90,8 +90,36 @@ function Scenes() {
 // ---------- Audio (S10) ----------
 
 const isKnownGain = (gain: unknown): gain is number => typeof gain === 'number' && Number.isFinite(gain);
+type Meter = { id: string; level: number; clipping: boolean };
 
-function TrackRow({ t }: { t: MeldTrack }) {
+/** The dedicated stream exists only while OBS audio is visible; no panel/overlay traffic. */
+function useMeters(watching: boolean) {
+  const [meters, setMeters] = useState<Record<string, Meter>>({});
+  useEffect(() => {
+    if (!watching) { setMeters({}); return; }
+    let source: EventSource | null = null;
+    const stop = () => { source?.close(); source = null; setMeters({}); };
+    const sync = () => {
+      if (document.hidden) { stop(); return; }
+      if (source) return;
+      source = new EventSource(withKey('/api/stream?client=dock-meters'));
+      source.addEventListener('meters', (event: MessageEvent) => {
+        try {
+          const tracks = (JSON.parse(event.data) as { tracks: Meter[] }).tracks;
+          if (Array.isArray(tracks)) setMeters(Object.fromEntries(tracks.map(t => [t.id, t])));
+        } catch { /* ignore incomplete frames */ }
+      });
+      source.onerror = () => setMeters({});
+    };
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('pagehide', stop); window.addEventListener('pageshow', sync);
+    sync();
+    return () => { document.removeEventListener('visibilitychange', sync); window.removeEventListener('pagehide', stop); window.removeEventListener('pageshow', sync); stop(); };
+  }, [watching]);
+  return meters;
+}
+
+function TrackRow({ t, meter, showMeter }: { t: MeldTrack; meter?: Meter; showMeter: boolean }) {
   const muted = !!t.muted;
   const gain = isKnownGain(t.gain) ? t.gain : null;
   const [drag, setDrag] = useState<number | null>(null);
@@ -131,10 +159,14 @@ function TrackRow({ t }: { t: MeldTrack }) {
       title={unknown ? 'Volumen desconocido: Meld no lo informa de esta pista' : `Volumen de ${t.name}`}
       aria-label={`Volumen de ${t.name}`}
       onChange={e => { const v = Number(e.target.value); setDrag(v); send(v); }} />
+    {showMeter && <div className={cx('d-meter', meter?.clipping && 'clip')} role="meter" aria-label={`Nivel de ${t.name}`}
+      aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((meter?.level ?? 0) * 100)}>
+      <div style={{ width: `${(meter?.level ?? 0) * 100}%` }} />
+    </div>}
   </div>;
 }
 
-function Audio() {
+function Audio({ meters, showMeters }: { meters: Record<string, Meter>; showMeters: boolean }) {
   const tracks = useLive(s => s.meld?.session?.tracks || []);
   const scenes = useLive(s => s.meld?.session?.scenes || []);
   const meldOn = useLive(s => s.status.meld?.state === 'conectado');
@@ -145,8 +177,8 @@ function Audio() {
   const globals = tracks.filter(t => !t.parent);
   const onAir = tracks.filter(t => !!t.parent && parents.has(t.parent));
   return <div className="d-mixer">
-    {globals.length ? <><h3 className="d-sub">Globales</h3>{globals.map(t => <TrackRow key={t.id} t={t} />)}</> : null}
-    {onAir.length ? <><h3 className="d-sub">{`En esta escena · ${air.map(x => x.name).join(' · ')}`}</h3>{onAir.map(t => <TrackRow key={t.id} t={t} />)}</> : null}
+    {globals.length ? <><h3 className="d-sub">Globales</h3>{globals.map(t => <TrackRow key={t.id} t={t} meter={meters[t.id]} showMeter={showMeters} />)}</> : null}
+    {onAir.length ? <><h3 className="d-sub">{`En esta escena · ${air.map(x => x.name).join(' · ')}`}</h3>{onAir.map(t => <TrackRow key={t.id} t={t} meter={meters[t.id]} showMeter={showMeters} />)}</> : null}
   </div>;
 }
 
@@ -410,6 +442,8 @@ export function Dock() {
   const wide = useWide();
   const stream = useStreamControl();
   const [tab, setTab] = useState<Tab>(() => tabOf(localStorage.getItem(DOCK_TAB)));
+  const isObs = useLive(s => s?.config?.program?.kind === 'obs');
+  const meters = useMeters(ready && isObs && (wide || tab === 'audio'));
   useEffect(() => { live.load().then(() => live.connect('panel')).catch(e => toast(e.message, true)); }, []);
   useEffect(() => { try { localStorage.setItem(DOCK_TAB, tab); } catch { /* almacenamiento no disponible: se ignora */ } }, [tab]);
   if (!ready) return <div className="d-boot">Conectando con antena…</div>;
@@ -418,14 +452,14 @@ export function Dock() {
     {wide
       ? <div className="d-cols">
         <Col id="control" title="Control" meta={<ControlMeta />}><Control stream={stream} /></Col>
-        <Col id="audio" title="Audio" meta={<AudioMeta />}><Audio /></Col>
+        <Col id="audio" title="Audio" meta={<AudioMeta />}><Audio meters={meters} showMeters={isObs} /></Col>
         <section className="d-col d-col-inter" aria-labelledby="d-h-interactivos"><h2 className="d-col-h" id="d-h-interactivos">Interactivos</h2><Interactivos /></section>
       </div>
       : <>
         <Tabs tab={tab} onTab={setTab} />
         <div className="d-panels">
           <main className="d-body" role="tabpanel" id="d-p-control" aria-labelledby="d-t-control" hidden={tab !== 'control'}><Control stream={stream} /></main>
-          <main className="d-body" role="tabpanel" id="d-p-audio" aria-labelledby="d-t-audio" hidden={tab !== 'audio'}><Audio /></main>
+          <main className="d-body" role="tabpanel" id="d-p-audio" aria-labelledby="d-t-audio" hidden={tab !== 'audio'}><Audio meters={meters} showMeters={isObs} /></main>
           <main className="d-inter-panel" role="tabpanel" id="d-p-interactivos" aria-labelledby="d-t-interactivos" hidden={tab !== 'interactivos'}><Interactivos /></main>
         </div>
       </>}
