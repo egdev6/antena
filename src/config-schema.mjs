@@ -168,8 +168,13 @@ const THEME_SCHEMA = Object.fromEntries(Object.keys(THEME_RULES).map(k => [k, {
   ...(k === 'icons' ? { repair: keepValidIcons } : {}),
 }]));
 
+const PROGRAM_SCHEMA = { kind: { ...en(['meld', 'obs']), rejectNull: true } };
+const OBS_SCHEMA = { url: { kind: 'wsurl' }, password: str, passwordSet: bool };
+
 export const CONFIG_SCHEMA = {
   port: num({ int: true, min: 1, max: 65535 }),
+  program: PROGRAM_SCHEMA,
+  obs: OBS_SCHEMA,
   paused: bool,
   twitch: { clientId: str },
   youtube: {
@@ -269,6 +274,22 @@ export const CONFIG_SCHEMA = {
 const TIPO = { num: 'un número', str: 'un texto', bool: 'true o false', enum: 'uno de los valores permitidos', arrStr: 'una lista de textos' };
 
 function checkNode(node, value, path, errors) {
+  if (node === PROGRAM_SCHEMA) {
+    if (value !== undefined) checkObject(node, value, path, errors);
+    return;
+  }
+  if (node === OBS_SCHEMA && value === null) {
+    errors.push({ path, message: `${path}: se esperaba un objeto` });
+    return;
+  }
+  if (node?.kind === 'wsurl' && value !== undefined) {
+    try {
+      if (typeof value !== 'string' || !/^wss?:\/\//i.test(value) || value.trim() !== value) throw 0;
+      const url = new URL(value);
+      if (!['ws:', 'wss:'].includes(url.protocol) || url.username || url.password || url.hash) throw 0;
+    } catch { errors.push({ path, message: `${path}: se esperaba una URL ws:// o wss:// válida (sin usuario ni contraseña)` }); }
+    return;
+  }
   if (node === THANKS_FIELDS && value !== undefined) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       errors.push({ path, message: `${path}: se esperaba un objeto` });
@@ -307,7 +328,7 @@ function checkNode(node, value, path, errors) {
     return;
   }
   if (value === null && node?.rejectNull) {
-    errors.push({ path, message: `${path}: se esperaba ${TIPO.bool}` });
+    errors.push({ path, message: node.kind === 'enum' ? `${path}: se esperaba uno de: ${node.values.join(', ')}` : `${path}: se esperaba ${TIPO[node.kind]}` });
     return;
   }
   if (value === undefined || value === null) return;   // ausente no es inválido: queda el default
@@ -415,7 +436,7 @@ export function validateChatVariantsTransition(previous, next, defaultChat) {
 /** Tramos de ruta que llegarían al prototipo de los objetos: nunca se leen ni se escriben. */
 export const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 /** Hojas con un valor simple: por debajo no hay nada que guardar (lo convertiría en objeto). */
-const HOJAS = new Set(['num', 'str', 'bool', 'enum', 'arrStr', 'theme']);
+const HOJAS = new Set(['num', 'str', 'bool', 'enum', 'arrStr', 'theme', 'wsurl']);
 
 /** Valida el valor de una ruta con puntos («overlay.queueMax», «widgets.goals.0.target»).
  *  Las rutas sin esquema (claves nuevas) se aceptan, pero nunca las que tocan el prototipo,
@@ -428,7 +449,9 @@ export function validatePath(dotted, value) {
   if (proto) return [{ path: dotted, message: `${dotted}: ruta no válida («${proto}»)` }];
   let node = CONFIG_SCHEMA, prefix = '';
   for (const [i, k] of keys.entries()) {
-    if (node?.fields) {
+    if (node === PROGRAM_SCHEMA) {
+      node = node[k];
+    } else if (node?.fields) {
       // nodo cruzado (goalBar de #128): sus campos viven en .fields
       node = node.fields[k];
     } else if (node && node.kind !== undefined) {
@@ -468,6 +491,13 @@ export function sanitizeConfig(config, defaults) {
     for (const [k, node] of Object.entries(schema)) {
       const path = `${prefix}.${k}`;
       const v = value?.[k], d = def?.[k];
+      if (node === PROGRAM_SCHEMA || node === OBS_SCHEMA) {
+        if (!v || typeof v !== 'object' || Array.isArray(v)) {
+          value[k] = structuredClone(d);
+          warnings.push({ path, message: `${path}: valor inválido; uso el valor por defecto` });
+        } else walk(node, v, d, path);
+        continue;
+      }
       if (node.kind === undefined) { walk(node, v, d, path); continue; }
       // #118: dentro de una lista (comandos, timers, atajos, variaciones) la hoja inválida
       // vuelve a su default y el elemento se conserva: nunca se borra el elemento ni la lista.
@@ -511,7 +541,8 @@ const avisadas = new Set();
 export function schemaAt(dotted) {
   let node = CONFIG_SCHEMA;
   for (const k of String(dotted || '').split('.').filter(Boolean)) {
-    if (node && node.kind !== undefined) {
+    if (node === PROGRAM_SCHEMA) node = node[k];
+    else if (node && node.kind !== undefined) {
       if (node.kind === 'list' && /^\d+$/.test(k)) node = node.item;
       else return undefined;
     } else {
@@ -526,7 +557,7 @@ export function warnUnknownKeys(patch, base = '') {
   for (const [k, v] of Object.entries(patch || {})) {
     const path = base ? `${base}.${k}` : k;
     const node = schemaAt(path);
-    if (v !== null && typeof v === 'object' && !Array.isArray(v) && node && node.kind === undefined) {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v) && node && (node.kind === undefined || node === PROGRAM_SCHEMA)) {
       // rama con esquema propio: baja comparando hoja a hoja
       warnUnknownKeys(v, path);
     } else if (node === undefined && !avisadas.has(path)) {
