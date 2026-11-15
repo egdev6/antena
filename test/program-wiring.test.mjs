@@ -7,6 +7,7 @@ import net from 'node:net';
 import { EventEmitter } from 'node:events';
 import { Meld, MELD_COMMANDS as rawCommands, MELD_STREAM_EVENTS as rawEvents } from '../src/meld.mjs';
 import { Timers } from '../src/timers.mjs';
+import { Interactive, DEFAULT_INTERACTIVE_CONFIG } from '../src/interactive.mjs';
 import { MeldAdapter } from '../src/programs/meld-adapter.mjs';
 import { createProgram, MELD_COMMANDS, MELD_STREAM_EVENTS } from '../src/programs/index.mjs';
 import { createApp, startServer } from '../src/server.mjs';
@@ -417,4 +418,55 @@ test('an alert action reaches the program rather than bypassing it', async t => 
 test('the engine retains the program as its action provider', async t => {
   const { app } = await routeWiring(t);
   assert.strictEqual(app.engine.meld, app.program);
+});
+
+test('interactive retains the program as its confetti provider', async t => {
+  const { app } = await routeWiring(t);
+  assert.strictEqual(app.interactive.meld, app.program);
+});
+
+test('giveaway confetti reaches the program only while connected', async t => {
+  const { app, post } = await routeWiring(t), programCalls = [], rawCalls = [];
+  app.program.streamEvent = async (...args) => { programCalls.push(args); };
+  app.meld.streamEvent = async (...args) => { rawCalls.push(args); };
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const config = await fetch(`${base}/api/interactive/config`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ giveaway: { announceInChat: false, meldConfetti: true, rollSeconds: 1 } }),
+  });
+  assert.equal(config.status, 200);
+  const draw = async () => {
+    assert.equal((await post('/api/giveaway/open', {})).status, 200);
+    assert.deepEqual(await post('/api/giveaway/join', { user: 'Probe' }), { status: 200, body: { added: true } });
+    assert.deepEqual(await post('/api/giveaway/draw', {}), { status: 200, body: { winner: 'Probe', entries: 1, pool: 1 } });
+    await app.interactive.drainDraws();
+  };
+  try {
+    assert.equal(app.program.connected, true);
+    await draw();
+    assert.deepEqual(programCalls, [['CONFETTIPOP_TRIGGER']]);
+    assert.deepEqual(rawCalls, []);
+    app.meld.setStatus({ state: 'desconectado' });
+    assert.equal(app.program.connected, false);
+    await draw();
+    assert.deepEqual(programCalls, [['CONFETTIPOP_TRIGGER']]);
+    assert.deepEqual(rawCalls, []);
+  } finally {
+    try { await app.interactive.drainDraws(); } finally { await app.interactive.flush(); }
+  }
+});
+
+test('legacy Interactive constructor still accepts a duck-typed Meld provider', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const config = structuredClone(DEFAULT_INTERACTIVE_CONFIG), calls = [];
+  Object.assign(config.giveaway, { announceInChat: false, rollSeconds: 1 });
+  const meld = { connected: true, streamEvent: async (...args) => { calls.push(args); } };
+  const interactive = new Interactive({ store: { dir: '.', config: { interactive: config } }, twitch: {}, meld, writer: async () => {}, log: () => {} });
+  await interactive.openGiveaway();
+  assert.equal(interactive.join({ user: 'Probe' }), true);
+  assert.deepEqual(await interactive.draw(), { winner: 'Probe', entries: 1, pool: 1 });
+  const done = interactive.drainDraws();
+  t.mock.timers.tick(1000); await done;
+  assert.deepEqual(calls, [['CONFETTIPOP_TRIGGER']]);
+  assert.equal(interactive.giveawayState().history[0].winner, 'Probe');
 });

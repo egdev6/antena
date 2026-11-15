@@ -216,7 +216,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   session.channelTotals = channelTotals;
   const timers = new Timers({ store, engine, twitch, youtube, meld: program, session, log });
   engine.timers = timers;
-  const interactive = await new Interactive({ store, twitch, meld, log }).load();
+  const interactive = await new Interactive({ store, twitch, meld: program, log }).load();
   engine.interactive = interactive;
   // Ráfagas: cada voto recalcula `changed`, pero el snapshot completo solo sale una vez por ventana.
   const pushInteractive = burstCoalesce(SNAPSHOT_COALESCE_MS, () => bus.send('interactive', interactive.snapshot(), ['widget', 'panel']));
