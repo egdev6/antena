@@ -233,7 +233,41 @@ export async function consumerTrace(t) {
   await wire.waitIdleAfter(beforeExpiry);
   assert.equal(engineScheduled.length, 0);
 
+  // Compare the two no-confetti paths through the public draw and SSE interfaces.
+  // Keep prior history and the configured flag observable, but exclude those two
+  // expected differences from the otherwise identical snapshots.
+  const drawWithoutConfetti = async (confetti, state) => {
+    await api('PUT', '/api/interactive/config', { giveaway: { meldConfetti: confetti } });
+    assert.equal((await api('GET', '/api/meld')).status.state, state);
+    await api('POST', '/api/giveaway/open', {});
+    await api('POST', '/api/giveaway/join', { user: 'Probe' });
+    const history = (await api('GET', '/api/giveaway')).history;
+    const before = wire.messages.length;
+    const result = await api('POST', '/api/giveaway/draw', {});
+    assert.deepEqual(result, { winner: 'Probe', entries: 1, pool: 1 });
+    const rolling = await next('interactive', s => s.giveaway.rolling?.winner === 'Probe' && s.giveaway.history.length === history.length);
+    await app.interactive.drainDraws(); // wait for the real delayed confetti decision
+    const finished = await next('interactive', s => s.giveaway.rolling?.winner === 'Probe' && s.giveaway.history.length === history.length + 1);
+    assert.equal(rolling.config.giveaway.meldConfetti, confetti);
+    assert.equal(finished.config.giveaway.meldConfetti, confetti);
+    assert.deepEqual(rolling.giveaway.history, history);
+    assert.deepEqual(finished.giveaway.history.slice(1), history);
+    await new Promise(resolve => setImmediate(resolve));
+    const calls = wire.messages.slice(before);
+    assert.deepEqual(calls, [], 'draw must send no WebChannel messages');
+    const view = s => {
+      const { history: _history, ...giveaway } = s.giveaway;
+      const { meldConfetti: _flag, ...giveawayConfig } = s.config.giveaway;
+      return { ...s, giveaway, config: { ...s.config, giveaway: giveawayConfig } };
+    };
+    return { result, rolling: view(rolling), finished: view(finished), historyEntry: finished.giveaway.history[0], calls };
+  };
+  const disabled = await drawWithoutConfetti(false, 'conectado');
+  record('draw-confetti-disabled', disabled);
   await api('POST', '/api/meld/disconnect');
   await next('status', s => s.meld.state === 'desconectado');
+  const disconnected = await drawWithoutConfetti(true, 'desconectado');
+  assert.deepEqual(disconnected, disabled, 'draw result and SSE are unchanged');
+  record('draw-meld-disconnected', disconnected);
   return { wire: wire.messages, observations, order: await consumerOrderTrace(t) };
 }
