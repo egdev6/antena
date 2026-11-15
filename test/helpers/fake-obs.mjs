@@ -33,9 +33,9 @@ events(1 << 19, 'SceneItemTransformChanged');
 
 const REQUEST_TYPES = [
   'GetVersion', 'GetSceneList', 'CreateScene', 'RemoveScene', 'GetCurrentProgramScene', 'SetCurrentProgramScene', 'GetSceneItemList',
-  'GetSceneItemId', 'SetSceneItemEnabled', 'GetSourceFilterList', 'SetSourceFilterEnabled', 'GetInputList',
+  'GetSceneItemId', 'SetSceneItemEnabled', 'GetSourceFilterList', 'CreateSourceFilter', 'RemoveSourceFilter', 'SetSourceFilterName', 'SetSourceFilterEnabled', 'GetInputList',
   'GetInputMute', 'SetInputMute', 'ToggleInputMute', 'GetInputVolume', 'SetInputVolume',
-  'GetInputAudioMonitorType', 'SetInputAudioMonitorType', 'TriggerMediaInputAction', 'GetStreamStatus',
+  'GetInputAudioMonitorType', 'SetInputAudioMonitorType', 'TriggerMediaInputAction', 'SetMediaInputCursor', 'GetMediaInputStatus', 'GetStreamStatus',
   'StartStream', 'StopStream', 'ToggleStream', 'GetRecordStatus', 'StartRecord', 'StopRecord',
 ];
 
@@ -100,6 +100,8 @@ export function fakeObs(options = {}) {
     inputMuted: input.inputMuted ?? false,
     inputVolumeMul: input.inputVolumeMul ?? 1,
     monitorType: input.monitorType ?? 'OBS_MONITORING_TYPE_NONE',
+    media: input.media ?? ['ffmpeg_source', 'vlc_source'].includes(input.inputKind),
+    mediaCursor: 0, mediaState: 'OBS_MEDIA_STATE_STOPPED',
     filters: filters(input.filters),
   }));
   // Una fuente compartida por varias escenas conserva la misma identidad OBS.
@@ -170,6 +172,17 @@ export function fakeObs(options = {}) {
     ];
     return lookup(sources, data.sourceName, data.sourceUuid, 'sourceName', 'sourceUuid');
   }
+  function filterFor(source, name) {
+    required(name, 'filterName');
+    const filter = source.filters.find(entry => entry.filterName === name);
+    if (!filter) throw failure(600, 'filterName not found');
+    return filter;
+  }
+  function mediaFor(data) {
+    const input = inputFor(data);
+    if (!input.media) throw failure(602, 'Input is not controllable media');
+    return input;
+  }
   function itemFor(scene, id) {
     required(id, 'sceneItemId');
     const item = scene.sceneItems.find(entry => entry.sceneItemId === id);
@@ -238,11 +251,30 @@ export function fakeObs(options = {}) {
       }
     },
     GetSourceFilterList: data => ({ filters: clone(sourceFor(data).filters) }),
+    CreateSourceFilter(data) {
+      const source = sourceFor(data), filterName = required(data.filterName, 'filterName');
+      const filterKind = required(data.filterKind, 'filterKind');
+      if (source.filters.some(filter => filter.filterName === filterName)) throw failure(601, 'filterName already exists');
+      const filter = { filterName, filterKind, filterEnabled: true, filterIndex: source.filters.length, filterSettings: clone(data.filterSettings ?? {}) };
+      source.filters.push(filter);
+      emit('SourceFilterCreated', { sourceName: source.sourceName, sourceUuid: source.sourceUuid, ...clone(filter) });
+    },
+    RemoveSourceFilter(data) {
+      const source = sourceFor(data), filter = filterFor(source, data.filterName);
+      source.filters.splice(source.filters.indexOf(filter), 1);
+      source.filters.forEach((entry, index) => { entry.filterIndex = index; });
+      emit('SourceFilterRemoved', { sourceName: source.sourceName, sourceUuid: source.sourceUuid, filterName: filter.filterName });
+    },
+    SetSourceFilterName(data) {
+      const source = sourceFor(data), filter = filterFor(source, data.filterName);
+      const filterName = required(data.newFilterName, 'newFilterName');
+      if (source.filters.some(entry => entry !== filter && entry.filterName === filterName)) throw failure(601, 'filterName already exists');
+      const oldFilterName = filter.filterName;
+      filter.filterName = filterName;
+      emit('SourceFilterNameChanged', { sourceName: source.sourceName, sourceUuid: source.sourceUuid, oldFilterName, filterName });
+    },
     SetSourceFilterEnabled(data) {
-      const source = sourceFor(data);
-      required(data.filterName, 'filterName');
-      const filter = source.filters.find(entry => entry.filterName === data.filterName);
-      if (!filter) throw failure(600, 'filterName not found');
+      const source = sourceFor(data), filter = filterFor(source, data.filterName);
       const enabled = boolean(data.filterEnabled, 'filterEnabled');
       if (filter.filterEnabled !== enabled) {
         filter.filterEnabled = enabled;
@@ -277,8 +309,21 @@ export function fakeObs(options = {}) {
       if (input.monitorType !== monitorType) { input.monitorType = monitorType; emit('InputAudioMonitorTypeChanged', { ...inputIdentity(input), monitorType }); }
     },
     TriggerMediaInputAction(data) {
-      inputFor(data);
-      required(data.mediaAction, 'mediaAction');
+      const input = mediaFor(data), action = required(data.mediaAction, 'mediaAction');
+      const states = { OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY: 'PLAYING', OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PAUSE: 'PAUSED',
+        OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART: 'PLAYING', OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP: 'STOPPED' };
+      if (!states[action]) throw failure(400, 'Invalid mediaAction');
+      input.mediaState = `OBS_MEDIA_STATE_${states[action]}`;
+      if (action.endsWith('_RESTART') || action.endsWith('_STOP')) input.mediaCursor = 0;
+    },
+    SetMediaInputCursor(data) {
+      const input = mediaFor(data), cursor = required(data.mediaCursor, 'mediaCursor');
+      if (!Number.isSafeInteger(cursor) || cursor < 0) throw failure(400, 'Invalid mediaCursor');
+      input.mediaCursor = cursor;
+    },
+    GetMediaInputStatus(data) {
+      const input = mediaFor(data);
+      return { mediaState: input.mediaState, mediaDuration: 0, mediaCursor: input.mediaCursor };
     },
     GetStreamStatus: () => ({ outputActive: streaming, outputReconnecting: false, ...outputTime(), outputCongestion: 0, outputBytes: 0, outputSkippedFrames: 0, outputTotalFrames: 0 }),
     StartStream: () => { setOutput('Stream', true); },

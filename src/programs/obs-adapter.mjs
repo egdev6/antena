@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Program } from './program.mjs';
 
-const OBS_EVENTS = (1 << 2) | (1 << 3) | (1 << 6) | (1 << 7);
+const OBS_EVENTS = (1 << 2) | (1 << 3) | (1 << 5) | (1 << 6) | (1 << 7);
 const hash = value => createHash('sha256').update(value).digest('base64');
 const unavailable = () => { throw new Error('Acción todavía no disponible con OBS.'); };
 
@@ -22,7 +22,7 @@ export class ObsAdapter extends Program {
     this.closePromise = null;
     this.attempts = 0;
     this.scenes = [];
-    this.capabilities.add('scene-layers');
+    for (const capability of ['scene-layers', 'layer-effects', 'media-controls']) this.capabilities.add(capability);
   }
 
   get status() { return this._status; }
@@ -105,12 +105,17 @@ export class ObsAdapter extends Program {
       if (refreshing) return refreshing;
       refreshing = (async () => {
         while (current()) {
-          const revision = sceneRevision, list = await request('GetSceneList');
+          const revision = sceneRevision, list = await request('GetSceneList'), filters = new Map();
           const scenes = await Promise.all(list.scenes.map(async scene => {
             const id = scene.sceneUuid ?? scene.sceneName;
             const items = await request('GetSceneItemList', { sceneName: scene.sceneName });
-            return { id, name: scene.sceneName, current: scene.sceneUuid && list.currentProgramSceneUuid ? scene.sceneUuid === list.currentProgramSceneUuid : scene.sceneName === list.currentProgramSceneName,
-              layers: items.sceneItems.map(item => ({ id: `${id}:${item.sceneItemId}`, name: item.sourceName, visible: item.sceneItemEnabled })) };
+            const layers = await Promise.all(items.sceneItems.map(async item => {
+              if (!filters.has(item.sourceName)) filters.set(item.sourceName, request('GetSourceFilterList', { sourceName: item.sourceName }));
+              const result = await filters.get(item.sourceName);
+              return { id: `${id}:${item.sceneItemId}`, name: item.sourceName, visible: item.sceneItemEnabled,
+                effects: result.filters.map(f => ({ id: f.filterName, name: f.filterName, enabled: f.filterEnabled })) };
+            }));
+            return { id, name: scene.sceneName, current: scene.sceneUuid && list.currentProgramSceneUuid ? scene.sceneUuid === list.currentProgramSceneUuid : scene.sceneName === list.currentProgramSceneName, layers };
           }));
           if (!current()) return;
           if (revision !== sceneRevision) continue;
@@ -137,6 +142,18 @@ export class ObsAdapter extends Program {
       } else {
         void refreshScenes().catch(() => {}); return;
       }
+      if (this.connected) this.emit('session', this.session());
+    };
+    const filterEvent = d => {
+      if (d.eventType !== 'SourceFilterEnableStateChanged') { void refreshScenes().catch(() => {}); return; }
+      sceneRevision++;
+      const data = d.eventData ?? {};
+      const layers = this.scenes.flatMap(scene => scene.layers.filter(layer => layer.name === data.sourceName));
+      if (!layers.length || typeof data.filterEnabled !== 'boolean' || layers.some(layer => !layer.effects.some(effect => effect.name === data.filterName))) {
+        if (!refreshing) void refreshScenes().catch(() => {});
+        return;
+      }
+      for (const layer of layers) layer.effects.find(effect => effect.name === data.filterName).enabled = data.filterEnabled;
       if (this.connected) this.emit('session', this.session());
     };
     ws.onmessage = event => {
@@ -175,7 +192,11 @@ export class ObsAdapter extends Program {
         if (!entry) return;
         clearTimeout(entry.timer); pending.delete(d.requestId);
         if (d.requestStatus?.result === true) entry.resolve(d.responseData ?? {});
-        else entry.reject(new Error(`OBS rechazó la petición «${entry.name}».`));
+        else {
+          const error = new Error(`OBS rechazó la petición «${entry.name}».`);
+          if (entry.name === 'TriggerMediaInputAction' || entry.name === 'SetMediaInputCursor') error.obsCode = d.requestStatus?.code;
+          entry.reject(error);
+        }
       } else if (message.op === 5) {
         const field = d.eventType === 'StreamStateChanged' ? 'streaming' : d.eventType === 'RecordStateChanged' ? 'recording' : null;
         if (field) {
@@ -186,6 +207,7 @@ export class ObsAdapter extends Program {
           this.setStatus({ [field]: value, [field + 'Known']: true });
           if (this.connected) this.emit('session', this.session());
         } else if (/^(CurrentProgramSceneChanged|SceneCreated|SceneRemoved|SceneNameChanged|SceneListChanged|SceneItemCreated|SceneItemRemoved|SceneItemListReindexed|SceneItemEnableStateChanged|InputNameChanged)$/.test(d.eventType)) sceneEvent(d);
+        else if (/^(SourceFilterEnableStateChanged|SourceFilterCreated|SourceFilterRemoved|SourceFilterNameChanged|SourceFilterListReindexed)$/.test(d.eventType)) filterEvent(d);
       }
     };
     ws.onerror = () => {}; // No raw transport errors, URLs, close reasons or credentials in logs/status.
@@ -241,12 +263,31 @@ export class ObsAdapter extends Program {
     }
     return found;
   }
-  toggleEffect() { return unavailable(); }
+  async toggleEffect(sceneRef, layerRef, effectRef) {
+    const found = this.findLayer(sceneRef, layerRef);
+    if (!found) throw new Error(`No encuentro la capa «${layerRef}»`);
+    const name = String(effectRef).toLowerCase();
+    const effect = found.layer.effects.find(e => e.id === effectRef || e.name.toLowerCase() === name);
+    if (!effect) throw new Error(`No encuentro el efecto «${effectRef}»`);
+    await this.requestObs('SetSourceFilterEnabled', { sourceName: found.layer.name, filterName: effect.name, filterEnabled: !effect.enabled });
+  }
   command() { return unavailable(); }
   streamEvent() { return unavailable(); }
   toggleMute() { return unavailable(); }
   setGain() { return unavailable(); }
-  media() { return unavailable(); }
+  async media(layerRef, command, seconds) {
+    const found = this.findLayer(null, layerRef);
+    if (!found) throw new Error(`No encuentro la capa «${layerRef}»`);
+    const actions = { play: 'PLAY', pause: 'PAUSE', restart: 'RESTART', stop: 'STOP' };
+    if (command !== 'seekTo' && !Object.hasOwn(actions, command)) throw new Error(`Comando multimedia «${command}» no disponible con OBS.`);
+    try {
+      if (command === 'seekTo') await this.requestObs('SetMediaInputCursor', { inputName: found.layer.name, mediaCursor: Math.round((Number(seconds) || 0) * 1000) });
+      else await this.requestObs('TriggerMediaInputAction', { inputName: found.layer.name, mediaAction: `OBS_WEBSOCKET_MEDIA_INPUT_ACTION_${actions[command]}` });
+    } catch (error) {
+      if (error.obsCode === 600 || error.obsCode === 602) throw new Error(`La capa «${found.layer.name}» no es una fuente multimedia de OBS.`);
+      throw error;
+    }
+  }
   setProperty() { return unavailable(); }
   call() { return unavailable(); }
   dispose() { /* No external listeners: quiesceClose owns the transport. */ }

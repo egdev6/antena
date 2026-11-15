@@ -155,7 +155,7 @@ test('live switching preserves the facade, disconnects the old program and masks
     assert.ok(!JSON.stringify(output).includes(secret));
   const rejected = await http(base, 'POST', '/api/meld/effect', { scene: 'Cámara', layer: 'Logo', effect: 'Blur' });
   assert.equal(rejected.status, 500);
-  assert.match(rejected.body.error, /todavía no disponible con OBS/i);
+  assert.equal(rejected.body.error, 'No encuentro la capa «Logo»');
   assert.deepEqual(meld.state.calls, []);
   const obsRequests = obs.requests.length;
   assert.equal((await http(base, 'POST', '/api/meld/connect', {})).status, 200);
