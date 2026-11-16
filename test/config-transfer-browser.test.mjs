@@ -94,6 +94,9 @@ test('exportar descarga un ZIP con JSON versionado y medios sin credenciales', a
   const f = await fixture(t); if (!f) return;
   await writeFile(path.join(f.media, 'saludo.png'), 'imagen de prueba');
   await f.wait(`!!${control('Exportar configuración')}`);
+  const checkbox = `document.querySelector('input[aria-label="Incluir directos pasados"]')`;
+  assert.equal(await f.dom(`${checkbox}?.checked`), true);
+  assert.ok(await f.dom(`document.body.textContent.includes('Incluye nombres y mensajes de tu chat.')`));
   await f.dom(`(() => { const original = window.fetch, click = HTMLAnchorElement.prototype.click;
     window.__exportRequests = []; window.fetch = (...args) => { if (String(args[0]).includes('/api/config/export')) window.__exportRequests.push([String(args[0]), args[1]?.method || 'GET']); return original(...args); };
     HTMLAnchorElement.prototype.click = function() { window.__exportHref = this.getAttribute('href'); return click.call(this); }; return true; })()`);
@@ -102,8 +105,8 @@ test('exportar descarga un ZIP con JSON versionado y medios sin credenciales', a
   let files = [];
   for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.some(n => n.endsWith('.zip'))) break; await new Promise(r => setTimeout(r, 50)); }
   assert.equal(files.length, 1); assert.match(files[0], /^antena-config-\d{4}-\d{2}-\d{2}\.zip$/);
-  assert.deepEqual(await f.dom('window.__exportRequests'), [['/api/config/export?skipped=1', 'GET']]);
-  assert.equal(await f.dom('window.__exportHref'), '/api/config/export');
+  assert.deepEqual(await f.dom('window.__exportRequests'), [['/api/config/export?skipped=1&sessions=1', 'GET']]);
+  assert.equal(await f.dom('window.__exportHref'), '/api/config/export?sessions=1');
   const zip = await openZip(path.join(f.downloads, files[0])); let text;
   try {
     assert.deepEqual(zip.entries.map(e => e.name), ['config.json', 'media/saludo.png']);
@@ -114,6 +117,29 @@ test('exportar descarga un ZIP con JSON versionado y medios sin credenciales', a
   const file = JSON.parse(text);
   assert.equal(file.format, 'antena-config'); assert.equal(file.version, 1); assert.equal(text.includes(secret), false);
   assert.equal(Object.hasOwn(file.config.youtube, 'apiKey'), false);
+  await f.dom(`${checkbox}.click()`);
+  assert.equal(await f.dom(`${checkbox}.checked`), false);
+  await f.dom(`HTMLAnchorElement.prototype.click = function() { window.__exportHref = this.getAttribute('href'); }; true`);
+  await clickWhen(f.c, control('Exportar configuración'));
+  await f.wait(`window.__exportRequests.length === 2 && window.__exportHref === '/api/config/export'`);
+  assert.deepEqual(await f.dom('window.__exportRequests[1]'), ['/api/config/export?skipped=1', 'GET']);
+});
+
+test('la vista previa muestra directos añadidos, existentes y aviso de retención', async t => {
+  const f = await fixture(t); if (!f) return;
+  const config = await changedFile(f), session = id => ({ id, startedAt: '2026-10-01T18:00:00.000Z', endedAt: '2026-10-01T20:00:00.000Z', events: [] });
+  const set = await fetch(f.base + '/api/config/set', { method: 'POST', headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' }, body: JSON.stringify({ path: 'sessions.retention', value: 1 }) });
+  assert.equal(set.status, 200);
+  await mkdir(path.join(f.data, 'sessions'), { recursive: true });
+  await writeFile(path.join(f.data, 'sessions', 'old.json'), JSON.stringify(session('old')));
+  const archive = path.join(f.root, 'sessions.zip');
+  await writeZip(createWriteStream(archive), [{ name: 'config.json', source: JSON.stringify(config) },
+    { name: 'sessions/old.json', source: JSON.stringify(session('old')) }, { name: 'sessions/new.json', source: JSON.stringify(session('new')) }]);
+  const before = await f.snapshot();
+  await f.select(await readFile(archive), 'sessions.zip'); await f.wait(`!!${dialog}`);
+  const text = await f.dom(`${dialog}.textContent`);
+  for (const expected of ['Directos pasados', '1 se agregan · 1 ya estaban', 'La retención (1) borrará los más antiguos en la próxima limpieza.']) assert.ok(text.includes(expected), expected);
+  assert.deepEqual(await f.snapshot(), before);
 });
 
 test('exportar avisa de los medios omitidos y conserva la descarga ZIP', async t => {

@@ -8,8 +8,18 @@ import { isDeepStrictEqual } from 'node:util';
 import { ROOT, DEFAULT_CONFIG, deepMerge } from '../store.mjs';
 import { PROTO_KEYS, validatePatch, validateImportedChatVariants } from '../config-schema.mjs';
 import { httpError } from '../http-util.mjs';
-import { checkZipName, openZip, writeZip, MAX_ZIP_TOTAL, MAX_ZIP_ENTRIES } from '../zip-archive.mjs';
+import { checkZipName, openZip, writeZip, MAX_ZIP_TOTAL, MAX_ZIP_ENTRIES, MAX_SESSION } from '../zip-archive.mjs';
+import { isImportableArchive } from '../session.mjs';
+import { serialize } from '../json-file.mjs';
 import { MAX_UPLOAD } from './media.mjs';
+import { metricsDocument } from './metrics.mjs';
+
+// A stream must be importable and also valid for the metrics routes: one invalid archive makes
+// GET /api/metrics/v1/sessions fail for every stream.
+const validStream = (id, data) => {
+  if (!isImportableArchive(data) || data.id !== id) return false;
+  try { metricsDocument(id, data); return true; } catch { return false; }
+};
 
 const VERSION = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
 const object = value => value !== null && typeof value === 'object';
@@ -107,7 +117,7 @@ function changes(previous, next) {
 
 /** Strict like PUT /api/config (including theme ranges), not theme-import clamping.
  * Overlay approval/version fields are local trust state and never imported as approvals. */
-export function registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO = {}, zipUploadLimit, zipExportLimit }) {
+export function registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO = {}, zipUploadLimit, zipExportLimit, session, retention, afterSessions }) {
   // The keyed fingerprint binds both current private state and the exact file without exposing either.
   const fingerprintKey = randomBytes(32);
   const fingerprint = (before, file) => createHmac('sha256', fingerprintKey).update(JSON.stringify([before, file])).digest('hex');
@@ -154,12 +164,50 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
     return applyConfig(prepared);
   });
 
+  // Session archives preserve chat statistics, but never credential-named fields or the
+  // local push obligation. Public session endpoints still project away authorIds.
+  const cleanSession = data => { const { _pushExportOwed, ...rest } = portable(data); return rest; };
+  const decodeSession = bytes => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   // Compute the same entry list for the cheap report and the download, before sending bytes.
   // zipExportLimit is a test seam; production is always capped by MAX_ZIP_TOTAL.
-  const planExport = async file => {
+  const planExport = async (file, options = {}, scratch) => {
     const config = JSON.stringify(file), entries = [{ name: 'config.json', source: config }], skipped = [], seen = new Set();
     const limit = Math.min(zipExportLimit ?? MAX_ZIP_TOTAL, MAX_ZIP_TOTAL);
     let total = Buffer.byteLength(config), full = false;
+    if (options.sessions) {
+      const { archived, memory } = await session.exportableArchives();
+      const streams = [...archived, ...memory.map(data => ({ id: data.id, data }))].sort((a, b) => Buffer.compare(Buffer.from(a.id), Buffer.from(b.id)));
+      for (const stream of streams) {
+        const name = `sessions/${stream.id}.json`;
+        try { checkZipName(name, seen); } catch (err) { skipped.push(`${name} (${err.message})`); continue; }
+        let data = stream.data, size;
+        if (stream.path) {
+          let info;
+          try { info = await lstat(stream.path); } catch { skipped.push(`${name} (No se pudo leer el archivo)`); continue; }
+          if (!info.isFile()) { skipped.push(`${name} (No es un archivo normal)`); continue; }
+          if (info.size > MAX_SESSION) { skipped.push(`${name} (supera 64 MB)`); continue; }
+          size = info.size;
+          let bytes;
+          try { bytes = await readFile(stream.path); } catch { skipped.push(`${name} (No se pudo leer el archivo)`); continue; }
+          try { data = decodeSession(bytes); } catch { skipped.push(`${name} (JSON no válido)`); continue; }
+        }
+        if (data?.id !== stream.id && isImportableArchive(data)) { skipped.push(`${name} (el id no coincide con el nombre)`); continue; }
+        if (!validStream(stream.id, data)) { skipped.push(`${name} (directo no válido)`); continue; }
+        const clean = cleanSession(data), changed = !isDeepStrictEqual(clean, data);
+        const sanitized = !stream.path || changed ? Buffer.from(serialize(clean)) : null;
+        if (sanitized) size = sanitized.length;
+        if (size > MAX_SESSION) { skipped.push(`${name} (supera 64 MB)`); continue; }
+        if (full || total + size > limit) { full = true; skipped.push(`${name} (límite total de 2 GB)`); continue; }
+        if (entries.length >= MAX_ZIP_ENTRIES) { skipped.push(`${name} (límite de entradas del ZIP)`); continue; }
+        let source = stream.path ? { path: stream.path } : sanitized;
+        if (stream.path && changed && scratch) {
+          const target = path.join(scratch, `${stream.id}.json`), fd = await open(target, 'wx', 0o600);
+          try { await fd.writeFile(sanitized); } finally { await fd.close(); }
+          source = { path: target };
+        }
+        total += size; entries.push({ name, source });
+      }
+    }
     const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
     for (const entry of (await readdir(mediaDir, { withFileTypes: true, encoding: 'buffer' })).sort((a, b) => Buffer.compare(a.name, b.name))) {
       if (entry.isDirectory()) continue;
@@ -179,20 +227,22 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
     return { entries, skipped };
   };
   // Header: base64url de un array JSON UTF-8 con nombre y motivo; nombres no UTF-8 usan «base64:<bytes base64url>».
-  const exportZip = async (res, file) => {
-    const { entries, skipped } = await planExport(file);
-    if (skipped.length) {
-      // Keep headers well below common client limits (Node: 16 KB); the full list is always
-      // available from GET /api/config/export?skipped=1.
-      const encoded = Buffer.from(JSON.stringify(skipped)).toString('base64url');
-      res.setHeader('X-Antena-Skipped-Media-Count', String(skipped.length));
-      if (encoded.length <= 8000) res.setHeader('X-Antena-Skipped-Media', encoded);
-    }
-    res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.zip"`);
-    res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/zip');
-    await writeZip(res, entries);
+  const exportZip = async (res, file, options = {}) => {
+    const scratch = options.sessions ? await mkdtemp(path.join(tmpdir(), 'antena-config-export-')) : null;
+    try {
+      const { entries, skipped } = await planExport(file, options, scratch);
+      if (skipped.length) {
+        // Keep headers well below common client limits; the full list has a separate report.
+        const encoded = Buffer.from(JSON.stringify(skipped)).toString('base64url');
+        res.setHeader('X-Antena-Skipped-Media-Count', String(skipped.length));
+        if (encoded.length <= 8000) res.setHeader('X-Antena-Skipped-Media', encoded);
+      }
+      res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.zip"`);
+      res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/zip');
+      await writeZip(res, entries);
+    } finally { if (scratch) await rm(scratch, { recursive: true, force: true }); }
   };
-  const exportSkipped = async file => (await planExport(file)).skipped;
+  const exportSkipped = async (file, options = {}) => (await planExport(file, options)).skipped;
   const hashFile = async file => {
     const hash = createHash('sha256');
     for await (const chunk of createReadStream(file)) hash.update(chunk);
@@ -206,12 +256,15 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
   };
   const move = configTransferIO.rename || rename;
   let lastMediaBackup = 0;
-  const applyMedia = async (prepared, media, state, stage) => {
+  const sessionStatus = async id => session.protectedIds().has(id) || await session.hasArchive(id) ? 'unchanged' : 'added';
+  const applyMedia = async (prepared, media, state, stage, streams) => {
     let backupName, backupDir, committed = false, preserve = false;
-    const moved = [], installed = [];
+    const moved = [], installed = [], written = [], caches = [];
+    const counts = streams && { ...streams.counts };
     try {
-      // Media routes are serialized by the dispatcher; recheck just before the first rename.
+      // Media routes are serialized by the dispatcher; session cutovers share the import lock.
       for (const [name, expected] of state) if (await localHash(name) !== expected) throw conflict();
+      if (streams) for (const [id, expected] of streams.state) if (await sessionStatus(id) !== expected) throw conflict();
       if (media.replaced.length) {
         lastMediaBackup = Math.max(Date.now(), lastMediaBackup + 1);
         backupName = `.backup-${new Date(lastMediaBackup).toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`;
@@ -222,18 +275,34 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
         if (media.replaced.includes(name)) { await move(target, path.join(backupDir, name)); moved.push(name); }
         await move(path.join(stage, name), target); installed.push(name);
       }
+      if (streams) for (const [id, status] of streams.state) if (status === 'added') {
+        const data = decodeSession(await readFile(path.join(streams.stage, `${id}.json`)));
+        delete data._pushExportOwed;
+        caches.push([id, await session.importCache(id)]);
+        if (await session.importArchive(data, { locked: true })) written.push(id);
+        else { caches.pop(); counts.added--; counts.unchanged++; }
+      }
+      if (counts) {
+        delete counts.retention;
+        if (streams.retention > 0 && await session.archiveCount() > streams.retention) counts.retention = streams.retention;
+      }
       const result = await applyConfig(prepared, () => { committed = true; });
-      return { ...result, media, mediaBackup: backupName || null };
+      return { ...result, media, mediaBackup: backupName || null, ...(counts ? { sessions: counts } : {}) };
     } catch (err) {
       if (!committed) {
+        let sessionRollback;
+        for (const id of written.reverse()) try { await session.removeImportedArchive(id, { locked: true }); } catch (rollback) { sessionRollback ||= rollback; }
+        for (const [id, cache] of caches.reverse()) try { await session.restoreImportCache(id, cache); } catch (rollback) { sessionRollback ||= rollback; }
         try {
           for (const name of installed.reverse()) await unlink(path.join(mediaDir, name));
           for (const name of moved.reverse()) await move(path.join(backupDir, name), path.join(mediaDir, name));
           if (backupDir) await rm(backupDir, { recursive: true, force: true });
-        } catch (rollback) { preserve = true; throw Object.assign(new Error(`No se pudieron restaurar los medios; conserva las copias locales${backupName ? ` en media/${backupName}` : ''}`), { cause: rollback }); }
+        } catch (rollback) { preserve = true; throw Object.assign(new Error(`No se pudieron restaurar los medios${sessionRollback ? ' ni los directos' : ''}; conserva las copias locales${backupName ? ` en media/${backupName}` : ''}`), { cause: rollback }); }
+        if (sessionRollback) throw Object.assign(new Error('No se pudieron restaurar los directos importados.'), { cause: sessionRollback });
       }
       throw err;
     } finally {
+      if (committed && written.length) try { await afterSessions(); } catch { /* el commit ya es durable */ }
       if (!preserve) await rm(stage, { recursive: true, force: true });
       if (committed && backupName) try {
         const backups = (await readdir(mediaDir)).filter(n => /^\.backup-\d{4}-\d\d-\d\dT[\dTZ-]+-[0-9a-f-]{36}$/.test(n) && n !== backupName).sort().reverse();
@@ -264,10 +333,31 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
         const [incoming, current] = await Promise.all([hashFile(extracted), localHash(name)]); state.push([name, current]);
         if (current === null) media.added.push(name); else if (current !== incoming) media.replaced.push(name); else media.unchanged++;
       }
-      const token = fingerprint(prepared.before, { archive: hash.digest('hex'), media: state });
-      if (!applying) return { summary: prepared.summary, media, fingerprint: token };
+      const sessionEntries = zip.entries.filter(e => e.name.startsWith('sessions/')).sort((a, b) => a.name.localeCompare(b.name));
+      let streams;
+      if (sessionEntries.length) {
+        const sessionStage = path.join(scratch, 'sessions'), sessionState = [], counts = { added: 0, unchanged: 0 };
+        await mkdir(sessionStage, { mode: 0o700 });
+        for (const entry of sessionEntries) {
+          const id = entry.name.slice(9, -5), extracted = await zip.extract(entry.name, sessionStage);
+          const bytes = await readFile(extracted); let data;
+          try { data = decodeSession(bytes); } catch { throw httpError(400, 'El directo importado no es un JSON válido.'); }
+          if (!isImportableArchive(data)) throw httpError(400, 'El directo importado no es válido.');
+          if (data.id !== id) throw httpError(400, 'El directo importado no coincide con su nombre de archivo.');
+          if (!validStream(id, data)) throw httpError(400, 'El directo importado no es válido.');
+          const status = await sessionStatus(id); counts[status]++;
+          sessionState.push([id, status, createHash('sha256').update(bytes).digest('hex')]);
+        }
+        const currentRetention = retention();
+        if (currentRetention > 0 && await session.archiveCount() + counts.added > currentRetention) counts.retention = currentRetention;
+        streams = { stage: sessionStage, state: sessionState, counts, retention: currentRetention };
+      }
+      const token = fingerprint(prepared.before, { archive: hash.digest('hex'), media: state, ...(streams ? { sessions: streams.state } : {}) });
+      if (!applying) return { summary: prepared.summary, media, ...(streams ? { sessions: streams.counts } : {}), fingerprint: token };
       if (req.headers['x-config-fingerprint'] !== token) throw conflict();
-      const dir = stage; stage = null; return await applyMedia(prepared, media, state, dir);
+      const dir = stage; stage = null;
+      const apply = () => applyMedia(prepared, media, state, dir, streams);
+      return await (streams ? session.withArchiveImport(apply) : apply());
     } finally {
       if (zip) await zip.close();
       if (stage && applying) await rm(stage, { recursive: true, force: true });

@@ -51,7 +51,8 @@ export function MediaThumb({ m }: { m: any }) {
 type ChangeGroup = { count: number; paths: string[] };
 type Summary = Record<string, Record<'added' | 'removed' | 'changed', ChangeGroup>>;
 type MediaChanges = { added: string[]; replaced: string[]; unchanged: number };
-type Preview = { file: File; summary: Summary; media?: MediaChanges; fingerprint: string };
+type SessionChanges = { added: number; unchanged: number; retention?: number };
+type Preview = { file: File; summary: Summary; media?: MediaChanges; sessions?: SessionChanges; fingerprint: string };
 
 // Se envía el archivo tal cual: incluso el JSON mal formado recibe el error exacto del servidor.
 async function transfer<T>(path: string, file: File, fingerprint?: string): Promise<T> {
@@ -91,6 +92,10 @@ function TransferPreview({ preview, busy, error, cancel, apply, trigger }: { pre
         <div><b>Sin cambios: {preview.media.unchanged}</b></div>
         <p>Los archivos reemplazados se guardan en una copia; no se borra ningún archivo tuyo.</p>
       </section>}
+      {preview.sessions && <section><h3>Directos pasados</h3>
+        <p>{preview.sessions.added} se agregan · {preview.sessions.unchanged} ya estaban</p>
+        {preview.sessions.retention !== undefined && <p>La retención ({preview.sessions.retention}) borrará los más antiguos en la próxima limpieza.</p>}
+      </section>}
     </div>
     {error && <p className="errors" role="alert">{error}</p>}
     <div className="row mt"><button ref={cancelButton} type="button" className="eg-btn eg-btn--ghost" disabled={busy} onClick={cancel}>Cancelar</button>
@@ -103,27 +108,27 @@ function ConfigTransfer() {
   const picker = useRef<HTMLInputElement>(null), trigger = useRef<HTMLButtonElement>(null), lock = useRef(false), exportLock = useRef(false);
   const [preview, setPreview] = useState<Preview | null>(null), [busy, setBusy] = useState(false), [exporting, setExporting] = useState(false);
   const [error, setError] = useState(''), [backup, setBackup] = useState(''), [mediaBackup, setMediaBackup] = useState('');
-  const [skipped, setSkipped] = useState<string[]>([]);
+  const [skipped, setSkipped] = useState<string[]>([]), [includeSessions, setIncludeSessions] = useState(true);
   const dirty = isDirty() || isSaving();
   const exportConfig = async () => {
     if (exportLock.current) return;
     exportLock.current = true; setExporting(true); setError(''); setSkipped([]);
     try {
-      const r = await fetch(withKey('/api/config/export?skipped=1'));
+      const r = await fetch(withKey('/api/config/export?skipped=1' + (includeSessions ? '&sessions=1' : '')));
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(typeof data.error === 'string' && data.error ? data.error : `Error ${r.status}`);
       const names: unknown = data.skipped;
       if (Array.isArray(names) && names.every(n => typeof n === 'string')) setSkipped(names);
       // El navegador guarda el ZIP directamente, sin convertirlo en un Blob en memoria.
       const link = document.createElement('a');
-      link.href = withKey('/api/config/export'); link.download = ''; document.body.append(link); link.click(); link.remove();
+      link.href = withKey('/api/config/export' + (includeSessions ? '?sessions=1' : '')); link.download = ''; document.body.append(link); link.click(); link.remove();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { exportLock.current = false; setExporting(false); }
   };
   const select = async (file?: File) => {
     if (!file || lock.current || isDirty() || isSaving()) return;
     lock.current = true; setBusy(true); setError(''); setBackup(''); setMediaBackup('');
-    try { const { summary, media, fingerprint } = await transfer<{ summary: Summary; media?: MediaChanges; fingerprint: string }>('/api/config/import/preview', file); setPreview({ file, summary, media, fingerprint }); }
+    try { const { summary, media, sessions, fingerprint } = await transfer<{ summary: Summary; media?: MediaChanges; sessions?: SessionChanges; fingerprint: string }>('/api/config/import/preview', file); setPreview({ file, summary, media, sessions, fingerprint }); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { lock.current = false; setBusy(false); }
   };
@@ -141,12 +146,14 @@ function ConfigTransfer() {
   };
   return <Panel title="Copia de la configuración">
     <p className="hint">Exporta la configuración guardada y los medios, o importa una copia después de revisar los cambios.</p>
+    <label><input type="checkbox" aria-label="Incluir directos pasados" checked={includeSessions} disabled={exporting} onChange={e => setIncludeSessions(e.target.checked)} /> Incluir directos pasados</label>
+    <p className="hint">Incluye nombres y mensajes de tu chat.</p>
     <div className="row mt">
       <button type="button" className="eg-btn eg-btn--secondary" disabled={exporting} onClick={() => void exportConfig()}>Exportar configuración</button>
       <button ref={trigger} type="button" className="eg-btn eg-btn--ghost" disabled={busy || dirty} onClick={() => picker.current?.click()}>Importar configuración…</button>
       <input ref={picker} type="file" accept=".zip,.json" aria-label="Archivo de configuración ZIP o JSON" hidden onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void select(file); }} />
     </div>
-    {skipped.length > 0 && <p className="hint mt" role="status">No se incluyeron estos archivos de medios: {skipped.join(', ')}</p>}
+    {skipped.length > 0 && <p className="hint mt" role="status">No se incluyeron estos archivos: {skipped.join(', ')}</p>}
     {dirty && <p className="hint mt">Guarda o descarta los cambios pendientes antes de importar.</p>}
     {backup && <p role="status">Configuración importada. Copia guardada: <code>{backup}</code>{mediaBackup && <>. Copia de medios: <code>media/{mediaBackup}</code></>}</p>}
     {error && !preview && <p className="errors" role="alert">{error}</p>}
