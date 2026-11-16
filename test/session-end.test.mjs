@@ -102,7 +102,7 @@ test('S5: origen ajeno y emisión confirmada se rechazan sin cambiar sesión ni 
   const origin = await f.request('POST', '/api/session/end', 'https://foreign.example');
   assert.deepEqual(origin, { status: 403, body: { error: 'Origen no permitido para acciones que cambian el directo.' } });
   const rejected = await f.request('POST', '/api/session/end');
-  assert.equal(rejected.status, 409); assert.match(rejected.body.error, /Meld.*emitiendo/i);
+  assert.equal(rejected.status, 409); assert.match(rejected.body.error, /programa de emisión.*emitiendo/i);
   assert.deepEqual(await f.get('/api/session/summary?format=json'), before);
   chat('después'); await f.app.session.transitionChain;
   const after = await f.get('/api/session/summary?format=json');

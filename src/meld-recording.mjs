@@ -1,12 +1,12 @@
 // La API pública de Meld solo informa booleanos, no la identidad de una grabación.
 // Se conserva propiedad únicamente durante la conexión y operación observadas.
 const CONFIRM_MS = 20000;
-const START_FAILED = 'No se pudo iniciar la grabación en Meld. Comprueba la grabación.';
-const STOP_FAILED = 'No se pudo detener la grabación en Meld. Comprueba la grabación.';
-const START_TIMEOUT = 'Meld no confirmó el inicio de la grabación. Comprueba la grabación.';
-const STOP_TIMEOUT = 'Meld no confirmó el fin de la grabación. Comprueba la grabación.';
-const UNKNOWN = 'Meld no informa si está grabando. Comprueba la grabación en Meld.';
-const STOP_UNCERTAIN = 'No se pudo comprobar si detener la grabación. Comprueba la grabación en Meld.';
+const START_FAILED = 'No se pudo iniciar la grabación en el programa de emisión. Comprueba la grabación.';
+const STOP_FAILED = 'No se pudo detener la grabación en el programa de emisión. Comprueba la grabación.';
+const START_TIMEOUT = 'El programa de emisión no confirmó el inicio de la grabación. Comprueba la grabación.';
+const STOP_TIMEOUT = 'El programa de emisión no confirmó el fin de la grabación. Comprueba la grabación.';
+const UNKNOWN = 'El programa de emisión no informa si está grabando. Comprueba la grabación en el programa de emisión.';
+const STOP_UNCERTAIN = 'No se pudo comprobar si detener la grabación. Comprueba la grabación en el programa de emisión.';
 
 export function createMeldRecording({ meld, enabled, timers = { setTimeout, clearTimeout } }) {
   let operation = null, sendingOwn = false;

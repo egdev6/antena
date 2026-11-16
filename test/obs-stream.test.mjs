@@ -76,25 +76,25 @@ test('OBS stream routes share one pending guard and wait for confirmed transitio
   for (const invalid of [{ action: 'toggle' }, {}, { action: 'start', extra: 1 }]) {
     assert.deepEqual(await f.api('POST', '/api/program/stream', invalid), { status: 400, body: { error: 'Indica una acción válida: start o stop.' } });
   }
-  assert.deepEqual(await f.api('POST', '/api/meld/stream', { action: 'stop' }), { status: 409, body: { error: 'Meld no está emitiendo.' } });
+  assert.deepEqual(await f.api('POST', '/api/meld/stream', { action: 'stop' }), { status: 409, body: { error: 'El programa de emisión no está emitiendo.' } });
   assert.deepEqual(f.streamCalls(), []); assert.deepEqual(await f.session(), initial); assert.deepEqual(await f.ok('GET', '/api/sessions'), history);
   for (const [startRoute, stopRoute] of [['/api/program/stream', '/api/meld/stream'], ['/api/meld/stream', '/api/program/stream']]) {
     const before = await f.session();
     f.fake.delayRequest('StartStream', 200);
     const starting = f.api('POST', startRoute, { action: 'start' });
     await until(() => f.streamCalls().filter(r => r.requestType === 'StartStream').length === (startRoute.includes('program') ? 1 : 2), 'StartStream request');
-    assert.deepEqual(await f.api('POST', stopRoute, { action: 'start' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación de Meld.' } });
+    assert.deepEqual(await f.api('POST', stopRoute, { action: 'start' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' } });
     assert.deepEqual(await f.session(), before);
     assert.deepEqual(await starting, { status: 200, body: { requested: 'start', streaming: false } });
     f.fake.delayRequest('StartStream', 0);
     const live = await f.sessionWhere(s => s.id !== before.id && s.meldAutoSession === true);
     assert.equal(live.endedAt, undefined);
     assert.equal((await f.status()).streaming, true);
-    assert.deepEqual(await f.api('POST', startRoute, { action: 'start' }), { status: 409, body: { error: 'Meld ya está emitiendo.' } });
+    assert.deepEqual(await f.api('POST', startRoute, { action: 'start' }), { status: 409, body: { error: 'El programa de emisión ya está emitiendo.' } });
     f.fake.delayRequest('StopStream', 200);
     const stopping = f.api('POST', stopRoute, { action: 'stop' });
     await until(() => f.streamCalls().filter(r => r.requestType === 'StopStream').length === (startRoute.includes('program') ? 1 : 2), 'StopStream request');
-    assert.deepEqual(await f.api('POST', startRoute, { action: 'stop' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación de Meld.' } });
+    assert.deepEqual(await f.api('POST', startRoute, { action: 'stop' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' } });
     assert.deepEqual(await f.session(), live);
     assert.deepEqual(await stopping, { status: 200, body: { requested: 'stop', streaming: true } });
     f.fake.delayRequest('StopStream', 0);
@@ -109,12 +109,12 @@ test('acknowledgement without a final OBS event keeps both aliases pending and t
   const initial = await f.session();
   assert.deepEqual(await f.api('POST', '/api/program/stream', { action: 'start' }), { status: 200, body: { requested: 'start', streaming: false } });
   assert.deepEqual(await f.session(), initial); assert.equal((await f.status()).streaming, false);
-  assert.deepEqual(await f.api('POST', '/api/meld/stream', { action: 'start' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación de Meld.' } });
+  assert.deepEqual(await f.api('POST', '/api/meld/stream', { action: 'start' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' } });
   f.fake.confirmStream();
   const live = await f.sessionWhere(s => s.id !== initial.id && s.meldAutoSession === true);
   assert.deepEqual(await f.api('POST', '/api/meld/stream', { action: 'stop' }), { status: 200, body: { requested: 'stop', streaming: true } });
   assert.deepEqual(await f.session(), live); assert.equal((await f.status()).streaming, true);
-  assert.deepEqual(await f.api('POST', '/api/program/stream', { action: 'stop' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación de Meld.' } });
+  assert.deepEqual(await f.api('POST', '/api/program/stream', { action: 'stop' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' } });
   f.fake.confirmStream();
   await f.sessionWhere(s => s.id === live.id && !!s.endedAt);
   assert.deepEqual(f.streamCalls(), [{ requestType: 'StartStream', requestData: {} }, { requestType: 'StopStream', requestData: {} }]);
@@ -231,7 +231,7 @@ test('record-on-start warns on OBS failure without interrupting streaming', asyn
   assert.deepEqual(await f.api('POST', '/api/program/stream', { action: 'start' }), { status: 200, body: { requested: 'start', streaming: false } });
   await f.sessionWhere(s => s.id !== before.id && s.meldAutoSession === true);
   await until(async () => !!(await f.status()).recordingWarning, 'recording warning');
-  assert.deepEqual([(await f.status()).streaming, (await f.status()).recordingWarning], [true, 'No se pudo iniciar la grabación en Meld. Comprueba la grabación.']);
+  assert.deepEqual([(await f.status()).streaming, (await f.status()).recordingWarning], [true, 'No se pudo iniciar la grabación en el programa de emisión. Comprueba la grabación.']);
   assert.deepEqual(f.streamCalls(), [{ requestType: 'StartStream', requestData: {} }]);
   assert.deepEqual(fakeRecordCalls(f.fake), [{ requestType: 'StartRecord', requestData: {} }]);
 });

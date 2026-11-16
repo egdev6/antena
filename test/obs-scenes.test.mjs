@@ -127,7 +127,7 @@ test('OBS scene and item actions use stable scoped ids, names and visibility sem
   ]);
   assert.deepEqual(program.session().scenes.map(s => s.layers.map(l => l.visible)), [[true, false], [false]]);
   const snapshot = program.session(), calls = fake.requests.length;
-  await assert.rejects(program.showScene('missing'), { message: 'No encuentro la escena «missing» en Meld' });
+  await assert.rejects(program.showScene('missing'), { message: 'No encuentro la escena «missing» en el programa de emisión' });
   await assert.rejects(program.setLayer('missing', 'Logo', true), { message: 'No encuentro la capa «Logo»' });
   await assert.rejects(program.setLayer('Camera', 'missing', true), { message: 'No encuentro la capa «missing»' });
   assert.equal(fake.requests.length, calls); assert.deepEqual(program.session(), snapshot);
@@ -237,7 +237,7 @@ test('HTTP aliases, timed layer hide and engine actions use the OBS facade', asy
   assert.deepEqual(fake.requests.filter(r => r.requestType === 'SetSceneItemEnabled').map(r => r.requestData.sceneItemEnabled), [true, false]);
   const snapshot = app.program.session(), count = fake.requests.length;
   assert.deepEqual(await call('POST', '/api/program/scene', { scene: 'missing' }),
-    { status: 500, body: { error: 'No encuentro la escena «missing» en Meld' } });
+    { status: 500, body: { error: 'No encuentro la escena «missing» en el programa de emisión' } });
   assert.deepEqual(await call('POST', '/api/program/layer', { scene: 'Camera', layer: 'missing' }),
     { status: 500, body: { error: 'No encuentro la capa «missing»' } });
   assert.equal(fake.requests.length, count); assert.deepEqual(app.program.session(), snapshot);

@@ -90,7 +90,7 @@ test('desconectado, incluso con estado anterior de emisión, rechaza ambas órde
   for (const action of ['start', 'stop']) {
     const before = await current(f.api);
     const res = await f.api('POST', '/api/meld/stream', { action });
-    assert.equal(res.status, 409); assert.match(res.body.error, /Meld no está conectado/i);
+    assert.equal(res.status, 409); assert.match(res.body.error, /El programa de emisión no está conectado/i);
     assert.deepEqual(commandCalls(f.meld), []); assert.deepEqual(await current(f.api), before);
   }
   await f.connect();
@@ -100,7 +100,7 @@ test('desconectado, incluso con estado anterior de emisión, rechaza ambas órde
   const before = await current(f.api);
   for (const action of ['start', 'stop']) {
     const res = await f.api('POST', '/api/meld/stream', { action });
-    assert.equal(res.status, 409); assert.match(res.body.error, /Meld no está conectado/i);
+    assert.equal(res.status, 409); assert.match(res.body.error, /El programa de emisión no está conectado/i);
     assert.deepEqual(commandCalls(f.meld), []); assert.deepEqual(await current(f.api), before);
   }
 });
@@ -193,7 +193,7 @@ test('peticiones simultáneas no duplican órdenes sin cambio de estado', async 
   assert.deepEqual(starts.map(r => r.status).sort((a, b) => a - b), [200, 409, 409, 409]);
   for (const r of starts) assert.deepEqual(r.body, r.status === 200
     ? { requested: 'start', streaming: false }
-    : { error: 'Ya hay una orden pendiente de confirmación de Meld.' });
+    : { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' });
   assert.deepEqual(commandCalls(f.meld), [[12, 'meld.startStreamingAction']]);
   assert.deepEqual(await current(f.api), before);
   assert.deepEqual(await list(f.api), beforeList);
@@ -208,7 +208,7 @@ test('peticiones simultáneas no duplican órdenes sin cambio de estado', async 
   assert.deepEqual(stops.map(r => r.status).sort((a, b) => a - b), [200, 409]);
   for (const r of stops) assert.deepEqual(r.body, r.status === 200
     ? { requested: 'stop', streaming: true }
-    : { error: 'Ya hay una orden pendiente de confirmación de Meld.' });
+    : { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' });
   assert.deepEqual(commandCalls(f.meld), [
     [12, 'meld.startStreamingAction'],
     [12, 'meld.stopStreamingAction'],

@@ -97,7 +97,7 @@ test('HTTP: every route pair preserves response bytes, effects and rejected requ
       const before = await Promise.all(fixtures.map(f => f.snapshot()));
       const results = await Promise.all(fixtures.map((f, i) => f.request('POST', prefixes[i] + row.suffix, row.body)));
       assert.deepEqual(results[0], results[1]);
-      assert.deepEqual(results[0], { status: 409, body: JSON.stringify({ error: 'Meld no está conectado. Actívalo en Ajustes › Avanzado › «Allow remote connections» y pulsa Conectar.' }) });
+      assert.deepEqual(results[0], { status: 409, body: JSON.stringify({ error: 'El programa de emisión no está conectado. Conéctalo en Conexiones.' }) });
       for (let i = 0; i < 2; i++) assert.deepEqual(await fixtures[i].snapshot(), before[i]);
     }
   });
@@ -131,7 +131,7 @@ test('HTTP: every route pair preserves response bytes, effects and rejected requ
       for (let i = 0; i < 2; i++) {
         const f = fixtures[i], other = prefixes[1 - i];
         const duplicate = await f.request('POST', other + '/stream', row.body);
-        assert.deepEqual(duplicate, { status: 409, body: JSON.stringify({ error: 'Ya hay una orden pendiente de confirmación de Meld.' }) });
+        assert.deepEqual(duplicate, { status: 409, body: JSON.stringify({ error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' }) });
         for (const prefix of prefixes) {
           const invalid = await f.request('POST', prefix + '/stream', '{"action":"start","\\u0061ction":"stop"}', true);
           assert.deepEqual(invalid, { status: 400, body: JSON.stringify({ error: 'La acción no puede repetirse en el mismo JSON.' }) });
@@ -177,7 +177,7 @@ const tools = [
   ['llamar', '/call', { metodo: 'sendCommand', args: ['meld.recordClip'] }, { method: 'sendCommand', args: ['meld.recordClip'] }],
 ];
 
-test('MCP: legacy metadata stays byte-identical and every pair uses its route', { timeout: 30000 }, async t => {
+test('MCP: metadata snapshot and every pair uses its route', { timeout: 30000 }, async t => {
   const seen = [];
   const server = createServer((req, res) => {
     if (req.url === '/api/status') { res.end('{}'); return; }
@@ -194,8 +194,8 @@ test('MCP: legacy metadata stays byte-identical and every pair uses its route', 
   const legacy = tools.map(([name]) => list.find(tool => tool.name === `meld_${name}`));
   await t.test('base metadata snapshot', () => {
     assert.ok(legacy.every(Boolean));
-    // Captured from tools/list at base 9d9645b: names, descriptions and schemas.
-    assert.equal(createHash('sha256').update(JSON.stringify(legacy)).digest('hex'), '403f982b931ceb976a0592d254e1c0c500a9e1aea08cf2cf4ed9756e801db22d');
+    // Names, updated descriptions and schemas remain byte-stable.
+    assert.equal(createHash('sha256').update(JSON.stringify(legacy)).digest('hex'), 'df6da1cfe96383a1f268630e0bd2c22080e13a144c6bc51437930a84235ba0b2');
   });
   for (const [name, suffix, args, body] of tools) await t.test(name, async () => {
     const old = list.find(tool => tool.name === `meld_${name}`), generic = list.find(tool => tool.name === `programa_${name}`);

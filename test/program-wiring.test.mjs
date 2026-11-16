@@ -394,7 +394,7 @@ test('program controlCommand revokes an owned recording', async t => {
 test('program confirmations clear both pending route guards', async t => {
   const { post, report } = await routeWiring(t);
   const stream = action => post('/api/meld/stream', { action });
-  const pending = { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación de Meld.' } };
+  const pending = { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' } };
   assert.deepEqual(await stream('start'), { status: 200, body: { requested: 'start', streaming: false } });
   assert.deepEqual(await stream('start'), pending); report(true);
   assert.deepEqual(await stream('stop'), { status: 200, body: { requested: 'stop', streaming: true } });
@@ -499,7 +499,7 @@ test('manual end checks live program status without changing the session on reje
   const persistence = (await (await fetch(base + '/api/status')).json()).persistence;
   Object.defineProperty(app.program, 'status', { get: () => ({ ...app.meld.status, streaming: true }) });
   assert.deepEqual(await post('/api/session/end', { id: before.id }),
-    { status: 409, body: { error: 'No se puede terminar el directo mientras Meld está emitiendo.' } });
+    { status: 409, body: { error: 'No se puede terminar el directo mientras el programa de emisión está emitiendo.' } });
   assert.deepEqual(await (await fetch(base + '/api/session')).json(), before);
   assert.deepEqual((await (await fetch(base + '/api/status')).json()).persistence, persistence);
 });

@@ -194,7 +194,7 @@ test('failed recording start or stop warns without changing streaming or retryin
   assert.deepEqual(await start.stream('start'), started);
   await until(async () => !!(await start.status()).recordingWarning, 'start warning');
   assert.deepEqual([(await start.status()).streaming, (await start.status()).recording, (await start.status()).recordingWarning],
-    [true, false, 'No se pudo iniciar la grabación en Meld. Comprueba la grabación.']);
+    [true, false, 'No se pudo iniciar la grabación en el programa de emisión. Comprueba la grabación.']);
   assert.deepEqual(await start.stream('stop'), stopped);
   assert.deepEqual(start.calls(), ['StartStream', 'StartRecord', 'StopStream']);
   const stop = await fixture(t); await startOwned(stop);
@@ -202,7 +202,7 @@ test('failed recording start or stop warns without changing streaming or retryin
   assert.deepEqual(await stop.stream('stop'), stopped);
   await until(async () => !!(await stop.status()).recordingWarning, 'stop warning');
   assert.deepEqual([(await stop.status()).streaming, (await stop.status()).recording, (await stop.status()).recordingWarning],
-    [false, true, 'No se pudo detener la grabación en Meld. Comprueba la grabación.']);
+    [false, true, 'No se pudo detener la grabación en el programa de emisión. Comprueba la grabación.']);
   assert.deepEqual(stop.calls(), ['StartStream', 'StartRecord', 'StopStream', 'StopRecord']);
 });
 

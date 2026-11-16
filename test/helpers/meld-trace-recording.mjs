@@ -79,7 +79,7 @@ export async function recordingTrace(t) {
   const duplicate = async action => {
     const before = await request('GET', '/api/session'), count = wire.messages.length;
     const result = await stream(`duplicate-${action}`, action);
-    assert.deepEqual(result, { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación de Meld.' } });
+    assert.deepEqual(result, { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' } });
     assert.deepEqual(await request('GET', '/api/session'), before); assert.equal(wire.messages.length, count);
   };
   const report = async (values, extraRpc = false) => {

@@ -48,7 +48,7 @@ export function registerMeldRoutes({ route: register, store, meld, scheduleLayer
     register(method, pattern.replace('/api/meld', '/api/program'), handler);
   };
   const recording = createMeldRecording({ meld, enabled: () => store.config.meld.recordOnStart === true, timers: recordingTimers });
-  const needMeld = () => { if (!meld.connected) throw httpError(409, 'Meld no está conectado. Actívalo en Ajustes › Avanzado › «Allow remote connections» y pulsa Conectar.'); };
+  const needMeld = () => { if (!meld.connected) throw httpError(409, 'El programa de emisión no está conectado. Conéctalo en Conexiones.'); };
   // Por instancia, compartido entre todos los clientes HTTP; no se borra al desconectar.
   const pending = new Map();
   meld.on?.('status', st => {
@@ -87,10 +87,10 @@ export function registerMeldRoutes({ route: register, store, meld, scheduleLayer
     needMeld();
     // Un valor ausente no es una confirmación de que Meld no emite.
     const streaming = meld.status.streamingKnown ? meld.status.streaming : null;
-    if (body.action === 'start' && streaming === true) throw httpError(409, 'Meld ya está emitiendo.');
-    if (body.action === 'stop' && streaming === false) throw httpError(409, 'Meld no está emitiendo.');
+    if (body.action === 'start' && streaming === true) throw httpError(409, 'El programa de emisión ya está emitiendo.');
+    if (body.action === 'stop' && streaming === false) throw httpError(409, 'El programa de emisión no está emitiendo.');
     const current = now(), deadline = pending.get(body.action);
-    if (deadline !== undefined && deadline > current) throw httpError(409, 'Ya hay una orden pendiente de confirmación de Meld.');
+    if (deadline !== undefined && deadline > current) throw httpError(409, 'Ya hay una orden pendiente de confirmación del programa de emisión.');
     // Reservar antes del primer await: dos clientes no pueden enviar la misma orden.
     // Si falla la respuesta, pudo haberse enviado; se conserva hasta confirmar o agotar el plazo.
     pending.set(body.action, current + STREAM_PENDING_MS);

@@ -79,7 +79,7 @@ test('handlers de control exigen Meld conectado (409) y sin conexión no tocan n
     ['/api/meld/effect', {}], ['/api/meld/command', {}], ['/api/meld/event', {}],
     ['/api/meld/track', {}], ['/api/meld/media', {}], ['/api/meld/property', {}], ['/api/meld/call', {}],
   ]) {
-    await assert.rejects(find('POST', path).fn(body), e => e.status === 409 && /Meld no está conectado/.test(e.message));
+    await assert.rejects(find('POST', path).fn(body), e => e.status === 409 && /El programa de emisión no está conectado/.test(e.message));
   }
   assert.deepEqual(ctx._spies.calls, []);
 });
