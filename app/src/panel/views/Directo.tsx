@@ -83,7 +83,7 @@ function Health({ state, session, idleSeconds, endSession }: { state: AppState; 
   return <section className="dir-health" aria-label="Salud y conexiones del directo">
     <div className={cx('dir-health-line', count > 0 && 'is-warning')} role="status">
       {count ? <><strong>{count} {count === 1 ? 'aviso' : 'avisos'}</strong>{warnings.length > 0 && <span>{warnings.join(' · ')}</span>}
-        {idleSeconds !== null && <span>Sesión abierta sin emisión · empezó hace {mmss(idleSeconds)} · <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={endSession}>Cerrarla</button></span>}</> : <strong>Todo en orden</strong>}
+        {idleSeconds !== null && <span className="dir-health-idle">Sesión abierta sin emisión · empezó hace {mmss(idleSeconds)}<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={endSession}>Cerrarla</button></span>}</> : <strong>Todo en orden</strong>}
     </div>
     <Connections />
   </section>;

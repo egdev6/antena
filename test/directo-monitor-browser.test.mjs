@@ -689,6 +689,13 @@ test('#118: aviso sin emisión, cierre confirmado, historial e inicio manual', {
   assert.ok(await dom(c, `!!${buttonByText('Terminar directo')}`));
   assert.match(await dom(c, `${health}.textContent`), /Sesión abierta sin emisión · empezó hace \d+:\d{2}/);
   assert.ok(await dom(c, `!!${buttonByText('Cerrarla')}`));
+  // The idle-session notice sits at the end of the line and every item is vertically centered.
+  const layout = await dom(c, `(() => { const line = ${health}.querySelector('.dir-health-line'), lr = line.getBoundingClientRect(), pad = parseFloat(getComputedStyle(line).paddingRight);
+    const mid = e => { const r = e.getBoundingClientRect(); return Math.round(r.top + r.height / 2); };
+    const idle = [...line.children].find(e => /Sesión abierta/.test(e.textContent));
+    return { gap: Math.round(lr.right - pad - idle.getBoundingClientRect().right), mids: [...line.children, ${buttonByText('Cerrarla')}].map(mid) }; })()`);
+  assert.equal(layout.gap, 0);
+  assert.ok(Math.max(...layout.mids) - Math.min(...layout.mids) <= 1, JSON.stringify(layout.mids));
   f.app.viewers.observe('twitch', { live: true, viewers: 10 }); f.app.viewers.emit('change', f.app.viewers.snapshot());
   await wait(c, `!/Sesión abierta sin emisión/.test(${health}.textContent)`);
   assert.ok(await dom(c, `!!${buttonByText('Terminar directo')}`));
