@@ -21,7 +21,7 @@
 
 # antena
 
-Alertas, chat y widgets de directo para **Meld Studio**, en local, gratis y con la identidad EGDEV. Es una **app de escritorio** (Tauri + React) que se controla desde su panel, desde el **Stream Deck**, desde el **panel de chat de Meld** y **también desde un servidor MCP**, para que Claude (o cualquier cliente MCP) pueda ver y cambiar absolutamente todo.
+Alertas, chat y widgets de directo para tu **programa de emisión (Meld u OBS)**, en local, gratis y con la identidad EGDEV. El soporte de OBS es experimental y las acciones disponibles dependen del programa. Es una **app de escritorio** (Tauri + React) que se controla desde su panel, desde el **Stream Deck**, desde el **panel de chat de Meld** y **también desde un servidor MCP**, para que Claude (o cualquier cliente MCP) pueda ver y cambiar absolutamente todo.
 
 ## Qué es
 
@@ -31,7 +31,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Tres diseños por alerta:** la tarjeta 3D EGDEV; tu vídeo o imagen (webm con transparencia) con el mensaje encima, colocado donde quieras; o **vídeo + tarjeta**: tu vídeo o imagen de fondo a pantalla completa y encima la tarjeta 3D, con retraso de entrada y ajuste de posición. Todos con CSS propio.
 - **Variaciones:** otra versión de la alerta según la cantidad, el tier, el usuario, el mensaje o una probabilidad.
 - **Voz (TTS)** de los mensajes, **filtro** de palabras, enlaces y usuarios, y **pausa** con cola.
-- **Acciones en Meld** al salir una alerta: cambiar de escena (y volver), mostrar u ocultar capas, efectos, confeti, ruleta, guardar clip, escribir en el chat, hablar…
+- **Acciones en el programa de emisión** al salir una alerta: cambiar de escena (y volver), mostrar u ocultar capas, efectos, escribir en el chat, hablar…
 - **Comandos de chat** (`!engram`, `!web`…) que lanzan sus propias alertas, con permisos y esperas.
 - **Mensajes programados:** textos que se publican solos en el chat cada X minutos (también como anuncio destacado) y, si quieres, salen además como alerta en pantalla.
 - **Interactivos:** cola de preguntas del chat, tier list que vota el chat y sorteos con ruleta en pantalla.
@@ -40,12 +40,12 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Resumen del directo:** totales, a quién dar las gracias y la cronología con el minuto de cada evento, en Markdown.
 - **Seguidores sin conexión:** registra los seguidores de Twitch ganados mientras antena estaba cerrada y, en YouTube, las suscripciones públicas y un recuento anónimo; YouTube requiere conectar la cuenta.
 - **Panel desde el móvil** en la red local, protegido con clave.
-- **Fuentes para Meld:** cada alerta, widget, panel y overlay propio es una fuente de navegador con su tamaño, listas para copiar.
+- **Fuentes para el programa de emisión:** cada alerta, widget, panel y overlay propio es una fuente de navegador con su tamaño, listas para copiar.
 - **Prompter para el Elgato Prompter** (1024×600): la app lo abre a pantalla completa en esa pantalla.
 - **Alerta de récord de espectadores** por plataforma (Twitch y YouTube), con freno anti-spam.
 - **Apariencia:** un solo tema para todo lo que sale en pantalla (alertas, widgets y créditos): colores, fuentes (también las tuyas), iconos por alerta, forma, posición, animación y sonido. El de serie es el de EGDEV.
 - **Atajos para Stream Deck** personalizables: cada uno encadena pasos (marca, pausa, escena, capa, chat, pestaña del prompter…) y tiene su dirección `/sd/custom/<id>`.
-- **Dock para Meld:** todo el manejo del directo menos la vista previa —escenas, pistas de audio de Meld, alertas, preguntas, votación, sorteo, teleprompter y créditos— y adaptable: tres columnas desde 768 px de ancho, sin importar la orientación; por debajo, una pestaña por sección.
+- **Dock:** todo el manejo del directo menos la vista previa —escenas, pistas de audio del programa de emisión, alertas, preguntas, votación, sorteo, teleprompter y créditos— y adaptable: tres columnas desde 768 px de ancho, sin importar la orientación; por debajo, una pestaña por sección.
 
 El servidor no tiene dependencias (Node ≥ 24). La interfaz es React compilada con esbuild y la app de escritorio es Tauri 2, que arranca ese servidor como *sidecar*. Todo se queda en tu PC.
 
@@ -93,7 +93,7 @@ pnpm desktop:dev     # app en modo desarrollo (usa el código de src/ directamen
 pnpm desktop:build   # instalador en src-tauri/target/release/bundle/nsis
 ```
 
-La app arranca el servidor en `http://127.0.0.1:4500`, abre el panel y deja un icono en la bandeja. **Cerrar la ventana la deja en la bandeja**: las fuentes de Meld y el Stream Deck siguen funcionando. Para apagarlo todo, «Salir» en el menú de la bandeja (guarda y cierra el servidor con orden).
+La app arranca el servidor en `http://127.0.0.1:4500`, abre el panel y deja un icono en la bandeja. **Cerrar la ventana la deja en la bandeja**: las fuentes del programa de emisión y el Stream Deck siguen funcionando. Para apagarlo todo, «Salir» en el menú de la bandeja (guarda y cierra el servidor con orden).
 
 - Los datos de la app instalada van en `%APPDATA%\es.egdev.antena\data` y `…\media`. Para seguir usando los de la carpeta del proyecto, copia `data/` y `media/` allí, o arranca con `ANTENA_DATA` y `ANTENA_MEDIA` apuntando a ellas. En `desktop:dev` se usan los del proyecto.
 - Si ya hay un antena escuchando en el puerto con la misma carpeta de datos, la app lo reutiliza. En otro caso no se conecta y te pide que cierres el servidor que ocupa el puerto. Cada carpeta de datos tiene una identidad aleatoria ligada a su ruta real en `instance.json`; una copia recibe otra identidad y la API de estado no expone la ruta.
@@ -139,13 +139,13 @@ Los ZIP admiten hasta 2 GB en total sin comprimir, 300 MB por archivo de medios,
 
 La importación y vista previa del JSON anterior admiten 8 millones de caracteres (aproximadamente 8 MB en ASCII); las demás rutas mantienen sus límites. En la API HTTP, envía el ZIP como `application/zip` o el JSON como `application/json` a `POST /api/config/import/preview`; devuelve un `fingerprint` opaco. Envía el mismo archivo a `POST /api/config/import` con `X-Config-Fingerprint` igual a ese valor. Si falta o está desactualizado, responde 409 sin aplicar cambios. MCP `importar_configuracion` con `confirmar: true` previsualiza y aplica JSON con la misma protección.
 
-### Capas de navegador en Meld
+### Capas de navegador en el programa de emisión
 
-En el panel, **Meld y Stream Deck › Fuentes para Meld** lista todas con su tamaño y un botón de copiar (incluye un objetivo por cada uno que tengas). En Meld: **+ › Browser**, pega la dirección y pon ese ancho y alto. Meld no deja crear capas desde fuera, así que se añaden a mano una vez.
+En el panel, la página «Fuentes del programa de emisión» lista todas con su tamaño y un botón de copiar (incluye un objetivo por cada uno que tengas). Añade una fuente de navegador en el programa de emisión, pega la dirección y pon el ancho y alto indicados. Añade cada fuente a mano una vez; activa su audio para las alertas.
 
 | Capa | URL | Tamaño |
 |---|---|---|
-| Alertas | `http://127.0.0.1:4500/overlay` | 1920×1080, con **Add audio track** |
+| Alertas | `http://127.0.0.1:4500/overlay` | 1920×1080, con audio activado |
 | Chat | `http://127.0.0.1:4500/widget/chat` | 600×900 |
 | Objetivo | `http://127.0.0.1:4500/widget/goal?id=principal` | 1000×200 |
 | Últimos | `http://127.0.0.1:4500/widget/latest` | 1400×200 |
@@ -161,7 +161,7 @@ En el panel, **Meld y Stream Deck › Fuentes para Meld** lista todas con su tam
 
 **Barras de objetivo.** Los seguidores y subs de Twitch y los suscriptores de YouTube muestran el total del canal que informa la plataforma, no solo los eventos del directo, y no se reinician entre directos. Antena lo consulta al arrancar, al reconectar y cada cinco minutos; los eventos en vivo suman entre lecturas. Si hay un canal de YouTube configurado, los suscriptores detectados solo suman cuando coincide con el ID del canal de la cuenta conectada; si es distinto o no se puede comprobar, el total se actualiza en la siguiente lectura de la plataforma. Si la plataforma no responde, se conserva el último valor conocido; antes de la primera lectura la barra muestra `—`. +1, −1 y «Fijar» aplican una corrección persistente (por ejemplo, para descontar tu propia sub). Las subs de Twitch requieren el permiso `channel:read:subscriptions`. YouTube redondea los suscriptores a tres cifras significativas a partir de 1.000. Las demás métricas de objetivo siguen siendo por directo.
 
-**Variantes del chat (API del servidor).** `POST /api/widgets/chat/variants` con `{ "name": "Directo" }` crea una copia con nombre de los ajustes actuales del chat predeterminado salvo el CSS personalizado, que empieza vacío. Los cambios posteriores del predeterminado no se propagan y las variantes existentes no se modifican. Los campos explícitos al crear deben coincidir con la copia predeterminada, salvo `css`, que debe omitirse o estar vacío; si son distintos se rechazan. `GET` en esa ruta lista las variantes; `PUT` o `DELETE` en `/:id` editan o borran una. Se validan nombres y ajustes, cambiar el id al renombrar se rechaza y el predeterminado no se puede borrar. La validación se aplica cuando se incluye o se apunta explícitamente a `chatVariants`; las demás escrituras conservan su comportamiento de fusión, reemplazo y `null`. El servidor lista `/widget/chat?variant=<id>` en fuentes y MCP; `/widget/chat` sigue siendo la URL predeterminada sin cambios. El widget selecciona el id exacto de la variante y usa el predeterminado si falta, es desconocido o se ha borrado. Cada configuración independiente tiene `layout: "vertical" | "horizontal"` (por defecto `vertical`): la fila horizontal coloca los mensajes nuevos a la derecha y desvanece los antiguos en el borde izquierdo; `reverse` invierte el orden y las animaciones direccionales. El ancho disponible y `maxMessages` limitan la fila y los mensajes se recortan a dos líneas. En capas horizontales de poca altura se adaptan el espacio vertical y la altura de las tarjetas; las fuentes configuradas también se reducen cuando hace falta. En **Widgets › Chat en pantalla**, crea una variante a partir del predeterminado guardado, elige su disposición y ajustes, y pulsa **Guardar**. Copia la URL de la variante seleccionada en su fuente de navegador de Meld; renombrarla no cambia la dirección. El panel sugiere 600×900 para el chat vertical y 1832×160 para el horizontal; ajústalos a tu escena. Guarda o descarta el borrador antes de cambiar o gestionar variantes. El chat no admite un parámetro `?layout=` independiente.
+**Variantes del chat (API del servidor).** `POST /api/widgets/chat/variants` con `{ "name": "Directo" }` crea una copia con nombre de los ajustes actuales del chat predeterminado salvo el CSS personalizado, que empieza vacío. Los cambios posteriores del predeterminado no se propagan y las variantes existentes no se modifican. Los campos explícitos al crear deben coincidir con la copia predeterminada, salvo `css`, que debe omitirse o estar vacío; si son distintos se rechazan. `GET` en esa ruta lista las variantes; `PUT` o `DELETE` en `/:id` editan o borran una. Se validan nombres y ajustes, cambiar el id al renombrar se rechaza y el predeterminado no se puede borrar. La validación se aplica cuando se incluye o se apunta explícitamente a `chatVariants`; las demás escrituras conservan su comportamiento de fusión, reemplazo y `null`. El servidor lista `/widget/chat?variant=<id>` en fuentes y MCP; `/widget/chat` sigue siendo la URL predeterminada sin cambios. El widget selecciona el id exacto de la variante y usa el predeterminado si falta, es desconocido o se ha borrado. Cada configuración independiente tiene `layout: "vertical" | "horizontal"` (por defecto `vertical`): la fila horizontal coloca los mensajes nuevos a la derecha y desvanece los antiguos en el borde izquierdo; `reverse` invierte el orden y las animaciones direccionales. El ancho disponible y `maxMessages` limitan la fila y los mensajes se recortan a dos líneas. En capas horizontales de poca altura se adaptan el espacio vertical y la altura de las tarjetas; las fuentes configuradas también se reducen cuando hace falta. En **Widgets › Chat en pantalla**, crea una variante a partir del predeterminado guardado, elige su disposición y ajustes, y pulsa **Guardar**. Copia la URL de la variante seleccionada en su fuente de navegador del programa de emisión; renombrarla no cambia la dirección. El panel sugiere 600×900 para el chat vertical y 1832×160 para el horizontal; ajústalos a tu escena. Guarda o descarta el borrador antes de cambiar o gestionar variantes. El chat no admite un parámetro `?layout=` independiente.
 
 Parámetros del overlay: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Créditos: `?transparent`, `?autoplay`, `?loop`. Últimos: `?layout=column`, `?items=follow,sub`. Espectadores: `?platforms=twitch`, `?layout=column`, `?total=0`, `?peak=1`.
 
@@ -169,7 +169,7 @@ Los **overlays propios** salen en esa misma lista como «Overlay · nombre», co
 
 ### OBS (experimental)
 
-En OBS 28 o posterior, activa **Herramientas › Ajustes del servidor WebSocket**, usa el puerto `4455` y establece una contraseña. En antena, elige **OBS** en **Conexiones**, introduce la URL y la contraseña y guarda. Las escenas, el audio, la emisión y la grabación con OBS llegarán en versiones posteriores.
+En OBS 28 o posterior, activa **Herramientas › Ajustes del servidor WebSocket**, usa el puerto `4455` y establece una contraseña. En antena, elige **OBS** en **Conexiones**, introduce la URL y la contraseña y guarda. La integración de OBS es experimental y no todas las acciones están disponibles en ambos programas.
 
 ### Meld Studio
 
@@ -194,7 +194,7 @@ En cada alerta, variación o comando, **Acciones al salir** se ejecuta justo cua
 | Escribir en el chat | Escribe en tu chat de Twitch, de YouTube o en los dos (selector «Dónde»; sin elegir, Twitch), con `{user}` y demás variables. Cada plataforma tiene su propio resultado: si una falla, la acción queda como fallida con su motivo, y lo que ya salió en la otra no se repite |
 | Decir en voz alta | Lee un texto en el overlay |
 
-Las escenas y capas se indican por nombre, así que puedes prepararlas aunque Meld esté cerrado.
+Las escenas y capas se indican por nombre, así que puedes prepararlas aunque el programa de emisión esté cerrado.
 
 ### Variaciones
 
@@ -236,13 +236,13 @@ Los botones de **fragmentos** insertan recetas listas: otro color, sin inclinaci
 
 ### Overlays propios
 
-Una capa nueva para Meld hecha con HTML, CSS y JavaScript: un marco para la cámara, un título animado, un cartel para una escena. Los escribes tú en **Overlays** o se los pides a Claude por MCP (`crear_overlay`); lo que hace el agente aparece en el panel sin recargar.
+Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un marco para la cámara, un título animado, un cartel para una escena. Los escribes tú en **Overlays** o se los pides a Claude por MCP (`crear_overlay`); lo que hace el agente aparece en el panel sin recargar.
 
 | Dónde | Qué hay |
 |---|---|
 | Panel › **Overlays** | Lista en tarjetas, editor con pestañas HTML, CSS y JavaScript, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
-| Meld | Capa **+ › Browser** con `http://127.0.0.1:4500/custom/<id>` y el tamaño del overlay (también está en **Fuentes para Meld**, como «Overlay · nombre») |
-| Al guardar | Todas las capas abiertas (Meld y la vista previa) se recargan solas: no hay que tocar la fuente en Meld |
+| Programa de emisión | Añade una fuente de navegador con `http://127.0.0.1:4500/custom/<id>` y el tamaño del overlay (también está en la página «Fuentes del programa de emisión», como «Overlay · nombre») |
+| Al guardar | Todas las capas abiertas (en el programa de emisión y la vista previa) se recargan solas: no hay que tocar la fuente en el programa de emisión |
 
 `/theme.css` ya viene enlazado: usa sus variables (`var(--accent)`, `var(--text)`…) para que combine. El fondo es transparente por defecto, así que queda bien encima de la cámara, y los recursos externos por https (fuentes, imágenes) sí cargan. Ancho 16–7680, alto 16–4320, hasta 50 overlays y 512 KB de JSON por overlay.
 
@@ -281,7 +281,7 @@ El agente **pide** permisos al crear o editar; solo tú los **apruebas** en el p
 
 Por MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay` y `probar_overlay` (manda un evento de ejemplo a una capa abierta).
 
-> «Hazme un overlay propio con el último seguidor en una tarjeta HTML/CSS animada y añádelo a Meld».
+> «Hazme un overlay propio con el último seguidor en una tarjeta HTML/CSS animada y añádelo al programa de emisión».
 
 ### Comandos de chat
 
@@ -298,11 +298,11 @@ Por MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `b
 - **Texto** con variables: `{channel}` (tu canal), `{title}` (título del directo), `{uptime}` (tiempo en directo) y `{follows}` (seguidores nuevos hoy).
 - **Cada cuántos minutos** y **cuántos mensajes tiene que haber en el chat** desde la última vez. Así no se repite en un chat parado; tus propios mensajes no cuentan.
 - **Dónde se publica:** Twitch, YouTube o los dos. Los mensajes que ya tenías siguen saliendo solo en Twitch.
-- **Solo mientras emito** (activado de serie): usa el estado de Meld. La cuenta se pausa fuera de directo y, al empezar a emitir, vuelve a contar el intervalo completo. Si Meld no está conectado no se sabe si emites, así que **no se publica**, ni solo ni con «Enviar ahora». Desactiva esta opción para seguir contando y publicando fuera de directo.
+- **Solo mientras emito** (activado de serie): usa el estado del programa de emisión. La cuenta se pausa fuera de directo y, al empezar a emitir, vuelve a contar el intervalo completo. Si el programa de emisión no está conectado no se sabe si emites, así que **no se publica**, ni solo ni con «Enviar ahora». Desactiva esta opción para seguir contando y publicando fuera de directo.
 - **Como anuncio destacado** de Twitch, con color (el del canal, azul, verde, naranja o morado). YouTube no tiene anuncios: con «YouTube» o «los dos», allí sale el mismo texto como mensaje normal.
-- **También en pantalla:** además del chat, sale una alerta completa (tarjeta o vídeo, sonido, voz, acciones de Meld…).
+- **También en pantalla:** además del chat, sale una alerta completa (tarjeta o vídeo, sonido, voz, acciones del programa de emisión…).
 
-Cada 15 s se mira si toca publicar alguno. El panel muestra cuándo sale el siguiente, por qué está esperando (pausa, Meld sin conectar…), el resultado en cada plataforma y el último error, y tiene «Enviar ahora».
+Cada 15 s se mira si toca publicar alguno. El panel muestra cuándo sale el siguiente, por qué está esperando (pausa, programa de emisión sin conectar…), el resultado en cada plataforma y el último error, y tiene «Enviar ahora».
 
 **Límites:** 500 caracteres en Twitch y 200 en YouTube. Al guardar, el panel avisa si la plantilla ya no cabe. Al enviar, el texto nunca se corta: si no cabe en una plataforma, no se manda ahí y queda como fallo parcial con el motivo; la otra sí lo recibe. Lo mismo vale para las acciones «Escribir en el chat».
 
@@ -320,7 +320,7 @@ Están en **Widgets** y cada uno tiene su capa de navegador. Su estado (pregunta
 
 ### Teleprompter
 
-**Widgets › Teleprompter.** Tu guion de directo, por bloques, que avanza solo a las palabras por minuto que elijas. **Solo lo ves tú**: ábrelo en el monitor que tienes junto a la cámara (botón «Abrir en ventana») o en una capa de Meld que no se emita. El servidor manda el mismo avance a la ventana, el panel, el Stream Deck y el MCP, así que todos van a la vez.
+**Widgets › Teleprompter.** Tu guion de directo, por bloques, que avanza solo a las palabras por minuto que elijas. **Solo lo ves tú**: ábrelo en el monitor que tienes junto a la cámara (botón «Abrir en ventana») o en una capa del programa de emisión que no se emita. El servidor manda el mismo avance a la ventana, el panel, el Stream Deck y el MCP, así que todos van a la vez.
 
 - Escribe cada bloque con su texto; lo que va entre **[corchetes] son notas** para ti: salen en amarillo, no se leen y (si activas «Pausar en los [corchetes]») el avance se para justo antes de cada una.
 - Control: empezar, parar, bloque anterior/siguiente, volver al principio, más rápido o más lento (teclado en el panel: espacio, ←/→, ↑/↓ e Inicio) y una cuenta atrás al empezar. Con «Línea de lectura» ves una línea roja fija y el texto sube; con «Espejo», invertido para el reflejo del prompter.
@@ -338,7 +338,7 @@ Están en **Widgets** y cada uno tiene su capa de navegador. Su estado (pregunta
 - **Directo:** totales, objetivos, cronología, resumen en Markdown (copiar o descargar), lanzar créditos y empezar un directo nuevo (el anterior queda archivado con su resumen). Puedes mostrar el widget real de agradecimientos a seguidores sin conexión pendientes; el panel recuerda esta elección en este navegador. Si el widget no tiene pendientes para mostrar, su vista previa queda vacía. Las barras de total del canal conservan su valor y sus correcciones entre directos; las demás cuentan por directo.
 - **Identidad de sesión:** los IDs conocidos de YouTube y Twitch aparecen en `/api/sessions` y `listar_directos`; un ID distinto al reconectar abre otra sesión, y si no se conserva el primero.
 - **Historial de espectadores:** las sesiones automáticas guardan cada muestra y los huecos por error, fin de emisión o desconexión por plataforma. Los resúmenes JSON incluyen `viewers` y `viewerMetrics`; `/api/sessions` y `listar_directos` solo incluyen métricas. La media es ponderada por tiempo, con pico y cobertura separados por plataforma (nunca se suman). Cada muestra cubre como máximo su intervalo de sondeo; los huecos y el tiempo sin datos al reiniciar no se interpolan.
-- **Métricas de chat:** las sesiones automáticas de Meld guardan chatters únicos y mensajes/minuto por plataforma, independientemente del buffer de 300 mensajes. Se excluyen las simulaciones y los mensajes propios identificables.
+- **Métricas de chat:** las sesiones automáticas guardan chatters únicos y mensajes/minuto por plataforma, independientemente del buffer de 300 mensajes. Se excluyen las simulaciones y los mensajes propios identificables.
   Los resúmenes JSON incluyen `chatMetrics` y los minutos con mensajes, relativos al inicio de sesión; el listado omite la serie. La media usa la duración completa de la sesión (`null` cuando aún no ha transcurrido tiempo).
   Los mensajes sin ID de autor cuentan como mensajes, nunca como chatters únicos por nombre. Los conjuntos de autores son privados; no se guarda texto para analítica.
 - **Retención de sesiones:** por defecto se conservan todos los directos archivados. Con `sessions.retention` (en `data/config.json`) a un número N, tras cada corte solo quedan los N archivados más recientes (el media de cada directo nunca se borra). El listado del panel se alimenta de metadatos ligeros, sin leer cada archivo entero.
@@ -352,12 +352,12 @@ Están en **Widgets** y cada uno tiene su capa de navegador. Su estado (pregunta
 Vista de 1024×600 pensada para el **Elgato Prompter**: lees el chat y manejas los widgets mirando a cámara, con el ratón. Está en `http://127.0.0.1:4500/prompter`.
 
 1. Conecta el Prompter por USB-C: Windows lo ve como otra pantalla.
-2. En la app de escritorio, **Prompter › Abrir en el Prompter** (o el botón «Prompter» del menú lateral, o la bandeja): detecta la pantalla de 1024×600 y abre la vista a pantalla completa en ella. Se puede fijar otra pantalla en **Meld y Stream Deck › Prompter**. Sin la app: abre `/prompter` en Chrome o Edge como ventana de app, arrástrala a esa pantalla y pulsa F11.
+2. En la app de escritorio, **Prompter › Abrir en el Prompter** (o el botón «Prompter» del menú lateral, o la bandeja): detecta la pantalla de 1024×600 y abre la vista a pantalla completa en ella. Se puede fijar otra pantalla en la página **Paneles**. Sin la app: abre `/prompter` en Chrome o Edge como ventana de app, arrástrala a esa pantalla y pulsa F11.
 3. El Prompter da la vuelta a la imagen solo; si la ves al revés, activa «Espejo» en **Ajustes › Prompter**.
 
 Qué lleva:
 
-- **Arriba:** tiempo de directo y avisos solo cuando algo va mal (micro silenciado en Meld, alertas en pausa, Twitch o YouTube caídos, sin overlay), con la mitad de alto que antes.
+- **Arriba:** tiempo de directo y avisos solo cuando algo va mal (micro silenciado en el programa de emisión, alertas en pausa, Twitch o YouTube caídos, sin overlay), con la mitad de alto que antes.
 - **Izquierda, el chat de Twitch y YouTube en una columna.** Los comandos y los votos no salen. Los mensajes que el espectador manda con «Destacar mi mensaje» salen resaltados. Con el ratón encima, el chat se para y cada mensaje tiene ❓ (a la cola de preguntas) y 📌 (guardar en la cronología). Abajo se puede escribir en el chat de Twitch.
 - **Derecha, dos pestañas:**
   - **Eventos,** dos bloques apilados que ocupan todo el alto. **Cronología:** alertas con ✔ (agradecido) y ↺ (repetir), marcas de short (se renombran con un clic), preguntas mostradas y ganadores, cada uno con su minuto y el logo de su plataforma, y una marca «por agradecer» en las alertas que aún no has agradecido. **Destacados:** los mensajes que un espectador destaca en Twitch y los que guardas con «Guardar», con logo de plataforma, usuario y minuto. La pestaña cuenta lo que queda por agradecer.
@@ -368,7 +368,7 @@ Las **marcas de short** quedan en la pestaña Eventos con su minuto y, si estás
 
 ### Apariencia
 
-En **Ajustes › Apariencia** se cambia el tema de **todo lo que sale en pantalla**: overlay de alertas, chat, objetivos, últimos, ticker, pregunta, tier list, sorteo y créditos. Hay un único tema; el de serie es el de EGDEV y lo que cambies aquí lo sobrescribe. Mientras lo cambias, solo se ve en la vista previa del panel (un borrador en `/api/theme/draft` que solo cargan las vistas con `?themeDraft`); al pulsar **Guardar** llega a la vez a todas las capas abiertas en Meld, sin recargarlas. Si el guardado falla, el borrador sigue ahí y el panel avisa; un punto de partida, una importación o «Restaurar EGDEV» se aplican y guardan al momento y tiran el borrador.
+En **Ajustes › Apariencia** se cambia el tema de **todo lo que sale en pantalla**: overlay de alertas, chat, objetivos, últimos, ticker, pregunta, tier list, sorteo y créditos. Hay un único tema; el de serie es el de EGDEV y lo que cambies aquí lo sobrescribe. Mientras lo cambias, solo se ve en la vista previa del panel (un borrador en `/api/theme/draft` que solo cargan las vistas con `?themeDraft`); al pulsar **Guardar** llega a la vez a todas las capas abiertas en el programa de emisión, sin recargarlas. Si el guardado falla, el borrador sigue ahí y el panel avisa; un punto de partida, una importación o «Restaurar EGDEV» se aplican y guardan al momento y tiran el borrador.
 
 - **Color:** acento, acento suave, fondo de las tarjetas (degradado, sólido o cristal, con su opacidad), textos, borde (del acento o propio), intensidad del brillo y, si quieres, el color de cada plataforma.
 - **Tipografía:** fuente de títulos y de textos (las de la marca, las del sistema o una tuya en woff2/woff/ttf/otf subida en General y archivos), tamaño del texto de las alertas, mayúsculas y contorno negro.
@@ -382,7 +382,7 @@ El tema se sirve en `/theme.css`, en la capa `egdev-theme`, por encima de los es
 
 ### Récord de espectadores
 
-Dos alertas más, **Récord de espectadores** en Twitch y en YouTube (`viewers` y `ytviewers`), que salen cuando hay más gente viendo a la vez que nunca en esa plataforma. Se diseñan como cualquier otra alerta (tarjeta o vídeo, sonido, variaciones, acciones de Meld). En su pestaña **Récord** se ven la cifra de ahora, el pico del directo y el récord guardado, que se puede fijar a mano o poner a cero.
+Dos alertas más, **Récord de espectadores** en Twitch y en YouTube (`viewers` y `ytviewers`), que salen cuando hay más gente viendo a la vez que nunca en esa plataforma. Se diseñan como cualquier otra alerta (tarjeta o vídeo, sonido, variaciones, acciones del programa de emisión). En su pestaña **Récord** se ven la cifra de ahora, el pico del directo y el récord guardado, que se puede fijar a mano o poner a cero.
 
 Cada minuto se mira cuánta gente hay (Twitch: `streams`; YouTube: `videos.list`, 1 unidad de cuota). El récord se guarda siempre; lo que se frena es la alerta:
 
@@ -414,16 +414,16 @@ Escenas, micro y efectos sueltos van directos con el plugin de Meld para Stream 
 
 **Seguridad de los atajos.** Las direcciones `/sd/*` tienen efectos, así que además del bloqueo CSRF de siempre (Origin y `Sec-Fetch-Site`), un GET con `Referer` de otro origen, o con cabeceras de navegador sin `Sec-Fetch-Site` (p. ej. un `<img>` en una web ajena desde un navegador antiguo), se rechaza con 403 y no ejecuta nada. El plugin del Stream Deck, que no envía ninguna de esas cabeceras, y un navegador same-origin siguen funcionando sin configurar nada.
 
-**Atajos propios.** En **Meld y Stream Deck › Atajos y Stream Deck** se crean botones que encadenan varios pasos, en orden: cualquiera de los de arriba, cambiar la pestaña del prompter, y las acciones de Meld y del chat (escena, mostrar/ocultar capa, efecto, comando, evento de widget, escribir en el chat, decir en voz alta), cada una con su retardo. Cada atajo tiene su dirección, `/sd/custom/<id>` (también vale el nombre: `/sd/custom/Empezar%20directo`), un botón de probar y un color. Si un paso falla, los demás se hacen igual y la respuesta dice cuál falló. También se crean y lanzan desde el MCP (`crear_atajo`, `lanzar_atajo`…).
+**Atajos propios.** En la página **Atajos y Stream Deck** se crean botones que encadenan varios pasos, en orden: cualquiera de los de arriba, cambiar la pestaña del prompter, y las acciones del programa de emisión y del chat (escena, mostrar/ocultar capa, efecto, comando, evento de widget, escribir en el chat, decir en voz alta), cada una con su retardo. Las acciones disponibles dependen del programa. Cada atajo tiene su dirección, `/sd/custom/<id>` (también vale el nombre: `/sd/custom/Empezar%20directo`), un botón de probar y un color. Si un paso falla, los demás se hacen igual y la respuesta dice cuál falló. También se crean y lanzan desde el MCP (`crear_atajo`, `lanzar_atajo`…).
 
 ### Dock en Meld
 
 La página **Paneles** también permite mostrar el prompter o el teleprompter en la pantalla elegida (solo uno a la vez), y abrir el dock y el teleprompter en ventanas flotantes. En el navegador se abren ventanas emergentes y no se conoce su estado.
 
-Meld no admite paneles propios, pero su **panel de chat** carga una dirección. Pon ahí `http://127.0.0.1:4500/dock` (**File › Preferences › User Interface**), o ábrelo desde **Paneles › Ventanas flotantes › Abrir el dock**; en la app también se abre como ventana flotante siempre encima desde la bandeja. Sin salir de Meld tiene todo el manejo del directo menos la vista previa, con el estado del directo y los avisos (micro, pausa, Meld, overlay) en la cabecera:
+Meld no admite paneles propios, pero su **panel de chat** carga una dirección. Pon ahí `http://127.0.0.1:4500/dock` (**File › Preferences › User Interface**), o ábrelo desde **Paneles › Ventanas flotantes › Abrir el dock**; en la app también se abre como ventana flotante siempre encima desde la bandeja. Sin salir de Meld tiene todo el manejo del directo menos la vista previa, con el estado del directo y los avisos (micro, pausa, «Programa», overlay) en la cabecera:
 
-- **Control:** iniciar o terminar la emisión de Meld con confirmación, y ver los espectadores actuales de Twitch y YouTube por separado. **Al iniciar se emite de verdad y en público** a través de Meld. Con la sesión automática de Meld activada (de serie), antena crea su sesión cuando Meld confirma que emite; el dock no crea una segunda sesión. Si la sesión automática está desactivada, no se crea ninguna. El dock espera la confirmación de Meld y avisa si no llega; conecta Meld primero. Una lectura de espectadores ausente, desconectada, con error o caducada aparece como `sin dato`, no como cero. Control también incluye pausar/reanudar alertas (con la cola), saltar, marca de short, agradecido (con pendientes), escenas, teleprompter (anterior, play/pausa, siguiente, inicio) y créditos (lanzar, parar). Cada escena horizontal aparece una vez; al pulsarla también se muestra en Meld su pareja ` [Vertical]` si existe. Las verticales sin pareja siguen disponibles. La marca al aire distingue H, V y H + V; los nombres largos conservan el nombre accesible completo.
-- **Audio:** pistas globales y de las escenas al aire, con interruptor de mute y fader de **volumen real**. Si Meld no informa del volumen, el fader queda desactivado. En estrecho, la pestaña Audio avisa de pistas visibles silenciadas.
+- **Control:** iniciar o terminar la emisión del programa de emisión con confirmación, y ver los espectadores actuales de Twitch y YouTube por separado. **Al iniciar se emite de verdad y en público** a través del programa de emisión. Con la sesión automática activada (de serie), antena crea su sesión cuando el programa de emisión confirma que emite; el dock no crea una segunda sesión. Si la sesión automática está desactivada, no se crea ninguna. El dock espera la confirmación del programa de emisión y avisa si no llega; conéctalo primero. Una lectura de espectadores ausente, desconectada, con error o caducada aparece como `sin dato`, no como cero. Control también incluye pausar/reanudar alertas (con la cola), saltar, marca de short, agradecido (con pendientes), escenas, teleprompter (anterior, play/pausa, siguiente, inicio) y créditos (lanzar, parar). Cada escena horizontal aparece una vez; al pulsarla también se solicita su pareja ` [Vertical]` si existe. Las verticales sin pareja siguen disponibles. La marca al aire distingue H, V y H + V; los nombres largos conservan el nombre accesible completo.
+- **Audio:** pistas globales y de las escenas al aire, con interruptor de mute y fader de **volumen real**. Si el programa de emisión no informa del volumen, el fader queda desactivado. En estrecho, la pestaña Audio avisa de pistas visibles silenciadas.
 - **Interactivos:** pestañas para preguntas (interruptor, pregunta actual, siguiente, ocultar y cola), votación de tier list (cerrar y colocar, cancelar) y sorteo (abrir/cerrar, sortear, participantes), con indicadores de estado.
 
 Desde **768 px de ancho, sin importar la orientación**, las columnas son **Control | Audio | Interactivos**; por debajo de 768 px son pestañas. Los dos niveles de pestañas admiten flechas y recuerdan la última selección. El dock no tiene chat, vista previa ni atajos; estos siguen en el panel y Stream Deck.
@@ -493,15 +493,15 @@ Ejemplos de lo que se le puede pedir a Claude:
 - «Ponle nombre a las marcas de short de hoy según lo que pasó en el chat en ese minuto».
 - «Bloquea la palabra spoiler y al usuario troll123».
 - «Hazme el resumen del directo de hoy para LinkedIn».
-- «Hazme un overlay propio con el último seguidor en una tarjeta HTML/CSS animada y añádelo a Meld».
+- «Hazme un overlay propio con el último seguidor en una tarjeta HTML/CSS animada y añádelo al programa de emisión».
 
 ### API REST
 
-`POST /api/program/stream` (también `/api/meld/stream`) acepta exactamente `{ "action": "start" }` o `{ "action": "stop" }` y solicita la orden explícita correspondiente a Meld. Devuelve HTTP 200 con `{ "requested": "start" | "stop", "streaming": true | false | null }`: `streaming` es el estado confirmado por Meld antes de pedir la orden, o `null` si es desconocido; no confirma que la orden se haya completado. Los cuerpos inválidos, incluidas las claves `action` repetidas, devuelven 400; Meld desconectado o un estado de destino ya confirmado devuelven 409 sin enviar ninguna orden. Entre todos los clientes, repetir la acción también devuelve 409 hasta que Meld confirme el cambio o pasen 20 segundos; una respuesta fallida no garantiza que la orden no se haya enviado. Empezar y terminar afectan a la emisión pública real; la sesión automática existente, si está activada, gestiona la sesión de antena cuando Meld informa de la transición.
+`POST /api/program/stream` (también `/api/meld/stream`) acepta exactamente `{ "action": "start" }` o `{ "action": "stop" }` y solicita la orden explícita correspondiente al programa de emisión. Devuelve HTTP 200 con `{ "requested": "start" | "stop", "streaming": true | false | null }`: `streaming` es el estado confirmado por el programa de emisión antes de pedir la orden, o `null` si es desconocido; no confirma que la orden se haya completado. Los cuerpos inválidos, incluidas las claves `action` repetidas, devuelven 400; un programa de emisión desconectado o un estado de destino ya confirmado devuelven 409 sin enviar ninguna orden. Entre todos los clientes, repetir la acción también devuelve 409 hasta que el programa confirme el cambio o pasen 20 segundos; una respuesta fallida no garantiza que la orden no se haya enviado. Empezar y terminar afectan a la emisión pública real; la sesión automática existente, si está activada, gestiona la sesión de antena cuando el programa informa de la transición.
 
 `GET /api/followers` lista el registro local, los recuentos anónimos de YouTube y el estado de sincronización (`?pending=true` muestra solo lo pendiente de agradecer). Añade `shown=true` para incluir los registros exactos seleccionados por la configuración guardada del widget. `POST /api/followers/thank` acepta `{ "ids": ["<id>"] }` o `{ "all": true }`; `all` también marca los recuentos anónimos y las entradas sin ID. Otra opción es `{ "entries": [{ "platform": "twitch", "id": "<id>" }, { "platform": "youtube", "name": "<nombre>" }], "anonymous": ["<at>"] }`: selecciona por plataforma e ID, por plataforma y nombre solo si falta ID, y registros anónimos de YouTube por fecha (`null` si es desconocida). Se puede omitir cualquiera de las dos listas; las fechas no nulas deben coincidir exactamente con su formato ISO canónico (por ejemplo, `2026-01-01T00:00:00.000Z`). Añade `"onlyShown": true` a esta selección para exigir que todos los registros sigan en la selección actual del widget; si alguno ya no está, o si una selección coincide también con un registro pendiente oculto con la misma identidad (por ejemplo, duplicados en un archivo editado a mano), la petición completa devuelve 409 sin cambiar el registro. El panel usa esta protección tanto para acciones individuales como en bloque. Una petición inválida devuelve 400 sin cambiar el registro; si no se puede leer, devuelve 503.
 
-`POST /api/session/end` termina la sesión actual y devuelve `{ session }`. El cuerpo opcional `{ "id": "<id-de-sesión>" }` protege frente al cierre de otra sesión; un id inválido devuelve 400 y un cambio de sesión actual devuelve 409. Es idempotente si ya terminó, cierra los huecos de espectadores y conserva los datos; el archivado y la puesta a cero siguen ocurriendo en el siguiente `POST /api/session/new`. Devuelve 409 mientras Meld esté conectado y confirme que está emitiendo. Se aplican las comprobaciones de origen de las rutas de mutación.
+`POST /api/session/end` termina la sesión actual y devuelve `{ session }`. El cuerpo opcional `{ "id": "<id-de-sesión>" }` protege frente al cierre de otra sesión; un id inválido devuelve 400 y un cambio de sesión actual devuelve 409. Es idempotente si ya terminó, cierra los huecos de espectadores y conserva los datos; el archivado y la puesta a cero siguen ocurriendo en el siguiente `POST /api/session/new`. Devuelve 409 mientras el programa de emisión esté conectado y confirme que está emitiendo. Se aplican las comprobaciones de origen de las rutas de mutación.
 
 El panel y el MCP usan la misma API en `http://127.0.0.1:4500/api/…` (`/api/state`, `/api/alerts/:type`, `/api/alerts/:type/variations`, `/api/commands`, `/api/widgets`, `/api/goals`, `/api/session`, `/api/program*`, `/api/meld*`, `/api/chat/*`…). La lista completa está en `src/server.mjs`. Las capas reciben eventos en `/api/stream`; cada conexión tiene un presupuesto de bytes pendientes: si un cliente no consume su cola, el servidor le envía un evento `gap` y la cierra; al reconectar recibe un snapshot actualizado y el panel muestra un aviso visible. Los eventos efímeros perdidos durante el gap no se reproducen; los registros críticos persistidos (p. ej. donaciones) se conservan.
 
@@ -509,7 +509,7 @@ Las capas conectan por WebSocket (sin el límite de seis conexiones por host) y 
 
 #### Métricas finales de sesión (export v1)
 
-Solo lectura, para **sesiones automáticas de Meld terminadas**; no se exportan las manuales ni las que siguen en directo. En el mismo PC se usa el acceso habitual a la API en `127.0.0.1` o `::1`, con las mismas comprobaciones y sin credencial nueva:
+Solo lectura, para **sesiones automáticas terminadas**; no se exportan las manuales ni las que siguen en directo. En el mismo PC se usa el acceso habitual a la API en `127.0.0.1` o `::1`, con las mismas comprobaciones y sin credencial nueva:
 
 - `GET /api/metrics/v1/sessions?limit=50&before=<id>` usa la misma ventana que `/api/sessions`: los 50 archivos más recientes por id de archivo, más la sesión automática actual si ha terminado. Los resultados elegibles se ordenan por inicio e id descendentes. `limit` va de 1 a 50 (50 por defecto). Para la página siguiente usa `next` como `before`; `next: null` indica el final. Los límites o cursores inválidos o repetidos devuelven 400.
 - Como en `/api/sessions`, un archivo ilegible sin metadatos utilizables se omite del listado; su URL de detalle devuelve 500. Si los metadatos listan un archivo cuyo contenido no se puede leer, el listado de métricas también devuelve 500 en vez de inventar valores.
@@ -556,7 +556,7 @@ Permisos: `moderator:read:followers`, `channel:read:subscriptions`, `bits:read`,
 1. En Google Cloud Console activa **YouTube Data API v3** y crea una **API key**.
 2. Pégala en **Conexiones**, con el ID de tu canal (`UC…`) o el enlace del directo, y pulsa **Escuchar el chat**.
 
-**Conexión automática:** cuando Meld empieza a emitir (o antena arranca con el directo ya en marcha), antena se pone a escuchar el chat de YouTube sola, sin tu cuenta. Mientras YouTube aún no muestra el directo, reintenta cada 30 s, hasta 10 veces (con el ID del canal cada intento cuesta 100 unidades de cuota; con el enlace del directo, mucho menos). Al terminar el directo, el chat se detiene y el estado queda limpio. Si unos segundos después de empezar alguna plataforma configurada (Twitch o YouTube) sigue sin conectar, el panel muestra un aviso con un botón para conectar cada una.
+**Conexión automática:** cuando el programa de emisión empieza a emitir (o antena arranca con el directo ya en marcha), antena se pone a escuchar el chat de YouTube sola, sin tu cuenta. Mientras YouTube aún no muestra el directo, reintenta cada 30 s, hasta 10 veces (con el ID del canal cada intento cuesta 100 unidades de cuota; con el enlace del directo, mucho menos). Al terminar el directo, el chat se detiene y el estado queda limpio. Si unos segundos después de empezar alguna plataforma configurada (Twitch o YouTube) sigue sin conectar, el panel muestra un aviso con un botón para conectar cada una.
 
 Cuota: 10.000 unidades al día. Cada lectura del chat cuesta unas 5, así que con 8 s entre lecturas hay para unas 4 horas.
 

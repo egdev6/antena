@@ -21,7 +21,7 @@
 
 # antena
 
-Stream alerts, chat and widgets for **Meld Studio** — local, free and with the EGDEV identity. It is a **desktop app** (Tauri + React) controlled from its own panel, from the **Stream Deck**, from the **Meld chat panel** and **also from an MCP server**, so that Claude (or any MCP client) can see and change absolutely everything.
+Stream alerts, chat and widgets for your **broadcast program (Meld or OBS)** — local, free and with the EGDEV identity. OBS support is experimental, and available actions depend on the program. It is a **desktop app** (Tauri + React) controlled from its own panel, from the **Stream Deck**, from the **Meld chat panel** and **also from an MCP server**, so that Claude (or any MCP client) can see and change absolutely everything.
 
 ## What is it
 
@@ -31,7 +31,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Three designs per alert:** the EGDEV 3D card; your own video or image (webm with transparency) with the message on top, placed wherever you want; or **video + card**: your video or image as a full-screen background with the 3D card on top, with an entry delay and position offset. All with your own CSS.
 - **Variations:** another version of the alert depending on the amount, the tier, the user, the message or a probability.
 - **Voice (TTS)** for messages, **filtering** of words, links and users, and **pause** with queue.
-- **Actions in Meld** when an alert fires: change scene (and switch back), show or hide layers, effects, confetti, roulette, save a clip, write in chat, speak…
+- **Actions in the broadcast program** when an alert fires: change scene (and switch back), show or hide layers, effects, write in chat, speak…
 - **Chat commands** (`!engram`, `!web`…) that trigger their own alerts, with permissions and cooldowns.
 - **Scheduled messages:** texts that post themselves to chat every X minutes (also as a highlighted announcement) and, if you want, also appear on screen as an alert.
 - **Interactives:** chat question queue, a tier list the chat votes on, and giveaways with an on-screen roulette.
@@ -40,12 +40,12 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Stream recap:** totals, who to thank and a timeline with the minute of each event, in Markdown.
 - **Offline followers:** records Twitch followers gained while antena was closed, and YouTube's public subscribers plus an anonymous count; YouTube requires a connected account.
 - **Mobile panel** on your local network, protected with a key.
-- **Browser sources for Meld:** every alert, widget, panel and custom overlay is a browser source with its size, ready to copy.
+- **Browser sources for the broadcast program:** every alert, widget, panel and custom overlay is a browser source with its size, ready to copy.
 - **Prompter for the Elgato Prompter** (1024×600): the app opens it full screen on that display.
 - **Viewers record alert** per platform (Twitch and YouTube), with anti-spam brakes.
 - **Appearance:** one theme for everything that goes on screen (alerts, widgets and credits): colors, fonts (including yours), icons per alert, shape, position, animation and sound. The default one is the EGDEV theme.
 - **Customizable Stream Deck shortcuts:** each one chains steps (bookmark, pause, scene, layer, chat, prompter tab…) and has its own `/sd/custom/<id>` endpoint.
-- **Dock for Meld:** the whole live show minus the preview — scenes, Meld's audio tracks, alerts, questions, vote, giveaway, teleprompter, and credits — adaptable: three columns from 768 px wide regardless of orientation, one tab per section below that.
+- **Dock:** the whole live show minus the preview — scenes, broadcast program audio tracks, alerts, questions, vote, giveaway, teleprompter, and credits — adaptable: three columns from 768 px wide regardless of orientation, one tab per section below that.
 
 The server has no dependencies (Node ≥ 24). The interface is React compiled with esbuild and the desktop app is Tauri 2, which starts that server as a *sidecar*. Everything stays on your PC.
 
@@ -93,7 +93,7 @@ pnpm desktop:dev     # app in development mode (uses the code in src/ directly)
 pnpm desktop:build   # installer into src-tauri/target/release/bundle/nsis
 ```
 
-The app starts the server on `http://127.0.0.1:4500`, opens the panel and leaves an icon in the tray. **Closing the window leaves it in the tray**: the Meld sources and the Stream Deck keep working. To shut everything down, use «Exit» in the tray menu (it saves and stops the server cleanly).
+The app starts the server on `http://127.0.0.1:4500`, opens the panel and leaves an icon in the tray. **Closing the window leaves it in the tray**: the broadcast program's sources and the Stream Deck keep working. To shut everything down, use «Exit» in the tray menu (it saves and stops the server cleanly).
 
 - The installed app's data lives in `%APPDATA%\es.egdev.antena\data` and `…\media`. To keep using the data from the project folder, copy `data/` and `media/` there, or start with `ANTENA_DATA` and `ANTENA_MEDIA` pointing at them. In `desktop:dev` the project's own folders are used.
 - If another antena is listening on the port with the same data directory, the app reuses it. Otherwise it does not connect and asks you to close the server occupying the port. Each data directory has a random identity bound to its real path in `instance.json`; a copied directory gets a new identity, and the status API does not expose the path.
@@ -139,13 +139,13 @@ ZIP imports allow up to 2 GB total uncompressed, 300 MB per media file, 64 MB pe
 
 Legacy JSON import and preview allow 8 million characters (roughly 8 MB for ASCII); other routes keep their existing limits. For the HTTP API, send a ZIP as `application/zip` or JSON as `application/json` to `POST /api/config/import/preview`; it returns an opaque `fingerprint`. Send the same file to `POST /api/config/import` with `X-Config-Fingerprint` set to that value. Missing or stale fingerprints return 409 without applying changes. MCP `importar_configuracion` with `confirmar: true` previews and applies JSON with the same protection.
 
-### Browser layers in Meld
+### Browser layers in the broadcast program
 
-In the panel, **Meld and Stream Deck › Sources for Meld** lists all of them with their size and a copy button (it includes one goal per goal you have). In Meld: **+ › Browser**, paste the URL and set that width and height. Meld does not allow creating layers from outside, so they are added by hand once.
+In the panel, the «Fuentes del programa de emisión» page lists all of them with their size and a copy button (it includes one goal per goal you have). Add a browser source in the broadcast program, paste the URL and set the listed width and height. Add each source by hand once; enable its audio for alerts.
 
 | Layer | URL | Size |
 |---|---|---|
-| Alerts | `http://127.0.0.1:4500/overlay` | 1920×1080, with **Add audio track** |
+| Alerts | `http://127.0.0.1:4500/overlay` | 1920×1080, with audio enabled |
 | Chat | `http://127.0.0.1:4500/widget/chat` | 600×900 |
 | Goal | `http://127.0.0.1:4500/widget/goal?id=principal` | 1000×200 |
 | Latest | `http://127.0.0.1:4500/widget/latest` | 1400×200 |
@@ -161,7 +161,7 @@ In the panel, **Meld and Stream Deck › Sources for Meld** lists all of them wi
 
 **Goal bars.** Twitch followers and subs and YouTube subscribers show the platform's channel total, not just events from the stream, and do not reset between streams. Antena reads it at startup, on reconnect and every five minutes; live events add between reads. For an explicitly configured YouTube channel, detected subscribers add only when the connected account's channel ID matches; if it differs or cannot be verified, the next platform read updates the total instead. If the platform does not respond, the last known value remains; before the first read the bar shows `—`. Manual +1, −1 and Set apply a persistent correction (for example, to exclude your own sub). Twitch subs require the `channel:read:subscriptions` permission. YouTube rounds subscriber counts to three significant figures from 1,000. Other goal metrics remain per stream.
 
-**Chat variants (server API).** `POST /api/widgets/chat/variants` with `{ "name": "Live" }` creates a named copy of the current default-chat settings except custom CSS, which starts empty. Later default changes do not propagate, and existing variants are not modified. Explicit creation fields must match the copied defaults, except `css`, which must be omitted or empty; a conflicting value is rejected. `GET` on that path lists variants; `PUT` or `DELETE` on `/:id` edits or removes one. Names and settings are validated, a changed id is rejected on rename, and the default cannot be deleted. Validation applies when `chatVariants` is supplied or addressed explicitly; other config writes retain their existing merge, replacement and `null` semantics. The server lists `/widget/chat?variant=<id>` in sources and MCP; `/widget/chat` remains the unchanged default URL. The widget selects an exact variant id, and falls back to the default if it is missing, unknown or deleted. Each independent configuration has `layout: "vertical" | "horizontal"` (default `vertical`): the horizontal row puts new messages on the right and fades older ones at the left edge; `reverse` mirrors the order and directional animations. Available width and `maxMessages` limit the row, and messages are clamped to two lines. In shorter horizontal layers, vertical spacing and card height adapt; configured fonts also shrink when needed. In **Widgets › Chat en pantalla**, create a variant from the saved default, choose its layout and settings, then press **Guardar**. Copy the selected variant's URL into its Meld browser source; renaming does not change that URL. The panel suggests 600×900 for vertical chat and 1832×160 for horizontal chat; adjust these to your scene. Save or discard a draft before switching or managing variants. A standalone `?layout=` parameter is not supported for chat.
+**Chat variants (server API).** `POST /api/widgets/chat/variants` with `{ "name": "Live" }` creates a named copy of the current default-chat settings except custom CSS, which starts empty. Later default changes do not propagate, and existing variants are not modified. Explicit creation fields must match the copied defaults, except `css`, which must be omitted or empty; a conflicting value is rejected. `GET` on that path lists variants; `PUT` or `DELETE` on `/:id` edits or removes one. Names and settings are validated, a changed id is rejected on rename, and the default cannot be deleted. Validation applies when `chatVariants` is supplied or addressed explicitly; other config writes retain their existing merge, replacement and `null` semantics. The server lists `/widget/chat?variant=<id>` in sources and MCP; `/widget/chat` remains the unchanged default URL. The widget selects an exact variant id, and falls back to the default if it is missing, unknown or deleted. Each independent configuration has `layout: "vertical" | "horizontal"` (default `vertical`): the horizontal row puts new messages on the right and fades older ones at the left edge; `reverse` mirrors the order and directional animations. Available width and `maxMessages` limit the row, and messages are clamped to two lines. In shorter horizontal layers, vertical spacing and card height adapt; configured fonts also shrink when needed. In **Widgets › Chat en pantalla**, create a variant from the saved default, choose its layout and settings, then press **Guardar**. Copy the selected variant's URL into its browser source in the broadcast program; renaming does not change that URL. The panel suggests 600×900 for vertical chat and 1832×160 for horizontal chat; adjust these to your scene. Save or discard a draft before switching or managing variants. A standalone `?layout=` parameter is not supported for chat.
 
 Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. Credits: `?transparent`, `?autoplay`, `?loop`. Latest: `?layout=column`, `?items=follow,sub`. Viewers: `?platforms=twitch`, `?layout=column`, `?total=0`, `?peak=1`.
 
@@ -169,7 +169,7 @@ Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. C
 
 ### OBS (experimental)
 
-In OBS 28 or newer, enable **Tools › WebSocket Server Settings**, use port `4455` and set a password. In antena, choose **OBS** under **Conexiones**, enter the URL and password, and save. OBS scenes, audio, streaming and recording controls are coming in later versions.
+In OBS 28 or newer, enable **Tools › WebSocket Server Settings**, use port `4455` and set a password. In antena, choose **OBS** under **Conexiones**, enter the URL and password, and save. The OBS integration is experimental, and not every action is available in both programs.
 
 ### Meld Studio
 
@@ -194,7 +194,7 @@ In every alert, variation or command, **Actions on fire** runs right when the al
 | Write in chat | Writes in your Twitch chat, your YouTube chat or both («Where» selector; if none chosen, Twitch), with `{user}` and other variables. Each platform has its own outcome: if one fails, the action is marked as failed with its reason, and what already went out on the other is not repeated |
 | Say out loud | Reads a text in the overlay |
 
-Scenes and layers are referenced by name, so you can prepare them even with Meld closed.
+Scenes and layers are referenced by name, so you can prepare them even with the broadcast program closed.
 
 ### Variations
 
@@ -236,13 +236,13 @@ The **snippets** buttons insert ready-made recipes: another color, no tilt, smal
 
 ### Custom overlays
 
-A new Meld layer made of HTML, CSS and JavaScript: a frame for the camera, an animated title, a card for a scene. You write them in **Overlays**, or ask Claude via MCP (`crear_overlay`); whatever the agent does shows up in the panel without reloading.
+A new layer for the broadcast program made of HTML, CSS and JavaScript: a frame for the camera, an animated title, a card for a scene. You write them in **Overlays**, or ask Claude via MCP (`crear_overlay`); whatever the agent does shows up in the panel without reloading.
 
 | Where | What you get |
 |---|---|
 | Panel › **Overlays** | Card list, editor with HTML, CSS and JavaScript tabs, live preview, width and height, transparent background, permissions, copy URL and delete |
-| Meld | **+ › Browser** layer with `http://127.0.0.1:4500/custom/<id>` and the overlay size (it is also in **Sources for Meld**, as «Overlay · name») |
-| On save | Every open layer (Meld and the preview) reloads by itself: you never touch the source in Meld |
+| Broadcast program | Add a browser source with `http://127.0.0.1:4500/custom/<id>` and the overlay size (it is also on the «Fuentes del programa de emisión» page, as «Overlay · name») |
+| On save | Every open layer (in the broadcast program and the preview) reloads by itself: you never touch the source in the broadcast program |
 
 `/theme.css` is already linked: use its variables (`var(--accent)`, `var(--text)`…) to match the rest. The background is transparent by default, so it sits well over the camera, and external https resources (fonts, images) do load. Width 16–7680, height 16–4320, up to 50 overlays and 512 KB of JSON per overlay.
 
@@ -281,7 +281,7 @@ The agent **asks** for permissions when it creates or edits; only you **approve*
 
 Over MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay` and `probar_overlay` (fires a sample event at one open layer).
 
-> «Make me a custom overlay with the latest follower as an animated HTML/CSS card and add it to Meld».
+> «Make me a custom overlay with the latest follower as an animated HTML/CSS card and add it to the broadcast program».
 
 ### Chat commands
 
@@ -298,11 +298,11 @@ Over MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `
 - **Text** with variables: `{channel}` (your channel), `{title}` (stream title), `{uptime}` (time live) and `{follows}` (new followers today).
 - **Every how many minutes** and **how many chat messages** must have happened since the last time. That way it does not repeat in a dead chat; your own messages do not count.
 - **Where it posts:** Twitch, YouTube or both. Messages you already had keep posting to Twitch only.
-- **Only while streaming** (on by default): it uses the Meld status. The countdown pauses while offline and starts a full interval when the stream starts. If Meld is not connected there is no way to know if you are live, so it **does not post**, neither alone nor with «Send now». Turn this option off to keep counting and posting while offline.
+- **Only while streaming** (on by default): it uses the broadcast program's status. The countdown pauses while offline and starts a full interval when the stream starts. If the broadcast program is not connected there is no way to know if you are live, so it **does not post**, neither alone nor with «Send now». Turn this option off to keep counting and posting while offline.
 - **As a highlighted Twitch announcement**, with a color (the channel's, blue, green, orange or purple). YouTube has no announcements: with «YouTube» or «both», the same text goes there as a normal message.
-- **Also on screen:** besides chat, a full alert comes out (card or video, sound, voice, Meld actions…).
+- **Also on screen:** besides chat, a full alert comes out (card or video, sound, voice, broadcast program actions…).
 
-Every 15 s it checks whether any message is due. The panel shows when the next one comes out, why it is waiting (paused, Meld not connected…), the result on each platform and the last error, and has «Send now».
+Every 15 s it checks whether any message is due. The panel shows when the next one comes out, why it is waiting (paused, broadcast program not connected…), the result on each platform and the last error, and has «Send now».
 
 **Limits:** 500 characters on Twitch and 200 on YouTube. When saving, the panel warns if the template no longer fits. When sending, the text is never cut: if it does not fit on one platform, it is not sent there and stays as a partial failure with the reason; the other one does receive it. The same applies to «Write in chat» actions.
 
@@ -320,7 +320,7 @@ They live in **Widgets** and each one has its browser layer. Their state (questi
 
 ### Teleprompter
 
-**Widgets › Teleprompter.** Your stream script, block by block, that scrolls at the words-per-minute you choose. **Only you see it**: open it on the monitor next to your camera («Open in window» button) or in a Meld layer that is not broadcast. The server sends the same scroll position to the window, the panel, the Stream Deck and the MCP, so they all stay in sync.
+**Widgets › Teleprompter.** Your stream script, block by block, that scrolls at the words-per-minute you choose. **Only you see it**: open it on the monitor next to your camera («Open in window» button) or in a broadcast program layer that is not broadcast. The server sends the same scroll position to the window, the panel, the Stream Deck and the MCP, so they all stay in sync.
 
 - Write each block with its text; whatever is inside **[brackets] are notes** for you: they show in yellow, are not read out and (if you enable «Pause on [brackets]») the scroll stops right before each one.
 - Control: start, stop, previous/next block, back to the beginning, faster or slower (keyboard in the panel: space, ←/→, ↑/↓ and Home) and a countdown when starting. With «Reading line» you see a fixed red line and the text scrolls up; with «Mirror», flipped for the prompter reflection.
@@ -338,7 +338,7 @@ They live in **Widgets** and each one has its browser layer. Their state (questi
 - **Stream:** totals, goals, timeline, Markdown recap (copy or download), launch credits and start a new stream (the previous one is archived with its recap). Optionally show the real thank-you widget with pending offline followers; the panel remembers this choice in this browser. The thank-you preview is empty when the widget has no pending followers to show. Channel-total goal bars keep their values and corrections across streams; other goals count per stream.
 - **Session identity:** known YouTube and Twitch IDs appear in `/api/sessions` and `listar_directos`; a different ID on reconnect starts a new session, otherwise the first ID is kept.
 - **Viewer history:** automatic live sessions retain every captured sample and error/offline/disconnection gap per platform. JSON summaries expose `viewers` and `viewerMetrics`; `/api/sessions` and `listar_directos` expose only metrics. Average is time-weighted, peak and coverage stay separate per platform (never summed). Each sample covers at most its polling interval; gaps and restart downtime are never interpolated.
-- **Chat metrics:** automatic Meld sessions persist unique chatters and message/minute counts per platform, independently of the 300-message buffer. Simulated and identifiable streamer messages are excluded.
+- **Chat metrics:** automatic sessions persist unique chatters and message/minute counts per platform, independently of the 300-message buffer. Simulated and identifiable streamer messages are excluded.
   JSON summaries expose `chatMetrics` and nonempty minute buckets relative to session start; lists omit the series. The average uses the full session duration (`null` at zero duration).
   Messages without an author ID count as messages, never as unique chatters by name. Author sets stay private; no message text is stored for analytics.
 - **Session retention:** by default all archived streams are kept. With `sessions.retention` (in `data/config.json`) set to a number N, after each stream only the N most recent archives remain (each stream's media is never deleted). The panel list is fed by lightweight metadata, without reading each whole file.
@@ -352,12 +352,12 @@ They live in **Widgets** and each one has its browser layer. Their state (questi
 A 1024×600 view designed for the **Elgato Prompter**: you read chat and handle the widgets while looking at the camera, with the mouse. It lives at `http://127.0.0.1:4500/prompter`.
 
 1. Connect the Prompter over USB-C: Windows sees it as another display.
-2. In the desktop app, **Prompter › Open on the Prompter** (or the «Prompter» button in the side menu, or the tray): it detects the 1024×600 display and opens the view full screen on it. You can pin a different display in **Meld and Stream Deck › Prompter**. Without the app: open `/prompter` in Chrome or Edge as an app window, drag it to that display and press F11.
+2. In the desktop app, **Prompter › Open on the Prompter** (or the «Prompter» button in the side menu, or the tray): it detects the 1024×600 display and opens the view full screen on it. You can pin a different display on the **Paneles** page. Without the app: open `/prompter` in Chrome or Edge as an app window, drag it to that display and press F11.
 3. The Prompter flips the image itself; if you see it reversed, enable «Mirror» in **Settings › Prompter**.
 
 What it carries:
 
-- **Top:** stream time and warnings only when something is wrong (mic muted in Meld, alerts paused, Twitch or YouTube down, no overlay), about half the height it used to be.
+- **Top:** stream time and warnings only when something is wrong (mic muted in the broadcast program, alerts paused, Twitch or YouTube down, no overlay), about half the height it used to be.
 - **Left, the Twitch and YouTube chat in one column.** Commands and votes do not appear. Messages a viewer sends with «Highlight my message» appear highlighted. On mouse hover, the chat pauses and each message gets ❓ (to the question queue) and 📌 (save to the timeline). At the bottom you can write to the Twitch chat.
 - **Right, two tabs:**
   - **Events,** two stacked blocks that fill the height. **Timeline:** alerts with ✔ (thanked) and ↺ (replay), short bookmarks (rename them with a click), questions shown and winners, each with its minute and its platform logo, and a «to thank» mark on alerts you have not thanked yet. **Highlights:** the messages a viewer highlights in Twitch and the ones you save with «Save», with platform logo, user and minute. The tab counts what is still to thank.
@@ -368,7 +368,7 @@ What it carries:
 
 ### Appearance
 
-In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. There is a single theme; the default is the EGDEV one and whatever you change here overrides it. While you change it, only the panel preview shows it (a draft in `/api/theme/draft` that only `?themeDraft` previews load); pressing **Save** sends it to every layer open in Meld at once, without reloading them. If saving fails, the draft stays and the panel warns; a starting point, an import or «Restore EGDEV» are applied and saved right away and drop the draft.
+In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. There is a single theme; the default is the EGDEV one and whatever you change here overrides it. While you change it, only the panel preview shows it (a draft in `/api/theme/draft` that only `?themeDraft` previews load); pressing **Save** sends it to every layer open in the broadcast program at once, without reloading them. If saving fails, the draft stays and the panel warns; a starting point, an import or «Restore EGDEV» are applied and saved right away and drop the draft.
 
 - **Color:** accent, soft accent, card background (gradient, solid or glass, with its opacity), texts, border (accent or its own), glow intensity and, if you want, the color of each platform.
 - **Typography:** title and body fonts (the brand's, the system's or your own in woff2/woff/ttf/otf uploaded in General and files), alert text size, uppercase and black outline.
@@ -382,7 +382,7 @@ The theme is served at `/theme.css`, in the `egdev-theme` layer, above the defau
 
 ### Viewers record
 
-Two more alerts, **Viewers record** on Twitch and on YouTube (`viewers` and `ytviewers`), which fire when more people are watching at once than ever before on that platform. You design them like any other alert (card or video, sound, variations, Meld actions). Their **Record** tab shows the current figure, the stream's peak and the saved record, which you can set by hand or reset to zero.
+Two more alerts, **Viewers record** on Twitch and on YouTube (`viewers` and `ytviewers`), which fire when more people are watching at once than ever before on that platform. You design them like any other alert (card or video, sound, variations, broadcast program actions). Their **Record** tab shows the current figure, the stream's peak and the saved record, which you can set by hand or reset to zero.
 
 Every minute it checks how many people are watching (Twitch: `streams`; YouTube: `videos.list`, 1 quota unit). The record is always saved; what is slowed down is the alert:
 
@@ -414,16 +414,16 @@ Scenes, mic and loose effects go directly with the Meld plugin for Stream Deck.
 
 **Shortcut security.** The `/sd/*` endpoints have effects, so on top of the usual CSRF blocking (Origin and `Sec-Fetch-Site`), a GET with a `Referer` from another origin, or with browser headers but no `Sec-Fetch-Site` (e.g. an `<img>` on a third-party site from an old browser), is rejected with 403 and nothing runs. The Stream Deck plugin, which sends none of those headers, and a same-origin browser keep working without configuring anything.
 
-**Custom shortcuts.** In **Meld and Stream Deck › Shortcuts and Stream Deck** you create buttons that chain several steps, in order: any of the ones above, switching the prompter tab, and the Meld and chat actions (scene, show/hide layer, effect, command, widget event, write in chat, say out loud), each with its own delay. Every shortcut has its endpoint, `/sd/custom/<id>` (the name also works: `/sd/custom/Start%20stream`), a test button and a color. If a step fails, the rest still run and the response says which one failed. They can also be created and triggered from the MCP (`crear_atajo`, `lanzar_atajo`…).
+**Custom shortcuts.** On the «Atajos y Stream Deck» page you create buttons that chain several steps, in order: any of the ones above, switching the prompter tab, and the broadcast program and chat actions (scene, show/hide layer, effect, command, widget event, write in chat, say out loud), each with its own delay. Available actions depend on the program. Every shortcut has its endpoint, `/sd/custom/<id>` (the name also works: `/sd/custom/Start%20stream`), a test button and a color. If a step fails, the rest still run and the response says which one failed. They can also be created and triggered from the MCP (`crear_atajo`, `lanzar_atajo`…).
 
 ### Dock in Meld
 
 The **Paneles** page also puts either the prompter or the teleprompter on the selected screen (only one at a time), and offers floating dock and teleprompter windows. In a browser they open as popups and their window state is unavailable.
 
-Meld does not support custom panels, but its **chat panel** loads a URL. Put `http://127.0.0.1:4500/dock` there (**File › Preferences › User Interface**), or open it from **Paneles › Ventanas flotantes › Abrir el dock**; in the app it also opens as an always-on-top floating window from the tray. Without leaving Meld it has the whole live show minus the preview, with the stream state and the warnings (mic, pause, Meld, overlay) on the header:
+Meld does not support custom panels, but its **chat panel** loads a URL. Put `http://127.0.0.1:4500/dock` there (**File › Preferences › User Interface**), or open it from **Paneles › Ventanas flotantes › Abrir el dock**; in the app it also opens as an always-on-top floating window from the tray. Without leaving Meld it has the whole live show minus the preview, with the stream state and the warnings (mic, pause, «Programa», overlay) on the header:
 
-- **Control:** start or stop Meld's broadcast after confirmation, and see current Twitch and YouTube viewers separately. **Starting broadcasts for real, publicly**, through Meld. With Meld's automatic session enabled (the default), antena creates its session when Meld confirms it is streaming; the dock does not create a second session. If automatic sessions are disabled, it does not create one. The dock waits for Meld's confirmation and warns if none arrives; connect Meld first. A missing, offline, errored or stale viewer reading is shown as `sin dato`, not zero. Control also has pause/resume alerts (with the queue), skip, short bookmark, thanked (with pending count), scenes, teleprompter (previous, play/pause, next, start) and credits (launch, stop). Each horizontal scene appears once; a matching ` [Vertical]` scene is also shown in Meld when clicked. Unpaired vertical scenes remain available. On-air labels distinguish H, V and H + V; long names retain their full accessible name.
-- **Audio:** global tracks and those of the on-air scenes, each with a mute switch and a fader for the **real gain**. If Meld does not report a track's volume, its fader is disabled. The narrow Audio tab signals muted listed tracks.
+- **Control:** start or stop the broadcast program's stream after confirmation, and see current Twitch and YouTube viewers separately. **Starting broadcasts for real, publicly**, through the broadcast program. With the automatic session enabled (the default), antena creates its session when the broadcast program confirms it is streaming; the dock does not create a second session. If automatic sessions are disabled, it does not create one. The dock waits for the broadcast program's confirmation and warns if none arrives; connect the program first. A missing, offline, errored or stale viewer reading is shown as `sin dato`, not zero. Control also has pause/resume alerts (with the queue), skip, short bookmark, thanked (with pending count), scenes, teleprompter (previous, play/pause, next, start) and credits (launch, stop). Each horizontal scene appears once; clicking it also requests its matching ` [Vertical]` scene. Unpaired vertical scenes remain available. On-air labels distinguish H, V and H + V; long names retain their full accessible name.
+- **Audio:** global tracks and those of the on-air scenes, each with a mute switch and a fader for the **real gain**. If the broadcast program does not report a track's volume, its fader is disabled. The narrow Audio tab signals muted listed tracks.
 - **Interactivos:** tabs for questions (switch, current, next, hide and queue), tier list vote (close and place, cancel) and giveaway (open/close, draw, participants), with status badges.
 
 At **768 px wide or more, regardless of orientation**, the columns are **Control | Audio | Interactivos**; below 768 px they become tabs. Both tab levels support arrow keys and remember the last selection. There is no chat, preview or shortcuts module in the dock; shortcuts remain in the panel and Stream Deck.
@@ -493,15 +493,15 @@ Examples of what you can ask Claude to do:
 - «Name today's short bookmarks after what happened in chat that minute».
 - «Block the word spoiler and the user troll123».
 - «Give me today's stream recap for LinkedIn».
-- «Make me a custom overlay with the latest follower as an animated HTML/CSS card and add it to Meld».
+- «Make me a custom overlay with the latest follower as an animated HTML/CSS card and add it to the broadcast program».
 
 ### REST API
 
-`POST /api/program/stream` (also `/api/meld/stream`) accepts exactly `{ "action": "start" }` or `{ "action": "stop" }` and requests the corresponding explicit Meld streaming command. It returns HTTP 200 with `{ "requested": "start" | "stop", "streaming": true | false | null }`: `streaming` is Meld's confirmed state before the request, or `null` if unknown, not confirmation that the requested action completed. Invalid bodies, including repeated `action` keys, return 400; disconnected Meld or an already-confirmed target state returns 409 without sending a command. Across clients, a repeated action also returns 409 until Meld confirms the change or 20 seconds elapse; a failed response may still mean the command was sent. Starting and stopping affect the real public broadcast; the existing automatic session, if enabled, handles the antena session when Meld reports the transition.
+`POST /api/program/stream` (also `/api/meld/stream`) accepts exactly `{ "action": "start" }` or `{ "action": "stop" }` and requests the corresponding explicit streaming command from the broadcast program. It returns HTTP 200 with `{ "requested": "start" | "stop", "streaming": true | false | null }`: `streaming` is the broadcast program's confirmed state before the request, or `null` if unknown, not confirmation that the requested action completed. Invalid bodies, including repeated `action` keys, return 400; a disconnected broadcast program or an already-confirmed target state returns 409 without sending a command. Across clients, a repeated action also returns 409 until the program confirms the change or 20 seconds elapse; a failed response may still mean the command was sent. Starting and stopping affect the real public broadcast; the existing automatic session, if enabled, handles the antena session when the program reports the transition.
 
 `GET /api/followers` lists the local follower registry, anonymous YouTube counts and sync status (`?pending=true` shows only unthanked records). Add `shown=true` to include the exact records selected by the saved thanks widget configuration. `POST /api/followers/thank` accepts `{ "ids": ["<id>"] }` or `{ "all": true }` to mark them thanked; `all` also marks anonymous counts and entries without an ID. Alternatively, `{ "entries": [{ "platform": "twitch", "id": "<id>" }, { "platform": "youtube", "name": "<name>" }], "anonymous": ["<at>"] }` targets exact platform/id pairs, platform/name pairs only when the ID is absent, and YouTube anonymous records by timestamp (including `null` for an unknown timestamp). Either array may be omitted; non-null timestamps must exactly match their canonical ISO form (for example, `2026-01-01T00:00:00.000Z`). Add `"onlyShown": true` to this selective form to require every selected record still to be in the widget's current selection; otherwise — or if a selection also matches a hidden pending record with the same identity, e.g. duplicates in a hand-edited file — the whole request returns 409 without changing the registry. The panel uses this guard for individual and bulk actions. Invalid requests return 400 without changing the registry; an unreadable registry returns 503.
 
-`POST /api/session/end` ends the current session and returns `{ session }`. An optional body `{ "id": "<session-id>" }` protects against ending a different session; an invalid id returns 400, and a changed current session returns 409. It is idempotent for an already ended session, closes viewer gaps and preserves the data; archiving and resetting still happen on the next `POST /api/session/new`. It returns 409 while Meld is connected and confirms it is streaming. Normal mutating-route origin checks apply.
+`POST /api/session/end` ends the current session and returns `{ session }`. An optional body `{ "id": "<session-id>" }` protects against ending a different session; an invalid id returns 400, and a changed current session returns 409. It is idempotent for an already ended session, closes viewer gaps and preserves the data; archiving and resetting still happen on the next `POST /api/session/new`. It returns 409 while the broadcast program is connected and confirms it is streaming. Normal mutating-route origin checks apply.
 
 The panel and the MCP use the same API at `http://127.0.0.1:4500/api/…` (`/api/state`, `/api/alerts/:type`, `/api/alerts/:type/variations`, `/api/commands`, `/api/widgets`, `/api/goals`, `/api/session`, `/api/program*`, `/api/meld*`, `/api/chat/*`…). The full list is in `src/server.mjs`. The layers receive events at `/api/stream`; each connection has a budget of pending bytes: if a client does not consume its queue, the server sends it a `gap` event and closes it; on reconnect it receives an updated snapshot and the panel shows a visible warning. Ephemeral events lost during the gap are not replayed; persisted critical records (e.g. donations) are kept.
 
@@ -509,7 +509,7 @@ Layers connect via WebSocket (not limited to six connections per host), falling 
 
 #### Final session metrics (export v1)
 
-Read-only, for **ended automatic Meld sessions**; manual and ongoing sessions are not exported. On the same PC use the existing local API access at `127.0.0.1` or `::1`, with the same admission checks and no new credential:
+Read-only, for **ended automatic sessions**; manual and ongoing sessions are not exported. On the same PC use the existing local API access at `127.0.0.1` or `::1`, with the same admission checks and no new credential:
 
 - `GET /api/metrics/v1/sessions?limit=50&before=<id>` uses the same window as `/api/sessions`: the 50 most recent archives by archive id, plus the ended automatic current session. Eligible results are sorted by start time then id descending. `limit` is 1–50 (default 50). Use `next` as `before` for the next page; `next: null` ends pagination. Invalid or repeated limits or cursors return 400.
 - As in `/api/sessions`, an unreadable archive without usable metadata is skipped by the list; its detail URL returns 500. If metadata lists an archive whose contents cannot be read, the metrics list also returns 500 rather than inventing values.
@@ -556,7 +556,7 @@ Permissions: `moderator:read:followers`, `channel:read:subscriptions`, `bits:rea
 1. In Google Cloud Console enable the **YouTube Data API v3** and create an **API key**.
 2. Paste it into **Connections**, with your channel ID (`UC…`) or the stream link, and click **Listen to chat**.
 
-**Automatic connection:** when Meld starts streaming (or antena starts with the stream already live), antena starts listening to the YouTube chat on its own, without your account. While YouTube does not show the stream yet, it retries every 30 s, up to 10 times (with a channel ID each attempt costs 100 quota units; with the stream link, much less). When the stream ends, the chat stops and the status is cleared. If a configured platform (Twitch or YouTube) is still not connected a few seconds after the stream starts, the panel shows a warning with a button to connect each one.
+**Automatic connection:** when the broadcast program starts streaming (or antena starts with the stream already live), antena starts listening to the YouTube chat on its own, without your account. While YouTube does not show the stream yet, it retries every 30 s, up to 10 times (with a channel ID each attempt costs 100 quota units; with the stream link, much less). When the stream ends, the chat stops and the status is cleared. If a configured platform (Twitch or YouTube) is still not connected a few seconds after the stream starts, the panel shows a warning with a button to connect each one.
 
 Quota: 10,000 units per day. Each chat read costs about 5, so with 8 s between reads there is enough for about 4 hours.
 

@@ -5,8 +5,8 @@ declaran el código y el README, o lo respaldan la suite de tests y las PR ya in
 
 ## Qué es
 
-antena es una herramienta local de alertas, chat y widgets de directo para **Meld
-Studio**, gratis y con identidad EGDEV. Desde la 0.9 es una **app de
+antena es una herramienta local de alertas, chat y widgets de directo para el **programa de
+emisión (Meld u OBS)**, gratis y con identidad EGDEV. Desde la 0.9 es una **app de
 escritorio** (Tauri 2 + React) que arranca el servidor Node de siempre como *sidecar*; se controla
 desde su panel, el Stream Deck, el panel de chat de Meld (dock) y un servidor MCP. El servidor
 sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compilación.
@@ -25,7 +25,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
 - **Agradecimientos (#129):** `/widget/thanks` (900×200) rota un nombre pendiente sin conexión cada vez y puede mostrar al final el recuento anónimo de YouTube. Configura plataformas, ventana y máximo desde Widgets; las fechas desconocidas se incluyen y sin archivo previo no hay corte «desde el último directo». El panel marca al momento cada entrada o, con confirmación, exactamente la selección visible. La capa solo recibe nombres, plataformas y recuento anónimo.
 - **Alertas de Twitch y YouTube:** tipos normalizados (follow, sub, resub, giftsub,
   cheer, raid, redemption; ytsub, superchat, supersticker, member, milestone, giftmember) con
-  tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en Meld.
+  tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en el programa de emisión.
 - **Suscriptores de YouTube (#134):** alerta `ytsub` para suscripciones públicas detectadas durante la escucha, con intervalo configurable y parada por cuota.
 - **Chat y moderación local:** Twitch y YouTube unificados, envío a una o a las dos
   plataformas con resultado por plataforma, filtro local y reflejo de la moderación de Twitch.
@@ -37,7 +37,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   acciones de alerta se conservan sin ejecutarse y una respuesta vacía no se envía. La pausa
   retiene las respuestas hasta reanudar (o descartarlas); se prueban desde el simulador de chat,
   que puede enviar la respuesta al chat real si hay una cuenta conectada.
-- **Meld remoto:** escenas, capas, efectos, mute y ganancia, media, comandos y eventos.
+- **Control remoto del programa de emisión:** escenas, capas, efectos, mute y ganancia, media, comandos y eventos según la compatibilidad del programa. La integración de OBS es experimental y no todas las acciones están disponibles en ambos programas.
 - **Panel, MCP y Stream Deck:** panel por API REST, MCP con 142 herramientas y atajos `/sd/…`.
 - **Teleprompter:** guiones por bloques que avanzan solos a X palabras/min, con notas entre
   [corchetes] y línea de lectura. Solo lo ves tú (`/widget/teleprompter`, con su propio kind
@@ -62,7 +62,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   directa; al abrirlos queda marcado «Widgets» en la barra lateral. Sus tarjetas muestran la cola,
   la votación, el sorteo y la lectura en marcha. La entrada «Widgets» avisa en rojo de una votación
   o un sorteo abierto (y de ambos a la vez), incluso desde otras vistas.
-- **Fuentes para Meld:** `GET /api/sources` y la vista «Fuentes para Meld» listan cada capa
+- **Fuentes del programa de emisión:** `GET /api/sources` y la vista «Fuentes del programa de emisión» listan cada capa
   con su URL y tamaño (un objetivo por cada uno configurado y un overlay por cada overlay propio),
   más el dock y el prompter.
 - **Overlays propios:** `src/custom-overlays.mjs`, `src/routes/custom-overlays.mjs` y la vista React
@@ -79,13 +79,13 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   aprobación. Seis herramientas MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`,
   `editar_overlay`, `borrar_overlay` y `probar_overlay`.
 - **Atajos personalizados:** pasos encadenados (acciones `/sd/…`, pestaña del prompter y
-  acciones de Meld/chat/voz) con dirección `/sd/custom/<id>`, editables en el panel y por MCP.
+  acciones del programa de emisión/chat/voz) con dirección `/sd/custom/<id>`, editables en el panel y por MCP.
 - **Dock:** `/dock`, vista estrecha para el panel de chat de Meld o ventana flotante; en ancho
   apaisado usa columnas y en estrecho pestañas. En Interactivos permite añadir, ordenar, mostrar
   y descartar preguntas; elegir la tier list en pantalla, añadir o quitar elementos y abrir su
   votación; y añadir o quitar participantes y consultar los ganadores del sorteo. Los cambios
   se comparten al momento con el panel y las capas.
-- **Escenas de Meld:** el panel y el dock agrupan cada escena con su pareja ` [Vertical]` e
+- **Escenas del programa de emisión:** el panel y el dock agrupan cada escena con su pareja ` [Vertical]` e
   indican cuál está en directo. El panel muestra si cada entrada tiene H, V o ambas; al pulsarla
   cambia las variantes disponibles. Si falla la segunda, muestra el error y no revierte la primera.
 - **Interfaz React** en `app/src` (panel, prompter, dock); el panel clásico `/legacy` se retiró
@@ -95,7 +95,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   Foundation en grafito): cabecera en banda, pie de la barra lateral con pausa y estado en un pozo,
   Directo con StatusBadge, Stat, ModuleCard de alertas, cronología y chat; editor de alertas en
   pestañas (Diseño, Mensaje, Sonido y voz, Acciones, Variaciones, CSS) con SelectTile y StageFrame;
-  preguntas, tier list, sorteo y Meld con PostCard --row, SelectTile de escenas e IconButton; y el
+  preguntas, tier list, sorteo y Meld Studio con PostCard --row, SelectTile de escenas e IconButton; y el
   prompter rediseñado (Timeline --lg, Tabs --lg). Todo a la densidad compacta de #104: los
   componentes del sistema se reducen en `app/src/styles/panel.css` (sección «Densidad del panel»).
   Del lienzo quedan fuera el mando móvil (función nueva, no solo diseño) y la ganancia de audio
@@ -237,7 +237,7 @@ persistencia tienen regresiones de navegador React, exigidas por la línea base 
 - App de escritorio: `ANTENA_DATA` con su propio `"port"` en Windows real (lo cubre
   `cargo test`), y la recuperación de alertas retenidas, que en la app de Windows sale como
   «bloqueada o no disponible».
-- Meld real con el dock en su panel de chat y las fuentes añadidas desde «Fuentes para Meld».
+- Meld real con el dock en su panel de chat y las fuentes añadidas desde «Fuentes del programa de emisión».
 - El prompter en el Elgato real con la app (detección de 1024×600 y pantalla completa).
 - El tema de Apariencia en el navegador de Meld (usa `color-mix`, capas CSS y `translate`; Chromium ≥ 111).
 - Lectura real de espectadores en Twitch (`streams`) y YouTube (`concurrentViewers`): la lógica
@@ -297,7 +297,6 @@ Meld Studio, navegadores), eventos reales sin comprar nada, presupuestos y activ
 
 ## Fuera de alcance por ahora
 
-- OBS: no hay integración.
 - Sorteos y tier list: el código existe, pero no se acreditan en esta fase.
 - Moderación remota: no hay ban ni timeout lanzados desde antena.
 
