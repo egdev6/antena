@@ -16,7 +16,7 @@ function IxField({ k, label, type = 'text', ...rest }: { k: string; label: React
   const [sec, f] = k.split('.');
   const val = useLive(s => s.interactive?.config?.[sec]?.[f] as string | number | boolean | undefined);
   const set = (v: string | number | boolean) => patchIx(sec, { [f]: v });
-  if (type === 'switch') return <Switch checked={!!val} onChange={set}>{label}</Switch>;
+  if (type === 'switch') return <Switch checked={!!val} onChange={set} disabled={rest.disabled}>{label}</Switch>;
   if (type === 'range') { const n = Number(val ?? 0), min = Number(rest.min ?? 0), max = Number(rest.max ?? 100); return <label>{label}<span className="val">{n}</span><input type="range" min={min} max={max} value={n} style={{ ['--v' as any]: ((n - min) / ((max - min) || 1)) * 100 + '%' }} onChange={e => set(Number(e.target.value))} /></label>; }
   if (type === 'perm') return <label>{label}<select value={String(val ?? '')} onChange={e => set(e.target.value)}>{PERMS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>;
   if (type === 'css') return <label>{label}<textarea className="code" spellCheck={false} style={{ minHeight: 70 }} value={val === undefined ? '' : String(val)} onKeyDown={codeTab} {...rest} onChange={e => set(e.target.value)} /></label>;
@@ -196,6 +196,7 @@ export function Sorteo({ parts }: { parts: string[] }) {
   useManualSave();
   const [tab, setTab] = usePageTab(parts, 'sorteo', ['sorteo', 'ajustes']);
   const I = useLive(s => s.interactive);
+  const obs = useLive(s => s.config.program?.kind === 'obs');
   const g = I.giveaway, c = I.config.giveaway;
   const [member, setMember] = useState(false);
   const last = g.winners.at(-1);
@@ -241,7 +242,8 @@ export function Sorteo({ parts }: { parts: string[] }) {
           <div className="row tight">
             <IxField k="giveaway.excludeWinners" label="No repetir ganador" type="switch" />
             <IxField k="giveaway.announceInChat" label="Avisar en el chat" type="switch" />
-            <IxField k="giveaway.meldConfetti" label="Confeti en el programa de emisión" type="switch" />
+            <IxField k="giveaway.meldConfetti" label="Confeti en el programa de emisión" type="switch" disabled={obs} />
+            {obs && <span className="hint">El confeti en el programa de emisión es solo con Meld.</span>}
           </div>
           <IxField k="giveaway.openText" label="Al abrir" />
           <IxField k="giveaway.closeText" label="Al cerrar" />

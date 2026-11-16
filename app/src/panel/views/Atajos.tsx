@@ -9,7 +9,7 @@ import { IC } from '../../lib/icons';
 import { isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
 import { Box, ListPanel, NameCell, PageHead, SaveBar, Slide, Tags } from '../../lib/layout';
 import { go } from '../router';
-import { ACTIONS, ActionFields } from './Editor';
+import { ACTIONS, ActionFields, ActionOptions } from './Editor';
 
 export const SD_HELP: Record<string, string> = {
   marca: 'Marca de short (con su minuto y marcador de Twitch)', pausa: 'Pausar / reanudar alertas', saltar: 'Saltar la alerta en pantalla',
@@ -44,7 +44,7 @@ function StepsEditor({ steps, info, onChange }: { steps: Step[]; info: Info; onC
       <span className="step-n">{i + 1}</span>
       <select value={stepValue(st)} onChange={e => setKind(i, e.target.value)} aria-label="Qué hace">
         <optgroup label="antena">{info.builtins.map(b => <option key={b} value={`b:${b}`}>{SD_HELP[b] || b}</option>)}<option value="b:prompter">Cambiar la pestaña del prompter</option></optgroup>
-        <optgroup label="Programa de emisión, chat y voz">{Object.entries(ACTIONS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</optgroup>
+        <optgroup label="Programa de emisión, chat y voz"><ActionOptions /></optgroup>
       </select>
       {st.kind === 'builtin'
         ? <div className="afields">{st.action === 'prompter' && <label>Pestaña<select value={st.arg} onChange={e => repl(i, { ...st, arg: e.target.value })}>{info.prompterTabs.map(t => <option key={t} value={t}>{TAB_NAMES[t] || t}</option>)}</select></label>}</div>

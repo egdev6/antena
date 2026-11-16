@@ -20,6 +20,7 @@ export function Meld({ parts }: { parts: string[] }) {
   useManualSave();
   const [tab, setTab] = usePageTab(parts, 'meld', ['escenas', 'capas', 'audio', 'conexion']);
   const st = useLive(s => s.status.meld || {});
+  const obs = useLive(s => s.config.program?.kind === 'obs');
   const m = useLive(s => s.config.meld || {});
   const ses = useLive(s => s.meld?.session || { scenes: [], tracks: [] });
   const [url, setUrl] = useState(m.url || '');
@@ -39,6 +40,7 @@ export function Meld({ parts }: { parts: string[] }) {
     <div className="row tight"><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await saveAll(); await post('/api/meld/connect', { url: url.trim() }); }, 'Conectando con Meld…')}>{on ? 'Guardar y reconectar' : 'Guardar y conectar'}</button><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/meld/disconnect'))}>Desconectar</button></div>
   </Sec>;
   return <>
+    {obs && <p className="hint" role="status">Estás usando OBS. Esta página es solo para Meld.</p>}
     <PageHead tour="meld-head" crumb="Producción" title="Meld Studio" desc="Cambia de escena, muestra capas y lanza efectos desde las alertas, el panel, los atajos o el MCP."
       tabs={[{ id: 'escenas', label: 'Escenas', count: scenes.length }, { id: 'capas', label: 'Capas' }, { id: 'audio', label: 'Audio', count: ses.tracks.length }, { id: 'conexion', label: 'Conexión', warn: !on }]} tab={on ? tab : 'conexion'} onTab={setTab}
       actions={<>
@@ -47,12 +49,12 @@ export function Meld({ parts }: { parts: string[] }) {
       </>} />
     {!on || tab === 'conexion' ? <>{connection}<SaveBar /></> : <>
       {tab === 'escenas' && <><section aria-label="Atajos" className="row tight meld-quick">
-        <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(async () => { await post('/api/meld/command', { command: 'meld.recordClip' }); await post('/api/markers', {}); }, 'Clip guardado y momento marcado')}><Icon d={IC.bookmark} className="eg-btn__icon" />Guardar clip y marcar</button>
+        <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={obs} onClick={guard(async () => { await post('/api/meld/command', { command: 'meld.recordClip' }); await post('/api/markers', {}); }, 'Clip guardado y momento marcado')}><Icon d={IC.bookmark} className="eg-btn__icon" />Guardar clip y marcar</button>
         {mic && <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/meld/track', { track: mic.id, action: 'mute' }))}><Icon d={mic.muted ? IC.mic : IC.micOff} className="eg-btn__icon" />{mic.muted ? 'Activar micro' : 'Silenciar micro'}</button>}
-        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={evt('CONFETTIPOP_TRIGGER')}><Icon d={IC.sparkle} className="eg-btn__icon" />Confeti</button>
-        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={evt('CONFETTIFALL_TRIGGER')}>Lluvia de confeti</button>
-        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={evt('WHEELSPIN_SPIN')}>Girar ruleta</button>
-        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={cmd('meld.screenshot', 'Captura guardada')}><Icon d={IC.camera} className="eg-btn__icon" />Captura</button>
+        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={obs} onClick={evt('CONFETTIPOP_TRIGGER')}><Icon d={IC.sparkle} className="eg-btn__icon" />Confeti</button>
+        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={obs} onClick={evt('CONFETTIFALL_TRIGGER')}>Lluvia de confeti</button>
+        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={obs} onClick={evt('WHEELSPIN_SPIN')}>Girar ruleta</button>
+        <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={obs} onClick={cmd('meld.screenshot', 'Captura guardada')}><Icon d={IC.camera} className="eg-btn__icon" />Captura</button>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={cmd('meld.toggleRecordingAction')}><Icon d={IC.record} className="eg-btn__icon" />{ses.recording ? 'Parar grabación' : 'Grabar'}</button>
         <span className="hint push">{ses.streaming ? 'Emitiendo' : 'Sin emitir'}{ses.recording ? ' · grabando' : ''}</span>
       </section>
