@@ -373,3 +373,27 @@ test('retention warning appears only when the limit would be exceeded', async t 
     assert.equal(body.sessions.retention, warn ? retention : undefined);
   }
 });
+
+// Verifier B1 recheck: integer-only viewer samples and the skipped header.
+const series = value => ({ twitch: { samples: [{ at: '2026-10-01T18:10:00.000Z', value }], gaps: [] } });
+
+test('import rejects a meld stream with a fractional viewer sample, without writing', async t => {
+  const target = await fixture(t), before = await target.files();
+  const bytes = await makeZip(target, [configEntry(), sessionEntry(session(ID_C)),
+    sessionEntry(session(ID_B, { meldAutoSession: true, viewers: series(1.5) }))]);
+  const r = await target.postZip('/api/config/import/preview', bytes);
+  assert.deepEqual({ status: r.status, body: r.body }, { status: 400, body: { error: 'El directo importado no es válido.' } });
+  assert.equal((await target.postZip('/api/config/import', bytes, 'x')).status, 400);
+  assert.deepEqual(await target.files(), before);
+  assert.equal((await target.call('GET', '/api/metrics/v1/sessions')).status, 200);
+});
+
+test('export reports a metrics-invalid stream in the skipped header and keeps valid meld streams', async t => {
+  const f = await fixture(t, { sessions: [session(ID_A, { meldAutoSession: true, viewers: series(3) }),
+    session(ID_B, { meldAutoSession: true, platforms: { twitch: { streamId: 5 } } })] });
+  const r = await f.download('?sessions=1');
+  assert.deepEqual((await inspect(f, r.bytes)).names, ['config.json', `sessions/${ID_A}.json`]);
+  assert.equal(r.headers.get('x-antena-skipped-media-count'), '1');
+  assert.deepEqual(JSON.parse(Buffer.from(r.headers.get('x-antena-skipped-media'), 'base64url').toString()),
+    [`sessions/${ID_B}.json (directo no válido)`]);
+});
