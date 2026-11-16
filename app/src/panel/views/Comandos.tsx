@@ -25,7 +25,7 @@ const CMD_TEMPLATES: [string, string, string][] = [
   ['alerta', 'Alerta en pantalla', 'Saca su alerta con quién lo escribe y lo que va detrás'],
   ['chat', 'Alerta y respuesta', 'Además contesta en el chat (Twitch y YouTube)'],
   ['solo', 'Solo chat', 'Sin alerta: responde en la plataforma de origen'],
-  ['meld', 'Alerta y escena', 'Además cambia de escena en Meld unos segundos'],
+  ['meld', 'Alerta y escena', 'Además cambia de escena en el programa de emisión unos segundos'],
 ];
 function NuevoComando() {
   const [trigger, setTrigger] = useState('!');
@@ -75,7 +75,7 @@ export function Comandos({ parts }: { parts: string[] }) {
       actions={<a className="eg-btn eg-btn--primary eg-btn--sm" href="#/comandos/nuevo">+ Nuevo comando</a>} />
     <Kpis items={[
       { value: list.length, label: `comandos · ${n(c => c.enabled !== false)} activos` },
-      { value: n(c => (c.actions || []).length > 0), label: 'con acciones (chat, Meld…)' },
+      { value: n(c => (c.actions || []).length > 0), label: 'con acciones (chat, programa de emisión…)' },
       { value: n(c => c.permission !== 'everyone' && !!c.permission), label: 'solo para algunos' },
       { value: n(c => !!c.ttsEnabled), label: 'leídos en voz alta' },
     ]} />

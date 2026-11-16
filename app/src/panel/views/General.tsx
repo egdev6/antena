@@ -172,7 +172,7 @@ export function General({ parts }: { parts: string[] }) {
       tabs={[{ id: 'overlay', label: 'Capa de alertas' }, { id: 'directos', label: 'Directos' }, { id: 'movil', label: 'Acceso desde el móvil' }, { id: 'tour', label: 'Tour guiado' }, { id: 'copia', label: 'Copia' }]} tab={tab} onTab={setTab} />
     {tab === 'overlay' && <Panel title="Capa de alertas">
       <CopyUrl url={`${location.origin}/overlay`} />
-      <p className="hint">En Meld: <b>+ › Browser</b>, 1920×1080 y activa <b>Add audio track</b>. Todas las capas están en <a href="#/fuentes">Fuentes para Meld</a>. Parámetros: <code>?pos=top|center|bottom</code> <code>&amp;scale=0.8</code> <code>&amp;mute</code> <code>&amp;debug</code></p>
+      <p className="hint">Añade una fuente de navegador de 1920×1080 y activa el audio de la fuente si quieres oírla. Todas las capas están en <a href="#/fuentes">Fuentes del programa de emisión</a>. Parámetros: <code>?pos=top|center|bottom</code> <code>&amp;scale=0.8</code> <code>&amp;mute</code> <code>&amp;debug</code></p>
       <div className="row2 mt">
         <Range label="Volumen general" value={Math.round((c.overlay.volume ?? 0.6) * 100)} min={0} max={100} unit="%" onChange={v => live.patchConfig({ overlay: { volume: v / 100 } })} />
         <label>Tope de la cola del overlay <input type="number" min={0} value={c.overlay.queueMax ?? 20} onChange={e => live.patchConfig({ overlay: { queueMax: Math.max(0, Number(e.target.value) || 0) } })} /></label>
@@ -193,7 +193,7 @@ export function General({ parts }: { parts: string[] }) {
       <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { if (confirm('Los móviles que ya tenían acceso tendrán que abrir el enlace nuevo. ¿Seguir?')) setAccess(await post('/api/access', { regenerate: true })); })}>Generar otra clave</button>
     </Panel>}
     {tab === 'tour' && <Panel title="Tour guiado" tour="general-tour">
-      <p className="hint">Un recorrido paso a paso que señala para qué sirve cada zona: el directo, el chat, los widgets, Meld, los atajos y las conexiones.</p>
+      <p className="hint">Un recorrido paso a paso que señala para qué sirve cada zona: el directo, el chat, los widgets, el programa de emisión, los atajos y las conexiones.</p>
       <button className="eg-btn eg-btn--ghost" onClick={launchTour}>Ver el tour de nuevo</button>
     </Panel>}
     {tab === 'copia' && <ConfigTransfer />}

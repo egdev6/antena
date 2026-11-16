@@ -329,7 +329,7 @@ export function Editor({ target }: { target: Target }) {
   const back = kind === 'variation' ? `#/alertas/${type}` : listHref;
   const testLive = guard(async () => {
     const d = await post<{ overlays?: number }>('/api/test', { ...testBody(target, 'live') });
-    toast(d.overlays ? 'Enviada al directo (lo guardado)' : 'Enviada, pero no hay ningún overlay abierto en Meld');
+    toast(d.overlays ? 'Enviada al directo (lo guardado)' : 'Enviada, pero no hay ningún overlay abierto en el programa de emisión');
   });
   const pf = t.platform === 'youtube' ? 'YouTube' : t.platform === 'twitch' ? 'Twitch' : '';
   const crumb = kind === 'alert' ? <><a href="#/alertas">Alertas</a> › {pf}</>
@@ -354,7 +354,7 @@ export function Editor({ target }: { target: Target }) {
     : <button className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={guard(async () => { if (isSaving() || !confirmDelete(item.trigger, 'este comando')) return; ed.discard(); const d = await del<{ commands: CommandConfig[] }>(`/api/commands/${enc(item.id)}`); live.update(st => ({ config: { ...st.config, commands: d.commands } })); go('#/comandos'); })}>Borrar comando…</button>;
   const headRight = kind === 'timer'
     ? <button className="eg-btn eg-btn--primary eg-btn--sm" title="Envía lo guardado" onClick={guard(async () => { await fireTimer(item.id, (text, err) => setFireMsg({ text, err: !!err })); })}>Enviar ahora</button>
-    : !showAlert ? null : <button className="eg-btn eg-btn--primary eg-btn--sm" title="Prueba lo guardado en Meld" onClick={testLive}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>;
+    : !showAlert ? null : <button className="eg-btn eg-btn--primary eg-btn--sm" title="Prueba lo guardado en el programa de emisión" onClick={testLive}><Icon d={IC.play} className="eg-btn__icon" />Probar en el directo</button>;
 
   const c = kind === 'variation' ? { ...s.conditionDefaults, ...v.conditions } : null;
   const nActions = (a.actions || []).length, nVars = (a.variations || []).length;
@@ -420,14 +420,14 @@ export function Editor({ target }: { target: Target }) {
             <SegField label="Dónde se publica" value={item.destination || 'twitch'} options={DESTINATIONS} onChange={v => set('destination', v)} />
           </div>
           <div className="row2 switches">
-            <Switch checked={item.onlyWhenLive} onChange={x => set('onlyWhenLive', x)} title="Viene activado. Sin Meld conectado no se publica.">Solo mientras emito (sin Meld conectado, no se publica)</Switch>
+            <Switch checked={item.onlyWhenLive} onChange={x => set('onlyWhenLive', x)} title="Viene activado. Sin el programa de emisión conectado no se publica.">Solo mientras emito (sin el programa de emisión conectado, no se publica)</Switch>
             <Switch checked={item.announce} onChange={x => set('announce', x)}>Como anuncio destacado</Switch>
           </div>
           {item.announce && <label>Color del anuncio <select value={item.announceColor} onChange={e => set('announceColor', e.target.value)}>{[['primary', 'Color del canal'], ['blue', 'Azul'], ['green', 'Verde'], ['orange', 'Naranja'], ['purple', 'Morado']].map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select></label>}
           {item.announce && ['youtube', 'both'].includes(item.destination) && <p className="hint">En YouTube no hay anuncios destacados: recibe el mismo texto como mensaje normal.</p>}
           <p className="timer-state"><TimerState id={item.id} /></p>
           {fireMsg && <p className={cx('hint', fireMsg.err && 'err-inline')} aria-live="polite">{fireMsg.text}</p>}
-          <p className="hint">Variables: <code>{'{channel}'}</code> tu canal, <code>{'{title}'}</code> título del directo, <code>{'{uptime}'}</code> tiempo en directo, <code>{'{follows}'}</code> seguidores nuevos hoy. «Solo mientras emito» usa el estado de Meld: sin Meld conectado no se publica. Fuera de directo la cuenta se pausa y, al empezar a emitir, vuelve a contar el intervalo completo. Límites: 500 caracteres en Twitch y 200 en YouTube; si el texto no cabe, no se envía a esa plataforma (nunca se corta).</p>
+          <p className="hint">Variables: <code>{'{channel}'}</code> tu canal, <code>{'{title}'}</code> título del directo, <code>{'{uptime}'}</code> tiempo en directo, <code>{'{follows}'}</code> seguidores nuevos hoy. «Solo mientras emito» usa el estado del programa de emisión: sin el programa de emisión conectado no se publica. Fuera de directo la cuenta se pausa y, al empezar a emitir, vuelve a contar el intervalo completo. Límites: 500 caracteres en Twitch y 200 en YouTube; si el texto no cabe, no se envía a esa plataforma (nunca se corta).</p>
           {box('También en pantalla', <p className="hint">Además del mensaje en el chat, saca una alerta en el overlay con su diseño, mensaje y sonido (aparecen sus pestañas).</p>, <Switch checked={item.showAlert} onChange={x => set('showAlert', x)}>Mostrar alerta</Switch>)}
         </>)}
 
@@ -508,7 +508,7 @@ export function Editor({ target }: { target: Target }) {
 
           {pane('actions', <>
             <div className="row middle">
-              <p className="hint grow">Se ejecutan cuando la alerta aparece en pantalla: cambiar de escena en Meld, mostrar una capa, lanzar confeti, escribir en el chat…{s.status.meld?.state !== 'conectado' && <> <b>Meld no está conectado</b>: puedes prepararlas igualmente.</>}</p>
+              <p className="hint grow">Se ejecutan cuando la alerta aparece en pantalla: cambiar de escena en el programa de emisión, mostrar una capa, lanzar confeti, escribir en el chat…{s.status.meld?.state !== 'conectado' && <> <b>El programa de emisión no está conectado</b>: puedes prepararlas igualmente.</>}</p>
               <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => set('actions', [...structuredClone(a.actions || []), { kind: 'layer', scene: '', layer: '', seconds: 8, delaySec: 0 }])}><Icon d={IC.plus} className="eg-btn__icon" />Añadir acción</button>
             </div>
             <ActionsEditor list={a.actions || []} onChange={l => set('actions', l)} />
@@ -581,7 +581,7 @@ export function Editor({ target }: { target: Target }) {
           <ScaledFrame src="/overlay?preview" className="preview" frameRef={frameRef} />
           <div className="eg-stage__bar"><span>Variables:</span>{vars.map(x => <button key={x} type="button" className="eg-chip" onClick={() => insertVar(x)} title="Insertar en el último campo de texto">{`{${x}}`}</button>)}</div>
         </figure>
-        <p className="hint">Se ve igual que en Meld a 1920×1080. El vídeo puede sonar silenciado aquí; en Meld suena normal.</p>
+        <p className="hint">Se ve igual que en el programa de emisión a 1920×1080. El vídeo puede sonar silenciado aquí; en el programa de emisión suena normal.</p>
       </div>}
     </div>
     <UploadBar name={up.name} progress={up.progress} />

@@ -69,7 +69,7 @@ export function Preguntas({ parts }: { parts: string[] }) {
         </Sec>
       </div>
     </div> : <WidgetLayout
-      source={<BrowserSource url={origin() + '/widget/question'} size="1920×1080" hint={<>En Meld: + › Browser. Con <code>?nocount</code> se oculta el contador. El CSS propio del widget gana a los estilos de serie.</>} />}
+      source={<BrowserSource url={origin() + '/widget/question'} size="1920×1080" hint={<>Añade una fuente de navegador con el tamaño indicado. Con <code>?nocount</code> se oculta el contador. El CSS propio del widget gana a los estilos de serie.</>} />}
       preview={<Stage eyebrow="Vista previa" src="/widget/question?debug" />}>
         <Sec title="Ajustes" id="h-aj">
           <IxField k="questions.command" label="Comando" className="mono" />
@@ -115,7 +115,7 @@ export function TierList({ parts }: { parts: string[] }) {
       <Kpis items={[{ value: lists.length, label: 'tier lists' }, { value: lists.reduce((t, x) => t + x.items.length, 0), label: 'elementos en total' }, { value: I.shownTierlist ? 1 : 0, label: 'en pantalla' }, { value: v ? 'Sí' : 'No', label: 'votación abierta' }]} />
       <ListPanel title="Tier lists" cols={[{ key: 'name', label: 'Lista' }, { key: 'state', label: 'Estado' }, { key: 'items', label: 'Elementos' }]} rows={rows} empty="Todavía no hay tier lists." />
     </> : <WidgetLayout
-      source={<BrowserSource url={origin() + '/widget/tierlist'} size="1920×1080" hint="En Meld: + › Browser. Muestra la lista que pongas «en pantalla»." />}
+      source={<BrowserSource url={origin() + '/widget/tierlist'} size="1920×1080" hint="Añade una fuente de navegador con el tamaño indicado. Muestra la lista que pongas «en pantalla»." />}
       preview={<Stage key="demo" eyebrow="Vista previa" src={I.shownTierlist ? `/widget/tierlist?id=${enc(I.shownTierlist)}&debug` : '/widget/tierlist?demo'} aside={<span>{I.shownTierlist ? 'La que está en pantalla' : 'Datos de ejemplo'}</span>} />}>
         <Sec title="Ajustes de la votación" id="h-vaj">
           <div className="row2"><IxField k="tierlist.command" label="Comando" className="mono" /><IxField k="tierlist.voteSeconds" label="Cierre automático (s, 0 = a mano)" type="number" min={0} /></div>
@@ -241,7 +241,7 @@ export function Sorteo({ parts }: { parts: string[] }) {
           <div className="row tight">
             <IxField k="giveaway.excludeWinners" label="No repetir ganador" type="switch" />
             <IxField k="giveaway.announceInChat" label="Avisar en el chat" type="switch" />
-            <IxField k="giveaway.meldConfetti" label="Confeti en Meld" type="switch" />
+            <IxField k="giveaway.meldConfetti" label="Confeti en el programa de emisión" type="switch" />
           </div>
           <IxField k="giveaway.openText" label="Al abrir" />
           <IxField k="giveaway.closeText" label="Al cerrar" />

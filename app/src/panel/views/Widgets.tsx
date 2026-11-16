@@ -171,9 +171,9 @@ export function Widgets({ parts }: { parts: string[] }) {
   };
   return <>
     <PageHead crumb={`Configurar · ${Object.keys(INFO).length + 5} widgets`} title="Widgets"
-      desc="Cada uno es una fuente de navegador para Meld (sus URL también están en Fuentes para Meld). Cuando la app trae un widget nuevo, aparece aquí como una tarjeta más." />
+      desc="Cada uno es una fuente de navegador para el programa de emisión (sus URL también están en Fuentes del programa de emisión). Cuando la app trae un widget nuevo, aparece aquí como una tarjeta más." />
     <div className="lv-groups">
-      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={6} note="Se ajustan aquí y se dejan puestas en Meld" wide>
+      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={6} note="Se ajustan aquí y se dejan puestas en el programa de emisión" wide>
         {fixed('chat', <div className="lv-wchat"><i style={{ width: '62%' }} /><i style={{ width: '80%' }} /><i style={{ width: '48%' }} /><i style={{ width: '72%' }} /><i style={{ width: '56%' }} /></div>,
           [...((w.chat?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.chat?.css)])}
         <Card href="#/widgets/objetivos" label="Abrir Objetivos" open={open === 'objetivos'} title="Objetivos" aside={<span className="lv-cmeta">1 capa por objetivo</span>}
@@ -234,7 +234,7 @@ function ObjetivosSlide({ parts, goals }: { parts: string[]; goals: GoalConfig[]
       head={<a className="eg-btn eg-btn--primary eg-btn--sm" href="#/widgets/objetivos/nuevo">+ Nuevo objetivo</a>}>
       <div className="lv-cols aside">
         <div className="lv-col">
-          <ListPanel tour="goals-list" title="Mis objetivos" note="Cada uno es su propia capa en Meld. Pulsa uno para editar sus barras."
+          <ListPanel tour="goals-list" title="Mis objetivos" note="Cada uno es su propia capa en el programa de emisión. Pulsa uno para editar sus barras."
             cols={[{ key: 'name', label: 'Objetivo' }, { key: 'state', label: 'Estado' }, { key: 'bars', label: 'Barras' }, { key: 'copy', label: '' }]}
             rows={rows} empty={<>Todavía no hay objetivos. <a href="#/widgets/objetivos/nuevo">Crea el primero</a>.</>} />
         </div>
@@ -315,7 +315,7 @@ function GoalSlide({ id }: { id: string }) {
         <article className="goal-card" data-tour="goals-editor">
         <p className="hint">{visibleBars} barras visibles · {g.visible === false ? 'Caja oculta' : 'En pantalla'}</p>
         <WidgetLayout
-          source={<BrowserSource url={`${origin()}/widget/goal?id=${enc(g.id)}`} size={`1000×${previewHeight}`} hint="En Meld: + › Browser. Cada caja de objetivos es una fuente propia." />}
+          source={<BrowserSource url={`${origin()}/widget/goal?id=${enc(g.id)}`} size={`1000×${previewHeight}`} hint="Añade una fuente de navegador con el tamaño indicado. Cada caja de objetivos es una fuente propia." />}
           /* O1.5: la preview se vuelve a montar al cambiar la config de la caja (no con cada valor) */
           preview={<Stage key={JSON.stringify(g)} eyebrow="Vista previa" aside={<span>{visibleBars ? 'Con los datos reales del directo' : 'Sin barras visibles en el overlay'}</span>} src={`/widget/goal?id=${enc(g.id)}&debug`} w={1000} h={previewHeight} />}>
         <Panel>

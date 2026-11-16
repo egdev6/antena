@@ -15,7 +15,7 @@ export function Fuentes(_: { parts: string[] }) {
     btns: <div className="row tight"><a className="eg-btn eg-btn--ghost eg-btn--sm" href={x.path + (x.path.includes('?') ? '&' : '?') + 'demo'} target="_blank" rel="noopener">Ver</a><button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={() => copy(x.url)}>Copiar</button></div> } }));
   const cols = [{ key: 'name', label: 'Fuente' }, { key: 'size', label: 'Tamaño' }, { key: 'url', label: 'Dirección', hide: true }, { key: 'btns', label: '' }];
   return <>
-    <PageHead crumb={`Producción · ${d.sources.length} fuentes`} title="Fuentes para Meld" desc="Cada alerta, widget y panel es una fuente de navegador. Copia la dirección y pégala en Meld."
+    <PageHead crumb={`Producción · ${d.sources.length} fuentes`} title="Fuentes del programa de emisión" desc="Cada alerta, widget y panel es una fuente de navegador. Copia la dirección y pégala en tu programa de emisión."
       actions={<button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => copy(d.sources.map(s => `${s.name}\t${s.width}×${s.height}\t${s.url}`).join('\n'))}>Copiar todas</button>}
     />
     <ListPanel title="Fuentes de navegador" search={f.q} onSearch={f.setQ} placeholder="Buscar fuente" cols={cols} rows={rowsOf(d.sources)} empty="Ninguna fuente coincide." />

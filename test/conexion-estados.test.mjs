@@ -40,11 +40,11 @@ test('las tres superficies redactan el estado de conexión igual', { timeout: 90
 
     // Panel (#/directo): píldoras de la fila de conexiones.
     chrome = await openChromePage(bin, `${base}/#/directo`);
-    await waitDom(chrome.cdp, `!!(${pillText('[aria-label=Conexiones]', 'Twitch ·')} && ${pillText('[aria-label=Conexiones]', 'YouTube ·')} && ${pillText('[aria-label=Conexiones]', 'Meld ·')})`, { timeoutMs: 15000 });
+    await waitDom(chrome.cdp, `!!(${pillText('[aria-label=Conexiones]', 'Twitch ·')} && ${pillText('[aria-label=Conexiones]', 'YouTube ·')} && ${pillText('[aria-label=Conexiones]', 'Programa ·')})`, { timeoutMs: 15000 });
     const panel = {
       twitch: await dom(chrome, pillText('[aria-label=Conexiones]', 'Twitch ·')),
       youtube: await dom(chrome, pillText('[aria-label=Conexiones]', 'YouTube ·')),
-      meld: await dom(chrome, pillText('[aria-label=Conexiones]', 'Meld ·')),
+      meld: await dom(chrome, pillText('[aria-label=Conexiones]', 'Programa ·')),
     };
     // En reposo, sin credenciales: Twitch desconectado y YouTube en la misma familia (YouTube
     // descansa en 'parado' internamente, pero se muestra como «desconectado»). Meld puede estar
@@ -56,15 +56,15 @@ test('las tres superficies redactan el estado de conexión igual', { timeout: 90
 
     // Dock: los avisos de la cabecera usan la misma píldora y la misma redacción.
     chrome = await openChromePage(bin, `${base}/dock`);
-    await waitDom(chrome.cdp, `!!(${pillText('.d-warns', 'Twitch ·')} && ${pillText('.d-warns', 'Meld ·')})`, { timeoutMs: 15000 });
+    await waitDom(chrome.cdp, `!!(${pillText('.d-warns', 'Twitch ·')} && ${pillText('.d-warns', 'Programa ·')})`, { timeoutMs: 15000 });
     eq(await dom(chrome, pillText('.d-warns', 'Twitch ·')), panel.twitch);
-    eq(await dom(chrome, pillText('.d-warns', 'Meld ·')), panel.meld);
+    eq(await dom(chrome, pillText('.d-warns', 'Programa ·')), panel.meld);
     await closeChrome(chrome); chrome = null;
 
     // Prompter: la barra superior usa la misma píldora y la misma redacción.
     chrome = await openChromePage(bin, `${base}/prompter`);
-    await waitDom(chrome.cdp, `!!(${pillText('.pr-warns', 'Twitch ·')} && ${pillText('.pr-warns', 'Meld ·')})`, { timeoutMs: 15000 });
+    await waitDom(chrome.cdp, `!!(${pillText('.pr-warns', 'Twitch ·')} && ${pillText('.pr-warns', 'Programa ·')})`, { timeoutMs: 15000 });
     eq(await dom(chrome, pillText('.pr-warns', 'Twitch ·')), panel.twitch);
-    eq(await dom(chrome, pillText('.pr-warns', 'Meld ·')), panel.meld);
+    eq(await dom(chrome, pillText('.pr-warns', 'Programa ·')), panel.meld);
   } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

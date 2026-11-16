@@ -68,8 +68,8 @@ function Scenes() {
   const scenes = useLive(s => s.meld?.session?.scenes || []);
   const meldOn = useLive(s => s.status.meld?.state === 'conectado');
   const [busy, setBusy] = useState<string | null>(null);
-  if (!meldOn) return <p className="d-muted d-empty">Meld no está conectado. Conéctalo en Meld Studio y sus escenas aparecerán aquí.</p>;
-  if (!scenes.length) return <p className="d-muted d-empty">Meld todavía no informa de ninguna escena.</p>;
+  if (!meldOn) return <p className="d-muted d-empty">El programa de emisión no está conectado. Conéctalo en Conexiones y sus escenas aparecerán aquí.</p>;
+  if (!scenes.length) return <p className="d-muted d-empty">El programa de emisión todavía no informa de ninguna escena.</p>;
   const entries = groupMeldScenes(scenes);
   const show = (id: string, verticalId?: string) => guard(async () => {
     setBusy(id);
@@ -156,7 +156,7 @@ function TrackRow({ t, meter, showMeter }: { t: MeldTrack; meter?: Meter; showMe
     <span className="d-trk-n" title={t.name}>{t.name}</span>
     <span className="d-trk-v" aria-hidden="true">{unknown ? '—' : `${value}%`}</span>
     <input className="d-trk-f" type="range" min={0} max={100} step={1} value={value} disabled={unknown}
-      title={unknown ? 'Volumen desconocido: Meld no lo informa de esta pista' : `Volumen de ${t.name}`}
+      title={unknown ? 'Volumen desconocido: el programa de emisión no lo informa de esta pista' : `Volumen de ${t.name}`}
       aria-label={`Volumen de ${t.name}`}
       onChange={e => { const v = Number(e.target.value); setDrag(v); send(v); }} />
     {showMeter && <div className={cx('d-meter', meter?.clipping && 'clip')} role="meter" aria-label={`Nivel de ${t.name}`}
@@ -170,8 +170,8 @@ function Audio({ meters, showMeters }: { meters: Record<string, Meter>; showMete
   const tracks = useLive(s => s.meld?.session?.tracks || []);
   const scenes = useLive(s => s.meld?.session?.scenes || []);
   const meldOn = useLive(s => s.status.meld?.state === 'conectado');
-  if (!meldOn) return <p className="d-muted d-empty">Meld no está conectado: sin pistas que mezclar.</p>;
-  if (!tracks.length) return <p className="d-muted d-empty">Meld todavía no informa de pistas de audio.</p>;
+  if (!meldOn) return <p className="d-muted d-empty">El programa de emisión no está conectado: sin pistas que mezclar.</p>;
+  if (!tracks.length) return <p className="d-muted d-empty">El programa de emisión todavía no informa de pistas de audio.</p>;
   const air = scenes.filter(x => x.current);
   const parents = new Set(air.map(x => x.id));
   const globals = tracks.filter(t => !t.parent);
@@ -215,25 +215,25 @@ function useStreamControl() {
     // La conexión o el estado pueden cambiar mientras está abierto el diálogo.
     if (op.current || live.failed || current?.state !== 'conectado' || current.streamingKnown !== true ||
       typeof current.streaming !== 'boolean' || current.streaming === (action === 'start')) {
-      setConfirmation(null); setNotice('El estado de Meld ha cambiado. Compruébalo antes de volver a intentarlo.'); return;
+      setConfirmation(null); setNotice('El estado del programa de emisión ha cambiado. Compruébalo antes de volver a intentarlo.'); return;
     }
     setConfirmation(null); setNotice('');
     const active = { action, timer: 0 };
     active.timer = window.setTimeout(() => {
       if (op.current !== active) return;
       op.current = null; setPending(null);
-      setNotice('Meld no confirmó la orden a tiempo. Comprueba si está emitiendo antes de volver a intentarlo.');
+      setNotice('El programa de emisión no confirmó la orden a tiempo. Comprueba si está emitiendo antes de volver a intentarlo.');
     }, STREAM_CONFIRM_MS);
     op.current = active; setPending(action);
     try { await post('/api/meld/stream', { action }); }
     catch (err) {
       if (op.current !== active) return;
       window.clearTimeout(active.timer); op.current = null; setPending(null);
-      setNotice(err instanceof Error ? err.message : 'No se pudo solicitar la orden a Meld.');
+      setNotice(err instanceof Error ? err.message : 'No se pudo solicitar la orden al programa de emisión.');
     }
   };
-  const reason = !connected ? (offline ? 'Sin conexión con antena: no se conoce el estado de Meld.' : 'Meld no está conectado. Conéctalo para controlar la emisión.')
-    : !known ? 'Meld todavía no informa del estado de emisión.' : '';
+  const reason = !connected ? (offline ? 'Sin conexión con antena: no se conoce el estado del programa de emisión.' : 'El programa de emisión no está conectado. Conéctalo para controlar la emisión.')
+    : !known ? 'El programa de emisión todavía no informa del estado de emisión.' : '';
   return { streaming, confirmation, setConfirmation, pending, notice, trigger, dismiss, request, reason };
 }
 
@@ -260,8 +260,8 @@ function StreamDialog({ control }: { control: ReturnType<typeof useStreamControl
     onCancel={e => { e.preventDefault(); dismiss(); }}>
     <h2 id="d-confirm-title">{action === 'start' ? '¿Iniciar directo?' : '¿Terminar directo?'}</h2>
     <p id="d-confirm-description">{action === 'start'
-      ? 'Esto inicia la emisión pública de Meld de verdad. Con la sesión automática activada, antena creará la sesión cuando Meld confirme que emite.'
-      : 'Esto termina la emisión pública de Meld de verdad.'}</p>
+      ? 'Esto inicia la emisión pública de verdad. Con la sesión automática activada, antena creará la sesión cuando el programa de emisión confirme que emite.'
+      : 'Esto termina la emisión pública de verdad.'}</p>
     {!valid && <p className="d-muted">{control.reason || 'El estado de emisión ha cambiado. Cancela y compruébalo.'}</p>}
     <div className="d-row d-confirm-actions">
       <button ref={cancel} type="button" className="d-btn sm" data-cancel-stream onClick={dismiss}>Cancelar</button>

@@ -76,7 +76,7 @@ export function AcercaDe() {
         <img className="acerca-logo" src="/brand/logo.png" alt="" aria-hidden="true" />
         <div>
           <p className="acerca-name"><b>antena</b> <span className="acerca-version" data-version={version}>v{version}</span></p>
-          <p className="hint">Alertas, chat, widgets y control de Meld Studio para los directos de EGDEV.</p>
+          <p className="hint">Alertas, chat, widgets y control del programa de emisión para los directos de EGDEV.</p>
         </div>
       </div>
       {desktop

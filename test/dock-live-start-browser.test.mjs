@@ -172,7 +172,7 @@ test('desconectado oculta el directo anterior y desactiva el control con motivo'
   const chrome = await f.open();
   await waitDom(chrome.cdp, `!!(${button('Terminar directo')})`);
   await f.api('POST', '/api/meld/disconnect');
-  await waitDom(chrome.cdp, `(${button('Iniciar directo')})?.disabled && ${card}.textContent.includes('Meld no está conectado')`);
+  await waitDom(chrome.cdp, `(${button('Iniciar directo')})?.disabled && ${card}.textContent.includes('El programa de emisión no está conectado')`);
   assert.doesNotMatch(await dom(chrome, `document.querySelector('.d-live').textContent`), /En directo/i);
   assert.doesNotMatch(await dom(chrome, `${card}.textContent`), /En directo/i);
   assert.deepEqual(calls(f.meld), []);
