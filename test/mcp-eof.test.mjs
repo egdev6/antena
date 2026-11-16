@@ -117,7 +117,7 @@ async function launch(t, scenario, external, entry = [MCP], bootstrapName = 'boo
   await writeFile(bootstrap, (native ? WINDOWS_RELEASE : '') + BOOTSTRAP);
   /** @type {NodeJS.ProcessEnv} */
   const env = { ...process.env, SCENARIO: scenario, PORT: '0', ANTENA_URL: external || 'http://127.0.0.1:1',
-    ANTENA_DATA: root, ANTENA_MEDIA: path.join(root, 'media') };
+    ANTENA_DATA: root, ANTENA_MEDIA: path.join(root, 'media'), ANTENA_PUSH_URL: '', ANTENA_PUSH_TOKEN: '' };
   delete env.NODE_TEST_CONTEXT; delete env.NODE_TEST_WORKER_ID; delete env.ANTENA_NO_EMBED;
   if (external) env.ANTENA_NO_EMBED = '1';
   if (native) env.MCP_RELEASE_ENDPOINT = path.join(root, 'release-port');

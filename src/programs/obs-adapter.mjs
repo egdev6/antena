@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
+import { httpError } from '../http-util.mjs';
 import { Program } from './program.mjs';
 
 const OBS_EVENTS = (1 << 2) | (1 << 3) | (1 << 5) | (1 << 6) | (1 << 7);
 const OBS_METERS = 1 << 16;
 const hash = value => createHash('sha256').update(value).digest('base64');
-const unavailable = () => { throw new Error('Acción todavía no disponible con OBS.'); };
+const unavailable = () => { throw httpError(409, 'Esta acción solo está disponible con Meld.'); };
 const STREAM_COMMANDS = { 'meld.startStreamingAction': 'StartStream', 'meld.stopStreamingAction': 'StopStream',
   'meld.toggleStreamingAction': 'ToggleStream' };
 const RECORD_COMMANDS = { 'meld.startRecordingAction': 'StartRecord', 'meld.stopRecordingAction': 'StopRecord',
@@ -409,6 +410,7 @@ export class ObsAdapter extends Program {
     await this.requestObs('SetSourceFilterEnabled', { sourceName: found.layer.name, filterName: effect.name, filterEnabled: !effect.enabled });
   }
   command(command) {
+    if (typeof command !== 'string') return unavailable();
     if (Object.hasOwn(STREAM_COMMANDS, command) || Object.hasOwn(RECORD_COMMANDS, command)) {
       try { this.emit('controlCommand', command); } catch { /* a listener must not change the RPC */ }
     }

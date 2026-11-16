@@ -9,7 +9,7 @@ import { createApp } from '../src/server.mjs';
 
 async function start(t, { youtubeError } = {}) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-chat-dest-'));
-  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), push: {}, log: () => {} });
   const sent = [], ytSent = [], results = [], failures = [];
   app.twitch.sendChat = async text => { sent.push(text); return { is_sent: true }; };
   app.youtube.sendChat = async text => {

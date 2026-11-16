@@ -8,7 +8,8 @@ const initialStatus = { state: 'desconectado', streaming: false, streamingKnown:
   recordingKnown: false, recordingWarning: null, version: null, error: null };
 const connectedStatus = { ...initialStatus, state: 'conectado', streamingKnown: true, recordingKnown: true, version: '30.2.3' };
 const methods = ['streamEvent', 'setProperty', 'call'];
-const actions = Object.fromEntries(methods.map(name => [name, [{ args: ['test'], calls: [], error: /todavía no disponible con OBS/i }]]));
+const unavailable = { message: 'Esta acción solo está disponible con Meld.', status: 409 };
+const actions = Object.fromEntries(methods.map(name => [name, [{ args: ['test'], calls: [], error: unavailable, syncThrow: true }]]));
 const initialSession = { scenes: [
   { id: 'scene-a', name: 'Camera', current: true, layers: [{ id: 'scene-a:7', name: 'Logo', visible: false,
     effects: [{ id: 'Blur', name: 'Blur', enabled: true }] }] },
@@ -27,7 +28,7 @@ actions.command = [
   ...[['meld.startRecordingAction', 'StartRecord'], ['meld.stopRecordingAction', 'StopRecord'],
     ['meld.toggleRecordingAction', 'ToggleRecord'], ['meld.toggleRecordingAction', 'ToggleRecord']]
     .map(([command, requestType]) => ({ args: [command], calls: [{ requestType, requestData: {} }] })),
-  { args: ['meld.unknownAction'], calls: [], error: /todavía no disponible con OBS/i },
+  { args: ['meld.unknownAction'], calls: [], error: unavailable, syncThrow: true },
 ];
 actions.showScene = [
   { args: ['slides'], calls: [{ requestType: 'SetCurrentProgramScene', requestData: { sceneName: 'Slides' } }], session: changedSession },
