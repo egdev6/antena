@@ -34,28 +34,30 @@ async function workspace(t) {
   return dir;
 }
 
-// Minimal independent ZIP builder; central and local sizes can deliberately lie.
-function rawZip(entries, { count = entries.length } = {}) {
+// Independent raw ZIP builder, extended from the verifier's synthetic helper.
+function rawZip(entries, { count = entries.length, suffix = Buffer.alloc(0) } = {}) {
   const locals = [], central = []; let offset = 0;
   for (const e of entries) {
-    const name = Buffer.from(e.name), data = Buffer.from(e.data || ''), method = e.method ?? 0;
+    const name = Buffer.from(e.name), localName = Buffer.from(e.localName ?? e.name);
+    const data = Buffer.from(e.data || ''), method = e.method ?? 0;
     const compressed = method === 8 ? deflateRawSync(data) : data;
     const size = e.size ?? data.length, crc = e.crc ?? crc32(data), flags = 0x800 | (e.flags || 0);
+    const extra = e.extra ?? Buffer.alloc(0), localExtra = e.localExtra ?? extra;
     const local = Buffer.alloc(30), cd = Buffer.alloc(46);
     local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(flags, 6);
     local.writeUInt16LE(method, 8); local.writeUInt32LE(crc, 14); local.writeUInt32LE(compressed.length, 18);
-    local.writeUInt32LE(size, 22); local.writeUInt16LE(name.length, 26);
+    local.writeUInt32LE(size, 22); local.writeUInt16LE(localName.length, 26); local.writeUInt16LE(localExtra.length, 28);
     cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(0x0314, 4); cd.writeUInt16LE(20, 6);
     cd.writeUInt16LE(flags, 8); cd.writeUInt16LE(method, 10); cd.writeUInt32LE(crc, 16);
-    cd.writeUInt32LE(compressed.length, 20); cd.writeUInt32LE(size, 24); cd.writeUInt16LE(name.length, 28);
-    cd.writeUInt32LE((e.external ?? (0o100644 << 16)) >>> 0, 38); cd.writeUInt32LE(offset, 42);
-    locals.push(local, name, compressed); central.push(cd, name);
-    offset += local.length + name.length + compressed.length;
+    cd.writeUInt32LE(compressed.length, 20); cd.writeUInt32LE(size, 24); cd.writeUInt16LE(name.length, 28); cd.writeUInt16LE(extra.length, 30);
+    cd.writeUInt32LE((e.external ?? (0o100644 << 16)) >>> 0, 38); cd.writeUInt32LE(e.offset ?? offset, 42);
+    locals.push(local, localName, localExtra, compressed); central.push(cd, name, extra);
+    offset += local.length + localName.length + localExtra.length + compressed.length;
   }
   const cd = Buffer.concat(central), end = Buffer.alloc(22);
   end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(count, 8); end.writeUInt16LE(count, 10);
   end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...locals, cd, end]);
+  return Buffer.concat([...locals, cd, end, suffix]);
 }
 async function archive(t, entries, opts) {
   const dir = await workspace(t), file = path.join(dir, 'input.zip');
@@ -124,6 +126,9 @@ const unsafe = [
   ['nested directory', [{ name: 'media/sub/a.png' }], message.name],
   ['other directory', [{ name: 'otro/' }], message.name],
   ['bad extension', [{ name: 'media/a.exe' }], message.name],
+  ['empty PNG basename', [{ name: 'media/.png' }], message.name],
+  ['empty MP4 basename', [{ name: 'media/.mp4' }], message.name],
+  ['empty font basename', [{ name: 'media/.woff2' }], message.name],
   ['case-insensitive duplicate', [{ name: 'media/a.PNG' }, { name: 'media/A.png' }], message.duplicate],
   ['encrypted', [{ name: 'config.json', flags: 1 }], message.encrypted],
   ['unsupported method', [{ name: 'config.json', method: 12 }], message.method],
@@ -143,6 +148,56 @@ for (const [label, entries, expected] of unsafe) {
     assert.equal(await readFile(path.join(out, 'sentinel'), 'utf8'), 'sin cambios');
   });
 }
+
+// The second valid local header is embedded in the first entry's data.
+const inner = rawZip([{ name: 'media/b.png', data: 'b' }]);
+const embedded = inner.subarray(0, 30 + Buffer.byteLength('media/b.png') + 1);
+const safetyCases = [
+  ['NFC/NFD duplicate names', [{ name: 'media/café.png' }, { name: 'media/cafe\u0301.png' }]],
+  ['local/central name mismatch', [{ name: 'media/a.png', localName: 'media/b.png' }]],
+  ['overlapping offsets', [{ name: 'media/a.png', data: embedded }, { name: 'media/b.png', data: 'b', offset: 30 + Buffer.byteLength('media/a.png') }]],
+  ['ZIP64 extra field', [{ name: 'config.json', extra: Buffer.from([1, 0, 0, 0]) }]],
+  ['data after the end record', [{ name: 'config.json' }], { suffix: Buffer.from('extra') }],
+  ['4097 entries', Array.from({ length: 4097 }, (_, i) => ({ name: `media/${i}.png` }))],
+  ['encryption flag 0x40', [{ name: 'config.json', flags: 0x40 }]],
+  ['symlink attribute', [{ name: 'media/a.png', external: 0o120777 << 16 }]],
+];
+for (const [label, entries, opts] of safetyCases) test(`verifier safety: rejects ${label}`, async t => {
+  const { file, out } = await archive(t, entries, opts);
+  await writeFile(path.join(out, 'sentinel'), 'sin cambios');
+  await assert.rejects(openZip(file), { status: 400 });
+  assert.deepEqual(await readdir(out), ['sentinel']);
+  assert.equal(await readFile(path.join(out, 'sentinel'), 'utf8'), 'sin cambios');
+});
+
+test('reading 20 media entries leaves no process warnings', async t => {
+  const entries = [{ name: 'config.json', data: '{}' }, ...Array.from({ length: 20 }, (_, i) => ({ name: `media/${i}.png`, data: `contenido ${i}` }))];
+  const { file, out } = await archive(t, entries), warnings = [];
+  const onWarning = warning => warnings.push(warning); process.on('warning', onWarning);
+  t.after(() => process.off('warning', onWarning));
+  const zip = await openZip(file);
+  try {
+    assert.equal((await zip.readConfig()).toString(), '{}');
+    for (const e of entries.slice(1)) {
+      const target = await zip.extract(e.name, out);
+      assert.equal(await readFile(target, 'utf8'), e.data);
+    }
+  } finally { await zip.close(); }
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(warnings.map(w => `${w.name}: ${w.message}`), []);
+});
+
+test('writer rejects empty basenames before emitting and permits a hidden name with a basename', async t => {
+  let emitted = 0;
+  const dest = new Writable({ write(chunk, _enc, cb) { emitted += chunk.length; cb(); } });
+  try { await assert.rejects(writeZip(dest, [{ name: 'media/.png', source: 'x' }]), isError(message.name)); }
+  finally { dest.destroy(); }
+  assert.equal(emitted, 0);
+  const { file, out } = await archive(t, [{ name: 'media/.hidden.png', data: 'ok' }]);
+  const zip = await openZip(file);
+  try { assert.equal(await readFile(await zip.extract('media/.hidden.png', out), 'utf8'), 'ok'); }
+  finally { await zip.close(); }
+});
 
 for (const [label, entry, expected] of [
   ['declared-size bomb', { name: 'media/lie.png', method: 8, data: Buffer.alloc(MiB, 65), size: 10 }, message.size],

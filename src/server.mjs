@@ -127,7 +127,7 @@ function sdRequestAllowed(req) {
 }
 
 export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist, recordingTimers,
-  push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs, configTransferIO, zipUploadLimit } = {}) {
+  push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs, configTransferIO, zipUploadLimit, zipExportLimit } = {}) {
   let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {};
   // Validate private process settings before loading or changing any application state.
   const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs,
@@ -898,7 +898,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
 
   // Export v1 excludes credentials; import previews the same strict schema before a local backup.
-  const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO, zipUploadLimit });
+  const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO, zipUploadLimit, zipExportLimit });
   let mediaQueue = Promise.resolve();
   const withMediaLock = async fn => {
     const previous = mediaQueue; let release; mediaQueue = new Promise(resolve => { release = resolve; });
@@ -1414,6 +1414,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (req.method === 'POST' && url.pathname === '/api/media/upload') return json(res, 200, await withMediaLock(() => upload(req, url)));
       if (req.method === 'GET' && url.pathname === '/api/config/export') {
         const file = configTransfer.exportFile();
+        if (url.searchParams.get('skipped') === '1') {
+          res.setHeader('Cache-Control', 'no-store');
+          return json(res, 200, { skipped: await configTransfer.exportSkipped(file) });
+        }
         if (url.searchParams.get('format') !== 'json') return await configTransfer.exportZip(res, file);
         res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.json"`);
         res.setHeader('Cache-Control', 'no-store');

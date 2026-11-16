@@ -94,15 +94,17 @@ test('exportar descarga un ZIP con JSON versionado y medios sin credenciales', a
   const f = await fixture(t); if (!f) return;
   await writeFile(path.join(f.media, 'saludo.png'), 'imagen de prueba');
   await f.wait(`!!${control('Exportar configuración')}`);
-  const response = await fetch(f.base + '/api/config/export');
-  const expected = /filename="([^"]+)"/.exec(response.headers.get('content-disposition'))[1];
+  await f.dom(`(() => { const original = window.fetch, click = HTMLAnchorElement.prototype.click;
+    window.__exportRequests = []; window.fetch = (...args) => { if (String(args[0]).includes('/api/config/export')) window.__exportRequests.push([String(args[0]), args[1]?.method || 'GET']); return original(...args); };
+    HTMLAnchorElement.prototype.click = function() { window.__exportHref = this.getAttribute('href'); return click.call(this); }; return true; })()`);
   await f.c.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: f.downloads });
   await clickWhen(f.c, control('Exportar configuración'));
   let files = [];
-  for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.includes(expected)) break; await new Promise(r => setTimeout(r, 50)); }
-  assert.deepEqual(files, [expected]);
-  assert.match(expected, /^antena-config-\d{4}-\d{2}-\d{2}\.zip$/);
-  const zip = await openZip(path.join(f.downloads, expected)); let text;
+  for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.some(n => n.endsWith('.zip'))) break; await new Promise(r => setTimeout(r, 50)); }
+  assert.equal(files.length, 1); assert.match(files[0], /^antena-config-\d{4}-\d{2}-\d{2}\.zip$/);
+  assert.deepEqual(await f.dom('window.__exportRequests'), [['/api/config/export?skipped=1', 'GET']]);
+  assert.equal(await f.dom('window.__exportHref'), '/api/config/export');
+  const zip = await openZip(path.join(f.downloads, files[0])); let text;
   try {
     assert.deepEqual(zip.entries.map(e => e.name), ['config.json', 'media/saludo.png']);
     text = (await zip.readConfig()).toString();

@@ -8,7 +8,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { ROOT, DEFAULT_CONFIG, deepMerge } from '../store.mjs';
 import { PROTO_KEYS, validatePatch, validateImportedChatVariants } from '../config-schema.mjs';
 import { httpError } from '../http-util.mjs';
-import { checkZipName, openZip, writeZip } from '../zip-archive.mjs';
+import { checkZipName, openZip, writeZip, MAX_ZIP_TOTAL, MAX_ZIP_ENTRIES } from '../zip-archive.mjs';
+import { MAX_UPLOAD } from './media.mjs';
 
 const VERSION = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
 const object = value => value !== null && typeof value === 'object';
@@ -106,7 +107,7 @@ function changes(previous, next) {
 
 /** Strict like PUT /api/config (including theme ranges), not theme-import clamping.
  * Overlay approval/version fields are local trust state and never imported as approvals. */
-export function registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO = {}, zipUploadLimit }) {
+export function registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO = {}, zipUploadLimit, zipExportLimit }) {
   // The keyed fingerprint binds both current private state and the exact file without exposing either.
   const fingerprintKey = randomBytes(32);
   const fingerprint = (before, file) => createHmac('sha256', fingerprintKey).update(JSON.stringify([before, file])).digest('hex');
@@ -153,25 +154,39 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
     return applyConfig(prepared);
   });
 
-  // Header: base64url de un array JSON UTF-8; nombres no UTF-8 van como «base64:<bytes base64url>».
-  const exportZip = async (res, file) => {
-    const entries = [{ name: 'config.json', source: JSON.stringify(file) }], skipped = [], seen = new Set();
+  // Compute the same entry list for the cheap report and the download, before sending bytes.
+  // zipExportLimit is a test seam; production is always capped by MAX_ZIP_TOTAL.
+  const planExport = async file => {
+    const config = JSON.stringify(file), entries = [{ name: 'config.json', source: config }], skipped = [], seen = new Set();
+    const limit = Math.min(zipExportLimit ?? MAX_ZIP_TOTAL, MAX_ZIP_TOTAL);
+    let total = Buffer.byteLength(config), full = false;
     const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
     for (const entry of (await readdir(mediaDir, { withFileTypes: true, encoding: 'buffer' })).sort((a, b) => Buffer.compare(a.name, b.name))) {
       if (entry.isDirectory()) continue;
       let name;
-      try { name = decoder.decode(entry.name); } catch { skipped.push(`base64:${entry.name.toString('base64url')}`); continue; }
-      try {
-        if (!entry.isFile()) throw new Error('not a regular file');
-        checkZipName(`media/${name}`, seen);
-        entries.push({ name: `media/${name}`, source: { path: path.join(mediaDir, name) } });
-      } catch { skipped.push(name); }
+      try { name = decoder.decode(entry.name); } catch { skipped.push(`base64:${entry.name.toString('base64url')} (Nombre no válido en UTF-8)`); continue; }
+      if (!entry.isFile()) { skipped.push(`${name} (No es un archivo normal)`); continue; }
+      try { checkZipName(`media/${name}`, seen); }
+      catch (err) { skipped.push(`${name} (${err.message})`); continue; }
+      const filename = path.join(mediaDir, name); let info;
+      try { info = await lstat(filename); } catch { skipped.push(`${name} (No se pudo leer el archivo)`); continue; }
+      if (!info.isFile()) { skipped.push(`${name} (No es un archivo normal)`); continue; }
+      if (info.size > MAX_UPLOAD) { skipped.push(`${name} (supera 300 MB)`); continue; }
+      if (full || total + info.size > limit) { full = true; skipped.push(`${name} (límite total de 2 GB)`); continue; }
+      if (entries.length >= MAX_ZIP_ENTRIES) { skipped.push(`${name} (límite de entradas del ZIP)`); continue; }
+      total += info.size; entries.push({ name: `media/${name}`, source: { path: filename } });
     }
+    return { entries, skipped };
+  };
+  // Header: base64url de un array JSON UTF-8 con nombre y motivo; nombres no UTF-8 usan «base64:<bytes base64url>».
+  const exportZip = async (res, file) => {
+    const { entries, skipped } = await planExport(file);
     if (skipped.length) res.setHeader('X-Antena-Skipped-Media', Buffer.from(JSON.stringify(skipped)).toString('base64url'));
     res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.zip"`);
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/zip');
     await writeZip(res, entries);
   };
+  const exportSkipped = async file => (await planExport(file)).skipped;
   const hashFile = async file => {
     const hash = createHash('sha256');
     for await (const chunk of createReadStream(file)) hash.update(chunk);
@@ -209,7 +224,7 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
           for (const name of installed.reverse()) await unlink(path.join(mediaDir, name));
           for (const name of moved.reverse()) await move(path.join(backupDir, name), path.join(mediaDir, name));
           if (backupDir) await rm(backupDir, { recursive: true, force: true });
-        } catch (rollback) { preserve = true; throw Object.assign(new Error('No se pudieron restaurar los medios; conserva las copias locales'), { cause: rollback }); }
+        } catch (rollback) { preserve = true; throw Object.assign(new Error(`No se pudieron restaurar los medios; conserva las copias locales${backupName ? ` en media/${backupName}` : ''}`), { cause: rollback }); }
       }
       throw err;
     } finally {
@@ -253,5 +268,5 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
       await rm(scratch, { recursive: true, force: true });
     }
   };
-  return { exportFile, exportZip, importZip };
+  return { exportFile, exportZip, exportSkipped, importZip };
 }

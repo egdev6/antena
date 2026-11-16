@@ -15,10 +15,10 @@ import { mediaKind } from './alerts.mjs';
 import { httpError } from './http-util.mjs';
 import { MAX_UPLOAD } from './routes/media.mjs';
 
-const MAX32 = 0xffffffff, MAX_CONFIG = 8 * 1024 * 1024, MAX_TOTAL = 2 * 1024 ** 3;
-const MAX_ENTRIES = 4096, MAX_DIRECTORY = 16 * 1024 * 1024;
+const MAX32 = 0xffffffff, MAX_CONFIG = 8 * 1024 * 1024, MAX_DIRECTORY = 16 * 1024 * 1024;
+export const MAX_ZIP_TOTAL = 2 * 1024 ** 3, MAX_ZIP_ENTRIES = 4096;
 const errors = {
-  name: 'Nombre de archivo no permitido en el ZIP.', duplicate: 'El ZIP contiene nombres duplicados.',
+  name: 'Nombre de archivo no permitido en el ZIP.', missingConfig: 'El archivo no contiene config.json', duplicate: 'El ZIP contiene nombres duplicados.',
   encrypted: 'El ZIP contiene archivos cifrados.', method: 'Método de compresión no admitido en el ZIP.',
   link: 'El ZIP contiene enlaces o tipos de archivo no admitidos.', count: 'El ZIP contiene demasiadas entradas.',
   config: 'El archivo config.json supera 8 MB.', media: 'El archivo de medios supera 300 MB.',
@@ -33,7 +33,7 @@ const decoder = new TextDecoder('utf-8', { fatal: true });
 export function checkZipName(name, seen = new Set()) {
   const base = name.startsWith('media/') ? name.slice(6) : '';
   if (name !== 'config.json' && name !== 'media/' &&
-      (!base || name.includes('..') || base.includes('/') || base.length > 255 ||
+      (!base || base.lastIndexOf('.') === 0 || name.includes('..') || base.includes('/') || base.length > 255 ||
        /[\\\x00-\x1f\x7f<>:"|?*]/.test(base) || /[. ]$/.test(base) ||
        /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(base) || !mediaKind(base))) fail('name');
   const key = name.normalize('NFC').toLowerCase();
@@ -76,7 +76,7 @@ export async function writeZip(dest, entries) {
     offset += b.length;
   };
   try {
-    if (entries.length > MAX_ENTRIES) fail('count');
+    if (entries.length > MAX_ZIP_ENTRIES) fail('count');
     // Preflight antes de producir bytes, incluso para archivos dispersos > 4 GiB.
     const inputs = [];
     for (const { name, source } of entries) {
@@ -85,7 +85,7 @@ export async function writeZip(dest, entries) {
       const data = filename ? null : Buffer.isBuffer(source) ? source : Buffer.from(source);
       const size = filename ? (await stat(filename)).size : data.length;
       if (size > MAX32) fail('zip64');
-      checkSize(name, size); total += size; if (total > MAX_TOTAL) fail('total');
+      checkSize(name, size); total += size; if (total > MAX_ZIP_TOTAL) fail('total');
       inputs.push({ name, filename, data, size });
     }
     for (const { name, filename, data, size: expected } of inputs) {
@@ -138,7 +138,7 @@ export async function openZip(filename) {
     if (eocd < 0) fail('invalid');
     const end = tailStart + eocd, disk = u16(tail, eocd + 4), cdDisk = u16(tail, eocd + 6);
     const count = u16(tail, eocd + 10), cdSize = u32(tail, eocd + 12), cdStart = u32(tail, eocd + 16);
-    if (count > MAX_ENTRIES) fail('count');
+    if (count > MAX_ZIP_ENTRIES) fail('count');
     if (disk || cdDisk || u16(tail, eocd + 8) !== count || cdSize > MAX_DIRECTORY || cdStart + cdSize !== end) fail('invalid');
     const records = [], seen = new Set(); let cursor = cdStart, total = 0;
     for (let i = 0; i < count; i++) {
@@ -155,7 +155,7 @@ export async function openZip(filename) {
       const nameBytes = variable.subarray(0, nameLen); let name;
       try { name = decoder.decode(nameBytes); } catch { fail('name'); }
       checkZipName(name, seen); checkSize(name, size); total += size;
-      if (total > MAX_TOTAL) fail('total');
+      if (total > MAX_ZIP_TOTAL) fail('total');
       checkExtra(variable.subarray(nameLen, nameLen + extraLen));
       const type = (attr >>> 16) & 0o170000, dir = name === 'media/';
       if ((attr & 0x400) || (type && type !== (dir ? 0o040000 : 0o100000)) || (!dir && (attr & 0x10))) fail('link');
@@ -181,7 +181,8 @@ export async function openZip(filename) {
     const byName = new Map(records.map(e => [e.name, e]));
     async function consume(e, sink) {
       let size = 0, crc = 0;
-      const source = e.compressed ? fd.createReadStream({ start: e.start, end: e.end - 1, autoClose: false }) : Readable.from([]);
+      // Use the numeric descriptor: FileHandle.createReadStream retains a close listener per entry.
+      const source = e.compressed ? createReadStream(null, { fd: fd.fd, start: e.start, end: e.end - 1, autoClose: false }) : Readable.from([]);
       const inflate = e.method === 8 ? createInflateRaw() : null;
       const meter = new Transform({ transform(chunk, _enc, cb) {
         size += chunk.length;
@@ -206,12 +207,13 @@ export async function openZip(filename) {
       entries: Object.freeze(records.map(e => Object.freeze({ name: e.name, size: e.size, compressedSize: e.compressed, method: e.method, crc32: e.crc }))),
       async readConfig() {
         const chunks = [], sink = new Writable({ write(chunk, _enc, cb) { chunks.push(chunk); cb(); } });
-        await consume(entry('config.json'), sink); return Buffer.concat(chunks);
+        const config = byName.get('config.json'); if (!config) fail('missingConfig');
+        await consume(config, sink); return Buffer.concat(chunks);
       },
       async extract(name, dir) {
         const e = entry(name), target = path.join(dir, path.basename(name));
         const temp = path.join(dir, `.antena-zip-${randomBytes(16).toString('hex')}.part`);
-        const file = await open(temp, 'wx', 0o600); let done = false;
+        const file = await open(temp, 'wx', 0o644); let done = false;
         try { await consume(e, file.createWriteStream()); await rename(temp, target); done = true; return target; }
         finally { await file.close().catch(() => {}); if (!done) await unlink(temp).catch(() => {}); }
       },

@@ -109,22 +109,14 @@ function ConfigTransfer() {
     if (exportLock.current) return;
     exportLock.current = true; setExporting(true); setError(''); setSkipped([]);
     try {
-      const r = await fetch(withKey('/api/config/export'));
-      if (!r.ok) {
-        const data = await r.json().catch(() => ({}));
-        throw new Error(typeof data.error === 'string' && data.error ? data.error : `Error ${r.status}`);
-      }
-      const header = r.headers.get('X-Antena-Skipped-Media');
-      let names: string[] = [];
-      if (header) try {
-        const bytes = Uint8Array.from(atob(header.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-        const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
-        if (Array.isArray(parsed) && parsed.every(n => typeof n === 'string')) names = parsed;
-      } catch { /* una cabecera inválida no impide descargar */ }
-      const filename = /filename="([^"]+)"/i.exec(r.headers.get('Content-Disposition') || '')?.[1] || 'antena-config.zip';
-      const url = URL.createObjectURL(await r.blob()), link = document.createElement('a');
-      link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000); setSkipped(names);
+      const r = await fetch(withKey('/api/config/export?skipped=1'));
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof data.error === 'string' && data.error ? data.error : `Error ${r.status}`);
+      const names: unknown = data.skipped;
+      if (Array.isArray(names) && names.every(n => typeof n === 'string')) setSkipped(names);
+      // El navegador guarda el ZIP directamente, sin convertirlo en un Blob en memoria.
+      const link = document.createElement('a');
+      link.href = withKey('/api/config/export'); link.download = ''; document.body.append(link); link.click(); link.remove();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { exportLock.current = false; setExporting(false); }
   };

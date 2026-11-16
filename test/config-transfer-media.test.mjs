@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, rename } from 'node:fs/promises';
+import { mkdtemp, mkdir, open, writeFile, readFile, readdir, rm, rename, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
@@ -103,7 +103,7 @@ test('ZIP export and preview/apply round-trip config and media, preserving local
 test('unportable local names are skipped and reported without failing the export', async t => {
   const f = await fixture(t); await writeFile(path.join(f.media, 'safe.png'), 'yes'); await writeFile(path.join(f.media, 'odd..png'), 'odd');
   const r = await f.download(); assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'application/zip');
-  assert.deepEqual(JSON.parse(Buffer.from(r.headers.get('x-antena-skipped-media'), 'base64url').toString()), ['odd..png']);
+  assert.deepEqual(JSON.parse(Buffer.from(r.headers.get('x-antena-skipped-media'), 'base64url').toString()), ['odd..png (Nombre de archivo no permitido en el ZIP.)']);
   assert.deepEqual((await archiveConfig(f, r.bytes)).names, ['config.json', 'media/safe.png']);
 });
 
@@ -112,8 +112,49 @@ test('a non-UTF-8 media filename is skipped losslessly instead of aborting expor
   const f = await fixture(t), name = Buffer.concat([Buffer.from([0xff]), Buffer.from('.png')]);
   await writeFile(Buffer.concat([Buffer.from(f.media + path.sep), name]), 'odd'); await writeFile(path.join(f.media, 'safe.png'), 'yes');
   const r = await f.download(); assert.equal(r.status, 200);
-  assert.deepEqual(JSON.parse(Buffer.from(r.headers.get('x-antena-skipped-media'), 'base64url').toString()), [`base64:${name.toString('base64url')}`]);
+  assert.deepEqual(JSON.parse(Buffer.from(r.headers.get('x-antena-skipped-media'), 'base64url').toString()), [`base64:${name.toString('base64url')} (Nombre no válido en UTF-8)`]);
   assert.deepEqual((await archiveConfig(f, r.bytes)).names, ['config.json', 'media/safe.png']);
+});
+
+const skippedHeader = r => JSON.parse(Buffer.from(r.headers.get('x-antena-skipped-media'), 'base64url').toString());
+const sparse = async (file, size) => { const h = await open(file, 'w'); try { await h.truncate(size); } finally { await h.close(); } };
+
+test('export skips a 301 MiB media file and returns a complete ZIP with the reason', async t => {
+  const f = await fixture(t);
+  await sparse(path.join(f.media, 'v0.mp4'), 301 * 2 ** 20);
+  await writeFile(path.join(f.media, 'safe.png'), 'small');
+  const r = await f.download();
+  assert.equal(r.status, 200);
+  assert.deepEqual(skippedHeader(r), ['v0.mp4 (supera 300 MB)']);
+  assert.deepEqual((await archiveConfig(f, r.bytes)).names, ['config.json', 'media/safe.png']);
+});
+
+test('export stops at the total limit in deterministic order and reports every remaining file', async t => {
+  // A 4 MiB test cap exercises the 2 GiB rule without streaming gigabytes of sparse zeros.
+  const f = await fixture(t, { zipExportLimit: 4 * 2 ** 20 });
+  await sparse(path.join(f.media, 'v1.mp4'), 2 * 2 ** 20);
+  await sparse(path.join(f.media, 'v0.mp4'), 2 * 2 ** 20);
+  await writeFile(path.join(f.media, 'v2.mp4'), 'x');
+  const r = await f.download();
+  assert.equal(r.status, 200);
+  assert.deepEqual(skippedHeader(r), ['v1.mp4 (límite total de 2 GB)', 'v2.mp4 (límite total de 2 GB)']);
+  assert.deepEqual((await archiveConfig(f, r.bytes)).names, ['config.json', 'media/v0.mp4']);
+  const report = await f.json('GET', '/api/config/export?skipped=1');
+  assert.equal(report.status, 200); assert.equal(report.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(report.body, { skipped: skippedHeader(r) });
+});
+
+test('skipped-only export report has no ZIP body and preserves the ordinary ZIP and JSON exports', async t => {
+  const f = await fixture(t);
+  await writeFile(path.join(f.media, 'odd..png'), 'odd'); await writeFile(path.join(f.media, 'safe.png'), 'safe');
+  const report = await f.json('GET', '/api/config/export?skipped=1');
+  assert.equal(report.status, 200); assert.match(report.headers.get('content-type'), /^application\/json/);
+  assert.equal(report.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(report.body, { skipped: ['odd..png (Nombre de archivo no permitido en el ZIP.)'] });
+  const zip = await f.download(); assert.equal(zip.status, 200);
+  assert.deepEqual(skippedHeader(zip), report.body.skipped);
+  assert.deepEqual((await archiveConfig(f, zip.bytes)).names, ['config.json', 'media/safe.png']);
+  assert.equal((await f.json('GET', '/api/config/export?format=json')).body.format, 'antena-config');
 });
 
 test('changed local media invalidates the archive fingerprint without writing', async t => {
@@ -145,6 +186,60 @@ test('traversal and inflated-size bombs return 400 with no data or media mutatio
     const bytes = rawZip([{ name: 'config.json', data: JSON.stringify(config) }, entry]);
     for (const run of [preview, apply]) { const r = await run(f, bytes); assert.deepEqual({ status: r.status, body: r.body }, { status: 400, body: error(message) }); assert.deepEqual(await f.snapshot(), before); }
   }
+});
+
+test('ZIP import reports missing config.json without touching config, media or counters', async t => {
+  const f = await fixture(t), before = await f.snapshot();
+  const bytes = rawZip([{ name: 'media/a.png', data: 'x' }]);
+  for (const run of [preview, apply]) {
+    const r = await run(f, bytes);
+    assert.deepEqual({ status: r.status, body: r.body }, { status: 400, body: error('El archivo no contiene config.json') });
+    assert.deepEqual(await f.snapshot(), before);
+  }
+});
+
+test('ZIP import rejects empty media basenames without touching config, media or counters', async t => {
+  const f = await fixture(t), config = (await f.json('GET', '/api/config/export?format=json')).body, before = await f.snapshot();
+  for (const name of ['.png', '.mp4', '.woff2']) {
+    const bytes = rawZip([{ name: 'config.json', data: JSON.stringify(config) }, { name: `media/${name}`, data: 'x' }]);
+    for (const run of [preview, apply]) {
+      const r = await run(f, bytes);
+      assert.deepEqual({ status: r.status, body: r.body }, { status: 400, body: error('Nombre de archivo no permitido en el ZIP.') });
+      assert.deepEqual(await f.snapshot(), before);
+    }
+  }
+});
+
+test('installed ZIP media use the same 0644 mode as uploads', async t => {
+  const { target, exported } = await exportedFixture(t);
+  const uploaded = await target.call('POST', '/api/media/upload?name=mode.png', 'uploaded', { 'content-type': 'application/octet-stream' });
+  assert.equal(uploaded.status, 200);
+  const uploadMode = (await stat(path.join(target.media, 'mode.png'))).mode & 0o777;
+  const p = await preview(target, exported.bytes); assert.equal(p.status, 200);
+  const r = await apply(target, exported.bytes, p.body.fingerprint); assert.equal(r.status, 200);
+  if (process.platform !== 'win32') {
+    assert.equal(uploadMode, 0o644);
+    for (const name of ['added.wav', 'replace.png']) assert.equal((await stat(path.join(target.media, name))).mode & 0o777, uploadMode, name);
+  }
+  assert.equal(await readFile(path.join(target.media, r.body.mediaBackup, 'replace.png'), 'utf8'), 'old');
+});
+
+test('rollback failure identifies the media backup folder and preserves recoverable bytes', async t => {
+  let armed = false;
+  const target = await fixture(t, { configTransferIO: { rename: async (from, to) => {
+    if (armed && (from.includes('.antena-stage-') || from.includes('.backup-'))) throw new Error('fallo inyectado');
+    return rename(from, to);
+  } } });
+  const source = await fixture(t);
+  await writeFile(path.join(source.media, 'one.png'), 'new'); await writeFile(path.join(target.media, 'one.png'), 'old');
+  const { bytes } = await source.download(), p = await preview(target, bytes), config = await readFile(path.join(target.data, 'config.json'));
+  assert.equal(p.status, 200); armed = true;
+  const r = await apply(target, bytes, p.body.fingerprint);
+  const backups = (await readdir(target.media)).filter(n => n.startsWith('.backup-'));
+  assert.equal(r.status, 500); assert.equal(backups.length, 1);
+  assert.ok(r.body.error.includes(`media/${backups[0]}`), r.body.error);
+  assert.equal(await readFile(path.join(target.media, backups[0], 'one.png'), 'utf8'), 'old');
+  assert.deepEqual(await readFile(path.join(target.data, 'config.json')), config);
 });
 
 test('declared and chunked oversized ZIP uploads return 413 JSON and leave state unchanged', async t => {
