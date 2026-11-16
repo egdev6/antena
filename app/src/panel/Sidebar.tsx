@@ -53,7 +53,7 @@ export function Sidebar({ current }: { current: string }) {
       { href: '#/atajos', label: 'Atajos y Stream Deck', tail: num(s.config.shortcuts?.length) },
     ]],
     ['produccion', 'Producción', [
-      { href: '#/fuentes', label: 'Fuentes para Meld' },
+      { href: '#/fuentes', label: 'Fuentes del programa de emisión' },
       { href: '#/meld', label: 'Meld Studio', tail: <span className={cx('nav-n', meldOn && 'is-live')} aria-label={meldOn ? 'conectado' : 'sin conectar'}>●</span> },
       { href: '#/prompter', label: 'Paneles' },
     ]],
@@ -77,7 +77,7 @@ export function Sidebar({ current }: { current: string }) {
   return <aside className="side">
     <a className="brand" href="#/directo" aria-label="antena, inicio">
       <img className="brand-mark" src="/brand/logo.png" alt="" aria-hidden="true" />
-      <span className="brand-name"><b>antena</b><small>Alertas y control de Meld</small></span>
+      <span className="brand-name"><b>antena</b><small>Alertas y control del programa de emisión</small></span>
     </a>
     <nav id="nav" aria-label="Secciones" data-tour="nav">
       {groups.map(([id, label, items]) => <div key={id} className="nav-grp" data-grp={id} data-tour={`nav-${id}`}>

@@ -75,7 +75,7 @@ test('O3.3 páginas de widgets: fuente de navegador primero a la izquierda y vis
       assert.equal(p.layouts, 1, `${hash}: un solo esqueleto de widget`);
       assert.equal(p.order, 'form-col | preview-col', `${hash}: columnas configuración | vista previa`);
       assert.equal(p.firstIsSource, true, `${hash}: el primer bloque de la izquierda es la fuente`);
-      assert.equal(p.title, 'Fuente de navegador en Meld', `${hash}: título del bloque`);
+      assert.equal(p.title, 'Fuente de navegador', `${hash}: título del bloque`);
       assert.equal(p.url, base + url, `${hash}: URL de la fuente`);
       assert.equal(p.copyBtn, true, `${hash}: la URL tiene botón de copiar`);
       assert.equal(p.sourcesOutsideLeftTop, 0, `${hash}: no hay bloques de fuente fuera de la columna izquierda`);

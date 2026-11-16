@@ -86,13 +86,13 @@ export function Teleprompter({ parts }: { parts: string[] }) {
   </>;
   return <>
     <PageHead crumb="En directo · solo lo ves tú" title="Teleprompter" tabs={tabs} tab={tab} onTab={setTab}
-      desc="El guion avanza por bloques a tu ritmo de lectura, en su propia ventana o en una capa de Meld que no se emite." actions={<>
+      desc="El guion avanza por bloques a tu ritmo de lectura, en su propia ventana o en una capa del programa de emisión que no se emite." actions={<>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={openWindow}><Icon d={IC.external} className="eg-btn__icon" />Abrir en ventana</button>
         {playBtn('eg-btn eg-btn--primary eg-btn--sm')}
       </>} />
     <ItemTabs label="Guiones" items={tp.scripts.map(s => ({ id: s.id, label: s.title }))} selected={tp.activeId} onSelect={id => { if (id !== tp.activeId) pickScript(id); }} onNew={newScript} newLabel="+ Nuevo guion" />
     <WidgetLayout className="tp"
-      source={<BrowserSource url={url} size="1280×720" hint="En Meld: + › Browser, en una escena que no se emita." />}
+      source={<BrowserSource url={url} size="1280×720" hint="Añade una fuente de navegador de 1280×720 en una escena que no se emita." />}
       preview={<figure className="eg-stage">
           <figcaption className="eg-stage__bar"><span className="eg-eyebrow">En pantalla</span><span className="eg-stage__spacer" /><span aria-live="polite">{status}</span></figcaption>
           <ScaledFrame src="/widget/teleprompter?embed" w={1280} h={720} className="preview wprev tp-frame" title="Vista del teleprompter" />
@@ -154,7 +154,7 @@ export function Teleprompter({ parts }: { parts: string[] }) {
             </select></label>}
           <div className="row tight"><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={openWindow}><Icon d={IC.external} className="eg-btn__icon" />Abrir en ventana</button>
             <span className="hint">{desk ? 'Se abre a pantalla completa en esa pantalla; «La principal» es el monitor primario.' : 'Arrástrala al monitor de la cámara y pulsa F11.'}</span></div>
-          <div className="eg-notice eg-notice--info eg-notice--sm"><Icon d={IC.monitor} /><span className="eg-notice__text">No sale en el directo: ábrelo en el monitor que tienes junto a la cámara, o en una escena de Meld que no se emita.</span></div>
+          <div className="eg-notice eg-notice--info eg-notice--sm"><Icon d={IC.monitor} /><span className="eg-notice__text">No sale en el directo: ábrelo en el monitor que tienes junto a la cámara, o en una escena del programa de emisión que no se emita.</span></div>
         </Sec>
     </WidgetLayout>
   </>;

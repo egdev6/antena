@@ -44,7 +44,7 @@ function StepsEditor({ steps, info, onChange }: { steps: Step[]; info: Info; onC
       <span className="step-n">{i + 1}</span>
       <select value={stepValue(st)} onChange={e => setKind(i, e.target.value)} aria-label="Qué hace">
         <optgroup label="antena">{info.builtins.map(b => <option key={b} value={`b:${b}`}>{SD_HELP[b] || b}</option>)}<option value="b:prompter">Cambiar la pestaña del prompter</option></optgroup>
-        <optgroup label="Meld, chat y voz">{Object.entries(ACTIONS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</optgroup>
+        <optgroup label="Programa de emisión, chat y voz">{Object.entries(ACTIONS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</optgroup>
       </select>
       {st.kind === 'builtin'
         ? <div className="afields">{st.action === 'prompter' && <label>Pestaña<select value={st.arg} onChange={e => repl(i, { ...st, arg: e.target.value })}>{info.prompterTabs.map(t => <option key={t} value={t}>{TAB_NAMES[t] || t}</option>)}</select></label>}</div>

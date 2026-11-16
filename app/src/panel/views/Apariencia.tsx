@@ -112,7 +112,7 @@ export function Apariencia({ parts }: { parts: string[] }) {
 
   return <>
     <PageHead crumb="Ajustes" title="Apariencia"
-      desc="Un solo tema para todo lo que sale en el directo: alertas, chat, objetivos, ticker, preguntas, sorteo, tier list y créditos. La vista previa cambia al momento; Meld, al guardar. El CSS propio de cada alerta o widget sigue ganando."
+      desc="Un solo tema para todo lo que sale en el directo: alertas, chat, objetivos, ticker, preguntas, sorteo, tier list y créditos. La vista previa cambia al momento; el programa de emisión, al guardar. El CSS propio de cada alerta o widget sigue ganando."
       tabs={[{ id: 'color', label: 'Color' }, { id: 'tipografia', label: 'Tipografía' }, { id: 'iconos', label: 'Iconos' }, { id: 'forma', label: 'Forma y posición' }, { id: 'sonido', label: 'Sonido' }]} tab={tab} onTab={setTab}
       actions={<>
         <label className="sr-only" htmlFor="ap-preset">Punto de partida</label>
@@ -198,7 +198,7 @@ export function Apariencia({ parts }: { parts: string[] }) {
           </div>
           <div className="row2">{range('offsetX', 'Ajuste horizontal', -960, 960, 10, 'px')}{range('offsetY', 'Ajuste vertical', -540, 540, 10, 'px')}</div>
           <div className="lbl">Entrada y salida de las alertas<div className="field-ctl"><Seg wide value={t.animation} onChange={v => set({ animation: v })} options={[['3d', 'Giro 3D'], ['slide', 'Deslizar'], ['fade', 'Fundido'], ['pop', 'Rebote'], ['none', 'Sin animación']]} /></div></div>
-          <p className="hint">La posición vale para el overlay de alertas; si en Meld usas <code>/overlay?pos=top</code>, manda la URL.</p>
+          <p className="hint">La posición vale para el overlay de alertas; si en el programa de emisión usas <code>/overlay?pos=top</code>, manda la URL.</p>
         </Sec>}
 
         {tab === 'sonido' && <Sec title="Sonido" id="ap-sound">
@@ -225,7 +225,7 @@ export function Apariencia({ parts }: { parts: string[] }) {
             {SAMPLES.map(([type, label]) => <button key={type} type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => sample(type)}>{label}</button>)}
           </div>}
         </figure>
-        <p className="hint">{view === 'alert' ? 'Las alertas de ejemplo salen solo aquí. Para verlas en Meld, usa «Probar en el directo» en cada alerta.' : 'Con datos de ejemplo. Al guardar, el tema llega a la vez a todas las capas que tengas en Meld.'}</p>
+        <p className="hint">{view === 'alert' ? 'Las alertas de ejemplo salen solo aquí. Para verlas en el programa de emisión, usa «Probar en el directo» en cada alerta.' : 'Con datos de ejemplo. Al guardar, el tema llega a la vez a todas las capas que tengas en el programa de emisión.'}</p>
       </div>
     </div>
     <SaveBar />

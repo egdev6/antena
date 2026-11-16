@@ -47,11 +47,11 @@ export function Overlays({ parts }: { parts: string[] }) {
   const nuevo = <button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}><Icon d={IC.plus} className="eg-btn__icon" />Nuevo overlay</button>;
   return <>
     <PageHead crumb={`Configurar · ${list.length === 1 ? '1 overlay' : `${list.length} overlays`}`} title="Overlays"
-      desc="Capas de HTML, CSS y JavaScript para Meld: un marco para la cámara, un título animado, lo que imagines. El agente las crea por MCP; aquí las ajustas, las pruebas y las ves en vivo."
+      desc="Capas de HTML, CSS y JavaScript para el programa de emisión: un marco para la cámara, un título animado, lo que imagines. El agente las crea por MCP; aquí las ajustas, las pruebas y las ves en vivo."
       actions={nuevo} />
     {list.length
       ? <div className="lv-groups">
-        <CardGroup title="Tus overlays" count={list.length} note="Cada uno es una capa de navegador: su dirección está también en Fuentes para Meld" wide>
+        <CardGroup title="Tus overlays" count={list.length} note="Cada uno es una capa de navegador: su dirección está también en Fuentes del programa de emisión" wide>
           {list.map(o => <Card key={o.id} href={`#/overlays/${enc(o.id)}`} label={`Abrir ${o.name}`} open={open === o.id}
             title={o.name} aside={<span className="lv-cmeta">{size(o)}</span>}
             thumb={<div className="lv-coverlay"><i /><b>HTML</b></div>}
@@ -173,7 +173,7 @@ function OverlaySlide({ id }: { id: string }) {
       <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={loadPending}>Cargar la versión nueva</button>
     </div> : null}
     <WidgetLayout
-      source={<BrowserSource url={`${origin()}/custom/${id}`} size={size(saved)} hint="En Meld: + › Browser. La capa se recarga sola cada vez que guardas." />}
+      source={<BrowserSource url={`${origin()}/custom/${id}`} size={size(saved)} hint="Añade una fuente de navegador con el tamaño indicado. La capa se recarga sola cada vez que guardas." />}
       preview={<Stage eyebrow="Vista previa" aside={<span>{size(cur)} · en vivo</span>} src={`/custom/${enc(id)}`} w={cur.width} h={cur.height} />}>
       <Panel title="Ajustes">
         <div className="row3">

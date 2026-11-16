@@ -671,7 +671,7 @@ test('#118: un error al guardar el cierre conserva la acción para reintentar', 
 test('#118: emisión confirmada por Meld no ofrece cierre', { timeout: 90000 }, async t => {
   const f = await fixture(t, { gap: false }); if (!f) return;
   const c = await f.open();
-  assert.match(await dom(c, `document.querySelector('.view-head').textContent`), /En directo · automático con Meld/);
+  assert.match(await dom(c, `document.querySelector('.view-head').textContent`), /En directo · automático con el programa de emisión/);
   assert.equal(await dom(c, `!!${buttonByText('Terminar directo')} || !!${buttonByText('Cerrarla')}`), false);
   const manual = await fixture(t, { withoutSeries: true }); if (!manual) return;
   const d = await manual.open();

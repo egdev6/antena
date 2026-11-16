@@ -253,7 +253,7 @@ export function Directo() {
         <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => copy((await get<{ markdown: string }>('/api/session/summary')).markdown))}>Copiar resumen</button>
         <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>
         {!open && (endRetryId !== ses.id || streaming) ? <button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={startSession}>Empezar directo</button>
-          : streaming ? <Status tone="success">{ses.meldAutoSession ? 'En directo · automático con Meld' : 'En directo · Meld emitiendo'}</Status>
+          : streaming ? <Status tone="success">{ses.meldAutoSession ? 'En directo · automático con el programa de emisión' : 'En directo · programa de emisión emitiendo'}</Status>
           : <button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={endSession}>Terminar directo</button>}
       </div></header>
     <Health state={s} session={ses} idleSeconds={idleSeconds} endSession={endSession} />

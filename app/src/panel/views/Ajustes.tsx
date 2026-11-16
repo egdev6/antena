@@ -77,8 +77,8 @@ export function Meld({ parts }: { parts: string[] }) {
           <div className="rows">{ses.tracks.length ? ses.tracks.map(t => <div key={t.id} className="track">
             <span className="grow"><b>{t.name}</b><span className="hint">{t.muted ? ' · silenciada' : ''}</span></span>
             <IconBtn icon={t.muted ? IC.volumeOff : /mic/i.test(t.name) ? IC.mic : IC.volume} label={`${t.muted ? 'Activar' : 'Silenciar'} ${t.name}`} pressed={!t.muted} className={cx(t.muted && 'is-muted')} onClick={guard(() => post('/api/meld/track', { track: t.id, action: 'mute' }))} />
-          </div>) : <EmptyState>Meld no ha mandado pistas de audio.</EmptyState>}</div>
-          <p className="hint">La ganancia de cada pista se cambia en Meld o con una acción del MCP; aquí, silenciar y activar.</p>
+          </div>) : <EmptyState>El programa de emisión no ha mandado pistas de audio.</EmptyState>}</div>
+          <p className="hint">La ganancia de cada pista se cambia en el programa de emisión o con una acción del MCP; aquí, silenciar y activar.</p>
         </Sec>}
     </>}
   </>;
@@ -223,7 +223,7 @@ export function PrompterAjustes({ parts }: { parts: string[] }) {
         </div>
         <Switch checked={pr.hideCommands !== false} onChange={x => P({ hideCommands: x })}>Ocultar comandos y votos del chat (<code>!sorteo</code>, «S»…)</Switch>
         <Switch checked={!!pr.mirror} onChange={x => P({ mirror: x })}>Espejo (solo si la imagen sale al revés)</Switch>
-        <label>Pista del micro en Meld (avisa en grande si está silenciado)
+        <label>Pista del micro en el programa de emisión (avisa en grande si está silenciado)
           <select value={pr.micTrack || ''} onChange={e => P({ micTrack: e.target.value })}><option value="">Automática (la que se llame «mic…»)</option>{tracks.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></label>
         <label>CSS propio de la vista <textarea className="code" spellCheck={false} value={pr.css || ''} onKeyDown={codeTab} onChange={e => P({ css: e.target.value })} placeholder=":root { --fs: 24px; --red: #00E0FF; }" /></label>
         <p className="css-help">Clases: <code>.pr</code> <code>.pr-top</code> <code>.pr-main</code> <code>.pr-chat</code> <code>.eg-timeline__item</code> <code>.pr-send</code> <code>.pr-side</code> <code>.pr-pane</code> <code>.ev-pane</code> <code>.ev-block</code> <code>.ev-item</code></p>

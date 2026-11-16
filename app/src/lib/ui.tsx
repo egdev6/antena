@@ -167,7 +167,7 @@ export function Status({ tone = 'neutral', icon, children, title }: { tone?: Ton
  *  'desconectado'): es el mismo hecho —no está leyendo el chat—, así que se muestra en la
  *  misma familia y solo cambia el matiz activo («leyendo el chat» cuando 'escuchando'). */
 export type ConnPlatform = 'twitch' | 'youtube' | 'meld';
-const CONN_PLATFORM_NAMES: Record<ConnPlatform, string> = { twitch: 'Twitch', youtube: 'YouTube', meld: 'Meld' };
+const CONN_PLATFORM_NAMES: Record<ConnPlatform, string> = { twitch: 'Twitch', youtube: 'YouTube', meld: 'Programa' };
 /** Texto visible de un estado de conexión, en la misma familia en las tres superficies. */
 export const connStateText = (state?: string) => !state ? 'sin conectar' : state === 'parado' ? 'desconectado' : state;
 /** Tono por defecto de un estado de conexión. */
@@ -232,9 +232,9 @@ export function Stage({ eyebrow, aside, src, w = 1920, h = 1080, foot, frameRef 
 export type SourceUrl = { url: string; size: string; label?: string };
 /** Bloque «Fuente de navegador en Meld» (O3.3): siempre el primero de la columna izquierda de una página de widget. */
 export function BrowserSource({ url, size, label, also = [], hint }: SourceUrl & { also?: SourceUrl[]; hint?: ReactNode }) {
-  return <Sec title="Fuente de navegador en Meld" className="browser-source">
+  return <Sec title="Fuente de navegador" className="browser-source">
     {[{ url, size, label }, ...also].map(s => <CopyUrl key={s.url} url={s.url}><span className="hint">{s.label ? `${s.label} · ` : ''}{s.size}</span></CopyUrl>)}
-    <p className="hint">{hint ?? 'En Meld: + › Browser. El CSS propio del widget gana a los estilos de serie.'}</p>
+    <p className="hint">{hint ?? 'Añade una fuente de navegador con el tamaño indicado y activa el audio de la fuente si quieres oírla. El CSS propio del widget gana a los estilos de serie.'}</p>
   </Sec>;
 }
 /** Esqueleto de una página de widget (O3.3): a la izquierda la fuente y la configuración, a la derecha la vista previa. */
