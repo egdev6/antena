@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { post, upload, enc } from '../../lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { post, upload, enc, withKey } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import type { Access, MediaItem } from '../../lib/types';
 import { CopyUrl, guard, Panel, Range, Switch, toast } from '../../lib/ui';
 import { launchTour } from '../tour';
-import { useManualSave } from '../../lib/draft';
+import { isDirty, isSaving, useDraftVersion, useManualSave } from '../../lib/draft';
 import { PageHead, SaveBar, usePageTab } from '../../lib/layout';
 import type { UploadResult } from '../../lib/types';
 
@@ -48,15 +48,94 @@ export function MediaThumb({ m }: { m: any }) {
   return <span className="au">♪ audio</span>;
 }
 
+type ChangeGroup = { count: number; paths: string[] };
+type Summary = Record<string, Record<'added' | 'removed' | 'changed', ChangeGroup>>;
+type Preview = { file: File; summary: Summary; fingerprint: string };
+
+// Se envía el archivo tal cual: incluso el JSON mal formado recibe el error exacto del servidor.
+async function transfer<T>(path: string, file: File, fingerprint?: string): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (fingerprint) headers['X-Config-Fingerprint'] = fingerprint;
+  const r = await fetch(withKey(path), { method: 'POST', headers, body: file });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof data.error === 'string' && data.error ? data.error : `Error ${r.status}`);
+  return data as T;
+}
+
+function TransferPreview({ preview, busy, error, cancel, apply, trigger }: { preview: Preview; busy: boolean; error: string; cancel: () => void; apply: () => void; trigger: React.RefObject<HTMLButtonElement | null> }) {
+  const dialog = useRef<HTMLDialogElement>(null), cancelButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const node = dialog.current;
+    node?.showModal(); cancelButton.current?.focus();
+    return () => { node?.close(); trigger.current?.focus(); };
+  }, [trigger]);
+  const groups = [['added', 'Añadidos'], ['removed', 'Eliminados'], ['changed', 'Cambiados']] as const;
+  return <dialog ref={dialog} className="modal panel transfer-dialog" aria-labelledby="transfer-title" aria-describedby="transfer-notes" onCancel={e => { e.preventDefault(); if (!busy) cancel(); }}>
+    <header><h2 id="transfer-title">Importar configuración</h2></header>
+    <div id="transfer-notes"><p>No incluye cuentas ni contraseñas: tus conexiones actuales se conservan.</p><p>Antes de aplicar se guarda una copia de tu configuración actual.</p></div>
+    {Object.keys(preview.summary).length === 0 && <p>No hay cambios en la configuración.</p>}
+    <div className="transfer-changes">{Object.entries(preview.summary).map(([section, changes]) => <section key={section}>
+      <h3>{section}</h3>
+      {groups.map(([key, label]) => {
+        const group = changes[key];
+        const paths = <ul>{group.paths.map(path => <li key={path}><code>{path}</code></li>)}</ul>;
+        return <div key={key}><b>{label}: {group.count}</b>{group.count > 5 ? <details><summary>Ver {group.count} rutas</summary>{paths}</details> : group.count > 0 && paths}</div>;
+      })}
+    </section>)}</div>
+    {error && <p className="errors" role="alert">{error}</p>}
+    <div className="row mt"><button ref={cancelButton} type="button" className="eg-btn eg-btn--ghost" disabled={busy} onClick={cancel}>Cancelar</button>
+      <button type="button" className="eg-btn eg-btn--primary" disabled={busy} onClick={apply}>{busy ? 'Aplicando…' : 'Aplicar'}</button></div>
+  </dialog>;
+}
+
+function ConfigTransfer() {
+  useDraftVersion();
+  const picker = useRef<HTMLInputElement>(null), trigger = useRef<HTMLButtonElement>(null), lock = useRef(false);
+  const [preview, setPreview] = useState<Preview | null>(null), [busy, setBusy] = useState(false);
+  const [error, setError] = useState(''), [backup, setBackup] = useState('');
+  const dirty = isDirty() || isSaving();
+  const select = async (file?: File) => {
+    if (!file || lock.current || isDirty() || isSaving()) return;
+    lock.current = true; setBusy(true); setError(''); setBackup('');
+    try { const { summary, fingerprint } = await transfer<{ summary: Summary; fingerprint: string }>('/api/config/import/preview', file); setPreview({ file, summary, fingerprint }); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { lock.current = false; setBusy(false); }
+  };
+  const apply = async () => {
+    if (!preview || lock.current) return;
+    if (isDirty() || isSaving()) { setError('Guarda o descarta los cambios pendientes antes de importar.'); return; }
+    lock.current = true; setBusy(true); setError('');
+    let applied = false;
+    try {
+      const result = await transfer<{ summary: Summary; backup: string }>('/api/config/import', preview.file, preview.fingerprint);
+      applied = true; setBackup(result.backup);
+      try { await live.load(); } catch { setError('Se importó la configuración, pero no se pudo actualizar el panel.'); }
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { lock.current = false; setBusy(false); if (applied) setPreview(null); }
+  };
+  return <Panel title="Copia de la configuración">
+    <p className="hint">Exporta la configuración guardada o importa una copia después de revisar los cambios.</p>
+    <div className="row mt">
+      <a className="eg-btn eg-btn--secondary" href={withKey('/api/config/export')}>Exportar configuración</a>
+      <button ref={trigger} type="button" className="eg-btn eg-btn--ghost" disabled={busy || dirty} onClick={() => picker.current?.click()}>Importar configuración…</button>
+      <input ref={picker} type="file" accept=".json" aria-label="Archivo de configuración JSON" hidden onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void select(file); }} />
+    </div>
+    {dirty && <p className="hint mt">Guarda o descarta los cambios pendientes antes de importar.</p>}
+    {backup && <p role="status">Configuración importada. Copia guardada: <code>{backup}</code></p>}
+    {error && !preview && <p className="errors" role="alert">{error}</p>}
+    {preview && <TransferPreview preview={preview} busy={busy} error={error} trigger={trigger} cancel={() => { if (!lock.current) { setPreview(null); setError(''); } }} apply={() => void apply()} />}
+  </Panel>;
+}
+
 export function General({ parts }: { parts: string[] }) {
   useManualSave();
   const c = useLive(s => s.config);
   const access = useLive(s => s.access || { lan: false, urls: [] });
   const setAccess = (a: Access) => live.update(() => ({ access: a }));
-  const [tab, setTab] = usePageTab(parts, 'general', ['overlay', 'directos', 'movil', 'tour']);
+  const [tab, setTab] = usePageTab(parts, 'general', ['overlay', 'directos', 'movil', 'tour', 'copia']);
   return <>
-    <PageHead tour="general-head" crumb="Ajustes" title="General" desc="Capa de alertas, cuántos directos se guardan, acceso desde el móvil y el tour guiado. Los archivos están en Registro › Archivos."
-      tabs={[{ id: 'overlay', label: 'Capa de alertas' }, { id: 'directos', label: 'Directos' }, { id: 'movil', label: 'Acceso desde el móvil' }, { id: 'tour', label: 'Tour guiado' }]} tab={tab} onTab={setTab} />
+    <PageHead tour="general-head" crumb="Ajustes" title="General" desc="Capa de alertas, directos guardados, acceso desde el móvil, tour guiado y copia de la configuración. Los archivos están en Registro › Archivos."
+      tabs={[{ id: 'overlay', label: 'Capa de alertas' }, { id: 'directos', label: 'Directos' }, { id: 'movil', label: 'Acceso desde el móvil' }, { id: 'tour', label: 'Tour guiado' }, { id: 'copia', label: 'Copia' }]} tab={tab} onTab={setTab} />
     {tab === 'overlay' && <Panel title="Capa de alertas">
       <CopyUrl url={`${location.origin}/overlay`} />
       <p className="hint">En Meld: <b>+ › Browser</b>, 1920×1080 y activa <b>Add audio track</b>. Todas las capas están en <a href="#/fuentes">Fuentes para Meld</a>. Parámetros: <code>?pos=top|center|bottom</code> <code>&amp;scale=0.8</code> <code>&amp;mute</code> <code>&amp;debug</code></p>
@@ -83,6 +162,7 @@ export function General({ parts }: { parts: string[] }) {
       <p className="hint">Un recorrido paso a paso que señala para qué sirve cada zona: el directo, el chat, los widgets, Meld, los atajos y las conexiones.</p>
       <button className="eg-btn eg-btn--ghost" onClick={launchTour}>Ver el tour de nuevo</button>
     </Panel>}
-    {(tab === 'overlay' || tab === 'directos') && <SaveBar />}
+    {tab === 'copia' && <ConfigTransfer />}
+    {(tab === 'overlay' || tab === 'directos' || tab === 'copia') && <SaveBar />}
   </>;
 }

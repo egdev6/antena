@@ -34,6 +34,7 @@ import { registerChatVariantsRoutes } from './routes/chat-variants.mjs';
 import { registerMeldRoutes } from './routes/meld.mjs';
 import { registerViewersRoutes } from './routes/viewers.mjs';
 import { registerThemeRoutes } from './routes/theme.mjs';
+import { registerConfigTransferRoutes } from './routes/config-transfer.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
 import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
@@ -897,6 +898,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return { path: p, value: store.getPath(p, keys[0] === 'obs' ? store.publicConfig() : store.config) };
   });
 
+  // Export v1 excludes credentials; import previews the same strict schema before a local backup.
+  const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig });
+
   // alertas
   route('GET', '/api/alerts', async () => Object.fromEntries(Object.keys(ALERT_TYPES).map(t => [t, alertConfig(t, store.config)])));
   route('GET', '/api/alerts/:type', async ({ type }) => ({ type, ...ALERT_TYPES[type], config: alertOf(type) }));
@@ -1404,6 +1408,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         return;
       }
       if (req.method === 'POST' && url.pathname === '/api/media/upload') return json(res, 200, await upload(req, url));
+      if (req.method === 'GET' && url.pathname === '/api/config/export') {
+        const file = configTransfer.exportFile();
+        res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.json"`);
+        res.setHeader('Cache-Control', 'no-store');
+        return json(res, 200, file);
+      }
       if (url.pathname === '/theme.css') {
         res.writeHead(200, { 'Content-Type': MIME['.css'], 'Cache-Control': 'no-store' });
         return res.end(themeCss((url.searchParams.has('draft') && themeRoutes.getDraft()) || store.config.theme));
@@ -1417,7 +1427,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         if (r.method !== req.method) continue;
         const m = r.re.exec(url.pathname);
         if (!m) continue;
-        const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream' || url.pathname === '/api/program/stream') : {};
+        // A portable config includes up to 2.5M overlay characters plus scripts and other sections.
+        // Allow 8M JSON characters here only; existing routes retain their 2M limit.
+        const transfer = req.method === 'POST' && (url.pathname === '/api/config/import' || url.pathname === '/api/config/import/preview');
+        const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream' || url.pathname === '/api/program/stream', transfer ? 8e6 : 2e6) : {};
         // rutas con parámetros: fn(params, body, url) · sin parámetros: fn(body, _, url)
         return json(res, 200, await (m.groups ? r.fn(m.groups, body, url, req) : r.fn(body, null, url, req)));
       }
@@ -1576,13 +1589,23 @@ function json(res, code, data) {
   res.end(JSON.stringify(data ?? null));
 }
 
-function readBody(req, retainRaw = false) {
+function readBody(req, retainRaw = false, limit = 2e6) {
   return new Promise((resolve, reject) => {
     let raw = '', done = false;
+    // Preserve split UTF-8 characters in the larger portable config body.
+    if (limit > 2e6) req.setEncoding('utf8');
     // El cierre/interrupción del socket también finaliza: nunca deja la promesa colgada ni el
     // contador de handlers sin bajar. El motivo es constante y no expone error crudo ni stack.
     const fail = () => { if (done) return; done = true; reject(httpError(400, 'Petición interrumpida')); };
-    req.on('data', c => { raw += c; if (raw.length > 2e6) req.destroy(); });
+    req.on('data', c => {
+      if (done) return;
+      raw += c;
+      if (raw.length <= limit) return;
+      // Existing routes keep their previous behavior (connection reset); only the larger
+      // portable-config limit answers with a readable 413.
+      if (limit <= 2e6) { req.destroy(); return; }
+      done = true; raw = ''; reject(httpError(413, 'El cuerpo de la petición es demasiado grande')); req.resume();
+    });
     req.on('end', () => {
       if (done) return;
       done = true;

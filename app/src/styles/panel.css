@@ -497,6 +497,11 @@ textarea.code{min-height:200px;font:500 13px/1.55 var(--font-mono);tab-size:2;wh
 /* Modal (lib/ui.tsx): above the panel and the tour greeting; toasts (.toast) stay above it */
 .modal-backdrop{position:fixed;inset:0;z-index:85;display:grid;place-items:center;padding:24px;background:var(--bg-scrim-backdrop);backdrop-filter:blur(2px)}
 .modal{width:min(880px,100%);max-height:min(90vh,900px);overflow:auto;outline:none}
+.transfer-dialog{width:min(680px,calc(100% - 32px));color:var(--text)}
+.transfer-dialog::backdrop{background:var(--bg-scrim-backdrop);backdrop-filter:blur(2px)}
+.transfer-changes{display:grid;gap:12px}.transfer-changes section{border-top:1px solid var(--line);padding-top:8px}
+.transfer-changes h3{margin:0 0 6px}.transfer-changes ul{margin:4px 0 8px;padding-left:24px}.transfer-changes code{overflow-wrap:anywhere;white-space:normal}
+.transfer-dialog .errors{margin-top:12px;padding-left:12px}
 .modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .platform-warning{width:min(520px,100%)}
 .platform-warning .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
