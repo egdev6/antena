@@ -23,6 +23,17 @@ export const ACTIONS: Record<string, string> = {
   scene: 'Cambiar a escena', layer: 'Mostrar capa unos segundos', hideLayer: 'Ocultar capa', toggleLayer: 'Alternar capa',
   effect: 'Alternar efecto', command: 'Comando de Meld', streamEvent: 'Evento de widget de Meld', chat: 'Escribir en el chat', say: 'Decir en voz alta',
 };
+// Refleja STREAM_COMMANDS y RECORD_COMMANDS de src/programs/obs-adapter.mjs.
+export const OBS_COMMANDS: readonly string[] = [
+  'meld.startStreamingAction', 'meld.stopStreamingAction', 'meld.toggleStreamingAction',
+  'meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction',
+];
+export function ActionOptions() {
+  const obs = useLive(s => s.config.program?.kind === 'obs');
+  return <>{Object.entries(ACTIONS).map(([kind, label]) => <option key={kind} value={kind} disabled={obs && kind === 'streamEvent'}>
+    {obs && kind === 'command' ? 'Comando del programa (en OBS: emitir y grabar)' : obs && kind === 'streamEvent' ? `${label} (solo con Meld)` : label}
+  </option>)}</>;
+}
 export const PERMS: [string, string][] = [['everyone', 'Todo el mundo'], ['members', 'Subs y miembros'], ['vips', 'VIPs y mods'], ['mods', 'Moderadores'], ['broadcaster', 'Solo yo']];
 export const DESTINATIONS: [string, string][] = [['twitch', 'Twitch'], ['youtube', 'YouTube'], ['both', 'Ambos']];
 const TIMER_VARS = ['channel', 'title', 'uptime', 'follows'];
@@ -205,10 +216,13 @@ function useEditor(t: Target) {
 /** Campos de una acción (escena, capa, efecto, chat…). Lo usan las alertas y los atajos. */
 export function ActionFields({ act, onChange, uid }: { act: any; onChange: (a: any) => void; uid: string }) {
   const meld = useLive(s => s.meld);
+  const obs = useLive(s => s.config.program?.kind === 'obs');
   const scenes = meld?.session?.scenes || [];
   const sc = scenes.find((x: any) => x.name === act.scene);
   const layers = [...new Set<string>((sc ? [sc] : scenes).flatMap((x: any) => x.layers.map((l: any) => l.name)))];
   const k = act.kind;
+  const meldOnlyCommand = obs && k === 'command' && !!act.command && !OBS_COMMANDS.includes(act.command);
+  const meldOnly = obs && (k === 'streamEvent' || meldOnlyCommand);
   const upd = (f: string, v: any) => onChange({ ...act, [f]: v });
   const inp = (f: string, label: string, type = 'text', extra: any = {}) => <label key={f} className={f === 'text' ? 'wide' : undefined}>{label}<input type={type} value={act[f] ?? ''} {...extra} onChange={e => upd(f, type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value)} /></label>;
   return <div className="afields">
@@ -218,18 +232,19 @@ export function ActionFields({ act, onChange, uid }: { act: any; onChange: (a: a
     {k === 'effect' && inp('effect', 'Efecto')}
     {k === 'scene' && inp('returnAfterSec', 'Volver tras (s)', 'number', { min: 0, placeholder: 'no volver' })}
     {k === 'layer' && inp('seconds', 'Durante (s)', 'number', { min: 0 })}
-    {k === 'command' && <label>Comando<select value={act.command || ''} onChange={e => upd('command', e.target.value)}><option value="">—</option>{(meld?.commands || []).map((c: string) => <option key={c} value={c}>{c.replace('meld.', '')}</option>)}</select></label>}
+    {k === 'command' && <label>Comando<select value={meldOnlyCommand ? '' : act.command || ''} onChange={e => upd('command', e.target.value)}><option value="">—</option>{(obs ? OBS_COMMANDS : meld?.commands || []).map((c: string) => <option key={c} value={c}>{c.replace('meld.', '')}</option>)}</select></label>}
     {k === 'streamEvent' && <><label>Evento<select value={act.event || ''} onChange={e => upd('event', e.target.value)}><option value="">—</option>{(meld?.events || []).map((c: string) => <option key={c} value={c}>{c}</option>)}</select></label>{inp('amount', 'Cantidad', 'number')}</>}
     {(k === 'chat' || k === 'say') && inp('text', k === 'chat' ? 'Mensaje (con {user}…)' : 'Texto (con {user}…)')}
     {k === 'chat' && <SegField label="Dónde" value={act.destination || 'twitch'} options={DESTINATIONS} onChange={v => upd('destination', v)} />}
     {inp('delaySec', 'Retardo (s)', 'number', { min: 0, step: 0.5 })}
+    {meldOnly && <p className="hint" style={{ gridColumn: '1 / -1' }}>Esta acción solo funciona con Meld; con OBS no hace nada.{meldOnlyCommand && <><br />Comando guardado: <code>{act.command}</code></>}</p>}
   </div>;
 }
 export function ActionsEditor({ list, onChange }: { list: any[]; onChange: (l: any[]) => void }) {
   const repl = (i: number, a: any) => { const l = [...list]; l[i] = a; onChange(l); };
   return <div className="actions-list">
     {list.map((act, i) => <div className="action" key={i}>
-      <select value={act.kind} onChange={e => repl(i, { kind: e.target.value, delaySec: act.delaySec })} aria-label="Qué hace">{Object.entries(ACTIONS).map(([x, l]) => <option key={x} value={x}>{l}</option>)}</select>
+      <select value={act.kind} onChange={e => repl(i, { kind: e.target.value, delaySec: act.delaySec })} aria-label="Qué hace"><ActionOptions /></select>
       <ActionFields act={act} uid={'a' + i} onChange={a => repl(i, a)} />
       <IconBtn icon={IC.x} label="Quitar acción" onClick={() => { const l = [...list]; l.splice(i, 1); onChange(l); }} />
     </div>)}

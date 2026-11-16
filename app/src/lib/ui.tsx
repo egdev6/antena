@@ -60,8 +60,8 @@ export function ViewHead({ crumb, title, hint, actions, tour }: { crumb: ReactNo
 export function Panel({ title, aside, children, className, tour }: { title?: ReactNode; aside?: ReactNode; children?: ReactNode; className?: string; tour?: string }) {
   return <article className={cx('panel', className)} data-tour={tour}>{(title || aside) && <header>{title && <h2>{title}</h2>}{aside}</header>}{children}</article>;
 }
-export function Switch({ checked, onChange, children, title }: { checked: boolean; onChange: (v: boolean) => void; children?: ReactNode; title?: string }) {
-  return <label className="switch" title={title}><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} /><i></i>{children}</label>;
+export function Switch({ checked, onChange, children, title, disabled }: { checked: boolean; onChange: (v: boolean) => void; children?: ReactNode; title?: string; disabled?: boolean }) {
+  return <label className="switch" title={title}><input type="checkbox" checked={!!checked} disabled={disabled} onChange={e => onChange(e.target.checked)} /><i></i>{children}</label>;
 }
 export function Check({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children?: ReactNode }) {
   return <label className="check"><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} /> {children}</label>;

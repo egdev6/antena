@@ -165,6 +165,7 @@ input[type=color]{padding:3px;height:34px;cursor:pointer}
 .switch input:checked+i::after{transform:translateX(16px);background:var(--color-action-primary-solid-fg)}
 .switch input:focus-visible+i{box-shadow:var(--shadow-focus)}
 .switch:has(input:checked){color:var(--text)}
+.switch:has(input:disabled){opacity:.55;cursor:not-allowed}
 
 /* StatusBadge */
 .pill,.state{--status:var(--grey);display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font:600 12px/1.1 var(--font-sans);letter-spacing:0;text-transform:none;
