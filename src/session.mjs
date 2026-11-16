@@ -1,5 +1,6 @@
 // Registro del directo: eventos con su minuto, totales, últimos, objetivo y créditos.
-import { readFile, readdir, rename, unlink, lstat, access } from 'node:fs/promises';
+import { readFile, readdir, rename, unlink, lstat, access, chmod } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
@@ -186,6 +187,11 @@ export function isValidRoot(d) {
     || Object.keys(d.chatListeners).some(p => !CHAT_PLATFORMS.includes(p) || d.chatListeners[p] !== true))) return false;
   return true;
 }
+// #223: an imported past stream must be a complete, ended archive (stricter than isValidRoot,
+// whose callers normalize missing fields; archives are served as stored).
+export function isImportableArchive(d) {
+  return isValidRoot(d) && typeof d.id === 'string' && isValidDate(d.startedAt) && isValidDate(d.endedAt) && Array.isArray(d.events);
+}
 // Rellena solo los defaults legacy ausentes; conserva íntegro todo lo demás (campos desconocidos incluidos).
 function normalizeRoot(d) {
   const base = Session.fresh();
@@ -225,7 +231,7 @@ export class Session extends EventEmitter {
     this.report = report;
     // IO de carga inyectable; los métodos ausentes caen a los defaults reales.
     // `lstat`/`access` son el seam opcional para comprobar el destino del archivo.
-    this.io = { readFile, rename, readdir, lstat, access, unlink, ...io };
+    this.io = { readFile, rename, readdir, lstat, access, unlink, chmod, ...io };
     this.recovery = { source: 'fresh', preservedFiles: 0, message: null };
     this.debounceMs = debounceMs;
     this.maxWaitMs = maxWaitMs;
@@ -841,6 +847,71 @@ export class Session extends EventEmitter {
       out.unshift({ ...this._metaOf(entry.data), pending: true });
     }
     return out.slice(0, limit);
+  }
+  // #223 portable copy: archived files plus ended streams that only live in memory (pending or
+  // ended-but-not-archived current). Never the live stream; never the .meta.json cache.
+  async exportableArchives() {
+    let names = [];
+    try { names = (await this.io.readdir(this.dir)).filter(f => f.endsWith('.json') && !f.endsWith('.meta.json') && SAFE_ROOT_ID.test(f.slice(0, -5))).sort(); }
+    catch (err) { if (err.code !== 'ENOENT') throw err; }
+    const ids = new Set(names.map(f => f.slice(0, -5)));
+    const memory = [this.pendingArchive?.data, this.data.endedAt ? this.data : null]
+      .filter(d => d && SAFE_ROOT_ID.test(d.id) && !ids.has(d.id) && (ids.add(d.id), true)).map(d => structuredClone(d));
+    return { archived: names.map(f => ({ id: f.slice(0, -5), path: path.join(this.dir, f) })), memory };
+  }
+  // Ids an import must never write: the live stream and the one waiting to be archived.
+  protectedIds() { return new Set([this.data.id, this.pendingArchive?.data.id].filter(Boolean)); }
+  async hasArchive(id) {
+    try { await this.io.lstat(path.join(this.dir, id + '.json')); return true; }
+    catch (err) { if (err.code === 'ENOENT') return false; throw err; }
+  }
+  async archiveCount() {
+    try { return (await this.io.readdir(this.dir)).filter(f => f.endsWith('.json') && !f.endsWith('.meta.json')).length; }
+    catch (err) { if (err.code === 'ENOENT') return 0; throw err; }
+  }
+  // Hold the existing transition queue across the whole import/commit/rollback, not just
+  // each individual archive write: a cutover must not prune an uncommitted import.
+  withArchiveImport(task) {
+    const run = this.transitionChain.then(task);
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
+  // These cache helpers are used under the import lock so rollback can restore even a
+  // stale or malformed sidecar that importArchive removes before writing the archive.
+  async importCache(id) {
+    const file = this._metaFile(path.join(this.dir, id + '.json'));
+    try {
+      const info = await this.io.lstat(file);
+      if (!info.isFile()) throw new Error('La caché del directo no es un archivo normal.');
+      const data = await this.io.readFile(file, { flag: fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) });
+      return { data, mode: info.mode & 0o7777 };
+    } catch (err) { if (err.code === 'ENOENT') return null; throw err; }
+  }
+  async restoreImportCache(id, cache) {
+    if (cache !== null) {
+      const file = this._metaFile(path.join(this.dir, id + '.json'));
+      await this.writer(file, cache.data, { text: cache.data });
+      await this.io.chmod(file, cache.mode);
+    }
+  }
+  // locked is only for the owner of withArchiveImport; ordinary callers enqueue normally.
+  importArchive(data, { locked = false } = {}) {
+    const write = async () => {
+      if (typeof data?.id !== 'string' || !SAFE_ROOT_ID.test(data.id) || this.protectedIds().has(data.id)) throw new Error('id de sesión no permitido');
+      if (await this.hasArchive(data.id)) return false;
+      const target = path.join(this.dir, data.id + '.json');
+      try { await this.io.unlink(this._metaFile(target)); } catch (err) { if (err.code !== 'ENOENT') throw err; }
+      await this.writer(target, data, { text: serialize(data) });
+      return true;
+    };
+    return locked ? write() : this.withArchiveImport(write);
+  }
+  removeImportedArchive(id, { locked = false } = {}) {
+    const remove = async () => {
+      if (typeof id !== 'string' || !SAFE_ROOT_ID.test(id) || this.protectedIds().has(id)) throw new Error('id de sesión no permitido');
+      await this.io.unlink(path.join(this.dir, id + '.json'));
+    };
+    return locked ? remove() : this.withArchiveImport(remove);
   }
   async getArchived(id) {
     const safe = String(id).replace(/[^\w-]/g, '');

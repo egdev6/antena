@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
 import { crc32, deflateRawSync } from 'node:zlib';
-import { openZip, writeZip } from '../src/zip-archive.mjs';
+import { checkZipName, openZip, writeZip } from '../src/zip-archive.mjs';
 import { createApp } from '../src/server.mjs';
 
 const MiB = 1024 * 1024;
@@ -136,6 +136,7 @@ const unsafe = [
   ['directory disguised as file', [{ name: 'media/a.png', external: (0o040755 << 16) | 0x10 }], message.link],
   ['oversized config', [{ name: 'config.json', size: 8 * MiB + 1 }], message.config],
   ['oversized media', [{ name: 'media/a.webm', size: 300 * MiB + 1 }], message.media],
+  ['oversized session', [{ name: 'sessions/a.json', size: 64 * MiB + 1 }], 'Un directo del ZIP supera 64 MB.'],
   ['oversized total', Array.from({ length: 8 }, (_, i) => ({ name: `media/${i}.webm`, size: 300 * MiB })), message.total],
   ['too many entries', Array.from({ length: 4097 }, (_, i) => ({ name: `media/${i}.png` })), message.count],
 ];
@@ -245,4 +246,15 @@ test('writer rejects a file over 4 GiB without reading or emitting it', async t 
   try { await assert.rejects(writeZip(dest, [{ name: 'media/large.webm', source: { path: large } }]), isError(message.zip64)); }
   finally { dest.destroy(); }
   assert.equal(emitted, 0);
+});
+
+test('sessions/ entries accept only a safe stream id with .json and reject caches and traversal', () => {
+  const ok = '2026-10-01T18-00-00-000Z-11111111-1111-4111-8111-111111111111';
+  assert.doesNotThrow(() => checkZipName(`sessions/${ok}.json`));
+  assert.doesNotThrow(() => checkZipName('sessions/legacy_id-1.json'));
+  for (const name of ['sessions/', 'sessions/.json', `sessions/${ok}.meta.json`, 'sessions/../config.json', 'sessions/a/b.json',
+    'sessions/a b.json', 'sessions/a.txt', 'sessions/a.JSON', `sessions/${'x'.repeat(200)}.json`, 'sessions/a\\b.json'])
+    assert.throws(() => checkZipName(name), { message: 'Nombre de archivo no permitido en el ZIP.' }, name);
+  const seen = new Set(); checkZipName('sessions/Abc.json', seen);
+  assert.throws(() => checkZipName('sessions/abc.json', seen), { message: 'El ZIP contiene nombres duplicados.' });
 });

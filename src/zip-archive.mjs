@@ -1,5 +1,6 @@
 // ZIP clásico sin dependencias (Node >= 24). Límites de importación: 8 MiB por
-// config, 300 MiB por medio, 2 GiB en total, 4096 entradas y 16 MiB de directorio.
+// config, 300 MiB por medio, 64 MiB por directo (sessions/<id>.json), 2 GiB en total,
+// 4096 entradas y 16 MiB de directorio.
 // writeZip(dest, [{name, source}]) cierra dest; source es Buffer/string o {path}.
 // openZip(path) devuelve {entries, readConfig(), extract(name, dir), close()}.
 // extract deposita el basename en un directorio de staging confiable ya existente;
@@ -16,12 +17,14 @@ import { httpError } from './http-util.mjs';
 import { MAX_UPLOAD } from './routes/media.mjs';
 
 const MAX32 = 0xffffffff, MAX_CONFIG = 8 * 1024 * 1024, MAX_DIRECTORY = 16 * 1024 * 1024;
-export const MAX_ZIP_TOTAL = 2 * 1024 ** 3, MAX_ZIP_ENTRIES = 4096;
+export const MAX_ZIP_TOTAL = 2 * 1024 ** 3, MAX_ZIP_ENTRIES = 4096, MAX_SESSION = 64 * 1024 * 1024;
+// Same id rule as the session archive (SAFE_ROOT_ID), bounded; never the .meta.json cache.
+const SESSION_NAME = /^sessions\/[\w-]{1,128}\.json$/;
 const errors = {
   name: 'Nombre de archivo no permitido en el ZIP.', missingConfig: 'El archivo no contiene config.json', duplicate: 'El ZIP contiene nombres duplicados.',
   encrypted: 'El ZIP contiene archivos cifrados.', method: 'Método de compresión no admitido en el ZIP.',
   link: 'El ZIP contiene enlaces o tipos de archivo no admitidos.', count: 'El ZIP contiene demasiadas entradas.',
-  config: 'El archivo config.json supera 8 MB.', media: 'El archivo de medios supera 300 MB.',
+  config: 'El archivo config.json supera 8 MB.', media: 'El archivo de medios supera 300 MB.', session: 'Un directo del ZIP supera 64 MB.',
   total: 'El ZIP supera el límite total de 2 GB.', size: 'El tamaño declarado no coincide con el contenido del ZIP.',
   crc: 'El CRC del archivo ZIP no coincide.', invalid: 'ZIP inválido o incompleto.',
   zip64: 'El ZIP supera el límite sin ZIP64.',
@@ -32,7 +35,7 @@ const decoder = new TextDecoder('utf-8', { fatal: true });
 
 export function checkZipName(name, seen = new Set()) {
   const base = name.startsWith('media/') ? name.slice(6) : '';
-  if (name !== 'config.json' && name !== 'media/' &&
+  if (name !== 'config.json' && name !== 'media/' && !SESSION_NAME.test(name) &&
       (!base || base.lastIndexOf('.') === 0 || name.includes('..') || base.includes('/') || base.length > 255 ||
        /[\\\x00-\x1f\x7f<>:"|?*]/.test(base) || /[. ]$/.test(base) ||
        /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(base) || !mediaKind(base))) fail('name');
@@ -43,6 +46,7 @@ export function checkZipName(name, seen = new Set()) {
 function checkSize(name, size) {
   if (name === 'config.json' && size > MAX_CONFIG) fail('config');
   if (name.startsWith('media/') && size > MAX_UPLOAD) fail('media');
+  if (name.startsWith('sessions/') && size > MAX_SESSION) fail('session');
   if (name === 'media/' && size !== 0) fail('invalid');
 }
 function checkExtra(extra) {

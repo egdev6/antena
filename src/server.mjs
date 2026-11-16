@@ -898,7 +898,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
 
   // Export v1 excludes credentials; import previews the same strict schema before a local backup.
-  const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO, zipUploadLimit, zipExportLimit });
+  const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO, zipUploadLimit, zipExportLimit,
+    session, retention: () => Number(store.config.sessions?.retention) || 0,
+    afterSessions: () => refreshLastStream().then(() => engine.pushWidgets()).catch(() => {}) });
   let mediaQueue = Promise.resolve();
   const withMediaLock = async fn => {
     const previous = mediaQueue; let release; mediaQueue = new Promise(resolve => { release = resolve; });
@@ -1414,11 +1416,13 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (req.method === 'POST' && url.pathname === '/api/media/upload') return json(res, 200, await withMediaLock(() => upload(req, url)));
       if (req.method === 'GET' && url.pathname === '/api/config/export') {
         const file = configTransfer.exportFile();
+        // #223: past streams carry chat names and messages, so they are opt-in.
+        const exportOptions = { sessions: url.searchParams.get('sessions') === '1' };
         if (url.searchParams.get('skipped') === '1') {
           res.setHeader('Cache-Control', 'no-store');
-          return json(res, 200, { skipped: await configTransfer.exportSkipped(file) });
+          return json(res, 200, { skipped: await configTransfer.exportSkipped(file, exportOptions) });
         }
-        if (url.searchParams.get('format') !== 'json') return await configTransfer.exportZip(res, file);
+        if (url.searchParams.get('format') !== 'json') return await configTransfer.exportZip(res, file, exportOptions);
         res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.json"`);
         res.setHeader('Cache-Control', 'no-store');
         return json(res, 200, file);
