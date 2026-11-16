@@ -181,7 +181,13 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
   // Header: base64url de un array JSON UTF-8 con nombre y motivo; nombres no UTF-8 usan «base64:<bytes base64url>».
   const exportZip = async (res, file) => {
     const { entries, skipped } = await planExport(file);
-    if (skipped.length) res.setHeader('X-Antena-Skipped-Media', Buffer.from(JSON.stringify(skipped)).toString('base64url'));
+    if (skipped.length) {
+      // Keep headers well below common client limits (Node: 16 KB); the full list is always
+      // available from GET /api/config/export?skipped=1.
+      const encoded = Buffer.from(JSON.stringify(skipped)).toString('base64url');
+      res.setHeader('X-Antena-Skipped-Media-Count', String(skipped.length));
+      if (encoded.length <= 8000) res.setHeader('X-Antena-Skipped-Media', encoded);
+    }
     res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.zip"`);
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/zip');
     await writeZip(res, entries);

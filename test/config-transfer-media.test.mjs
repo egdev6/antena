@@ -100,6 +100,18 @@ test('ZIP export and preview/apply round-trip config and media, preserving local
   assert.equal((await target.json('GET', '/api/config')).body.overlay.volume, 0.77);
 });
 
+test('a very long skipped list never overflows client header limits', async t => {
+  const f = await fixture(t); await writeFile(path.join(f.media, 'safe.png'), 'yes');
+  const names = Array.from({ length: 1500 }, (_, i) => `${String(i).padStart(4, '0')}-${'n'.repeat(150)}.txt`);
+  for (const name of names) await writeFile(path.join(f.media, name), 'x');
+  const r = await f.download(); assert.equal(r.status, 200);
+  assert.equal(r.headers.get('x-antena-skipped-media-count'), '1500');
+  assert.equal(r.headers.get('x-antena-skipped-media'), null);
+  assert.deepEqual((await archiveConfig(f, r.bytes)).names, ['config.json', 'media/safe.png']);
+  const report = await (await fetch(f.base + '/api/config/export?skipped=1')).json();
+  assert.equal(report.skipped.length, 1500);
+});
+
 test('unportable local names are skipped and reported without failing the export', async t => {
   const f = await fixture(t); await writeFile(path.join(f.media, 'safe.png'), 'yes'); await writeFile(path.join(f.media, 'odd..png'), 'odd');
   const r = await f.download(); assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'application/zip');
