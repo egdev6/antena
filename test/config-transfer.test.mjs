@@ -349,10 +349,10 @@ test('oversized requests return 413 JSON without writing, including chunked tran
   assert.deepEqual(await f.snapshot(), before);
 });
 
-test('other routes retain their 2 million character limit and report oversize (D2)', async t => {
+test('other routes retain their 2 million character limit and previous oversize behavior (D2)', async t => {
   const f = await fixture(t), before = await f.snapshot();
-  const r = await f.call('POST', '/api/config/set', { path: 'overlay.css', value: 'x'.repeat(2_000_001) });
-  assert.deepEqual({ status: r.status, body: r.body }, { status: 413, body: { error: 'El cuerpo de la petición es demasiado grande' } });
+  // Existing routes still reset the connection on an oversized body, exactly as before #219.
+  await assert.rejects(f.call('POST', '/api/config/set', { path: 'overlay.css', value: 'x'.repeat(2_000_001) }));
   assert.deepEqual(await f.snapshot(), before);
 });
 

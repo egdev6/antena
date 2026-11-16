@@ -1600,7 +1600,11 @@ function readBody(req, retainRaw = false, limit = 2e6) {
     req.on('data', c => {
       if (done) return;
       raw += c;
-      if (raw.length > limit) { done = true; raw = ''; reject(httpError(413, 'El cuerpo de la petición es demasiado grande')); req.resume(); }
+      if (raw.length <= limit) return;
+      // Existing routes keep their previous behavior (connection reset); only the larger
+      // portable-config limit answers with a readable 413.
+      if (limit <= 2e6) { req.destroy(); return; }
+      done = true; raw = ''; reject(httpError(413, 'El cuerpo de la petición es demasiado grande')); req.resume();
     });
     req.on('end', () => {
       if (done) return;
