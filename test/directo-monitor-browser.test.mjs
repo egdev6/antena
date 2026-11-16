@@ -715,3 +715,16 @@ test('#118: aviso sin emisión, cierre confirmado, historial e inicio manual', {
   const next = await api(f.base, 'GET', '/api/session'); assert.notEqual(next.id, ended.id);
   assert.ok((await api(f.base, 'GET', '/api/sessions')).past.some(x => x.id === ended.id));
 });
+
+test('Directo: the lower columns line up with the two pulse cards', { timeout: 90000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const c = await f.open();
+  await wait(c, `!!${pulse('twitch')} && !!${pulse('youtube')} && !!document.querySelector('#h-past')`);
+  const box = sel => `(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; })()`;
+  assert.ok(await dom(c, 'window.innerWidth') >= 960, 'two-column layout');
+  const [twL, twR] = await dom(c, box('[data-platform-pulse="twitch"]')), [ytL, ytR] = await dom(c, box('[data-platform-pulse="youtube"]'));
+  const lower = await dom(c, `[...document.querySelector('.dir-lower').children].map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; })`);
+  assert.deepEqual(lower, [[twL, twR], [ytL, ytR]]);
+  const extras = await dom(c, `[...document.querySelector('.dir-extras').children].map(e => Math.round(e.getBoundingClientRect().left))`);
+  assert.deepEqual(extras, [twL, ytL]);
+});
