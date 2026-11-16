@@ -433,6 +433,45 @@ export function validateChatVariantsTransition(previous, next, defaultChat) {
   return errors;
 }
 
+/** Import is a validated sequence on copies: delete, create from the default, then edit.
+ * Existing ids stay stable; the final write remains a single atomic configuration write. */
+export function validateImportedChatVariants(previous, next, defaultChat) {
+  const errors = validatePatch({ widgets: { chatVariants: next } });
+  if (errors.length) return errors;
+  const old = Array.isArray(previous) ? previous : [];
+  const wanted = new Set(next.map(v => v.id));
+  let staged = old.filter(v => wanted.has(v.id));
+  const check = candidate => {
+    const [error] = validateChatVariantsTransition(staged, candidate, defaultChat);
+    if (error) return error;
+    staged = candidate;
+  };
+  const [deletion] = validateChatVariantsTransition(old, staged, defaultChat);
+  if (deletion) return [deletion];
+  for (const variant of next) {
+    if (staged.some(v => v.id === variant.id)) continue;
+    const match = /^(.*)-([2-9]|[1-9]\d+)$/.exec(variant.id);
+    const long = variant.id.length > 60;
+    const name = long ? match?.[1] : variant.id;
+    if (!name || name.length > 60 || (long && !match))
+      return [{ path: 'widgets.chatVariants', message: 'widgets.chatVariants: id imposible de crear' }];
+    const generated = chatVariantId(name, staged);
+    const stub = { ...structuredClone(defaultChat), css: '', id: generated, name };
+    const added = check([...staged, stub]); if (added) return [added];
+    if (long) {
+      // A slug of at most 60 chars plus a canonical suffix is reachable by creating
+      // then deleting earlier same-name variants. Prove that history symbolically:
+      // expanding potentially billions of temporary rows would exhaust the server.
+      const initial = chatVariantId(name, []);
+      if (initial !== name && initial !== `${name}-2`)
+        return [{ path: 'widgets.chatVariants', message: 'widgets.chatVariants: id imposible de crear' }];
+      staged[staged.length - 1] = { ...stub, id: variant.id };
+    }
+  }
+  const edited = check(next);
+  return edited ? [edited] : [];
+}
+
 /** Tramos de ruta que llegarían al prototipo de los objetos: nunca se leen ni se escriben. */
 export const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 /** Hojas con un valor simple: por debajo no hay nada que guardar (lo convertiría en objeto). */

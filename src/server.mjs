@@ -34,6 +34,7 @@ import { registerChatVariantsRoutes } from './routes/chat-variants.mjs';
 import { registerMeldRoutes } from './routes/meld.mjs';
 import { registerViewersRoutes } from './routes/viewers.mjs';
 import { registerThemeRoutes } from './routes/theme.mjs';
+import { registerConfigTransferRoutes } from './routes/config-transfer.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
 import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
@@ -897,6 +898,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return { path: p, value: store.getPath(p, keys[0] === 'obs' ? store.publicConfig() : store.config) };
   });
 
+  // Export v1 excludes credentials; import previews the same strict schema before a local backup.
+  const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig });
+
   // alertas
   route('GET', '/api/alerts', async () => Object.fromEntries(Object.keys(ALERT_TYPES).map(t => [t, alertConfig(t, store.config)])));
   route('GET', '/api/alerts/:type', async ({ type }) => ({ type, ...ALERT_TYPES[type], config: alertOf(type) }));
@@ -1404,6 +1408,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         return;
       }
       if (req.method === 'POST' && url.pathname === '/api/media/upload') return json(res, 200, await upload(req, url));
+      if (req.method === 'GET' && url.pathname === '/api/config/export') {
+        const file = configTransfer.exportFile();
+        res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.json"`);
+        res.setHeader('Cache-Control', 'no-store');
+        return json(res, 200, file);
+      }
       if (url.pathname === '/theme.css') {
         res.writeHead(200, { 'Content-Type': MIME['.css'], 'Cache-Control': 'no-store' });
         return res.end(themeCss((url.searchParams.has('draft') && themeRoutes.getDraft()) || store.config.theme));

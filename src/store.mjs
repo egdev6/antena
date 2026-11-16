@@ -1,5 +1,8 @@
 // Configuración (data/config.json) y secretos (data/secrets.json). Nada sale del PC.
-import { readFile } from 'node:fs/promises';
+import { readFile, copyFile, chmod, stat, readdir, unlink } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -188,11 +191,45 @@ export class Store extends EventEmitter {
     this.chain = run.catch(() => {});
     return run;
   }
-  async patchConfig(patch) {
-    this.config = deepMerge(this.config, patch);
+  async patchConfig(patch, { replace = false, change = patch, onPersist } = {}) {
+    this.config = replace ? patch : deepMerge(this.config, patch);
     await this.write(this.cfgFile, this.config);
-    this.emit('change', patch);
+    onPersist?.(); // The atomic write has committed even if a change listener throws.
+    this.emit('change', change);
     return this.config;
+  }
+  /** Local restore point: exact prior config bytes and mode, never the separate credential file. */
+  async replaceConfigWithBackup(next, expected, change) {
+    const conflict = () => Object.assign(new Error('La configuración ha cambiado; vuelve a previsualizar'), { status: 409 });
+    const barrier = this.chain;
+    await barrier;
+    if (this.chain !== barrier || this.dirty.config || !isDeepStrictEqual(this.config, expected)) throw conflict();
+    const mode = (await stat(this.cfgFile)).mode & 0o777;
+    const now = this.lastConfigBackup = Math.max(Date.now(), (this.lastConfigBackup || 0) + 1);
+    const name = `config.backup-${new Date(now).toISOString().replace(/[:.]/g, '-')}-${randomUUID()}.json`;
+    const target = path.join(this.dir, name);
+    await copyFile(this.cfgFile, target, constants.COPYFILE_EXCL);
+    let started = false, committed = false, listenerError;
+    try {
+      await chmod(target, mode);
+      if (this.chain !== barrier || !isDeepStrictEqual(this.config, expected)) throw conflict();
+      started = true;
+      await this.patchConfig(next, { replace: true, change, onPersist: () => { committed = true; } });
+    } catch (error) {
+      if (!committed) {
+        if (started) this.config = expected;
+        await unlink(target).catch(() => {});
+        throw error;
+      }
+      listenerError = error; // Match PUT: report the listener error, but never roll back a committed write.
+    }
+    // Only files created by this feature are eligible; the current restore point always stays.
+    try {
+      const others = (await readdir(this.dir)).filter(n => /^config\.backup-\d{4}-\d\d-\d\dT[\dTZ-]+-[0-9a-f-]{36}\.json$/.test(n) && n !== name).sort().reverse();
+      for (const old of others.slice(9)) await unlink(path.join(this.dir, old));
+    } catch { /* successful import remains successful if old backup cleanup fails */ }
+    if (listenerError) throw listenerError;
+    return name;
   }
   /** Cambia un valor por ruta con puntos («alerts.follow.title», «widgets.goals.0.target»). */
   async setPath(dotted, value) {

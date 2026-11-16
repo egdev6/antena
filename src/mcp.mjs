@@ -89,6 +89,10 @@ tool('estado', 'Estado general: conexiones (Twitch, YouTube, chat, Meld), overla
   return { ...st, directo: { titulo: ses.title, inicio: ses.startedAt, eventos: ses.eventCount, totales: ses.totals } };
 });
 tool('ver_config', 'Lee la configuración completa o un valor concreto por ruta con puntos (p. ej. «alerts.raid.title», «widgets.chat», «filters.blockedWords»).', { ruta: S.str('Ruta opcional con puntos') }, ({ ruta }) => get('/api/config' + (ruta ? '?path=' + enc(ruta) : '')));
+tool('exportar_configuracion', 'Exporta toda la configuración en JSON v1 sin credenciales; los medios se indican solo por ruta.', {}, () => get('/api/config/export'));
+tool('importar_configuracion', 'Previsualiza una configuración exportada; confirmar=true aplica tras guardar una copia local privada (puede contener credenciales). Las aprobaciones de overlays son locales y los cambios de contenido requieren revisión en el panel.',
+  { archivo: S.obj('Archivo JSON completo exportado'), confirmar: S.bool('true para aplicar; por defecto solo previsualiza') },
+  ({ archivo, confirmar }) => post(confirmar === true ? '/api/config/import' : '/api/config/import/preview', archivo), ['archivo']);
 tool('cambiar_config', 'Cambia la configuración fusionando un objeto parcial (las listas se sustituyen enteras). Sirve para cualquier ajuste: overlay, tts, filters, chat, meld, widgets, youtube, twitch…', { cambios: S.obj('Objeto parcial, p. ej. {"tts":{"rate":1.1},"filters":{"blockedWords":["spoiler"]}}') }, ({ cambios }) => put('/api/config', cambios), ['cambios']);
 tool('fijar_valor', 'Fija un valor por ruta con puntos. Crea lo que falte. Ej.: ruta «alerts.follow.fontSize», valor 72; ruta «widgets.goals.0.target», valor 50.', { ruta: S.str('Ruta con puntos'), valor: { description: 'Cualquier valor JSON' } }, ({ ruta, valor }) => post('/api/config/set', { path: ruta, value: valor }), ['ruta', 'valor']);
 tool('borrar_valor', 'Borra un valor de la configuración por ruta (en listas, elimina ese elemento).', { ruta: S.str('Ruta con puntos') }, ({ ruta }) => post('/api/config/set', { path: ruta }), ['ruta']);
