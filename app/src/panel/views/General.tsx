@@ -50,11 +50,13 @@ export function MediaThumb({ m }: { m: any }) {
 
 type ChangeGroup = { count: number; paths: string[] };
 type Summary = Record<string, Record<'added' | 'removed' | 'changed', ChangeGroup>>;
-type Preview = { file: File; summary: Summary };
+type Preview = { file: File; summary: Summary; fingerprint: string };
 
 // Se envía el archivo tal cual: incluso el JSON mal formado recibe el error exacto del servidor.
-async function transfer<T>(path: string, file: File): Promise<T> {
-  const r = await fetch(withKey(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: file });
+async function transfer<T>(path: string, file: File, fingerprint?: string): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (fingerprint) headers['X-Config-Fingerprint'] = fingerprint;
+  const r = await fetch(withKey(path), { method: 'POST', headers, body: file });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(typeof data.error === 'string' && data.error ? data.error : `Error ${r.status}`);
   return data as T;
@@ -95,7 +97,7 @@ function ConfigTransfer() {
   const select = async (file?: File) => {
     if (!file || lock.current || isDirty() || isSaving()) return;
     lock.current = true; setBusy(true); setError(''); setBackup('');
-    try { const { summary } = await transfer<{ summary: Summary }>('/api/config/import/preview', file); setPreview({ file, summary }); }
+    try { const { summary, fingerprint } = await transfer<{ summary: Summary; fingerprint: string }>('/api/config/import/preview', file); setPreview({ file, summary, fingerprint }); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { lock.current = false; setBusy(false); }
   };
@@ -105,7 +107,7 @@ function ConfigTransfer() {
     lock.current = true; setBusy(true); setError('');
     let applied = false;
     try {
-      const result = await transfer<{ summary: Summary; backup: string }>('/api/config/import', preview.file);
+      const result = await transfer<{ summary: Summary; backup: string }>('/api/config/import', preview.file, preview.fingerprint);
       applied = true; setBackup(result.backup);
       try { await live.load(); } catch { setError('Se importó la configuración, pero no se pudo actualizar el panel.'); }
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }

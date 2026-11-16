@@ -134,6 +134,26 @@ test('un archivo inválido muestra exactamente el error 400 del servidor y no ap
   }
 });
 
+test('un archivo demasiado grande muestra el mensaje 413 del servidor sin escribir (D2)', async t => {
+  const f = await fixture(t); if (!f) return;
+  const before = await f.snapshot();
+  await f.wait(`!!${input}`);
+  await f.dom(`(() => { const d = new DataTransfer(); d.items.add(new File([' '.repeat(8000001)], 'grande.json', {type:'application/json'})); const i = ${input}; i.files = d.files; i.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+  await f.wait(`document.querySelector('[role="alert"]')?.textContent.trim() === 'El cuerpo de la petición es demasiado grande'`);
+  assert.equal(await f.dom(`!!${dialog}`), false); assert.deepEqual(await f.snapshot(), before);
+});
+
+test('si cambia la configuración tras la vista previa el panel muestra el conflicto y no aplica (A3)', async t => {
+  const f = await fixture(t); if (!f) return;
+  const file = await changedFile(f);
+  await f.select(JSON.stringify(file)); await f.wait(`!!${dialog}`);
+  const response = await fetch(f.base + '/api/config/set', { method: 'POST', headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' }, body: JSON.stringify({ path: 'tts.rate', value: 1.25 }) });
+  assert.equal(response.status, 200); const before = await f.snapshot();
+  await clickWhen(f.c, control('Aplicar'));
+  await f.wait(`${dialog}?.querySelector('[role="alert"]')?.textContent.trim() === 'La configuración ha cambiado; vuelve a previsualizar'`);
+  assert.deepEqual(await f.snapshot(), before);
+});
+
 test('General conserva el ajuste y guardado de retención de directos', async t => {
   const f = await fixture(t, '#/general/directos'); if (!f) return;
   await f.wait(`!!document.querySelector('input[type="number"]')`);

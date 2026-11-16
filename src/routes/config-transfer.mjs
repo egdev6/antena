@@ -1,6 +1,7 @@
 // Transferencia portable v1: rutas de medios, no archivos. Las copias locales sí contienen
 // credenciales del config.json y deben tratarse como privadas; conservamos las últimas diez.
 import { readFile } from 'node:fs/promises';
+import { createHmac, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { ROOT, DEFAULT_CONFIG, deepMerge } from '../store.mjs';
@@ -11,19 +12,46 @@ const VERSION = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8
 const object = value => value !== null && typeof value === 'object';
 // Unknown schema fields are accepted by generic writes; do not export common credential names.
 const credential = (key, prefix) => (prefix === 'access' && key === 'key') ||
-  /^(password|passwordset|passphrase|secret|secrets|clientsecret|clientsecretset|apikey|apikeyset|token|accesstoken|refreshtoken|authtoken|bearertoken|authorization|credential|credentials)$/i.test(key.replace(/[_-]/g, '')) ||
+  /token|secret|password|passwd|apikey|privatekey|credential|^passphrase$|^authorization$/i.test(key.replace(/[_-]/g, '')) ||
   (['twitch', 'youtube'].includes(prefix) && ['access', 'refresh'].includes(key));
+const credentialParam = key => ['key', 'pass', 'pwd', 'auth'].includes(key.toLowerCase()) || credential(key, '');
 
-// Meld URLs are free text and OBS URLs can carry a query. Strip userinfo and credential query
-// parameters rather than sharing them. On import a local credential-bearing URL stays local.
+// Only portable URL parts leave the PC; whitespace must not bypass credential detection.
 function cleanUrl(value) {
-  if (typeof value !== 'string' || !/^wss?:\/\//i.test(value)) return value;
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!/^wss?:\/\//i.test(trimmed)) return value;
   try {
-    const url = new URL(value); let changed = !!(url.username || url.password);
+    const url = new URL(trimmed); let changed = !!(url.username || url.password);
     url.username = ''; url.password = '';
-    for (const key of [...url.searchParams.keys()]) if (key.toLowerCase() === 'key' || credential(key, '')) { url.searchParams.delete(key); changed = true; }
-    return changed ? url.toString() : value;
-  } catch { return value; }
+    for (const key of [...url.searchParams.keys()]) if (credentialParam(key)) { url.searchParams.delete(key); changed = true; }
+    return changed ? url.toString() : trimmed;
+  } catch {
+    // Meld accepts arbitrary text, including malformed URLs. Redact their authority and query
+    // without relying on URL parsing; if even the split is ambiguous, fail closed.
+    const parts = /^(wss?:\/\/)([^/?#]*)([^?#]*)(?:\?([^#]*))?(#.*)?$/is.exec(trimmed);
+    if (!parts) return '';
+    const at = parts[2].lastIndexOf('@');
+    let changed = at !== -1;
+    const query = new URLSearchParams(parts[4] || '');
+    for (const key of [...query.keys()]) if (credentialParam(key)) { query.delete(key); changed = true; }
+    if (!changed) return trimmed;
+    const params = query.toString();
+    return `${parts[1]}${parts[2].slice(at + 1)}${parts[3]}${params ? '?' + params : ''}${parts[5] || ''}`;
+  }
+}
+
+// Retain only local credentials, never the old destination, and only for the same endpoint.
+function withLocalUrlCredentials(previous, imported) {
+  if (typeof previous !== 'string' || typeof imported !== 'string') return imported;
+  try {
+    const local = new URL(previous.trim()), next = new URL(imported);
+    if (local.protocol !== next.protocol || local.hostname !== next.hostname || local.port !== next.port) return imported;
+    let changed = !!(local.username || local.password);
+    next.username = local.username; next.password = local.password;
+    for (const [key, value] of local.searchParams) if (credentialParam(key)) { next.searchParams.append(key, value); changed = true; }
+    return changed ? next.toString() : imported;
+  } catch { return imported; }
 }
 
 function portable(value, prefix = '', reject = false) {
@@ -34,7 +62,7 @@ function portable(value, prefix = '', reject = false) {
     if (PROTO_KEYS.has(key)) { if (reject) throw httpError(400, `Clave de configuración no válida: ${p}`); continue; }
     if (credential(key, prefix)) { if (reject) throw httpError(400, `El archivo contiene credenciales: ${p}`); continue; }
     const clean = (p === 'meld.url' || p === 'obs.url') ? cleanUrl(child) : child;
-    if (reject && clean !== child) throw httpError(400, `El archivo contiene credenciales: ${p}`);
+    if (reject && clean !== child && typeof child === 'string' && clean !== child.trim()) throw httpError(400, `El archivo contiene credenciales: ${p}`);
     out[key] = portable(clean, p, reject);
   }
   return out;
@@ -46,8 +74,10 @@ function preserveLocal(previous, next, prefix = '') {
   for (const [key, value] of Object.entries(previous)) {
     const p = prefix ? `${prefix}.${key}` : key;
     if (PROTO_KEYS.has(key)) continue;
-    if (credential(key, prefix) || ((p === 'meld.url' || p === 'obs.url') && cleanUrl(value) !== value)) {
+    if (credential(key, prefix)) {
       next[key] = structuredClone(value); kept = true;
+    } else if (p === 'meld.url' || p === 'obs.url') {
+      next[key] = withLocalUrlCredentials(value, next[key]);
     } else if (object(value)) {
       const compatible = object(next[key]) && Array.isArray(value) === Array.isArray(next[key]);
       const branch = compatible ? next[key] : (Array.isArray(value) ? [] : {});
@@ -75,6 +105,9 @@ function changes(previous, next) {
 /** Strict like PUT /api/config (including theme ranges), not theme-import clamping.
  * Overlay approval/version fields are local trust state and never imported as approvals. */
 export function registerConfigTransferRoutes({ route, store, customOverlays, afterConfig }) {
+  // The keyed fingerprint binds both current private state and the exact file without exposing either.
+  const fingerprintKey = randomBytes(32);
+  const fingerprint = (before, file) => createHmac('sha256', fingerprintKey).update(JSON.stringify([before, file])).digest('hex');
   const exportFile = () => ({ format: 'antena-config', version: 1, exportedAt: new Date().toISOString(), app: VERSION, config: portable(store.config) });
   const prepare = file => {
     if (!file || typeof file !== 'object' || Array.isArray(file) || file.format !== 'antena-config') throw httpError(400, 'Formato de configuración no válido');
@@ -98,9 +131,13 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
     const summary = changes(portable(before), portable(next));
     return { before, next, summary };
   };
-  route('POST', '/api/config/import/preview', async file => ({ summary: prepare(file).summary }));
-  route('POST', '/api/config/import', async file => {
+  route('POST', '/api/config/import/preview', async file => {
+    const { before, summary } = prepare(file);
+    return { summary, fingerprint: fingerprint(before, file) };
+  });
+  route('POST', '/api/config/import', async (file, _, _url, req) => {
     const { before, next, summary } = prepare(file);
+    if (req.headers['x-config-fingerprint'] !== fingerprint(before, file)) throw httpError(409, 'La configuración ha cambiado; vuelve a previsualizar');
     const changed = Object.fromEntries(Object.keys(summary).map(key => [key, true]));
     // PUT treats recordOnStart alone as non-reconnecting.
     if (changed.meld && summary.meld.changed.paths.every(p => p === 'meld.recordOnStart') && !summary.meld.added.count && !summary.meld.removed.count) changed.meld = false;

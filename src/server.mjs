@@ -1427,7 +1427,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         if (r.method !== req.method) continue;
         const m = r.re.exec(url.pathname);
         if (!m) continue;
-        const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream' || url.pathname === '/api/program/stream') : {};
+        // A portable config includes up to 2.5M overlay characters plus scripts and other sections.
+        // Allow 8M JSON characters here only; existing routes retain their 2M limit.
+        const transfer = req.method === 'POST' && (url.pathname === '/api/config/import' || url.pathname === '/api/config/import/preview');
+        const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream' || url.pathname === '/api/program/stream', transfer ? 8e6 : 2e6) : {};
         // rutas con parámetros: fn(params, body, url) · sin parámetros: fn(body, _, url)
         return json(res, 200, await (m.groups ? r.fn(m.groups, body, url, req) : r.fn(body, null, url, req)));
       }
@@ -1586,13 +1589,19 @@ function json(res, code, data) {
   res.end(JSON.stringify(data ?? null));
 }
 
-function readBody(req, retainRaw = false) {
+function readBody(req, retainRaw = false, limit = 2e6) {
   return new Promise((resolve, reject) => {
     let raw = '', done = false;
+    // Preserve split UTF-8 characters in the larger portable config body.
+    if (limit > 2e6) req.setEncoding('utf8');
     // El cierre/interrupción del socket también finaliza: nunca deja la promesa colgada ni el
     // contador de handlers sin bajar. El motivo es constante y no expone error crudo ni stack.
     const fail = () => { if (done) return; done = true; reject(httpError(400, 'Petición interrumpida')); };
-    req.on('data', c => { raw += c; if (raw.length > 2e6) req.destroy(); });
+    req.on('data', c => {
+      if (done) return;
+      raw += c;
+      if (raw.length > limit) { done = true; raw = ''; reject(httpError(413, 'El cuerpo de la petición es demasiado grande')); req.resume(); }
+    });
     req.on('end', () => {
       if (done) return;
       done = true;

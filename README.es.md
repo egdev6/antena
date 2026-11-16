@@ -131,7 +131,9 @@ Panel: http://127.0.0.1:4500/ · prompter: `/prompter` · dock: `/dock`. Sin `ap
 
 En **Ajustes › General › Copia** puedes exportar un JSON versionado o elegir uno para revisar los cambios antes de aplicarlos. Se excluyen tokens, contraseñas, claves de acceso y otras credenciales; al importar se conservan las conexiones locales, así que en otro PC hay que volver a conectar las cuentas. Los archivos de medios (sonidos, vídeos e imágenes) no se incluyen, solo sus rutas.
 
-Antes de aplicar, antena guarda el `config.json` anterior a su lado en la carpeta de datos activa como `config.backup-….json` y conserva las últimas 10 copias. Estas copias locales pueden contener credenciales: mantenlas privadas.
+Antes de aplicar, antena guarda el `config.json` anterior a su lado en la carpeta de datos activa como `config.backup-….json` y conserva las últimas 10 copias. Estas copias locales pueden contener credenciales: mantenlas privadas. Las credenciales de las URL de Meld y OBS solo se conservan si la URL importada tiene el mismo esquema, host y puerto. Si la configuración cambia después de la vista previa, vuelve a previsualizar antes de aplicar.
+
+Las rutas de importación y vista previa admiten hasta 8 millones de caracteres JSON (aproximadamente 8 MB en ASCII), con margen para hasta 2,5 millones de caracteres de overlays propios más guiones y otros ajustes; las demás rutas mantienen sus límites. En la API HTTP, `POST /api/config/import/preview` devuelve un `fingerprint` opaco; envía el mismo archivo a `POST /api/config/import` con `X-Config-Fingerprint` igual a ese valor. Si falta o está desactualizado, responde 409 sin aplicar cambios. MCP `importar_configuracion` con `confirmar: true` previsualiza y aplica con la misma protección.
 
 ### Capas de navegador en Meld
 

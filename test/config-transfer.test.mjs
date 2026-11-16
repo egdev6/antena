@@ -27,8 +27,8 @@ async function fixture(t, extra = {}) {
   t.after(async () => { app.teleprompter.stop(); app.viewers.stop(); app.timers.stop(); await app.program.quiesceClose(); app.program.dispose(); await app.closeHttp(); await rm(root, { recursive: true, force: true }); });
   await listen(app.server);
   const base = `http://127.0.0.1:${app.server.address().port}`;
-  const call = async (method, url, body) => {
-    const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(5000) });
+  const call = async (method, url, body, headers = {}) => {
+    const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin', ...headers }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(15000) });
     return { status: r.status, body: await r.json(), headers: r.headers };
   };
   const ok = async (method, url, body) => { const r = await call(method, url, body); assert.equal(r.status, 200, JSON.stringify(r.body)); return r.body; };
@@ -57,7 +57,8 @@ async function fixture(t, extra = {}) {
 
 const exp = f => f.ok('GET', '/api/config/export');
 const preview = (f, file) => f.call('POST', '/api/config/import/preview', file);
-const apply = (f, file) => f.call('POST', '/api/config/import', file);
+const applyFingerprint = (f, file, fingerprint) => f.call('POST', '/api/config/import', file, fingerprint ? { 'x-config-fingerprint': fingerprint } : {});
+const apply = async (f, file) => applyFingerprint(f, file, (await preview(f, file)).body.fingerprint);
 
 test('exporta todas las secciones y rutas de medios sin campos ni valores de credenciales', async t => {
   const f = await fixture(t, { twitch: { clientId: 'public-id', accessToken: 'HIDDEN_UNKNOWN_TOKEN' } });
@@ -158,11 +159,14 @@ test('un oyente que falla tras guardar conserva el nuevo config y su copia, igua
 test('un fallo de escritura conserva memoria y archivos anteriores sin copia huérfana', async t => {
   const f = await fixture(t), file = await exp(f), before = await f.snapshot(); file.config.overlay.volume = 0.83;
   const restore = await f.failWrite(); const r = await apply(f, file); restore();
-  assert.deepEqual({ status: r.status, body: r.body }, { status: 500, body: { error: 'No se pudo guardar la configuración; los cambios permanecen en memoria pendientes de guardado' } });
+  assert.deepEqual({ status: r.status, body: r.body }, { status: 500, body: { error: 'No se pudo guardar la configuración; no se aplicaron los cambios' } });
   const after = await f.snapshot();
   assert.equal(after.config, before.config); assert.equal(after.credentials, before.credentials);
   assert.deepEqual(after.files, before.files); assert.deepEqual(after.state, before.state);
-  assert.equal(after.persistence.pending.config, 0); assert.equal(after.persistence.dirty.config, true);
+  assert.deepEqual(after.persistence, before.persistence);
+  const retry = await apply(f, file);
+  assert.equal(retry.status, 200, JSON.stringify(retry.body));
+  assert.equal((await f.ok('GET', '/api/config')).overlay.volume, 0.83);
 });
 
 test('un callback posterior que falla no deshace el config ya confirmado ni borra su copia', async t => {
@@ -260,6 +264,148 @@ test('MCP exporta y previsualiza por defecto; confirmar aplica', async t => {
   assert.deepEqual(seen.summary.overlay.changed, { count: 1, paths: ['overlay.volume'] }); assert.deepEqual(await f.snapshot(), before);
   const applied = await call('importar_configuracion', { archivo: file, confirmar: true }); assert.ok(applied.backup);
   assert.equal((await f.ok('GET', '/api/config')).overlay.volume, 0.77);
+});
+
+test('export strips Meld URL userinfo even without credential query (S5)', async t => {
+  const f = await fixture(t, { meld: { url: 'ws://USERCANARY:PASSCANARY@127.0.0.1:13376/' } });
+  const text = JSON.stringify(await exp(f));
+  for (const v of ['USERCANARY', 'PASSCANARY']) assert.equal(text.includes(v), false, v);
+});
+
+test('malformed Meld URLs still cannot export userinfo or credential query parameters (S5, A2)', async t => {
+  const f = await fixture(t, { meld: { url: ' ws://USERCANARY:PASSCANARY@bad.invalid:abc/path?token=TOKENCANARY&pass=PASSQUERY&profile=public ' } });
+  const file = await exp(f), text = JSON.stringify(file);
+  assert.equal(file.config.meld.url, 'ws://bad.invalid:abc/path?profile=public');
+  for (const value of ['USERCANARY', 'PASSCANARY', 'TOKENCANARY', 'PASSQUERY']) assert.equal(text.includes(value), false, value);
+  const before = await f.snapshot();
+  file.config.meld.url = ' ws://USERCANARY:PASSCANARY@bad.invalid:abc/path?token=TOKENCANARY ';
+  for (const run of [preview, apply]) {
+    const r = await run(f, file); assert.equal(r.status, 400); assert.equal(r.body.error, 'El archivo contiene credenciales: meld.url');
+    assert.deepEqual(await f.snapshot(), before);
+  }
+});
+
+test('import keeps exactly the last 10 backups (S4)', async t => {
+  const f = await fixture(t), file = await exp(f), names = [];
+  for (let i = 0; i < 11; i++) {
+    file.config.overlay.gapMs = 100 + i;
+    const r = await apply(f, file); assert.equal(r.status, 200, JSON.stringify(r.body)); names.push(r.body.backup);
+  }
+  const kept = (await readdir(f.dataDir)).filter(n => n.startsWith('config.backup-'));
+  assert.equal(kept.length, 10); assert.equal(kept.includes(names[0]), false);
+  for (const name of names.slice(1)) assert.ok(kept.includes(name));
+});
+
+test('imported meld.url is applied even when the local one carries credentials (S4, D1)', async t => {
+  const f = await fixture(t, { meld: { url: 'ws://u:p@127.0.0.1:13376/' } }), file = await exp(f);
+  file.config.meld.url = 'ws://127.0.0.1:13399';
+  assert.deepEqual((await preview(f, file)).body.summary.meld.changed.paths, ['meld.url']);
+  assert.equal((await apply(f, file)).status, 200);
+  assert.equal(JSON.parse(await readFile(f.config, 'utf8')).meld.url, 'ws://127.0.0.1:13399');
+});
+
+for (const kind of ['meld', 'obs']) test(`${kind}: imported URL keeps local credentials only at the same scheme, host and port (D1)`, async t => {
+  const authority = kind === 'meld' ? 'u:p@localhost' : 'localhost';
+  const f = await fixture(t, { [kind]: { url: `ws://${authority}:13376/old?token=PRIVATE_TOKEN_VALUE&pass=abc&profile=old` } });
+  const file = await exp(f);
+  file.config[kind].url = 'ws://localhost:13376/new?profile=new';
+  const p = await preview(f, file); assert.equal(p.status, 200); assert.deepEqual(p.body.summary[kind].changed.paths, [`${kind}.url`]);
+  assert.equal((await applyFingerprint(f, file, p.body.fingerprint)).status, 200);
+  let local = new URL(JSON.parse(await readFile(f.config, 'utf8'))[kind].url);
+  assert.equal(local.username, kind === 'meld' ? 'u' : ''); assert.equal(local.password, kind === 'meld' ? 'p' : '');
+  assert.equal(local.searchParams.get('token'), 'PRIVATE_TOKEN_VALUE'); assert.equal(local.searchParams.get('pass'), 'abc');
+  assert.equal(local.searchParams.get('profile'), 'new'); assert.equal(local.pathname, '/new');
+  let exported = (await exp(f)).config[kind].url;
+  for (const value of ['u:p', 'token', 'PRIVATE_TOKEN_VALUE', 'pass=abc']) assert.equal(exported.includes(value), false, value);
+  for (const url of ['wss://localhost:13376/secure', 'ws://127.0.0.1:13376/other', 'ws://localhost:13377/other']) {
+    const fresh = await fixture(t, { [kind]: { url: `ws://${authority}:13376/old?token=local` } });
+    const imported = await exp(fresh); imported.config[kind].url = url;
+    assert.ok((await preview(fresh, imported)).body.summary[kind]);
+    assert.equal((await apply(fresh, imported)).status, 200);
+    assert.equal(JSON.parse(await readFile(fresh.config, 'utf8'))[kind].url, url);
+  }
+});
+
+test('a valid export larger than 2 MB can be previewed and imported (S4, D2)', async t => {
+  const f = await fixture(t);
+  for (let i = 0; i < 5; i++) await f.ok('POST', '/api/custom-overlays', { name: 'Big' + i, html: '<p>' + 'x'.repeat(480000) + '</p>' });
+  const file = await exp(f); assert.ok(JSON.stringify(file).length > 2_000_000);
+  const p = await preview(f, file); assert.equal(p.status, 200, JSON.stringify(p.body));
+  assert.equal((await applyFingerprint(f, file, p.body.fingerprint)).status, 200);
+  assert.equal((await exp(f)).config.customOverlays.length, 5);
+});
+
+test('oversized requests return 413 JSON without writing, including chunked transfer (D2)', async t => {
+  const f = await fixture(t), before = await f.snapshot();
+  const body = { padding: 'x'.repeat(8_000_001) };
+  for (const url of ['/api/config/import/preview', '/api/config/import']) {
+    const r = await f.call('POST', url, body);
+    assert.deepEqual({ status: r.status, body: r.body }, { status: 413, body: { error: 'El cuerpo de la petición es demasiado grande' } });
+    assert.deepEqual(await f.snapshot(), before);
+  }
+  const stream = new ReadableStream({ start(controller) { for (let i = 0; i < 9; i++) controller.enqueue(new TextEncoder().encode('x'.repeat(1_000_000))); controller.close(); } });
+  const response = await fetch(f.base + '/api/config/import/preview', { method: 'POST', headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' }, body: stream, duplex: 'half', signal: AbortSignal.timeout(15000) });
+  assert.equal(response.status, 413); assert.deepEqual(await response.json(), { error: 'El cuerpo de la petición es demasiado grande' });
+  assert.deepEqual(await f.snapshot(), before);
+});
+
+test('other routes retain their 2 million character limit and report oversize (D2)', async t => {
+  const f = await fixture(t), before = await f.snapshot();
+  const r = await f.call('POST', '/api/config/set', { path: 'overlay.css', value: 'x'.repeat(2_000_001) });
+  assert.deepEqual({ status: r.status, body: r.body }, { status: 413, body: { error: 'El cuerpo de la petición es demasiado grande' } });
+  assert.deepEqual(await f.snapshot(), before);
+});
+
+test('unknown credential-like names never leave the export and are rejected on import (A2)', async t => {
+  const f = await fixture(t, { future: { apiToken: 'CANARY1', privateKey: 'CANARY2', webhookSecret: 'CANARY3', mixedPASSWD: 'CANARY4', api_key_extra: 'CANARY5', nestedCredential: 'CANARY6', safe: 'visible' } });
+  const file = await exp(f), text = JSON.stringify(file);
+  for (const v of ['apiToken', 'privateKey', 'webhookSecret', 'mixedPASSWD', 'api_key_extra', 'nestedCredential', 'CANARY1', 'CANARY2', 'CANARY3', 'CANARY4', 'CANARY5', 'CANARY6']) assert.equal(text.includes(v), false, v);
+  assert.equal(file.config.future.safe, 'visible');
+  const before = await f.snapshot();
+  for (const key of ['apiToken', 'privateKey', 'webhookSecret', 'mixedPASSWD', 'api_key_extra', 'nestedCredential']) {
+    const invalid = structuredClone(file); invalid.config.future[key] = 'intruso';
+    for (const run of [preview, apply]) {
+      const r = await run(f, invalid); assert.equal(r.status, 400); assert.equal(r.body.error, `El archivo contiene credenciales: future.${key}`);
+      assert.deepEqual(await f.snapshot(), before);
+    }
+  }
+});
+
+for (const kind of ['meld', 'obs']) test(`${kind}: trim URLs and strip credential parameters case-insensitively (A2)`, async t => {
+  // OBS validates whitespace and userinfo at load; Meld deliberately accepts both.
+  const local = kind === 'meld' ? '  ws://user:pass@127.0.0.1:12345/path?PaSs=a&PWD=b&Auth=c&apiToken=d&profile=public  ' : 'ws://127.0.0.1:12345/path?PaSs=a&PWD=b&Auth=c&apiToken=d&profile=public';
+  const f = await fixture(t, { [kind]: { url: local } });
+  const file = await exp(f), clean = file.config[kind].url;
+  assert.equal(clean, 'ws://127.0.0.1:12345/path?profile=public');
+  for (const value of ['user', 'pass', 'PaSs', 'PWD', 'Auth', 'apiToken']) assert.equal(clean.includes(value), false, value);
+  const before = await f.snapshot();
+  file.config[kind].url = ' ws://name:word@127.0.0.1:12345/ ';
+  for (const run of [preview, apply]) {
+    const r = await run(f, file); assert.equal(r.status, 400); assert.equal(r.body.error, `El archivo contiene credenciales: ${kind}.url`);
+    assert.deepEqual(await f.snapshot(), before);
+  }
+});
+
+test('apply requires the preview fingerprint and rejects stale or changed files without writing (A3)', async t => {
+  const f = await fixture(t), file = await exp(f); file.config.overlay.volume = 0.8;
+  const p = await preview(f, file); assert.equal(p.status, 200); assert.equal(typeof p.body.fingerprint, 'string'); assert.ok(p.body.fingerprint.length > 20);
+  for (const value of ['LOCAL_KEY_EXAMPLE', 'YOUTUBE_KEY_EXAMPLE']) assert.equal(p.body.fingerprint.includes(value), false);
+  let before = await f.snapshot();
+  for (const fingerprint of [undefined, 'incorrect']) {
+    const r = await applyFingerprint(f, file, fingerprint);
+    assert.deepEqual({ status: r.status, body: r.body }, { status: 409, body: { error: 'La configuración ha cambiado; vuelve a previsualizar' } });
+    assert.deepEqual(await f.snapshot(), before);
+  }
+  const modified = structuredClone(file); modified.config.overlay.volume = 0.9;
+  const changedFile = await applyFingerprint(f, modified, p.body.fingerprint);
+  assert.deepEqual({ status: changedFile.status, body: changedFile.body }, { status: 409, body: { error: 'La configuración ha cambiado; vuelve a previsualizar' } });
+  assert.deepEqual(await f.snapshot(), before);
+  await f.ok('POST', '/api/config/set', { path: 'tts.rate', value: 1.25 }); before = await f.snapshot();
+  const stale = await applyFingerprint(f, file, p.body.fingerprint);
+  assert.deepEqual({ status: stale.status, body: stale.body }, { status: 409, body: { error: 'La configuración ha cambiado; vuelve a previsualizar' } });
+  assert.deepEqual(await f.snapshot(), before);
+  const fresh = await preview(f, file); assert.notEqual(fresh.body.fingerprint, p.body.fingerprint);
+  assert.equal((await applyFingerprint(f, file, fresh.body.fingerprint)).status, 200);
 });
 
 test('PUT y config/set existentes mantienen su comportamiento', async t => {

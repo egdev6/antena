@@ -209,16 +209,23 @@ export class Store extends EventEmitter {
     const name = `config.backup-${new Date(now).toISOString().replace(/[:.]/g, '-')}-${randomUUID()}.json`;
     const target = path.join(this.dir, name);
     await copyFile(this.cfgFile, target, constants.COPYFILE_EXCL);
-    let started = false, committed = false, listenerError;
+    let started = false, committed = false, listenerError, importChain;
     try {
       await chmod(target, mode);
       if (this.chain !== barrier || !isDeepStrictEqual(this.config, expected)) throw conflict();
       started = true;
-      await this.patchConfig(next, { replace: true, change, onPersist: () => { committed = true; } });
+      const writing = this.patchConfig(next, { replace: true, change, onPersist: () => { committed = true; } });
+      importChain = this.chain;
+      await writing;
     } catch (error) {
       if (!committed) {
         if (started) this.config = expected;
         await unlink(target).catch(() => {});
+        if (started && error.code === 'PERSISTENCE_FAILED') {
+          // Unlike ordinary writes, this transaction restored memory and has no pending changes.
+          if (this.chain === importChain) { this.#markClean('config'); this.#publishPersistence(); }
+          throw Object.assign(new Error('No se pudo guardar la configuración; no se aplicaron los cambios'), { status: 500, cause: error });
+        }
         throw error;
       }
       listenerError = error; // Match PUT: report the listener error, but never roll back a committed write.
