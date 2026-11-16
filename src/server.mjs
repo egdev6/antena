@@ -25,7 +25,7 @@ import { registerShortcutRoutes, PROMPTER_LEGACY_TABS } from './routes/shortcuts
 import { registerSessionRoutes, TIMELINE_MAX } from './routes/sessions.mjs';
 import { registerMetricsRoutes } from './routes/metrics.mjs';
 import { createPushExport } from './push-export.mjs';
-import { registerMediaRoutes } from './routes/media.mjs';
+import { registerMediaRoutes, MAX_UPLOAD } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
 import { registerGoalsRoutes } from './routes/goals.mjs';
@@ -57,7 +57,6 @@ const PUBLIC = path.join(ROOT, 'public');
 // responden una página mínima que explica cómo compilarla (#115: el panel clásico se retiró).
 const APP_DIST = path.join(ROOT, 'app', 'dist');
 const APP_PAGES = { '/': 'index.html', '/prompter': 'prompter.html', '/dock': 'dock.html' };
-const MAX_UPLOAD = 300 * 1024 * 1024;
 const HELD_MAX_ALERT_BYTES = 256 * 1024;
 const HELD_MAX_BATCH_BYTES = 8 * 1024 * 1024;
 const HELD_LIST_LIMIT = 100;
