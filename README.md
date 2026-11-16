@@ -127,6 +127,12 @@ Panel: http://127.0.0.1:4500/ · prompter: `/prompter` · dock: `/dock`. Without
 
 ## Usage guide
 
+### Configuration backup
+
+In **Settings › General › Copia**, export a versioned JSON file or choose one to preview the changes before applying them. Tokens, passwords, access keys and other credentials are excluded; current local connections are preserved on import, so reconnect accounts when moving to another PC. Media files (sounds, videos and images) are not included, only their paths.
+
+Before applying an import, antena saves the previous `config.json` alongside it in the active data directory as `config.backup-….json` and keeps the last 10 backups. These local backups can contain credentials: keep them private.
+
 ### Browser layers in Meld
 
 In the panel, **Meld and Stream Deck › Sources for Meld** lists all of them with their size and a copy button (it includes one goal per goal you have). In Meld: **+ › Browser**, paste the URL and set that width and height. Meld does not allow creating layers from outside, so they are added by hand once.

@@ -127,6 +127,12 @@ Panel: http://127.0.0.1:4500/ · prompter: `/prompter` · dock: `/dock`. Sin `ap
 
 ## Guía de uso
 
+### Copia de la configuración
+
+En **Ajustes › General › Copia** puedes exportar un JSON versionado o elegir uno para revisar los cambios antes de aplicarlos. Se excluyen tokens, contraseñas, claves de acceso y otras credenciales; al importar se conservan las conexiones locales, así que en otro PC hay que volver a conectar las cuentas. Los archivos de medios (sonidos, vídeos e imágenes) no se incluyen, solo sus rutas.
+
+Antes de aplicar, antena guarda el `config.json` anterior a su lado en la carpeta de datos activa como `config.backup-….json` y conserva las últimas 10 copias. Estas copias locales pueden contener credenciales: mantenlas privadas.
+
 ### Capas de navegador en Meld
 
 En el panel, **Meld y Stream Deck › Fuentes para Meld** lista todas con su tamaño y un botón de copiar (incluye un objetivo por cada uno que tengas). En Meld: **+ › Browser**, pega la dirección y pon ese ancho y alto. Meld no deja crear capas desde fuera, así que se añaden a mano una vez.
