@@ -18,7 +18,7 @@
 // - Se puede probar sin arrancar la app: construyendo un ctx falso y llamando a los
 //   handlers directamente (ver test/routes-shortcuts.test.mjs).
 const BROWSER_SOURCES = [
-  { id: 'overlay', name: 'Alertas', path: '/overlay', width: 1920, height: 1080, note: 'Activa «Add audio track» para oír sonidos y voz.' },
+  { id: 'overlay', name: 'Alertas', path: '/overlay', width: 1920, height: 1080, note: 'Configura el audio de la fuente de navegador para oír sonidos y voz.' },
   { id: 'chat', name: 'Chat en pantalla', path: '/widget/chat', width: 600, height: 900 },
   { id: 'latest', name: 'Últimos apoyos', path: '/widget/latest', width: 1400, height: 200 },
   { id: 'ticker', name: 'Ticker', path: '/widget/ticker', width: 1920, height: 64 },

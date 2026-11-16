@@ -89,7 +89,7 @@
     {"type":4}
   ],
   "observations": [
-    {"label":"timer-disconnected","value":{"row":{"pausedOffStream":true,"nextInSec":60,"runs":0,"lines":0,"lastRun":false},"rejected":{"error":"No se envía «Live»: Meld no está conectado: no se sabe si estás emitiendo."}}},
+    {"label":"timer-disconnected","value":{"row":{"pausedOffStream":true,"nextInSec":60,"runs":0,"lines":0,"lastRun":false},"rejected":{"error":"No se envía «Live»: El programa de emisión no está conectado: no se sabe si estás emitiendo."}}},
     {"label":"timer-disconnected-later","value":{"pausedOffStream":true,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
     {"label":"timer-connected-offline","value":{"pausedOffStream":true,"nextInSec":60,"runs":0,"lines":0,"lastRun":false}},
     {"label":"stream-true","value":{"status":{"state":"conectado","streaming":true,"streamingKnown":true,"recording":false,"recordingKnown":true,"recordingWarning":null,"version":2,"error":null},"session":{"streaming":true,"recording":false}}},

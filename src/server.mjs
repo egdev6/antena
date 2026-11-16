@@ -528,7 +528,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const fromId = session.data.id;
     autoLive = true; reconnectCheck = null; identityEpoch++;
     const work = trackAutoSession(() => session.startNew('', { meldAuto: true }),
-      '[meld] directo en marcha: nueva sesión', '[meld] No se pudo iniciar la sesión automática.');
+      '[programa de emisión] directo en marcha: nueva sesión', '[programa de emisión] No se pudo iniciar la sesión automática.');
     pendingAutoStart = work; pendingAutoStartFrom = fromId;
     if (ownTwitchListening()) recordListener('twitch', {}, chatTarget());
     work.then(() => { if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; } }, () => {
@@ -624,7 +624,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // Meld's own stop keeps its existing immediate cut. A manual request cuts only
     // after success, so an unsuccessful pre-cut flush cannot discard live metrics.
     if (!manual) resetAutoSession();
-    const work = trackAutoSession(() => session.endCurrent(undefined, { expectedId }).then(closed => closed || structuredClone(session.data)), null, '[meld] No se pudo cerrar la sesión automática.');
+    const work = trackAutoSession(() => session.endCurrent(undefined, { expectedId }).then(closed => closed || structuredClone(session.data)), null, '[programa de emisión] No se pudo cerrar la sesión automática.');
     pendingAutoClose = work; pendingAutoCloseId = expectedId ?? session.data.id;
     const settle = () => {
       // Do not roll back a newer start or a different session. An ended session must
@@ -641,7 +641,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (expectedId !== session.data.id) throw httpError(409, 'La sesión actual ha cambiado. Actualiza antes de terminar el directo.');
     // Check and enqueue without an await: a live observation cannot slip between them.
     if (program.status.state === 'conectado' && program.status.streaming)
-      throw httpError(409, 'No se puede terminar el directo mientras Meld está emitiendo.');
+      throw httpError(409, 'No se puede terminar el directo mientras el programa de emisión está emitiendo.');
     return closeAutoSession({ expectedId }).then(async closed => {
       // An idempotent retry after a failed checkpoint must be durable before success.
       if (session.lastSaveError) await session.flush();
@@ -1699,7 +1699,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
   if (!quiet) {
     log(`\n  antena en marcha${host === '0.0.0.0' ? ' (también desde la red local)' : ''}`);
     log(`  Panel:   http://127.0.0.1:${port}/`);
-    log(`  Overlay: http://127.0.0.1:${port}/overlay   ← pégalo en Meld como capa de navegador`);
+    log(`  Overlay: http://127.0.0.1:${port}/overlay   ← añádelo como fuente de navegador en tu programa de emisión`);
     log(`  Widgets: http://127.0.0.1:${port}/widget/{chat,goal,latest,ticker,credits}`);
     log(`  Prompter: http://127.0.0.1:${port}/prompter`);
     log(`  Media:   ${app.mediaDir}\n`);
@@ -1853,7 +1853,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
                 () => { app.program.dispose(); drain(failed); },
                 () => {
                   app.program.dispose();
-                  safeLog('[parada] No se pudo cerrar Meld.');
+                  safeLog('[parada] No se pudo cerrar el programa de emisión.');
                   drain(true);
                 }
               );
@@ -1871,7 +1871,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
               attemptDrain(() => app.drainAutoSession()).then(
                 () => chatMetricsCut(failed),
                 () => {
-                  safeLog('[parada] No se pudo completar el inicio automático de sesión de Meld.');
+                  safeLog('[parada] No se pudo completar el inicio automático de sesión del programa de emisión.');
                   chatMetricsCut(true);
                 }
               );
@@ -1880,7 +1880,7 @@ export async function startServer({ log = console.log, quiet = false, shutdownTi
               attemptDrain(() => app.drainLayerHides()).then(
                 () => autoSessionCut(failed),
                 () => {
-                  safeLog('[parada] No se pudo completar el ocultado diferido de capas de Meld.');
+                  safeLog('[parada] No se pudo completar el ocultado diferido de capas del programa de emisión.');
                   autoSessionCut(true);
                 }
               );

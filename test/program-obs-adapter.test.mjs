@@ -31,7 +31,7 @@ actions.command = [
 ];
 actions.showScene = [
   { args: ['slides'], calls: [{ requestType: 'SetCurrentProgramScene', requestData: { sceneName: 'Slides' } }], session: changedSession },
-  { args: ['missing'], calls: [], error: { message: 'No encuentro la escena «missing» en Meld' } },
+  { args: ['missing'], calls: [], error: { message: 'No encuentro la escena «missing» en el programa de emisión' } },
 ];
 actions.setLayer = [
   { args: ['Camera', 'Logo', true], calls: [{ requestType: 'SetSceneItemEnabled', requestData: { sceneName: 'Camera', sceneItemId: 7, sceneItemEnabled: true } }], session: layerSession },

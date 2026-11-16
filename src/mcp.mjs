@@ -76,7 +76,7 @@ const ALERT_HELP = `Campos de una alerta (todos opcionales):
 - actions: lista de acciones al mostrarse. Cada una con "kind" y opcional "delaySec":
   scene {scene, returnAfterSec} · layer {scene, layer, seconds} (mostrar unos segundos) · hideLayer {scene, layer} · toggleLayer {scene, layer} · effect {scene, layer, effect}
   command {command: meld.recordClip…} · streamEvent {event: CONFETTIPOP_TRIGGER…, amount} · chat {text, destination} (escribe en tu chat: destination twitch|youtube|both, sin él Twitch; resultado por plataforma, y el texto que no cabe —500 Twitch, 200 YouTube— no se envía ahí) · say {text} (voz)
-  Escenas y capas se indican por nombre o id de Meld.`;
+  Escenas y capas se indican por nombre o id del programa de emisión.`;
 const CONDITIONS = S.obj('Condiciones (todas opcionales): minAmount, maxAmount, tier (1-3), users (lista separada por comas), messageContains (palabras separadas por comas), chance (0-100 %).');
 
 // ---------- herramientas ----------
@@ -84,7 +84,7 @@ const T = [];
 const tool = (name, description, properties, call, required = []) => T.push({ name, description, inputSchema: { type: 'object', properties, required, additionalProperties: false }, call });
 
 // estado y configuración
-tool('estado', 'Estado general: conexiones (Twitch, YouTube, chat, Meld), overlays abiertos, pausa, totales del directo, envío de métricas (último éxito, último error y pendientes) y recuperación de alertas retenidas (sin payload ni ejecución automática).', {}, async () => {
+tool('estado', 'Estado general: conexiones (Twitch, YouTube, chat, programa de emisión), overlays abiertos, pausa, totales del directo, envío de métricas (último éxito, último error y pendientes) y recuperación de alertas retenidas (sin payload ni ejecución automática).', {}, async () => {
   const [st, ses] = await Promise.all([get('/api/status'), get('/api/session')]);
   return { ...st, directo: { titulo: ses.title, inicio: ses.startedAt, eventos: ses.eventCount, totales: ses.totals } };
 });
@@ -145,12 +145,12 @@ tool('editar_comando', 'Edita un comando (por id o disparador). ' + CMD_HELP, { 
 tool('borrar_comando', 'Borra un comando.', { id: S.str('Id o disparador') }, ({ id }) => del('/api/commands/' + enc(id)), ['id']);
 
 // mensajes programados
-const TIMER_HELP = 'Campos: name, enabled, message (texto del chat; variables {channel} {title} {uptime} {follows}), intervalMin (cada cuántos minutos), minChatLines (mensajes en el chat desde la última vez; 0 = da igual), announce (anuncio destacado de Twitch), announceColor (primary|blue|green|orange|purple), onlyWhenLive (solo mientras emites, según Meld; activado por defecto, y sin Meld conectado no se envía), destination (twitch|youtube|both; sin él, Twitch; los anuncios solo existen en Twitch y YouTube recibe el texto normal; si el texto no cabe —500 Twitch, 200 YouTube— no se envía ahí y la respuesta trae warnings), showAlert (además sale en pantalla) y, para esa alerta, cualquier campo de alerta (title, text, sub, layout, media, sound, actions…).';
+const TIMER_HELP = 'Campos: name, enabled, message (texto del chat; variables {channel} {title} {uptime} {follows}), intervalMin (cada cuántos minutos), minChatLines (mensajes en el chat desde la última vez; 0 = da igual), announce (anuncio destacado de Twitch), announceColor (primary|blue|green|orange|purple), onlyWhenLive (solo mientras emites, según el programa de emisión; activado por defecto, y sin el programa de emisión conectado no se envía), destination (twitch|youtube|both; sin él, Twitch; los anuncios solo existen en Twitch y YouTube recibe el texto normal; si el texto no cabe —500 Twitch, 200 YouTube— no se envía ahí y la respuesta trae warnings), showAlert (además sale en pantalla) y, para esa alerta, cualquier campo de alerta (title, text, sub, layout, media, sound, actions…).';
 tool('listar_mensajes', 'Mensajes programados: se publican en el chat cada X minutos. Incluye cuándo toca el siguiente y el último error.', {}, () => get('/api/timers'));
 tool('crear_mensaje', 'Crea un mensaje programado. ' + TIMER_HELP, { mensaje: S.obj('Campos del mensaje (mínimo message e intervalMin)') }, ({ mensaje }) => post('/api/timers', mensaje), ['mensaje']);
 tool('editar_mensaje', 'Edita un mensaje programado (por id o nombre). ' + TIMER_HELP, { id: S.str('Id o nombre'), cambios: S.obj('Campos a cambiar') }, ({ id, cambios }) => put('/api/timers/' + enc(id), cambios), ['id', 'cambios']);
 tool('borrar_mensaje', 'Borra un mensaje programado.', { id: S.str('Id o nombre') }, ({ id }) => del('/api/timers/' + enc(id)), ['id']);
-tool('enviar_mensaje_ahora', 'Publica ya un mensaje programado (y reinicia su cuenta atrás). Devuelve el resultado de cada plataforma en platforms (ok, error) y error si alguna falló. No se envía si la pausa está activa o si es «solo mientras emito» y Meld no está conectado (devuelve el motivo).', { id: S.str('Id o nombre') }, ({ id }) => post(`/api/timers/${enc(id)}/fire`), ['id']);
+tool('enviar_mensaje_ahora', 'Publica ya un mensaje programado (y reinicia su cuenta atrás). Devuelve el resultado de cada plataforma en platforms (ok, error) y error si alguna falló. No se envía si la pausa está activa o si es «solo mientras emito» y el programa de emisión no está conectado (devuelve el motivo).', { id: S.str('Id o nombre') }, ({ id }) => post(`/api/timers/${enc(id)}/fire`), ['id']);
 tool('anunciar_chat', 'Publica un anuncio destacado en tu chat de Twitch.', { texto: S.str('Mensaje'), color: S.enum('Color', ['primary', 'blue', 'green', 'orange', 'purple']) }, ({ texto, color }) => post('/api/chat/announce', { text: texto, color }), ['texto']);
 
 // interactivos: preguntas, tier list y sorteo
@@ -262,7 +262,7 @@ tool('parar_creditos', 'Para los créditos.', {}, () => post('/api/credits/stop'
 // overlays propios: páginas HTML/CSS/JS del usuario (o del agente) como capa nueva en Meld
 const OVERLAY_HELP = `Cómo se escribe un overlay (con unas líneas basta):
 - Corre en un iframe con sandbox (origen opaco): NO tiene la API de antena ni puede leer la del panel; los recursos externos por https sí cargan (fuentes, imágenes, animaciones).
-- Fondo transparente por defecto (transparente: true): queda bien encima de la cámara o en una escena de Meld. ancho y alto son el lienzo de la capa.
+- Fondo transparente por defecto (transparente: true): queda bien encima de la cámara o en una escena del programa de emisión. ancho y alto son el lienzo de la capa.
 - /theme.css ya está enlazado: usa sus variables CSS (var(--accent), var(--text)…) para que combine con el tema.
 - Datos en vivo por el SDK (window.antena): antena.on('alert'|'chat'|'viewers'|'widgets'|'interactive'|'theme', fn), antena.state y antena.ready (espera a tener datos).
   Ej.: antena.on('alert', a => { nombre.textContent = a.text; nombre.animate([{opacity:0},{opacity:1}], 300); });
@@ -271,23 +271,23 @@ const OVERLAY_HELP = `Cómo se escribe un overlay (con unas líneas basta):
   En el código: antena.run('scene', { scene: 'Cámara' }).catch(e => console.warn(e.message));
 - El agente SOLO PIDE permisos con «permisos» (al crear o editar): el usuario los aprueba (o revoca) en el panel, en la sección Overlays. Aquí no hay forma de aprobarlos y editar el código nunca cambia lo aprobado. Sin aprobación, antena.run se rechaza y no pasa nada.
 - Límite por overlay: 10 acciones cada 10 s (por encima, 429 y no se ejecuta). Aprovecha una acción por evento, no bucles.
-- En Meld se añade como capa de navegador con la URL /custom/<id> (la devuelven crear_overlay y ver_overlay). Al guardar, las capas abiertas se recargan solas.`;
+- Añade una fuente de navegador con la URL /custom/<id> (la devuelven crear_overlay y ver_overlay). Al guardar, las capas abiertas se recargan solas.`;
 const localBase = async () => `http://127.0.0.1:${(await get('/api/config?path=port')).value || 4500}`;
 const overlayUrl = async overlay => (await localBase()) + '/custom/' + overlay.id;
 
-tool('listar_overlays', 'Lista los overlays propios (páginas HTML/CSS/JS que se añaden como capa en Meld) con su id, nombre, tamaño, URL y permisos de acción: los que PIDE el overlay y los que el usuario ha APROBADO en el panel. No incluye el código: para eso, ver_overlay.', {}, async () => {
+tool('listar_overlays', 'Lista los overlays propios (páginas HTML/CSS/JS que se añaden como fuente de navegador en el programa de emisión) con su id, nombre, tamaño, URL y permisos de acción: los que PIDE el overlay y los que el usuario ha APROBADO en el panel. No incluye el código: para eso, ver_overlay.', {}, async () => {
   const [{ overlays }, b] = await Promise.all([get('/api/custom-overlays'), localBase()]);
   return overlays.map(o => ({
     id: o.id, nombre: o.name, ancho: o.width, alto: o.height, url: b + '/custom/' + o.id,
     permisosSolicitados: o.requestedPermissions || [], permisosAprobados: o.permissions || [],
   }));
 });
-tool('ver_overlay', 'Un overlay propio completo: nombre, html, css, js, ancho, alto, fondo transparente, su URL para Meld (/custom/<id>) y los permisos de acción pedidos (permisosSolicitados) y aprobados por el usuario (permisosAprobados).', { id: S.str('Id del overlay') }, async ({ id }) => {
+tool('ver_overlay', 'Un overlay propio completo: nombre, html, css, js, ancho, alto, fondo transparente, su URL para el programa de emisión (/custom/<id>) y los permisos de acción pedidos (permisosSolicitados) y aprobados por el usuario (permisosAprobados).', { id: S.str('Id del overlay') }, async ({ id }) => {
   const { overlay } = await get('/api/custom-overlays/' + enc(id));
   return { ...overlay, url: await overlayUrl(overlay), permisosSolicitados: overlay.requestedPermissions || [], permisosAprobados: overlay.permissions || [] };
 }, ['id']);
 const OVERLAY_PERMISOS = S.arr('Tipos de acción que el overlay PIDE (no aprueba: el usuario los aprueba en el panel y sin aprobación antena.run se rechaza): scene, layer, hideLayer, toggleLayer, effect, command, streamEvent, chat, say.', { type: 'string', enum: CUSTOM_OVERLAY_ACTION_KINDS });
-tool('crear_overlay', 'Crea un overlay propio: una página HTML/CSS/JS que se añade en Meld como capa nueva. Solo hace falta el nombre; el resto tiene valores por defecto. Devuelve el id y la URL /custom/<id>. ' + OVERLAY_HELP,
+tool('crear_overlay', 'Crea un overlay propio: una página HTML/CSS/JS que se añade como fuente de navegador en el programa de emisión. Solo hace falta el nombre; el resto tiene valores por defecto. Devuelve el id y la URL /custom/<id>. ' + OVERLAY_HELP,
   { nombre: S.str('Nombre, p. ej. «Marco de cámara»'), html: S.str('HTML del cuerpo'), css: S.str('CSS propio (se aplica después de /theme.css)'), js: S.str('JavaScript del overlay'), ancho: S.num('Ancho del lienzo en px (16–7680, por defecto 1920)'), alto: S.num('Alto del lienzo en px (16–4320, por defecto 1080)'), transparente: S.bool('Fondo transparente (por defecto sí)'), permisos: OVERLAY_PERMISOS },
   async ({ nombre, html, css, js, ancho, alto, transparente, permisos }) => {
     const { overlay } = await post('/api/custom-overlays', { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente, requestedPermissions: permisos });
@@ -299,13 +299,13 @@ tool('editar_overlay', 'Cambia lo que pases de un overlay (actualización parcia
     const { overlay } = await put('/api/custom-overlays/' + enc(id), { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente, requestedPermissions: permisos });
     return { ...overlay, url: await overlayUrl(overlay), permisosSolicitados: overlay.requestedPermissions || [], permisosAprobados: overlay.permissions || [] };
   }, ['id']);
-tool('borrar_overlay', 'Borra un overlay propio: desaparece de «Fuentes para Meld» y las capas abiertas dejan de cargar.', { id: S.str('Id del overlay') }, ({ id }) => del('/api/custom-overlays/' + enc(id)), ['id']);
-tool('probar_overlay', 'Manda un evento de ejemplo AHORA a UNA capa abierta (la de Meld o la vista previa del panel), como si acabara de pasar: alert (una alerta), chat (un mensaje), viewers (espectadores) o widgets (totales, objetivos, últimos…). Sin datos usa un ejemplo realista. No toca el directo: ni alertas en cola, ni totales, ni historial.',
+tool('borrar_overlay', 'Borra un overlay propio: desaparece de «Fuentes del programa de emisión» y las capas abiertas dejan de cargar.', { id: S.str('Id del overlay') }, ({ id }) => del('/api/custom-overlays/' + enc(id)), ['id']);
+tool('probar_overlay', 'Manda un evento de ejemplo AHORA a UNA capa abierta (la del programa de emisión o la vista previa del panel), como si acabara de pasar: alert (una alerta), chat (un mensaje), viewers (espectadores) o widgets (totales, objetivos, últimos…). Sin datos usa un ejemplo realista. No toca el directo: ni alertas en cola, ni totales, ni historial.',
   { id: S.str('Id del overlay'), evento: S.enum('Qué evento de ejemplo', ['alert', 'chat', 'viewers', 'widgets']), datos: S.obj('Datos del evento (opcional: sin ellos se usa un ejemplo realista)') },
   ({ id, evento, datos }) => post(`/api/custom-overlays/${enc(id)}/test`, { event: evento, data: datos }), ['id', 'evento']);
 
 // directo
-tool('metricas_directo', 'Métricas finales por plataforma de un directo automático de Meld, con cobertura y procedencia (contrato v1). Sin id, devuelve el último directo terminado.', { id: S.str('Id del directo (opcional)') }, async ({ id }) => {
+tool('metricas_directo', 'Métricas finales por plataforma de un directo automático del programa de emisión, con cobertura y procedencia (contrato v1). Sin id, devuelve el último directo terminado.', { id: S.str('Id del directo (opcional)') }, async ({ id }) => {
   if (id !== undefined) return get('/api/metrics/v1/sessions/' + enc(id));
   const list = await get('/api/metrics/v1/sessions?limit=1');
   if (!list.sessions.length) throw new Error('No hay directos automáticos terminados.');
@@ -333,15 +333,15 @@ tool('marcar_agradecido', 'Marca una alerta de la cronología como agradecida (o
   });
 tool('prompter_pestana', 'Cambia el panel derecho de la vista del prompter: Eventos (id cronologia: cronología y destacados) o Preguntas (la cola de preguntas).', { pestana: S.enum('Pestaña (Eventos = cronologia)', ['cronologia', 'preguntas']) }, ({ pestana }) => post('/api/prompter', { tab: pestana }), ['pestana']);
 // atajos personalizados y fuentes de Meld
-const STEPS = S.arr('Pasos, en orden. Cada uno es {kind:"builtin", action:"marca"|"pausa"|"saltar"|"siguiente-pregunta"|"ocultar-pregunta"|"cerrar-votacion"|"abrir-sorteo"|"cerrar-sorteo"|"sortear"|"agradecido"|"prompter", arg?: pestaña del prompter (cronologia|preguntas; las retiradas tierlist y sorteo se aceptan en atajos guardados)} o una acción de Meld/chat como en las alertas: {kind:"scene", scene, returnAfterSec?} · {kind:"layer", scene, layer, seconds?} · {kind:"hideLayer"|"toggleLayer", scene, layer} · {kind:"effect", scene, layer, effect} · {kind:"command", command} · {kind:"streamEvent", event, amount?} · {kind:"chat", text, destination?: twitch|youtube|both} · {kind:"say", text}. Todos admiten delaySec.', { type: 'object', additionalProperties: true });
-tool('listar_atajos', 'Atajos personalizados (botones para Stream Deck, el dock de Meld y el panel) y acciones disponibles.', {}, () => get('/api/shortcuts'));
+const STEPS = S.arr('Pasos, en orden. Cada uno es {kind:"builtin", action:"marca"|"pausa"|"saltar"|"siguiente-pregunta"|"ocultar-pregunta"|"cerrar-votacion"|"abrir-sorteo"|"cerrar-sorteo"|"sortear"|"agradecido"|"prompter", arg?: pestaña del prompter (cronologia|preguntas; las retiradas tierlist y sorteo se aceptan en atajos guardados)} o una acción del programa de emisión, del chat o de voz como en las alertas: {kind:"scene", scene, returnAfterSec?} · {kind:"layer", scene, layer, seconds?} · {kind:"hideLayer"|"toggleLayer", scene, layer} · {kind:"effect", scene, layer, effect} · {kind:"command", command} · {kind:"streamEvent", event, amount?} · {kind:"chat", text, destination?: twitch|youtube|both} · {kind:"say", text}. Todos admiten delaySec.', { type: 'object', additionalProperties: true });
+tool('listar_atajos', 'Atajos personalizados (botones para Stream Deck, el dock y el panel) y acciones disponibles.', {}, () => get('/api/shortcuts'));
 tool('crear_atajo', 'Crea un atajo personalizado: un botón que lanza varios pasos seguidos. Para Stream Deck se llama a /sd/custom/<id>.', { nombre: S.str('Nombre del botón'), pasos: STEPS, color: S.str('Color opcional (#hex)') },
   ({ nombre, pasos, color }) => post('/api/shortcuts', { name: nombre, steps: pasos || [], color }), ['nombre', 'pasos']);
 tool('editar_atajo', 'Cambia el nombre, el color o los pasos de un atajo.', { id: S.str('Id o nombre'), nombre: S.str('Nombre'), pasos: STEPS, color: S.str('Color') },
   ({ id, nombre, pasos, color }) => put('/api/shortcuts/' + enc(id), { name: nombre, steps: pasos, color }), ['id']);
 tool('borrar_atajo', 'Borra un atajo personalizado.', { id: S.str('Id o nombre') }, ({ id }) => del('/api/shortcuts/' + enc(id)), ['id']);
 tool('lanzar_atajo', 'Ejecuta un atajo personalizado ahora.', { id: S.str('Id o nombre') }, ({ id }) => post('/api/shortcuts/' + enc(id) + '/run'), ['id']);
-tool('fuentes_meld', 'URL y tamaño de cada capa de navegador para añadir en Meld (alertas, chat, objetivos, preguntas…), y las vistas de dock, prompter y teleprompter.', {}, () => get('/api/sources'));
+tool('fuentes_meld', 'URL y tamaño de cada fuente de navegador para añadir en el programa de emisión (alertas, chat, objetivos, preguntas…), y las vistas de dock, prompter y teleprompter.', {}, () => get('/api/sources'));
 
 // Permanent Meld aliases and generic names use the same call and input schema.
 const programAliases = [];
@@ -350,9 +350,9 @@ const programTool = (name, description, properties, call, required = []) => {
   const generic = 'Control del programa de emisión: ' + description.replaceAll('de Meld', 'del programa de emisión').replaceAll('con Meld', 'con el programa de emisión').replaceAll('Meld', 'programa de emisión');
   programAliases.push(() => tool(`programa_${name}`, generic, properties, args => call('/api/program', args), required));
 };
-programTool('estado', 'Estado de Meld y sus escenas, capas (con efectos) y pistas de audio.', {}, root => get(root));
-programTool('conectar', 'Conecta con Meld (Ajustes › Avanzado › «Allow remote connections»).', { url: S.str('Por defecto ws://127.0.0.1:13376') }, (root, { url }) => post(root + '/connect', { url }));
-programTool('desconectar', 'Desconecta de Meld.', {}, root => post(root + '/disconnect'));
+programTool('estado', 'Estado del programa de emisión y sus escenas, capas (con efectos) y pistas de audio.', {}, root => get(root));
+programTool('conectar', 'Conecta con el programa de emisión.', { url: S.str('URL de conexión (opcional; por defecto se usa la URL configurada)') }, (root, { url }) => post(root + '/connect', { url }));
+programTool('desconectar', 'Desconecta del programa de emisión.', {}, root => post(root + '/disconnect'));
 programTool('escena', 'Cambia a una escena (por nombre o id).', { escena: S.str('Escena') }, (root, { escena }) => post(root + '/scene', { scene: escena }), ['escena']);
 programTool('capa', 'Muestra, oculta o alterna una capa. Con «segundos», la muestra ese tiempo y la vuelve a ocultar.', { escena: S.str('Escena (opcional si el nombre de capa es único)'), capa: S.str('Capa'), visible: S.bool('true mostrar, false ocultar; sin indicar, alterna'), segundos: S.num('Mostrar durante') },
   (root, { escena, capa, visible, segundos }) => post(root + '/layer', { scene: escena, layer: capa, visible, seconds: segundos }), ['capa']);
@@ -361,8 +361,8 @@ programTool('efecto', 'Activa o desactiva un efecto de una capa.', { escena: S.s
 programTool('comando', 'Lanza un comando de Meld.', { comando: S.enum('Comando', MELD_COMMANDS) }, (root, { comando }) => post(root + '/command', { command: comando }), ['comando']);
 programTool('evento', 'Dispara un evento de los widgets de Meld (confeti, ruleta, contador, cronómetros…).', { evento: S.enum('Evento', MELD_STREAM_EVENTS), cantidad: S.num('Para SUBATHONTIMER_ADDTIME') },
   (root, { evento, cantidad }) => post(root + '/event', { event: evento, amount: cantidad }), ['evento']);
-programTool('audio', 'Silencia o fija el volumen de una pista de audio de Meld.', { pista: S.str('Pista (nombre o id)'), accion: S.enum('Acción', ['mute', 'gain']), ganancia: S.num('0–1 para «gain»') }, (root, { pista, accion, ganancia }) => post(root + '/track', { track: pista, action: accion, gain: ganancia }), ['pista']);
-programTool('media', 'Controla una capa de vídeo de Meld.', { capa: S.str('Capa'), accion: S.enum('Acción', ['play', 'pause', 'seekTo']), segundos: S.num('Para seekTo') }, (root, { capa, accion, segundos }) => post(root + '/media', { layer: capa, command: accion, seconds: segundos }), ['capa', 'accion']);
+programTool('audio', 'Silencia o fija el volumen de una pista de audio del programa de emisión.', { pista: S.str('Pista (nombre o id)'), accion: S.enum('Acción', ['mute', 'gain']), ganancia: S.num('0–1 para «gain»') }, (root, { pista, accion, ganancia }) => post(root + '/track', { track: pista, action: accion, gain: ganancia }), ['pista']);
+programTool('media', 'Controla una capa de vídeo del programa de emisión.', { capa: S.str('Capa'), accion: S.enum('Acción', ['play', 'pause', 'seekTo']), segundos: S.num('Para seekTo') }, (root, { capa, accion, segundos }) => post(root + '/media', { layer: capa, command: accion, seconds: segundos }), ['capa', 'accion']);
 programTool('propiedad', 'Cambia una propiedad de un objeto de Meld (API v2: x, y, width, height, rotation, visible, name…).', { id: S.str('Id del objeto'), propiedad: S.str('Propiedad'), valor: { description: 'Valor' } }, (root, { id, propiedad, valor }) => post(root + '/property', { id, property: propiedad, value: valor }), ['id', 'propiedad', 'valor']);
 programTool('llamar', 'Llama a cualquier método de la API de Meld (para lo que no tenga herramienta propia).', { metodo: S.str('Método (showScene, toggleLayer, setStagedScene, showStagedScene, toggleRecord, toggleStream…)'), args: S.arr('Argumentos') }, (root, { metodo, args }) => post(root + '/call', { method: metodo, args: args || [] }), ['metodo']);
 tool('ejecutar_acciones', 'Ejecuta ahora una lista de acciones (las mismas que puede llevar una alerta).', { acciones: S.arr('Acciones', { type: 'object' }), datos: S.obj('Variables para las plantillas') }, ({ acciones, datos }) => post('/api/actions/run', { actions: acciones, vars: datos }), ['acciones']);
@@ -386,7 +386,7 @@ async function handle(msg) {
     return send({ jsonrpc: '2.0', id, result: {
       protocolVersion: pv, capabilities: { tools: { listChanged: false } },
       serverInfo: { name: 'antena', version: VERSION },
-      instructions: 'Control total de las alertas de directo de EGDEV para Meld Studio: alertas y variaciones, comandos de chat, mensajes programados, cola de preguntas, tier lists, sorteos, widgets, objetivos, voz, filtros, Meld (escenas, capas, eventos), chat, resumen del directo y archivos. Usa ver_config/cambiar_config/fijar_valor para cualquier ajuste que no tenga herramienta propia.',
+      instructions: 'Control total de las alertas de directo de EGDEV para el programa de emisión: alertas y variaciones, comandos de chat, mensajes programados, cola de preguntas, tier lists, sorteos, widgets, objetivos, voz, filtros, programa de emisión (escenas, capas, eventos), chat, resumen del directo y archivos. Usa ver_config/cambiar_config/fijar_valor para cualquier ajuste que no tenga herramienta propia.',
     } });
   }
   if (method === 'notifications/initialized' || method?.startsWith('notifications/')) return;

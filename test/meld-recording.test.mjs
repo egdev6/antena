@@ -165,7 +165,7 @@ test('only confirmed owned recording stops, after antena stream stop confirmatio
   const f = await setup(t, { initial: enabled }); await f.connect(); await startOwned(f);
   assert.deepEqual(await f.stream('stop'), { status: 200, body: { requested: 'stop', streaming: true } });
   const session = await f.session(), archives = await f.sessions();
-  assert.deepEqual(await f.stream('stop'), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación de Meld.' } });
+  assert.deepEqual(await f.stream('stop'), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' } });
   assert.deepEqual(await f.session(), session); assert.deepEqual(await f.sessions(), archives);
   await f.expectCalls([START, RECORD, STOP]);
   await f.report({ streaming: false }); await f.expectCalls([START, RECORD, STOP, END_RECORD]);
@@ -243,7 +243,7 @@ test('an absent recording property stays unknown until Meld supplies a boolean',
   assert.equal(status.recording, false); assert.equal(status.recordingKnown, false);
   assert.equal((await f.stream('start')).status, 200); await f.report({ streaming: true });
   assert.deepEqual(f.calls(), [START]);
-  assert.match((await f.api('GET', '/api/status')).body.meld.recordingWarning, /no informa/i);
+  assert.match((await f.api('GET', '/api/status')).body.meld.recordingWarning, /^El programa de emisión no informa si está grabando\. Comprueba la grabación en el programa de emisión\.$/);
 });
 
 test('unknown stream before request and unknown/late confirmation never start recording', async t => {
@@ -272,7 +272,7 @@ test('recording RPC failure is nonfatal and visible via status, snapshot and SSE
     await until(() => !!f.app.meld.status.recordingWarning, 'aviso de grabación');
     const status = (await f.api('GET', '/api/status')).body.meld;
     assert.equal(status.streaming, true); assert.equal(status.recording, false);
-    assert.equal(status.recordingWarning, 'No se pudo iniciar la grabación en Meld. Comprueba la grabación.');
+    assert.equal(status.recordingWarning, 'No se pudo iniciar la grabación en el programa de emisión. Comprueba la grabación.');
     assert.equal((await f.api('GET', '/api/state')).body.status.meld.recordingWarning, status.recordingWarning);
     assert.match(await event, /event: status/); assert.deepEqual(f.calls(), [START]);
   } finally { abort.abort(); await event.catch(() => {}); }
@@ -282,7 +282,7 @@ test('missing recording confirmation expires without retry or late ownership', a
   const f = await setup(t, { initial: enabled }); await f.connect();
   assert.equal((await f.stream('start')).status, 200); await f.report({ streaming: true }); await f.expectCalls([START, RECORD]);
   assert.ok(f.clock.expire() > 0, 'the confirmation deadline is injectable');
-  assert.match((await f.api('GET', '/api/status')).body.meld.recordingWarning, /no confirm[oó]/i);
+  assert.match((await f.api('GET', '/api/status')).body.meld.recordingWarning, /^El programa de emisión no confirmó el inicio de la grabación\. Comprueba la grabación\.$/);
   await f.report({ recording: true });
   assert.equal((await f.stream('stop')).status, 200); await f.report({ streaming: false });
   await f.expectCalls([START, RECORD, STOP]);
@@ -311,7 +311,7 @@ test('an owned recording warns if the pending antena stop becomes unknown or exp
     if (unknown) await f.report({ streaming: null });
     else assert.ok(f.clock.expire() > 0);
     const status = (await f.api('GET', '/api/status')).body.meld;
-    assert.equal(status.recordingWarning, 'No se pudo comprobar si detener la grabación. Comprueba la grabación en Meld.');
+    assert.equal(status.recordingWarning, 'No se pudo comprobar si detener la grabación. Comprueba la grabación en el programa de emisión.');
     await f.report({ streaming: false }); await f.expectCalls([START, RECORD, STOP]);
   }
 });
@@ -325,7 +325,9 @@ test('stop recording failure or missing confirmation warns without retrying or r
     if (fail) await until(() => !!f.app.meld.status.recordingWarning, 'fallo al detener');
     else { await f.expectCalls([START, RECORD, STOP, END_RECORD]); assert.ok(f.clock.expire() > 0); }
     const status = (await f.api('GET', '/api/status')).body.meld;
-    assert.equal(status.streaming, false); assert.match(status.recordingWarning, /grabaci[oó]n/i);
+    assert.equal(status.streaming, false); assert.match(status.recordingWarning, fail
+      ? /^No se pudo detener la grabación en el programa de emisión\. Comprueba la grabación\.$/
+      : /^El programa de emisión no confirmó el fin de la grabación\. Comprueba la grabación\.$/);
     await f.report({ recording: false });
     assert.deepEqual(f.calls(), fail ? [START, RECORD, STOP] : [START, RECORD, STOP, END_RECORD]);
   }
@@ -349,7 +351,7 @@ test('a late stream RPC failure cannot hide a subsequent recording-stop failure'
     rejectRecording(new Error('record RPC falló'));
     await until(() => !!f.app.meld.status.recordingWarning, 'fallo de grabación tras RPC de emisión');
     assert.equal((await f.api('GET', '/api/status')).body.meld.recordingWarning,
-      'No se pudo detener la grabación en Meld. Comprueba la grabación.');
+      'No se pudo detener la grabación en el programa de emisión. Comprueba la grabación.');
     assert.deepEqual(f.calls(), [START, RECORD, STOP, END_RECORD]);
   } finally {
     rejectStream(new Error('fin')); rejectRecording(new Error('fin')); await response.catch(() => {});
@@ -428,7 +430,7 @@ test('S2: lost recording RPC response warns even after recording state turns tru
     await until(() => !!f.app.meld.status.recordingWarning, 'warning');
     const status = (await f.api('GET', '/api/status')).body.meld;
     assert.equal(status.streaming, true); assert.equal(status.recording, true);
-    assert.equal(status.recordingWarning, 'No se pudo iniciar la grabación en Meld. Comprueba la grabación.');
+    assert.equal(status.recordingWarning, 'No se pudo iniciar la grabación en el programa de emisión. Comprueba la grabación.');
     assert.equal((await f.api('GET', '/api/state')).body.status.meld.recordingWarning, status.recordingWarning);
     assert.deepEqual(f.calls(), [START, RECORD]);
   } finally { reject(new Error('fin')); }

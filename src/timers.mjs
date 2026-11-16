@@ -143,7 +143,7 @@ export class Timers {
   /** Motivo por el que no puede salir nada de este mensaje, ni automático ni manual. */
   blocked(t) {
     if (this._syncPause()) return 'pausa activa';
-    if (t.onlyWhenLive && !this.meld?.connected) return 'Meld no está conectado: no se sabe si estás emitiendo';
+    if (t.onlyWhenLive && !this.meld?.connected) return 'El programa de emisión no está conectado: no se sabe si estás emitiendo';
     if (t.onlyWhenLive && !this.isLive()) return 'no estás emitiendo';
     return null;
   }

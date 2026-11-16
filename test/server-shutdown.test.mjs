@@ -90,7 +90,7 @@ if (childOrigin !== null) process.once('exit', code => childTrace('exit-hook:' +
 const opts = { quiet: true, log: m => {
   if (childOrigin !== null && m === '[parada] drenado agotado') childTrace('deadline-callback-log-observed');
   console.log('LOG:' + String(m));
-  if (scenario === 'meld-log-throw' && String(m).includes('No se pudo cerrar Meld.')) throw new Error('PRIVATE_LOG_FAILURE');
+  if (scenario === 'meld-log-throw' && String(m).includes('No se pudo cerrar el programa de emisión.')) throw new Error('PRIVATE_LOG_FAILURE');
 } };
 if (scenario === 'close-deadline' || scenario === 'deadline' || scenario === 'draw-deadline' || scenario === 'auth-deadline' || scenario === 'yt-deadline' || scenario === 'layer-deadline' || scenario === 'auto-deadline' || scenario === 'meld-deadline' || scenario === 'meld-close-deadline' || scenario === 'chat-deadline') opts.shutdownTimeoutMs = Number(process.env.CHILD_SHUTDOWN_TIMEOUT_MS || 100);
 if (scenario === 'chat-deadline') opts.shutdownDeadlineTimers = deadlineTimers;
@@ -659,7 +659,7 @@ for (const scenario of ['meld-reject', 'meld-throw', 'meld-log-throw', 'meld-aut
         if (scenario === 'meld-close-deadline') assert.match(c.stdout(), /MELD:CLOSE/);
         else assert.doesNotMatch(c.stdout(), /MELD:RPC/);
       } else {
-        if (scenario !== 'meld-auto-fail') assert.ok(c.stdout().split('\n').includes('LOG:[parada] No se pudo cerrar Meld.'));
+        if (scenario !== 'meld-auto-fail') assert.ok(c.stdout().split('\n').includes('LOG:[parada] No se pudo cerrar el programa de emisión.'));
         else assert.match(c.stdout(), /MELD:DONE/);
         for (const marker of ['MELD:SESSION', 'MELD:INTERACTIVE', 'MELD:HTTP']) assert.ok(c.stdout().includes(marker));
         const saved = JSON.parse(await readFile(path.join(c.dataDir, 'session-current.json'), 'utf8'));
@@ -1145,7 +1145,7 @@ for (const scenario of ['layer-gate', 'layer-fail', 'layer-auth-fail']) {
       assert.equal((c.stdout().match(/LAYER:HIDE/g) || []).length, 1, 'señales repetidas no duplican la captura');
       assert.doesNotMatch(c.stdout(), /PRIVATE_LAYER_FAILURE|PRIVATE_AUTH_FAILURE/);
       if (scenario === 'layer-gate') assert.equal((c.stdout().match(/LAYER:DONE/g) || []).length, 1);
-      else assert.ok(c.stdout().split('\n').includes('LOG:[parada] No se pudo completar el ocultado diferido de capas de Meld.'));
+      else assert.ok(c.stdout().split('\n').includes('LOG:[parada] No se pudo completar el ocultado diferido de capas del programa de emisión.'));
       if (scenario === 'layer-auth-fail') assert.ok(c.stdout().split('\n').includes('LOG:[parada] No se pudo drenar la autenticación de Twitch.'));
       const saved = JSON.parse(await readFile(path.join(c.dataDir, 'session-current.json'), 'utf8'));
       const inter = JSON.parse(await readFile(path.join(c.dataDir, 'interactive.json'), 'utf8'));
@@ -1211,7 +1211,7 @@ for (const scenario of ['auto-reject']) {
       assert.deepEqual(await awaitExit(c), { code: 1, signal: null });
       assert.equal(c.stderr(), '');
       assert.doesNotMatch(c.stdout(), /PRIVATE_/);
-      assert.ok(c.stdout().split('\n').includes('LOG:[parada] No se pudo completar el inicio automático de sesión de Meld.'));
+      assert.ok(c.stdout().split('\n').includes('LOG:[parada] No se pudo completar el inicio automático de sesión del programa de emisión.'));
       assert.equal((c.stdout().match(/AUTOSESSION:START/g) || []).length, 1);
       const saved = JSON.parse(await readFile(path.join(c.dataDir, 'session-current.json'), 'utf8'));
       const inter = JSON.parse(await readFile(path.join(c.dataDir, 'interactive.json'), 'utf8'));

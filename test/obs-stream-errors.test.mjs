@@ -22,7 +22,7 @@ test('OBS 501 on stop surfaces as 500, session kept, guard kept', { timeout: 300
   const r = await api('POST', '/api/program/stream', { action: 'stop' });
   console.log('PROBE501', JSON.stringify(r));
   assert.deepEqual(r, { status: 500, body: { error: 'OBS rechazó la petición «StopStream».' } });
-  assert.deepEqual(await api('POST', '/api/meld/stream', { action: 'stop' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación de Meld.' } });
+  assert.deepEqual(await api('POST', '/api/meld/stream', { action: 'stop' }), { status: 409, body: { error: 'Ya hay una orden pendiente de confirmación del programa de emisión.' } });
   const after = (await api('GET', '/api/session')).body; assert.equal(after.id, s.id); assert.equal(after.endedAt, undefined);
   // toggle with OBS rejection surfaces through /command
   fake.failRequest('ToggleStream', { code: 500, comment: 'x' });

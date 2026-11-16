@@ -387,7 +387,7 @@ export class ObsAdapter extends Program {
   }
   async showScene(ref) {
     const scene = this.findScene(ref);
-    if (!scene) throw new Error(`No encuentro la escena «${ref}» en Meld`);
+    if (!scene) throw new Error(`No encuentro la escena «${ref}» en el programa de emisión`);
     await this.requestObs('SetCurrentProgramScene', { sceneName: scene.name });
     return scene;
   }
