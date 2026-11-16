@@ -1,6 +1,6 @@
 [package]
 name = "antena"
-version = "0.15.0"
+version = "0.16.0"
 description = "antena: alertas, chat, widgets y control del programa de emisión para los directos de EGDEV"
 authors = ["egdev6"]
 edition = "2021"
