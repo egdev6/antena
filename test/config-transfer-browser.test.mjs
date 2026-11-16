@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { createApp } from '../src/server.mjs';
+import { openZip } from '../src/zip-archive.mjs';
 import { closeAll, closeChrome, findChrome, openChromePage, waitDom, clickWhen } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
@@ -60,14 +61,14 @@ async function fixture(t, route = '#/general/copia') {
   return { root, data, downloads, base, c, dom, wait, api, snapshot, select };
 }
 const changedFile = async f => {
-  const file = await f.api('/api/config/export');
+  const file = await f.api('/api/config/export?format=json');
   file.config.overlay.volume = 0.9; delete file.config.overlay.obsolete;
   for (let i = 1; i <= 6; i++) file.config.overlay[`extra${i}`] = true;
   file.config.filters.blockedWords = ['spam'];
   return file;
 };
 
-test('exportar descarga el nombre del servidor y JSON versionado sin credenciales', async t => {
+test('exportar descarga un ZIP con JSON versionado sin credenciales', async t => {
   const f = await fixture(t); if (!f) return;
   await f.wait(`!!${control('Exportar configuración')}`);
   const response = await fetch(f.base + '/api/config/export');
@@ -77,7 +78,10 @@ test('exportar descarga el nombre del servidor y JSON versionado sin credenciale
   let files = [];
   for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.includes(expected)) break; await new Promise(r => setTimeout(r, 50)); }
   assert.deepEqual(files, [expected]);
-  const text = await readFile(path.join(f.downloads, expected), 'utf8'), file = JSON.parse(text);
+  assert.match(expected, /^antena-config-\d{4}-\d{2}-\d{2}\.zip$/);
+  const zip = await openZip(path.join(f.downloads, expected)); let text;
+  try { text = (await zip.readConfig()).toString(); } finally { await zip.close(); }
+  const file = JSON.parse(text);
   assert.equal(file.format, 'antena-config'); assert.equal(file.version, 1); assert.equal(text.includes(secret), false);
   assert.equal(Object.hasOwn(file.config.youtube, 'apiKey'), false);
 });

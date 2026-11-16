@@ -30,7 +30,7 @@ const fail = key => { throw httpError(400, errors[key]); };
 const u16 = (b, n) => b.readUInt16LE(n), u32 = (b, n) => b.readUInt32LE(n);
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
-function checkName(name, seen) {
+export function checkZipName(name, seen = new Set()) {
   const base = name.startsWith('media/') ? name.slice(6) : '';
   if (name !== 'config.json' && name !== 'media/' &&
       (!base || name.includes('..') || base.includes('/') || base.length > 255 ||
@@ -80,7 +80,7 @@ export async function writeZip(dest, entries) {
     // Preflight antes de producir bytes, incluso para archivos dispersos > 4 GiB.
     const inputs = [];
     for (const { name, source } of entries) {
-      checkName(name, seen);
+      checkZipName(name, seen);
       const filename = source && typeof source === 'object' && !Buffer.isBuffer(source) ? source.path : null;
       const data = filename ? null : Buffer.isBuffer(source) ? source : Buffer.from(source);
       const size = filename ? (await stat(filename)).size : data.length;
@@ -154,7 +154,7 @@ export async function openZip(filename) {
       const variable = await readAt(fd, cursor + 46, nameLen + extraLen + commentLen, end);
       const nameBytes = variable.subarray(0, nameLen); let name;
       try { name = decoder.decode(nameBytes); } catch { fail('name'); }
-      checkName(name, seen); checkSize(name, size); total += size;
+      checkZipName(name, seen); checkSize(name, size); total += size;
       if (total > MAX_TOTAL) fail('total');
       checkExtra(variable.subarray(nameLen, nameLen + extraLen));
       const type = (attr >>> 16) & 0o170000, dir = name === 'media/';

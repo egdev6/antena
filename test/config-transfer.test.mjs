@@ -55,7 +55,7 @@ async function fixture(t, extra = {}) {
   return { base, call, ok, snapshot, config, credentials, dataDir, throwChange, failWrite, throwOverlay };
 }
 
-const exp = f => f.ok('GET', '/api/config/export');
+const exp = f => f.ok('GET', '/api/config/export?format=json');
 const preview = (f, file) => f.call('POST', '/api/config/import/preview', file);
 const applyFingerprint = (f, file, fingerprint) => f.call('POST', '/api/config/import', file, fingerprint ? { 'x-config-fingerprint': fingerprint } : {});
 const apply = async (f, file) => applyFingerprint(f, file, (await preview(f, file)).body.fingerprint);
@@ -63,7 +63,7 @@ const apply = async (f, file) => applyFingerprint(f, file, (await preview(f, fil
 test('exporta todas las secciones y rutas de medios sin campos ni valores de credenciales', async t => {
   const f = await fixture(t, { twitch: { clientId: 'public-id', accessToken: 'HIDDEN_UNKNOWN_TOKEN' } });
   await f.ok('PUT', '/api/config', { alerts: { follow: { sound: 'campana.mp3', media: 'saludo.webm' } }, overlay: { css: '/* propio */' } });
-  const r = await f.call('GET', '/api/config/export');
+  const r = await f.call('GET', '/api/config/export?format=json');
   assert.equal(r.status, 200);
   assert.match(r.headers.get('content-disposition'), /^attachment; filename="antena-config-\d{4}-\d{2}-\d{2}\.json"$/);
   assert.equal(r.body.format, 'antena-config'); assert.equal(r.body.version, 1);

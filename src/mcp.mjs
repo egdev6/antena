@@ -89,7 +89,7 @@ tool('estado', 'Estado general: conexiones (Twitch, YouTube, chat, Meld), overla
   return { ...st, directo: { titulo: ses.title, inicio: ses.startedAt, eventos: ses.eventCount, totales: ses.totals } };
 });
 tool('ver_config', 'Lee la configuración completa o un valor concreto por ruta con puntos (p. ej. «alerts.raid.title», «widgets.chat», «filters.blockedWords»).', { ruta: S.str('Ruta opcional con puntos') }, ({ ruta }) => get('/api/config' + (ruta ? '?path=' + enc(ruta) : '')));
-tool('exportar_configuracion', 'Exporta toda la configuración en JSON v1 sin credenciales; los medios se indican solo por ruta.', {}, () => get('/api/config/export'));
+tool('exportar_configuracion', 'Exporta toda la configuración en JSON v1 sin credenciales; los medios se indican solo por ruta.', {}, () => get('/api/config/export?format=json'));
 tool('importar_configuracion', 'Previsualiza una configuración exportada; confirmar=true previsualiza y aplica con protección ante cambios concurrentes tras guardar una copia local privada (puede contener credenciales). Las aprobaciones de overlays son locales y los cambios de contenido requieren revisión en el panel.',
   { archivo: S.obj('Archivo JSON completo exportado'), confirmar: S.bool('true para aplicar; por defecto solo previsualiza') },
   async ({ archivo, confirmar }) => {
