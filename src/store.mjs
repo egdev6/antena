@@ -199,7 +199,7 @@ export class Store extends EventEmitter {
     return this.config;
   }
   /** Local restore point: exact prior config bytes and mode, never the separate credential file. */
-  async replaceConfigWithBackup(next, expected, change) {
+  async replaceConfigWithBackup(next, expected, change, onCommit) {
     const conflict = () => Object.assign(new Error('La configuración ha cambiado; vuelve a previsualizar'), { status: 409 });
     const barrier = this.chain;
     await barrier;
@@ -214,7 +214,7 @@ export class Store extends EventEmitter {
       await chmod(target, mode);
       if (this.chain !== barrier || !isDeepStrictEqual(this.config, expected)) throw conflict();
       started = true;
-      const writing = this.patchConfig(next, { replace: true, change, onPersist: () => { committed = true; } });
+      const writing = this.patchConfig(next, { replace: true, change, onPersist: () => { committed = true; onCommit?.(); } });
       importChain = this.chain;
       await writing;
     } catch (error) {

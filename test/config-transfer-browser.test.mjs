@@ -1,18 +1,20 @@
 // S3-S4: the real panel and HTTP routes, built and served only from synthetic temp data.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { createApp } from '../src/server.mjs';
+import { openZip, writeZip } from '../src/zip-archive.mjs';
 import { closeAll, closeChrome, findChrome, openChromePage, waitDom, clickWhen } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const secret = 'SYNTHETIC_CREDENTIAL_CANARY';
 const control = text => `[...document.querySelectorAll('button,a')].find(e => e.textContent.trim() === ${JSON.stringify(text)})`;
-const input = `document.querySelector('input[type="file"][accept=".json"]')`;
+const input = `document.querySelector('input[type="file"]')`;
 const dialog = `document.querySelector('dialog[open]')`;
 let buildPromise;
 async function buildPanel(dist) {
@@ -29,7 +31,7 @@ async function fixture(t, route = '#/general/copia') {
   const bin = await findChrome();
   if (!bin) { t.skip('sin Chrome local; define CHROME_PATH'); return null; }
   const root = await mkdtemp(path.join(tmpdir(), 'antena-transfer-browser-'));
-  const data = path.join(root, 'data'), dist = path.join(root, 'dist'), downloads = path.join(root, 'downloads');
+  const data = path.join(root, 'data'), media = path.join(root, 'media'), dist = path.join(root, 'dist'), downloads = path.join(root, 'downloads');
   let app, chrome;
   t.after(() => closeAll(() => chrome && closeChrome(chrome), async () => {
     if (app) { app.teleprompter.stop(); app.viewers.stop(); app.timers.stop(); await app.program.quiesceClose(); app.program.dispose(); await app.closeHttp(); }
@@ -47,42 +49,151 @@ async function fixture(t, route = '#/general/copia') {
   const snapshot = async () => {
     const entries = await readdir(data, { recursive: true, withFileTypes: true });
     const files = entries.filter(e => e.isFile()).map(e => path.relative(data, path.join(e.parentPath, e.name))).sort();
-    return { files: await Promise.all(files.map(async f => [f, (await readFile(path.join(data, f))).toString('base64')])),
+    const mediaEntries = await readdir(media, { recursive: true, withFileTypes: true });
+    const mediaNames = mediaEntries.map(e => path.relative(media, path.join(e.parentPath, e.name))).sort();
+    const mediaFiles = mediaEntries.filter(e => e.isFile()).map(e => path.relative(media, path.join(e.parentPath, e.name))).sort();
+    return { files: await Promise.all(files.map(async f => [f, (await readFile(path.join(data, f))).toString('base64')])), mediaNames,
+      media: await Promise.all(mediaFiles.map(async f => [f, (await readFile(path.join(media, f))).toString('base64')])),
       config: await api('/api/config'), persistence: (await api('/api/status')).persistence };
   };
-  const select = async contents => {
+  const select = async (contents, name = 'copia.json') => {
     await wait(`!!${control('Importar configuración…')} && !!${input}`);
     await dom(`${input}.addEventListener('click', e => { e.preventDefault(); window.__picker = true; }, { once: true }); true`);
     await clickWhen(c, control('Importar configuración…'));
     assert.equal(await dom('window.__picker'), true, 'el botón abre el selector');
-    await dom(`(() => { const d = new DataTransfer(); d.items.add(new File([${JSON.stringify(contents)}], 'copia.json', {type:'application/json'})); const i = ${input}; i.files = d.files; i.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+    const bytes = Buffer.from(contents).toString('base64');
+    await dom(`(() => { const d = new DataTransfer(); const bytes = Uint8Array.from(atob(${JSON.stringify(bytes)}), c => c.charCodeAt(0)); d.items.add(new File([bytes], ${JSON.stringify(name)}, {type:'application/octet-stream'})); const i = ${input}; i.files = d.files; i.dispatchEvent(new Event('change', {bubbles:true})); })()`);
   };
-  return { root, data, downloads, base, c, dom, wait, api, snapshot, select };
+  return { root, data, media, downloads, base, c, dom, wait, api, snapshot, select };
 }
 const changedFile = async f => {
-  const file = await f.api('/api/config/export');
+  const file = await f.api('/api/config/export?format=json');
   file.config.overlay.volume = 0.9; delete file.config.overlay.obsolete;
   for (let i = 1; i <= 6; i++) file.config.overlay[`extra${i}`] = true;
   file.config.filters.blockedWords = ['spam'];
   return file;
 };
 
-test('exportar descarga el nombre del servidor y JSON versionado sin credenciales', async t => {
+async function mediaArchive(f) {
+  const file = await changedFile(f), added = [], replaced = [];
+  for (let i = 1; i <= 6; i++) {
+    added.push(`nuevo-${i}.wav`); replaced.push(`sustituido-${i}.png`);
+    await writeFile(path.join(f.media, replaced.at(-1)), `anterior ${i}`);
+  }
+  await writeFile(path.join(f.media, 'igual.jpg'), 'igual');
+  await writeFile(path.join(f.media, 'local.mp3'), 'solo local');
+  const archive = path.join(f.root, 'copia.zip');
+  await writeZip(createWriteStream(archive), [{ name: 'config.json', source: JSON.stringify(file) },
+    ...added.map(name => ({ name: `media/${name}`, source: `añadido ${name}` })),
+    ...replaced.map(name => ({ name: `media/${name}`, source: `nuevo ${name}` })),
+    { name: 'media/igual.jpg', source: 'igual' }]);
+  return { bytes: await readFile(archive), added, replaced };
+}
+
+test('exportar descarga un ZIP con JSON versionado y medios sin credenciales', async t => {
   const f = await fixture(t); if (!f) return;
+  await writeFile(path.join(f.media, 'saludo.png'), 'imagen de prueba');
   await f.wait(`!!${control('Exportar configuración')}`);
-  const response = await fetch(f.base + '/api/config/export');
-  const expected = /filename="([^"]+)"/.exec(response.headers.get('content-disposition'))[1];
+  await f.dom(`(() => { const original = window.fetch, click = HTMLAnchorElement.prototype.click;
+    window.__exportRequests = []; window.fetch = (...args) => { if (String(args[0]).includes('/api/config/export')) window.__exportRequests.push([String(args[0]), args[1]?.method || 'GET']); return original(...args); };
+    HTMLAnchorElement.prototype.click = function() { window.__exportHref = this.getAttribute('href'); return click.call(this); }; return true; })()`);
   await f.c.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: f.downloads });
   await clickWhen(f.c, control('Exportar configuración'));
   let files = [];
-  for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.includes(expected)) break; await new Promise(r => setTimeout(r, 50)); }
-  assert.deepEqual(files, [expected]);
-  const text = await readFile(path.join(f.downloads, expected), 'utf8'), file = JSON.parse(text);
+  for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.some(n => n.endsWith('.zip'))) break; await new Promise(r => setTimeout(r, 50)); }
+  assert.equal(files.length, 1); assert.match(files[0], /^antena-config-\d{4}-\d{2}-\d{2}\.zip$/);
+  assert.deepEqual(await f.dom('window.__exportRequests'), [['/api/config/export?skipped=1', 'GET']]);
+  assert.equal(await f.dom('window.__exportHref'), '/api/config/export');
+  const zip = await openZip(path.join(f.downloads, files[0])); let text;
+  try {
+    assert.deepEqual(zip.entries.map(e => e.name), ['config.json', 'media/saludo.png']);
+    text = (await zip.readConfig()).toString();
+    const extracted = await mkdir(path.join(f.root, 'extracted')).then(() => zip.extract('media/saludo.png', path.join(f.root, 'extracted')));
+    assert.equal(await readFile(extracted, 'utf8'), 'imagen de prueba');
+  } finally { await zip.close(); }
+  const file = JSON.parse(text);
   assert.equal(file.format, 'antena-config'); assert.equal(file.version, 1); assert.equal(text.includes(secret), false);
   assert.equal(Object.hasOwn(file.config.youtube, 'apiKey'), false);
 });
 
-test('importar previsualiza recuentos y rutas, aplica y muestra la copia y la configuración viva', async t => {
+test('exportar avisa de los medios omitidos y conserva la descarga ZIP', async t => {
+  const f = await fixture(t); if (!f) return;
+  await writeFile(path.join(f.media, 'saludo ñ..png'), 'omitido');
+  await f.wait(`!!${control('Exportar configuración')}`);
+  await f.c.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: f.downloads });
+  await clickWhen(f.c, control('Exportar configuración'));
+  await f.wait(`[...document.querySelectorAll('[role="status"]')].some(e => e.textContent.includes('saludo ñ..png'))`);
+  let files = [];
+  for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.some(n => n.endsWith('.zip'))) break; await new Promise(r => setTimeout(r, 50)); }
+  assert.equal(files.length, 1); assert.match(files[0], /^antena-config-\d{4}-\d{2}-\d{2}\.zip$/);
+  const zip = await openZip(path.join(f.downloads, files[0]));
+  try { assert.deepEqual(zip.entries.map(e => e.name), ['config.json']); } finally { await zip.close(); }
+});
+
+test('ZIP previsualiza y aplica configuración y medios con copias, sin borrar los locales', async t => {
+  const f = await fixture(t); if (!f) return;
+  const { bytes, added, replaced } = await mediaArchive(f), before = await f.snapshot();
+  const oldConfig = await readFile(path.join(f.data, 'config.json'));
+  await f.wait(`!!${input}`);
+  assert.equal(await f.dom(`${input}.accept`), '.zip,.json');
+  await f.dom(`(() => { const original = window.fetch; window.__transfers = []; let file;
+    window.fetch = (url, options) => { if (String(url).startsWith('/api/config/import')) {
+      file ||= options.body; window.__transfers.push({ path: String(url), type: options.headers['Content-Type'],
+        fingerprint: options.headers['X-Config-Fingerprint'] || '', sameFile: file === options.body });
+    } return original(url, options); }; return true; })()`);
+  await f.select(bytes, 'copia.ZIP'); await f.wait(`!!${dialog}`);
+  const text = await f.dom(`${dialog}.textContent`);
+  for (const expected of ['overlay', 'filters', 'Cambiados: 1', 'overlay.volume', 'Archivos de medios',
+    'Añadidos: 6', 'Reemplazados: 6', 'Sin cambios: 1', ...added, ...replaced,
+    'Los archivos reemplazados se guardan en una copia; no se borra ningún archivo tuyo.']) assert.ok(text.includes(expected), expected);
+  const mediaSection = `${dialog}.querySelector('section:last-child')`;
+  assert.equal(await f.dom(`${mediaSection}.querySelectorAll('details:not([open])').length`), 2, 'las dos listas largas empiezan plegadas');
+  assert.deepEqual(await f.snapshot(), before, 'previsualizar no escribe en datos ni medios');
+  await clickWhen(f.c, control('Aplicar'));
+  await f.wait(`!${dialog} && document.body.textContent.includes('config.backup-') && document.body.textContent.includes('.backup-')`);
+  const names = await f.dom(`[...document.querySelectorAll('[role="status"] code')].map(e => e.textContent)`);
+  const backup = names.find(name => /^config\.backup-[\w-]+\.json$/.test(name));
+  const mediaBackup = names.find(name => /^media\/\.backup-[\w-]+$/.test(name))?.slice('media/'.length);
+  assert.ok(backup && mediaBackup, JSON.stringify(names));
+  assert.deepEqual(await readFile(path.join(f.data, backup)), oldConfig);
+  for (let i = 0; i < replaced.length; i++) {
+    assert.equal(await readFile(path.join(f.media, mediaBackup, replaced[i]), 'utf8'), `anterior ${i + 1}`);
+    assert.equal(await readFile(path.join(f.media, replaced[i]), 'utf8'), `nuevo ${replaced[i]}`);
+    assert.equal(await readFile(path.join(f.media, added[i]), 'utf8'), `añadido ${added[i]}`);
+  }
+  assert.equal(await readFile(path.join(f.media, 'igual.jpg'), 'utf8'), 'igual');
+  assert.equal(await readFile(path.join(f.media, 'local.mp3'), 'utf8'), 'solo local');
+  assert.equal((await f.api('/api/config')).overlay.volume, 0.9);
+  const requests = await f.dom('window.__transfers');
+  assert.deepEqual(requests.map(r => [r.path, r.type, r.sameFile]), [['/api/config/import/preview', 'application/zip', true], ['/api/config/import', 'application/zip', true]]);
+  assert.match(requests[1].fingerprint, /^[a-f0-9]{64}$/); assert.equal(requests[0].fingerprint, '');
+});
+
+test('cancelar ZIP no modifica datos ni medios', async t => {
+  const f = await fixture(t); if (!f) return;
+  const { bytes } = await mediaArchive(f), before = await f.snapshot();
+  await f.select(bytes, 'copia.zip'); await f.wait(`!!${dialog} || !!document.querySelector('[role="alert"]')`);
+  assert.equal(await f.dom(`!!${dialog}`), true, await f.dom(`document.querySelector('[role="alert"]')?.textContent || ''`));
+  await clickWhen(f.c, control('Cancelar')); await f.wait(`!${dialog}`);
+  assert.equal(await f.dom(`document.activeElement === ${control('Importar configuración…')}`), true);
+  assert.deepEqual(await f.snapshot(), before);
+});
+
+test('ZIP inválido y medios cambiados tras la vista previa conservan ambos directorios', async t => {
+  const f = await fixture(t); if (!f) return;
+  const { bytes } = await mediaArchive(f), before = await f.snapshot();
+  await f.select('{', 'roto.zip');
+  await f.wait(`!!document.querySelector('[role="alert"]')`);
+  assert.equal(await f.dom(`document.querySelector('[role="alert"]').textContent.trim()`), 'ZIP inválido o incompleto.');
+  assert.equal(await f.dom(`!!${dialog}`), false); assert.deepEqual(await f.snapshot(), before);
+  await f.select(bytes, 'copia.zip'); await f.wait(`!!${dialog}`);
+  await writeFile(path.join(f.media, 'sustituido-1.png'), 'cambio concurrente');
+  const concurrent = await f.snapshot(); await clickWhen(f.c, control('Aplicar'));
+  await f.wait(`${dialog}?.querySelector('[role="alert"]')?.textContent.trim() === 'La configuración ha cambiado; vuelve a previsualizar'`);
+  assert.deepEqual(await f.snapshot(), concurrent);
+});
+
+test('importar JSON previsualiza recuentos y rutas, aplica y muestra la copia y la configuración viva', async t => {
   const f = await fixture(t); if (!f) return;
   const file = await changedFile(f), before = await f.snapshot(), oldConfig = await readFile(path.join(f.data, 'config.json'));
   await f.select(JSON.stringify(file)); await f.wait(`!!${dialog}`);

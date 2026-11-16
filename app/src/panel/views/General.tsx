@@ -50,11 +50,12 @@ export function MediaThumb({ m }: { m: any }) {
 
 type ChangeGroup = { count: number; paths: string[] };
 type Summary = Record<string, Record<'added' | 'removed' | 'changed', ChangeGroup>>;
-type Preview = { file: File; summary: Summary; fingerprint: string };
+type MediaChanges = { added: string[]; replaced: string[]; unchanged: number };
+type Preview = { file: File; summary: Summary; media?: MediaChanges; fingerprint: string };
 
 // Se envía el archivo tal cual: incluso el JSON mal formado recibe el error exacto del servidor.
 async function transfer<T>(path: string, file: File, fingerprint?: string): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = { 'Content-Type': /\.zip$/i.test(file.name) ? 'application/zip' : 'application/json' };
   if (fingerprint) headers['X-Config-Fingerprint'] = fingerprint;
   const r = await fetch(withKey(path), { method: 'POST', headers, body: file });
   const data = await r.json().catch(() => ({}));
@@ -81,7 +82,16 @@ function TransferPreview({ preview, busy, error, cancel, apply, trigger }: { pre
         const paths = <ul>{group.paths.map(path => <li key={path}><code>{path}</code></li>)}</ul>;
         return <div key={key}><b>{label}: {group.count}</b>{group.count > 5 ? <details><summary>Ver {group.count} rutas</summary>{paths}</details> : group.count > 0 && paths}</div>;
       })}
-    </section>)}</div>
+    </section>)}
+      {preview.media && <section><h3>Archivos de medios</h3>
+        {([['added', 'Añadidos'], ['replaced', 'Reemplazados']] as const).map(([key, label]) => {
+          const names = preview.media![key], list = <ul>{names.map(name => <li key={name}><code>{name}</code></li>)}</ul>;
+          return <div key={key}><b>{label}: {names.length}</b>{names.length > 5 ? <details><summary>Ver {names.length} archivos</summary>{list}</details> : names.length > 0 && list}</div>;
+        })}
+        <div><b>Sin cambios: {preview.media.unchanged}</b></div>
+        <p>Los archivos reemplazados se guardan en una copia; no se borra ningún archivo tuyo.</p>
+      </section>}
+    </div>
     {error && <p className="errors" role="alert">{error}</p>}
     <div className="row mt"><button ref={cancelButton} type="button" className="eg-btn eg-btn--ghost" disabled={busy} onClick={cancel}>Cancelar</button>
       <button type="button" className="eg-btn eg-btn--primary" disabled={busy} onClick={apply}>{busy ? 'Aplicando…' : 'Aplicar'}</button></div>
@@ -90,14 +100,30 @@ function TransferPreview({ preview, busy, error, cancel, apply, trigger }: { pre
 
 function ConfigTransfer() {
   useDraftVersion();
-  const picker = useRef<HTMLInputElement>(null), trigger = useRef<HTMLButtonElement>(null), lock = useRef(false);
-  const [preview, setPreview] = useState<Preview | null>(null), [busy, setBusy] = useState(false);
-  const [error, setError] = useState(''), [backup, setBackup] = useState('');
+  const picker = useRef<HTMLInputElement>(null), trigger = useRef<HTMLButtonElement>(null), lock = useRef(false), exportLock = useRef(false);
+  const [preview, setPreview] = useState<Preview | null>(null), [busy, setBusy] = useState(false), [exporting, setExporting] = useState(false);
+  const [error, setError] = useState(''), [backup, setBackup] = useState(''), [mediaBackup, setMediaBackup] = useState('');
+  const [skipped, setSkipped] = useState<string[]>([]);
   const dirty = isDirty() || isSaving();
+  const exportConfig = async () => {
+    if (exportLock.current) return;
+    exportLock.current = true; setExporting(true); setError(''); setSkipped([]);
+    try {
+      const r = await fetch(withKey('/api/config/export?skipped=1'));
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof data.error === 'string' && data.error ? data.error : `Error ${r.status}`);
+      const names: unknown = data.skipped;
+      if (Array.isArray(names) && names.every(n => typeof n === 'string')) setSkipped(names);
+      // El navegador guarda el ZIP directamente, sin convertirlo en un Blob en memoria.
+      const link = document.createElement('a');
+      link.href = withKey('/api/config/export'); link.download = ''; document.body.append(link); link.click(); link.remove();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { exportLock.current = false; setExporting(false); }
+  };
   const select = async (file?: File) => {
     if (!file || lock.current || isDirty() || isSaving()) return;
-    lock.current = true; setBusy(true); setError(''); setBackup('');
-    try { const { summary, fingerprint } = await transfer<{ summary: Summary; fingerprint: string }>('/api/config/import/preview', file); setPreview({ file, summary, fingerprint }); }
+    lock.current = true; setBusy(true); setError(''); setBackup(''); setMediaBackup('');
+    try { const { summary, media, fingerprint } = await transfer<{ summary: Summary; media?: MediaChanges; fingerprint: string }>('/api/config/import/preview', file); setPreview({ file, summary, media, fingerprint }); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { lock.current = false; setBusy(false); }
   };
@@ -107,21 +133,22 @@ function ConfigTransfer() {
     lock.current = true; setBusy(true); setError('');
     let applied = false;
     try {
-      const result = await transfer<{ summary: Summary; backup: string }>('/api/config/import', preview.file, preview.fingerprint);
-      applied = true; setBackup(result.backup);
+      const result = await transfer<{ summary: Summary; backup: string; mediaBackup?: string | null }>('/api/config/import', preview.file, preview.fingerprint);
+      applied = true; setBackup(result.backup); setMediaBackup(result.mediaBackup || '');
       try { await live.load(); } catch { setError('Se importó la configuración, pero no se pudo actualizar el panel.'); }
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { lock.current = false; setBusy(false); if (applied) setPreview(null); }
   };
   return <Panel title="Copia de la configuración">
-    <p className="hint">Exporta la configuración guardada o importa una copia después de revisar los cambios.</p>
+    <p className="hint">Exporta la configuración guardada y los medios, o importa una copia después de revisar los cambios.</p>
     <div className="row mt">
-      <a className="eg-btn eg-btn--secondary" href={withKey('/api/config/export')}>Exportar configuración</a>
+      <button type="button" className="eg-btn eg-btn--secondary" disabled={exporting} onClick={() => void exportConfig()}>Exportar configuración</button>
       <button ref={trigger} type="button" className="eg-btn eg-btn--ghost" disabled={busy || dirty} onClick={() => picker.current?.click()}>Importar configuración…</button>
-      <input ref={picker} type="file" accept=".json" aria-label="Archivo de configuración JSON" hidden onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void select(file); }} />
+      <input ref={picker} type="file" accept=".zip,.json" aria-label="Archivo de configuración ZIP o JSON" hidden onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void select(file); }} />
     </div>
+    {skipped.length > 0 && <p className="hint mt" role="status">No se incluyeron estos archivos de medios: {skipped.join(', ')}</p>}
     {dirty && <p className="hint mt">Guarda o descarta los cambios pendientes antes de importar.</p>}
-    {backup && <p role="status">Configuración importada. Copia guardada: <code>{backup}</code></p>}
+    {backup && <p role="status">Configuración importada. Copia guardada: <code>{backup}</code>{mediaBackup && <>. Copia de medios: <code>media/{mediaBackup}</code></>}</p>}
     {error && !preview && <p className="errors" role="alert">{error}</p>}
     {preview && <TransferPreview preview={preview} busy={busy} error={error} trigger={trigger} cancel={() => { if (!lock.current) { setPreview(null); setError(''); } }} apply={() => void apply()} />}
   </Panel>;

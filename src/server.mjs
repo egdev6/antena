@@ -25,7 +25,7 @@ import { registerShortcutRoutes, PROMPTER_LEGACY_TABS } from './routes/shortcuts
 import { registerSessionRoutes, TIMELINE_MAX } from './routes/sessions.mjs';
 import { registerMetricsRoutes } from './routes/metrics.mjs';
 import { createPushExport } from './push-export.mjs';
-import { registerMediaRoutes } from './routes/media.mjs';
+import { registerMediaRoutes, MAX_UPLOAD } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
 import { registerGoalsRoutes } from './routes/goals.mjs';
@@ -57,7 +57,6 @@ const PUBLIC = path.join(ROOT, 'public');
 // responden una página mínima que explica cómo compilarla (#115: el panel clásico se retiró).
 const APP_DIST = path.join(ROOT, 'app', 'dist');
 const APP_PAGES = { '/': 'index.html', '/prompter': 'prompter.html', '/dock': 'dock.html' };
-const MAX_UPLOAD = 300 * 1024 * 1024;
 const HELD_MAX_ALERT_BYTES = 256 * 1024;
 const HELD_MAX_BATCH_BYTES = 8 * 1024 * 1024;
 const HELD_LIST_LIMIT = 100;
@@ -128,7 +127,7 @@ function sdRequestAllowed(req) {
 }
 
 export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist, recordingTimers,
-  push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs } = {}) {
+  push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs, configTransferIO, zipUploadLimit, zipExportLimit } = {}) {
   let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {};
   // Validate private process settings before loading or changing any application state.
   const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs,
@@ -697,7 +696,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
 
   async function listMedia() {
     try {
-      const files = (await readdir(mediaDir)).filter(f => mediaKind(f)).sort((a, b) => a.localeCompare(b));
+      const files = (await readdir(mediaDir, { withFileTypes: true })).filter(e => !(e.isDirectory() && e.name.startsWith('.backup-')) && mediaKind(e.name)).map(e => e.name).sort((a, b) => a.localeCompare(b));
       // #68: tamaño en bytes de cada archivo, para el panel.
       return await Promise.all(files.map(async name => {
         const st = await stat(path.join(mediaDir, name)).catch(() => null);
@@ -899,7 +898,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
 
   // Export v1 excludes credentials; import previews the same strict schema before a local backup.
-  const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig });
+  const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO, zipUploadLimit, zipExportLimit });
+  let mediaQueue = Promise.resolve();
+  const withMediaLock = async fn => {
+    const previous = mediaQueue; let release; mediaQueue = new Promise(resolve => { release = resolve; });
+    await previous; try { return await fn(); } finally { release(); }
+  };
 
   // alertas
   route('GET', '/api/alerts', async () => Object.fromEntries(Object.keys(ALERT_TYPES).map(t => [t, alertConfig(t, store.config)])));
@@ -1407,9 +1411,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         stream(res, url);
         return;
       }
-      if (req.method === 'POST' && url.pathname === '/api/media/upload') return json(res, 200, await upload(req, url));
+      if (req.method === 'POST' && url.pathname === '/api/media/upload') return json(res, 200, await withMediaLock(() => upload(req, url)));
       if (req.method === 'GET' && url.pathname === '/api/config/export') {
         const file = configTransfer.exportFile();
+        if (url.searchParams.get('skipped') === '1') {
+          res.setHeader('Cache-Control', 'no-store');
+          return json(res, 200, { skipped: await configTransfer.exportSkipped(file) });
+        }
+        if (url.searchParams.get('format') !== 'json') return await configTransfer.exportZip(res, file);
         res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.json"`);
         res.setHeader('Cache-Control', 'no-store');
         return json(res, 200, file);
@@ -1430,8 +1439,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         // A portable config includes up to 2.5M overlay characters plus scripts and other sections.
         // Allow 8M JSON characters here only; existing routes retain their 2M limit.
         const transfer = req.method === 'POST' && (url.pathname === '/api/config/import' || url.pathname === '/api/config/import/preview');
+        if (transfer && /^application\/zip(?:\s*;|$)/i.test(req.headers['content-type'] || '')) {
+          const applying = url.pathname === '/api/config/import', run = () => configTransfer.importZip(req, applying);
+          return json(res, 200, await (applying ? withMediaLock(run) : run()));
+        }
         const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream' || url.pathname === '/api/program/stream', transfer ? 8e6 : 2e6) : {};
         // rutas con parámetros: fn(params, body, url) · sin parámetros: fn(body, _, url)
+        const mediaWrite = req.method === 'POST' && ['/api/media/import', '/api/media/delete'].includes(url.pathname);
+        if (mediaWrite) return json(res, 200, await withMediaLock(() => r.fn(body, null, url, req)));
         return json(res, 200, await (m.groups ? r.fn(m.groups, body, url, req) : r.fn(body, null, url, req)));
       }
       if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'No existe' });

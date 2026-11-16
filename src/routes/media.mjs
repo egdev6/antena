@@ -20,6 +20,9 @@ import path from 'node:path';
 import { mediaKind } from '../alerts.mjs';
 import { httpError, safePath, cleanName, freeName } from '../http-util.mjs';
 
+// Límite compartido por la subida, la importación y los archivos ZIP.
+export const MAX_UPLOAD = 300 * 1024 * 1024;
+
 // Origen importable de media: resuelve enlaces simbólicos, exige extensión de media
 // en el archivo real y lo prohíbe si vive en la carpeta de datos (tokens, sesiones…).
 // La carpeta de datos también se canonicaliza (ANTENA_DATA puede ser un enlace) y,

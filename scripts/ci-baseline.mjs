@@ -25,6 +25,8 @@ const WINDOWS_POSIX_SKIPS = [
   'POSIX file modes: chmod cannot make a file unreadable on Windows; the unreadable-file fallback is platform-independent and runs on Linux',
   // #173: owned Chrome shutdown signals the POSIX process group; Windows uses taskkill /T instead
   'POSIX process groups: Windows escalates the owned Chrome tree with taskkill instead of group signals',
+  // #221: Windows (NTFS) filenames are UTF-16, so a non-UTF-8 media filename cannot exist there
+  'POSIX filenames: Windows cannot create a non-UTF-8 media filename; the skip-and-report path runs on Linux',
 ];
 
 export function checkCiBaseline(report, tap) {
