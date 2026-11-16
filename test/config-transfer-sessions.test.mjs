@@ -341,3 +341,35 @@ test('a cutover waits until session import commits', async t => {
     assert.ok((await target.files())[`${ID_B}.json`]);
   } finally { release(); if (cutover) await cutover; target.app.store.replaceConfigWithBackup = original; }
 });
+
+// Verifier B1: an imported stream must also be valid for the metrics routes, or it breaks the whole list.
+test('import rejects a stream the metrics export treats as invalid, without writing', async t => {
+  const target = await fixture(t), before = await target.files(), config = await readFile(path.join(target.data, 'config.json'));
+  for (const bad of [session(ID_B, { meldAutoSession: true, endedAt: '2026-10-01T17:00:00.000Z' }),
+    session(ID_B, { meldAutoSession: true, platforms: { twitch: { streamId: 5 } } })]) {
+    const bytes = await makeZip(target, [configEntry(), sessionEntry(bad)]);
+    const r = await target.postZip('/api/config/import/preview', bytes);
+    assert.deepEqual({ status: r.status, body: r.body }, { status: 400, body: { error: 'El directo importado no es válido.' } });
+    assert.equal((await target.postZip('/api/config/import', bytes, 'x')).status, 400);
+  }
+  assert.deepEqual(await target.files(), before); assert.deepEqual(await readFile(path.join(target.data, 'config.json')), config);
+  assert.equal((await target.call('GET', '/api/metrics/v1/sessions')).status, 200);
+});
+
+test('export skips a stored stream the metrics export treats as invalid and reports it', async t => {
+  const f = await fixture(t, { sessions: [session(ID_A), session(ID_B, { meldAutoSession: true, endedAt: '2026-10-01T17:00:00.000Z' })] });
+  const r = await f.download('?sessions=1');
+  assert.equal(r.status, 200);
+  assert.deepEqual((await inspect(f, r.bytes)).names, ['config.json', `sessions/${ID_A}.json`]);
+  const report = await (await fetch(f.base + '/api/config/export?skipped=1&sessions=1')).json();
+  assert.deepEqual(report.skipped, [`sessions/${ID_B}.json (directo no válido)`]);
+});
+
+test('retention warning appears only when the limit would be exceeded', async t => {
+  for (const [retention, existing, warn] of [[0, 3, false], [3, 1, false], [2, 1, true]]) {
+    const target = await fixture(t, { sessions: [session(ID_A), session(ID_B), session(ID_C)].slice(0, existing), config: { sessions: { retention } } });
+    const bytes = await makeZip(target, [configEntry(), sessionEntry(session('imp_1')), sessionEntry(session('imp_2'))]);
+    const { body } = await target.postZip('/api/config/import/preview', bytes);
+    assert.equal(body.sessions.retention, warn ? retention : undefined);
+  }
+});

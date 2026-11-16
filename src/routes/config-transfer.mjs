@@ -12,6 +12,14 @@ import { checkZipName, openZip, writeZip, MAX_ZIP_TOTAL, MAX_ZIP_ENTRIES, MAX_SE
 import { isImportableArchive } from '../session.mjs';
 import { serialize } from '../json-file.mjs';
 import { MAX_UPLOAD } from './media.mjs';
+import { metricsDocument } from './metrics.mjs';
+
+// A stream must be importable and also valid for the metrics routes: one invalid archive makes
+// GET /api/metrics/v1/sessions fail for every stream.
+const validStream = (id, data) => {
+  if (!isImportableArchive(data) || data.id !== id) return false;
+  try { metricsDocument(id, data); return true; } catch { return false; }
+};
 
 const VERSION = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
 const object = value => value !== null && typeof value === 'object';
@@ -183,8 +191,8 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
           try { bytes = await readFile(stream.path); } catch { skipped.push(`${name} (No se pudo leer el archivo)`); continue; }
           try { data = decodeSession(bytes); } catch { skipped.push(`${name} (JSON no válido)`); continue; }
         }
-        if (!isImportableArchive(data)) { skipped.push(`${name} (directo no válido)`); continue; }
-        if (data.id !== stream.id) { skipped.push(`${name} (el id no coincide con el nombre)`); continue; }
+        if (data?.id !== stream.id && isImportableArchive(data)) { skipped.push(`${name} (el id no coincide con el nombre)`); continue; }
+        if (!validStream(stream.id, data)) { skipped.push(`${name} (directo no válido)`); continue; }
         const clean = cleanSession(data), changed = !isDeepStrictEqual(clean, data);
         const sanitized = !stream.path || changed ? Buffer.from(serialize(clean)) : null;
         if (sanitized) size = sanitized.length;
@@ -336,6 +344,7 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
           try { data = decodeSession(bytes); } catch { throw httpError(400, 'El directo importado no es un JSON válido.'); }
           if (!isImportableArchive(data)) throw httpError(400, 'El directo importado no es válido.');
           if (data.id !== id) throw httpError(400, 'El directo importado no coincide con su nombre de archivo.');
+          if (!validStream(id, data)) throw httpError(400, 'El directo importado no es válido.');
           const status = await sessionStatus(id); counts[status]++;
           sessionState.push([id, status, createHash('sha256').update(bytes).digest('hex')]);
         }
