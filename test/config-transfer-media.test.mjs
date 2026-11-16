@@ -120,7 +120,7 @@ test('unportable local names are skipped and reported without failing the export
 });
 
 test('a non-UTF-8 media filename is skipped losslessly instead of aborting export', async t => {
-  if (process.platform === 'win32') return t.skip('nombres binarios solo en POSIX');
+  if (process.platform === 'win32') return t.skip('POSIX filenames: Windows cannot create a non-UTF-8 media filename; the skip-and-report path runs on Linux');
   const f = await fixture(t), name = Buffer.concat([Buffer.from([0xff]), Buffer.from('.png')]);
   await writeFile(Buffer.concat([Buffer.from(f.media + path.sep), name]), 'odd'); await writeFile(path.join(f.media, 'safe.png'), 'yes');
   const r = await f.download(); assert.equal(r.status, 200);
