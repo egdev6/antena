@@ -77,7 +77,7 @@ The manual-save contract for each editing unit is:
 
 Views outside the v2 hierarchy start with `ViewHead`, so all headers share the same order:
 
-1. `crumb`: `<sidebar group> › <sidebar label>` (for example «Meld y Stream Deck › Atajos y Stream Deck»).
+1. `crumb`: `<sidebar group> › <sidebar label>` (for example «Configurar › Atajos y Stream Deck»).
    Sidebar groups are not routes, so this crumb is plain text. Sub-routes link back to their parent view
    instead: «Comandos de chat › Comando», where «Comandos de chat» links to `#/comandos`.
 2. `title` (`h1`): the sidebar label, or the object name in a sub-route (an editable `title-input` there).
@@ -137,9 +137,9 @@ Objetivos, Últimos y ticker, Créditos) uses one layout, `WidgetLayout`, below 
 
 - Two columns: the left one is everything you configure or operate, the right one is the preview. Below
   1180 px they stack and the preview goes first.
-- The left column always starts with `BrowserSource`: a section titled «Fuente de navegador en Meld» with
-  the URL (`CopyUrl`), its size and a usage hint (default «En Meld: + › Browser…»; pass `hint` for
-  widget-specific parameters such as `?nocount`). Never build this block by hand or give it another name.
+- The left column always starts with `BrowserSource`: a section titled «Fuente de navegador» with
+  the URL (`CopyUrl`), its size and a program-neutral usage hint. Pass `hint` for
+  widget-specific parameters such as `?nocount`. Never build this block by hand or give it another name.
   A page with two widgets lists both URLs in the same block with a `label` each (Últimos y ticker); a page
   with one source per object renders the block inside each object's tab (Objetivos).
 - The right column holds only previews, each one a `Stage` (or the same `figure.eg-stage` markup when it
