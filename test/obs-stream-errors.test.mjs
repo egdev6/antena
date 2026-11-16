@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
@@ -12,7 +12,10 @@ test('OBS 501 on stop surfaces as 500, session kept, guard kept', { timeout: 300
   const fake = fakeObs({ streaming: true }); await new Promise(r => fake.server.listen(0, '127.0.0.1', r));
   const app = await createApp({ dataDir: path.join(root, 'data'), mediaDir: path.join(root, 'media'), push: {}, log: () => {} });
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
-  t.after(async () => { await app.drainAutoSession(); await app.session.flush(); await app.program.quiesceClose(); app.program.dispose(); await app.closeHttp(); await fake.close(); });
+  t.after(async () => {
+    try { await app.drainAutoSession(); await app.session.flush(); await app.program.quiesceClose(); app.program.dispose(); await app.closeHttp(); await fake.close(); }
+    finally { await rm(root, { recursive: true, force: true }); }
+  });
   const base = `http://127.0.0.1:${app.server.address().port}`;
   const api = async (m, u, b) => { const r = await fetch(base + u, { method: m, headers: { 'content-type': 'application/json' }, body: b === undefined ? undefined : JSON.stringify(b) }); return { status: r.status, body: await r.json() }; };
   await api('PUT', '/api/config', { program: { kind: 'obs' }, obs: { url: `ws://127.0.0.1:${fake.server.address().port}` }, meld: { autoSession: true } });

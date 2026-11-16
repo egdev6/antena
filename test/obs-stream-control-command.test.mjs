@@ -14,7 +14,7 @@ test('OBS command emits controlCommand for the six control commands before the R
   const commands = ['meld.startStreamingAction', 'meld.stopStreamingAction', 'meld.toggleStreamingAction',
     'meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction'];
   for (const command of commands) assert.equal(await program.command(command), undefined);
-  assert.throws(() => program.command('meld.unknownAction'), { message: 'Acción todavía no disponible con OBS.' });
+  assert.throws(() => program.command('meld.unknownAction'), { message: 'Esta acción solo está disponible con Meld.', status: 409 });
   assert.deepEqual(seen, commands.map((command, index) => [command, index]));
   assert.deepEqual(fake.requests.filter(r => /(Stream|Record)$/.test(r.requestType)).map(r => r.requestType),
     ['StartStream', 'StopStream', 'ToggleStream', 'StartRecord', 'StopRecord', 'ToggleRecord']);

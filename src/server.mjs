@@ -274,6 +274,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // ---------- estado ----------
   const status = () => ({
     twitch: twitch.status, youtube: youtube.status, chat: chat.status, meld: program.status,
+    program: { kind: selectedProgram, capabilities: [...program.capabilities].sort() },
     overlays: bus.overlayCount(), pause: engine.pauseState(),
     persistence: store.persistenceState(),
     channelTotals: channelTotals.snapshot(),

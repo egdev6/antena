@@ -3,7 +3,7 @@
 // - url, capabilities, initialStatus, connectedStatus, initialSession and
 //   changedSession. The session has at least two scenes; changeSession() makes
 //   the second current, then emits its session update.
-// - actions: method -> [{ args, calls, result?, session?, error?, capability? }].
+// - actions: method -> [{ args, calls, result?, session?, error?, capability?, syncThrow? }].
 //   calls() returns the fake's request log, in the same driver-defined format as
 //   each case's calls. An unsupported action supplies an error and capability.
 // - ready() waits for connection initialization; settle() waits for the last
@@ -95,7 +95,8 @@ export function programContract(makeAdapter, makeDriver, { statusOnly = false, s
         if (scenario.error) {
           const status = structuredClone(program.status), session = program.session();
           if (scenario.capability) assert.equal(program.capabilities.has(scenario.capability), false);
-          await assert.rejects(async () => program[name](...scenario.args), scenario.error);
+          if (scenario.syncThrow) assert.throws(() => program[name](...scenario.args), scenario.error);
+          else await assert.rejects(async () => program[name](...scenario.args), scenario.error);
           assert.deepEqual(program.status, status);
           assert.deepEqual(program.session(), session);
         } else {
