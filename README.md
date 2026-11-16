@@ -167,9 +167,23 @@ Overlay parameters: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debug`. C
 
 **Custom overlays** show up in that same list as «Overlay · name», with their `/custom/<id>` URL and their size.
 
-### OBS (experimental)
+### Using antena with OBS (experimental)
 
-In OBS 28 or newer, enable **Tools › WebSocket Server Settings**, use port `4455` and set a password. In antena, choose **OBS** under **Conexiones**, enter the URL and password, and save. The OBS integration is experimental, and not every action is available in both programs.
+1. In OBS 28 or newer with **obs-websocket v5**, open **Tools › WebSocket Server Settings**, enable the server and set a password.
+2. In antena, choose **OBS** under **Conexiones › Programa de emisión** (marked experimental), enter the URL and password, and save. The default URL is `ws://127.0.0.1:4455`. Antena stores the password locally in the credential store, not in `config.json` or configuration exports.
+
+**Works with OBS:**
+- Scenes, OBS sources as layers, and OBS filters as effects.
+- Media play, pause, restart, stop and seek; audio mute and volume; live audio meters.
+- Start and stop streaming and recording; automatic sessions and, when enabled, record-on-start through antena's stream control.
+
+**Only with Meld (not available with OBS):**
+- Clips, screenshots and other Meld commands, except the streaming and recording commands above.
+- Meld widget events such as confetti, wheel, counter and timers, including Meld confetti for giveaways.
+- Meld API v2 properties, raw calls and staged scenes.
+- Embedding the dock inside Meld's chat panel requires Meld; the dock itself can still open as a floating window with OBS.
+
+**Connection problems:** If the password is wrong, antena shows an error and does not retry automatically. Correct it in **Conexiones** and save. For connection failures such as an unreachable server, antena retries with increasing delays up to five times before giving up.
 
 ### Meld Studio
 

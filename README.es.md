@@ -167,9 +167,23 @@ Parámetros del overlay: `?pos=top|center|bottom`, `&scale=0.8`, `&mute`, `&debu
 
 Los **overlays propios** salen en esa misma lista como «Overlay · nombre», con su URL `/custom/<id>` y su tamaño.
 
-### OBS (experimental)
+### Usar antena con OBS (experimental)
 
-En OBS 28 o posterior, activa **Herramientas › Ajustes del servidor WebSocket**, usa el puerto `4455` y establece una contraseña. En antena, elige **OBS** en **Conexiones**, introduce la URL y la contraseña y guarda. La integración de OBS es experimental y no todas las acciones están disponibles en ambos programas.
+1. En OBS 28 o posterior con **obs-websocket v5**, abre **Herramientas › Ajustes del servidor WebSocket**, activa el servidor y establece una contraseña.
+2. En antena, elige **OBS** en **Conexiones › Programa de emisión** (marcado como experimental), introduce la URL y la contraseña y guarda. La URL por defecto es `ws://127.0.0.1:4455`. Antena guarda la contraseña en el almacén local de credenciales, no en `config.json` ni en las exportaciones de configuración.
+
+**Funciona con OBS:**
+- Escenas, fuentes de OBS como capas y filtros de OBS como efectos.
+- Reproducir, pausar, reiniciar, detener y avanzar o retroceder medios; silenciar y ajustar el volumen de audio; medidores de audio en directo.
+- Iniciar y detener la emisión y la grabación; sesión automática y, si se activa, grabación al empezar mediante el control de emisión de antena.
+
+**Solo con Meld (no disponible con OBS):**
+- Clips, capturas y otros comandos de Meld, salvo los de emisión y grabación indicados arriba.
+- Eventos de widgets de Meld como confeti, ruleta, contador y cronómetros, incluido el confeti de Meld para sorteos.
+- Propiedades de la API v2 de Meld, llamadas en bruto y escenas preparadas.
+- Insertar el dock en el panel de chat de Meld requiere Meld; el dock en sí también se puede abrir como ventana flotante con OBS.
+
+**Problemas de conexión:** Si la contraseña es incorrecta, antena muestra un error y no reintenta automáticamente. Corrígela en **Conexiones** y guarda. Ante fallos de conexión como un servidor inaccesible, antena reintenta con esperas crecientes hasta cinco veces antes de desistir.
 
 ### Meld Studio
 
