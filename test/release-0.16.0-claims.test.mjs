@@ -143,3 +143,11 @@ test('S1: los agradecimientos solo atribuyen participación acreditada', () => {
   assert.match(agradecimientos, /propuesto, informado y desarrollado/i);
   assert.doesNotMatch(agradecimientos, /\b(?:probado|revisado)\b/i);
 });
+
+test('S1: las notas no afirman pruebas reales, actualizaciones automáticas ni firma en ninguna sección', () => {
+  assert.doesNotMatch(notes, /\bprobad[oa]s?\b/i);
+  assert.doesNotMatch(notes.replace(/no se ha validado con OBS ni Meld reales en Windows/i, ''), /validad[oa]/i);
+  assert.doesNotMatch(notes, /actualizaci[oó]n(?:es)? autom[aá]tica/i);
+  assert.doesNotMatch(notes, /(?<!no )está firmado/i);
+  assert.match(notes, /«Grabar al empezar el directo» \(el interruptor está en \*\*Meld Studio › Conexión\*\* y también vale para OBS\)/);
+});
