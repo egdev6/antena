@@ -1,9 +1,11 @@
-// #159: ejecutar solo después de compilar app/dist desde el árbol candidato.
+// #159: empaqueta el panel y el dock candidatos en memoria para cada fixture aislado.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 import { createApp } from '../src/server.mjs';
 import { fakeMeldRecording } from './helpers/fake-meld-recording.mjs';
 import { findChrome, closeAll, closeChrome, openChromePage, waitDom, buttonByText, clickWhen } from './helpers/react-browser.mjs';
@@ -27,10 +29,10 @@ function nextWhere(emitter, predicate) {
   });
 }
 
+let uiBuild;
 async function setup(t) {
   const bin = await findChrome();
   if (!bin) { t.skip('sin Chrome local; define CHROME_PATH'); return null; }
-  await stat(new URL('../app/dist/index.html', import.meta.url));
   const dir = await mkdtemp(path.join(tmpdir(), 'antena-recording-browser-'));
   const meld = fakeMeldRecording(), pages = [];
   let app;
@@ -44,7 +46,19 @@ async function setup(t) {
     }, () => new Promise(resolve => meld.server.close(resolve)), () => rm(dir, { recursive: true, force: true }));
   });
   await new Promise(resolve => meld.server.listen(0, '127.0.0.1', resolve));
-  app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
+  const appDist = path.join(dir, 'dist'), assets = path.join(appDist, 'assets');
+  await mkdir(assets, { recursive: true });
+  uiBuild ||= build({ entryPoints: {
+    panel: fileURLToPath(new URL('../app/src/panel/main.tsx', import.meta.url)),
+    dock: fileURLToPath(new URL('../app/src/dock/main.tsx', import.meta.url)),
+  }, outdir: path.join(dir, 'virtual'), bundle: true, format: 'esm', minify: true, write: false,
+  target: ['chrome110', 'edge110', 'safari16'], jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' },
+  external: ['/fonts/*', '/ds/*'], logLevel: 'silent' });
+  const built = await uiBuild;
+  await Promise.all(built.outputFiles.map(file => writeFile(path.join(assets, path.basename(file.path)), file.contents)));
+  for (const [name, entry] of [['index', 'panel'], ['dock', 'dock']])
+    await writeFile(path.join(appDist, `${name}.html`), `<!doctype html><html lang="es"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/ds/tokens.css"><link rel="stylesheet" href="/ds/bundle.css"><link rel="stylesheet" href="/assets/${entry}.css"></head><body><div id="root"></div><script type="module" src="/assets/${entry}.js"></script></body></html>`);
+  app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), appDist, push: {}, log: () => {} });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${app.server.address().port}`;
   const api = async (method, url, body) => {
@@ -79,13 +93,13 @@ test('record-on-start switch discards, saves and persists without reconnecting M
   assert.equal(await dom(page, `(${setting}).checked`), false);
   await clickWhen(page.cdp, setting);
   await waitDom(page.cdp, `(${setting}).checked && !!document.querySelector('.lv-savebar.is-open')`);
-  assert.equal((await f.api('GET', '/api/config')).meld.recordOnStart, false);
+  assert.equal((await f.api('GET', '/api/config')).program.recordOnStart, false);
   await clickWhen(page.cdp, saveButton('Descartar'));
   await waitDom(page.cdp, `!(${setting}).checked && !document.querySelector('.lv-savebar.is-open')`);
-  assert.equal((await f.api('GET', '/api/config')).meld.recordOnStart, false);
+  assert.equal((await f.api('GET', '/api/config')).program.recordOnStart, false);
   await clickWhen(page.cdp, setting); await clickWhen(page.cdp, saveButton('Guardar'));
   await waitDom(page.cdp, `(${setting}).checked && !document.querySelector('.lv-savebar.is-open')`);
-  assert.equal((await f.api('GET', '/api/config')).meld.recordOnStart, true);
+  assert.equal((await f.api('GET', '/api/config')).program.recordOnStart, true);
   assert.equal(disconnected, 0); assert.deepEqual(calls(f.meld), []);
   await dom(page, `window.__recordingOldPage = true`);
   await page.cdp.send('Page.reload');

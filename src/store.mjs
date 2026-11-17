@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { writeJson } from './json-file.mjs';
 import { cleanUrl } from './http-util.mjs';
 import { sanitizeConfig, schemaAt, PROTO_KEYS, validateChatVariantsTransition } from './config-schema.mjs';
-import { convertLegacyGoals } from './goals.mjs';
+import { CURRENT_CONFIG_VERSION, migrateConfig } from './config-migrations.mjs';
 import { DEFAULT_ALERTS } from './alerts.mjs';
 import { DEFAULT_FILTERS } from './filters.mjs';
 import { DEFAULT_VIEWERS } from './viewers.mjs';
@@ -22,6 +22,7 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export const DATA = process.env.ANTENA_DATA || path.join(ROOT, 'data');
 
 export const DEFAULT_CONFIG = {
+  configVersion: CURRENT_CONFIG_VERSION,
   port: 4500,
   paused: false,
   twitch: { clientId: '' },
@@ -30,9 +31,9 @@ export const DEFAULT_CONFIG = {
   overlay: { volume: 0.6, gapMs: 700, css: '', queueMax: 20 },   // css: común a todas las alertas; queueMax (#66): tope de la cola del overlay, 0 = sin tope
   tts: { enabled: true, voice: '', rate: 1, pitch: 1, volume: 1, maxChars: 200 },
   filters: DEFAULT_FILTERS,
-  program: { kind: 'meld' },
+  program: { kind: 'meld', autoSession: true, recordOnStart: false },
   obs: { url: 'ws://127.0.0.1:4455' },
-  meld: { enabled: false, url: 'ws://127.0.0.1:13376', autoSession: true, recordOnStart: false },
+  meld: { enabled: false, url: 'ws://127.0.0.1:13376' },
   panel: { onboardingDone: false },   // bienvenida del panel con tarjetas; true = ya la vio (se relanza desde General)
   access: { lan: false, key: '' },   // acceso desde el móvil en la red local
   sessions: { retention: 0 },        // #68: sesiones archivadas a conservar; 0 = sin límite (desactivado)
@@ -157,19 +158,16 @@ export class Store extends EventEmitter {
     return structuredClone({ dirty: { ...this.dirty }, message: { ...this.dirtyMessage }, pending: { ...this.pending } });
   }
   async load() {
-    // copia profunda: cada alerta tiene sus propias listas (variaciones, acciones)
-    this.config = deepMerge(structuredClone(DEFAULT_CONFIG), await readJson(this.cfgFile, {}));
+    // Migrar los datos originales antes de fusionar defaults: así un default nuevo no
+    // pisa el valor antiguo. Una versión futura nunca se migra ni se rebaja al cargar.
+    const migration = migrateConfig(await readJson(this.cfgFile, {}));
+    if (migration.future) console.warn(`config.json: configVersion ${migration.config.configVersion} es más reciente; no se migra`);
+    this.config = deepMerge(structuredClone(DEFAULT_CONFIG), migration.config);
     // Nunca importar una contraseña de config.json a las vistas o a guardados posteriores.
     if (this.config.obs && typeof this.config.obs === 'object') delete this.config.obs.password;
-    // #128: los objetivos legacy (barra única) se convierten en cajas con barras ANTES de
-    // sanear (el esquema nuevo valida cajas). La conversión es idempotente; si cambió algo,
-    // se persiste aquí mismo: un fallo de escritura rechaza la carga (no se silencia).
-    const goals = this.config.widgets.goals;
-    const converted = convertLegacyGoals(goals);
-    if (converted.some((g, i) => g !== goals[i])) {
-      this.config.widgets.goals = converted;
-      await this.write(this.cfgFile, this.config);
-    }
+    // El mismo backup transaccional que usa la importación conserva los bytes y el modo.
+    // Solo el cambio de datos, no añadir la versión en memoria, exige escribir al cargar.
+    if (migration.changed) await this.replaceConfigWithBackup(this.config, this.config, { all: true });
     // #106: cada hoja inválida de config.json vuelve a su default con un aviso; el arranque sigue
     const warnings = sanitizeConfig(this.config, DEFAULT_CONFIG);
     this.configWarnings = warnings.map(w => w.path);
@@ -201,6 +199,11 @@ export class Store extends EventEmitter {
     return typeof value === 'string' && typeof previous === 'string' && value === cleanUrl(previous) ? previous : value;
   }
   async patchConfig(patch, { replace = false, change = patch, onPersist } = {}) {
+    // configVersion belongs to the store: client patches cannot skip future migrations.
+    if (!replace && patch && typeof patch === 'object' && Object.hasOwn(patch, 'configVersion')) {
+      const { configVersion: _ignored, ...rest } = patch;
+      patch = rest;
+    }
     if (!replace) for (const kind of ['meld', 'obs']) {
       const section = patch?.[kind];
       if (!section || typeof section !== 'object' || Array.isArray(section) || !Object.hasOwn(section, 'url')) continue;
@@ -215,6 +218,8 @@ export class Store extends EventEmitter {
   }
   /** Local restore point: exact prior config bytes and mode, never the separate credential file. */
   async replaceConfigWithBackup(next, expected, change, onCommit) {
+    // An imported file never sets the stored version; keep the version this store loaded.
+    if (next && typeof next === 'object') next = { ...next, configVersion: this.config.configVersion };
     const conflict = () => Object.assign(new Error('La configuración ha cambiado; vuelve a previsualizar'), { status: 409 });
     const barrier = this.chain;
     await barrier;
@@ -254,11 +259,12 @@ export class Store extends EventEmitter {
     return name;
   }
   /** Cambia un valor por ruta con puntos («alerts.follow.title», «widgets.goals.0.target»). */
-  async setPath(dotted, value) {
+  async setPath(dotted, value, { programPatch } = {}) {
     const keys = configPathKeys(dotted);
     if (!keys.length) throw new Error('Ruta vacía');
     // defensa en profundidad (validatePath ya lo rechaza): nunca se escribe en el prototipo
     if (keys.some(k => PROTO_KEYS.has(k))) throw new Error(`Ruta no válida: ${dotted}`);
+    if (keys[0] === 'configVersion') throw Object.assign(new Error('configVersion lo gestiona antena; no se puede cambiar'), { status: 400 });
     if (['meld', 'obs'].includes(keys[0])) {
       if (keys.length === 2 && keys[1] === 'url') value = this.#retainProgramUrl(keys[0], value);
       else if (keys.length === 1 && value && typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, 'url')) {
@@ -327,9 +333,10 @@ export class Store extends EventEmitter {
       if (error) throw Object.assign(new Error(error.message), { status: 400 });
       this.config = target;
     }
+    if (programPatch) this.config.program = deepMerge(this.config.program, programPatch);
     if (fuera) console.warn(`${dotted}: se ignoran ${fuera} clave(s) del prototipo (__proto__, constructor, prototype)`);
     await this.write(this.cfgFile, this.config);
-    this.emit('change', { [keys[0]]: true });
+    this.emit('change', { [keys[0]]: true, ...(programPatch ? { program: true } : {}) });
     return this.config;
   }
   // La raíz opcional permite leer una proyección; el acceso interno sigue siendo crudo por defecto.

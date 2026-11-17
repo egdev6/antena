@@ -14,7 +14,7 @@ const MIN = 60_000;
 async function start(t) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'antena-timer-live-'));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
-  app.store.config.meld.autoSession = false;
+  app.store.config.program.autoSession = false;
   const sent = [];
   app.twitch.sendChat = async text => { sent.push(text); return { is_sent: true }; };
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));

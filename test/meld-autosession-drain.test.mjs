@@ -58,16 +58,16 @@ async function startApp(t, { writer, release } = {}) {
   return { app, dataDir, logs, calls, setStartNew: fn => { impl = fn; } };
 }
 
-test('filtros: solo live=true con meld.autoSession habilitado inicia la sesión automática', { timeout: 10000 }, async t => {
+test('filtros: solo live=true con program.autoSession habilitado inicia la sesión automática', { timeout: 10000 }, async t => {
   const { app, calls } = await startApp(t);
   app.meld.emit('streaming', false);
   await settle();
   assert.equal(calls.length, 0, 'live=false no inicia');
-  app.store.config.meld.autoSession = false;
+  app.store.config.program.autoSession = false;
   app.meld.emit('streaming', true);
   await settle();
   assert.equal(calls.length, 0, 'autoSession deshabilitado no inicia');
-  app.store.config.meld.autoSession = true;
+  app.store.config.program.autoSession = true;
   app.meld.emit('streaming', true);
   await settle();
   assert.equal(calls.length, 1, 'live=true con autoSession habilita el inicio');

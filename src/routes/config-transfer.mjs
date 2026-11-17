@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { ROOT, DEFAULT_CONFIG, deepMerge } from '../store.mjs';
+import { migrateConfig } from '../config-migrations.mjs';
 import { PROTO_KEYS, validatePatch, validateImportedChatVariants } from '../config-schema.mjs';
 import { httpError, credential, credentialParam, cleanUrl } from '../http-util.mjs';
 import { checkZipName, openZip, writeZip, MAX_ZIP_TOTAL, MAX_ZIP_ENTRIES, MAX_SESSION } from '../zip-archive.mjs';
@@ -97,7 +98,10 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
     if (!file.config || typeof file.config !== 'object' || Array.isArray(file.config)) throw httpError(400, 'La configuración debe ser un objeto');
     const { config: _config, ...metadata } = file;
     portable(metadata, '', true);
-    const input = portable(file.config, '', true);
+    const raw = portable(file.config, '', true);
+    // Valida primero lo que llegó: una migración no puede ocultar una sección o alias inválidos.
+    const [rawError] = validatePatch(raw); if (rawError) throw httpError(400, rawError.message);
+    const input = migrateConfig(raw).config;
     const [error] = validatePatch(input); if (error) throw httpError(400, error.message);
     for (const [key, def] of Object.entries(DEFAULT_CONFIG)) {
       if (object(def) && Object.hasOwn(input, key) && (input[key] === null || typeof input[key] !== 'object' || Array.isArray(input[key]) !== Array.isArray(def)))
@@ -116,8 +120,6 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
   const conflict = () => httpError(409, 'La configuración ha cambiado; vuelve a previsualizar');
   const applyConfig = async ({ before, next, summary }, onCommit) => {
     const changed = Object.fromEntries(Object.keys(summary).map(key => [key, true]));
-    // PUT treats recordOnStart alone as non-reconnecting.
-    if (changed.meld && summary.meld.changed.paths.every(p => p === 'meld.recordOnStart') && !summary.meld.added.count && !summary.meld.removed.count) changed.meld = false;
     const backup = await store.replaceConfigWithBackup(next, before, { ...changed, all: true }, onCommit);
     if (changed.customOverlays) customOverlays.notify(next.customOverlays);
     afterConfig(changed);

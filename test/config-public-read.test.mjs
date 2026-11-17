@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
@@ -139,7 +139,7 @@ async function fixture(t, populated) {
     try { if (mcp) await mcp.close(); }
     finally {
       try { if (app) await bounded(app.closeHttp(), 2500, 'HTTP close'); }
-      finally { guard.restore(); }
+      finally { guard.restore(); await rm(root, { recursive: true, force: true }); }
     }
   });
   process.env.ANTENA_DATA = dataDir;
@@ -197,7 +197,7 @@ async function fixture(t, populated) {
       assert.deepEqual(proof.blocked, ['fetch', 'WebSocket', 'net', 'tls'], 'only deliberate probes were blocked');
       assert.ok(proof.allowed > 0, 'real loopback HTTP transport was exercised');
     }
-    t.diagnostic(JSON.stringify({ parentGuard: guard.state, childGuard, childClose, fixtureRetained: root }));
+    t.diagnostic(JSON.stringify({ parentGuard: guard.state, childGuard, childClose, fixture: root }));
   } };
 }
 

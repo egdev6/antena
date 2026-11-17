@@ -15,7 +15,7 @@ async function start(t, configure) {
   t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
   app.store.config.panel = { onboardingDone: true };
-  app.store.config.meld.autoSession = false;
+  app.store.config.program.autoSession = false;
   // Sin red: el intento automático de YouTube falla al momento.
   app.youtube.start = async () => { app.youtube.setStatus({ state: 'error', errors: ['La API key de YouTube no es válida.'] }); };
   configure?.(app);

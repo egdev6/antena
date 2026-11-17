@@ -58,15 +58,16 @@ async function fixture(t, seed = {}) {
     youtubeAccessToken: () => app.youtube.accessToken() };
 }
 
-test('meld-only config retains its values and disk bytes while OBS defaults are supplied', async t => {
+test('meld-only config migrates generic settings while OBS defaults are supplied', async t => {
   const meld = { enabled: false, url: 'ws://127.0.0.1:9876', autoSession: false, recordOnStart: true };
   const f = await fixture(t, { meld });
   const r = await f.call('GET', '/api/config');
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.meld, meld);
-  assert.deepEqual(r.body.program, { kind: 'meld' });
+  assert.deepEqual(r.body.meld, { enabled: false, url: meld.url });
+  assert.deepEqual(r.body.program, { kind: 'meld', autoSession: false, recordOnStart: true });
   assert.deepEqual(r.body.obs, { url: 'ws://127.0.0.1:4455', passwordSet: false });
-  assert.equal(await readFile(f.file, 'utf8'), f.original);
+  const saved = JSON.parse(await readFile(f.file, 'utf8'));
+  assert.deepEqual(saved.meld, r.body.meld); assert.deepEqual(saved.program, r.body.program);
   assert.equal(f.logs.filter(x => /OBS/.test(x)).length, 0);
 });
 
@@ -120,7 +121,7 @@ test('OBS URLs accept ws/wss and bad URLs or kinds leave config and counters unc
 test('replacing a new config section keeps its required defaults', async t => {
   const f = await fixture(t);
   assert.deepEqual(await f.call('POST', '/api/config/set', { path: 'program', value: {} }),
-    { status: 200, body: { path: 'program', value: { kind: 'meld' } } });
+    { status: 200, body: { path: 'program', value: { kind: 'meld', autoSession: true, recordOnStart: false } } });
   assert.deepEqual(await f.call('POST', '/api/config/set', { path: 'obs', value: {} }),
     { status: 200, body: { path: 'obs', value: { url: 'ws://127.0.0.1:4455', passwordSet: false } } });
 });

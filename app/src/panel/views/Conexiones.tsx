@@ -127,7 +127,7 @@ export function Conexiones({ parts }: { parts: string[] }) {
           foot={<><span className="lv-cnote">{!selectedActive ? 'Guarda el programa seleccionado para conectarlo' : selectedOk ? 'Se reconecta solo si cierras Meld' : 'Activa «Allow remote connections» en Meld'}</span><span className="sp" />
             <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!selectedActive} onClick={guard(() => post('/api/meld/connect', { url: meldUrl }), 'Conectando con Meld…')}>{selectedOk ? 'Reconectar' : 'Conectar'}</button></>}>
           <Dot tone={selectedOk ? 'ok' : selectedStatus.state === 'error' ? 'warn' : 'off'}>{selectedActive ? cap(selectedStatus.state) : 'Pendiente de guardar'}</Dot>
-          <dl className="lv-kv"><dt>Dirección</dt><dd>{meldUrl}</dd><dt>Escenas</dt><dd>{selectedActive && scenes.length ? `${scenes.length}${scene ? ` · en directo «${scene.name}»` : ''}` : '—'}</dd><dt>Al emitir</dt><dd>{c.meld?.autoSession ? 'Empieza un directo nuevo' : 'Sigue el directo actual'}</dd></dl>
+          <dl className="lv-kv"><dt>Dirección</dt><dd>{meldUrl}</dd><dt>Escenas</dt><dd>{selectedActive && scenes.length ? `${scenes.length}${scene ? ` · en directo «${scene.name}»` : ''}` : '—'}</dd><dt>Al emitir</dt><dd>{c.program?.autoSession ? 'Empieza un directo nuevo' : 'Sigue el directo actual'}</dd></dl>
           {selectedStatus.error ? <p className="lv-cnote is-warn">{selectedStatus.error}</p> : null}
         </Card> : <Card className="lv-conn" label="Estado de OBS Studio"
           title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={IC.monitor} /></span><span><b>OBS Studio</b><small>Conexión experimental</small></span></span>}
