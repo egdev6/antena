@@ -18,7 +18,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]
-tauri-plugin-nexo = { git = "https://github.com/egdev6/tauri-plugin-nexo", tag = "v0.1.0" }
+tauri-plugin-nexo = { git = "https://github.com/egdev6/tauri-plugin-nexo", tag = "v0.1.1" }
 
 [profile.release]
 codegen-units = 1
