@@ -34,6 +34,7 @@ export function discoverTestFiles(repoRoot) {
 // used: it discards failures thrown after a test returns (a false green in CI). A leaked handle
 // still keeps its file alive; runSuite's watchdog ends that run with the failing test named.
 export const DEFAULT_TEST_TIMEOUT_MS = 300_000;
+export const TEST_GROUPS = Object.freeze(['unit', 'browser', 'platform']);
 
 export function testCommand(files, { coverage = true, timeoutMs = DEFAULT_TEST_TIMEOUT_MS } = {}) {
   return ['--test', '--test-reporter=tap', `--test-timeout=${timeoutMs}`, ...(coverage ? ['--experimental-test-coverage'] : []), ...files];
@@ -246,12 +247,19 @@ function safeArg(arg) {
 }
 
 export function parseArgs(argv) {
-  const opts = { output: null, tap: null, coverage: true, help: false, errors: [] };
+  const opts = { output: null, tap: null, group: null, coverage: true, help: false, errors: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--no-coverage') opts.coverage = false;
     else if (a === '--help' || a === '-h') opts.help = true;
-    else if (a === '--output' || a === '--tap') {
+    else if (a === '--group' || a.startsWith('--group=')) {
+      const value = a === '--group' ? argv[++i] : a.slice('--group='.length);
+      if (value === undefined || value.startsWith('--')) {
+        opts.errors.push('--group requiere unit, browser o platform');
+        if (value !== undefined) i--;
+      } else if (!TEST_GROUPS.includes(value)) opts.errors.push('--group requiere unit, browser o platform');
+      else opts.group = value;
+    } else if (a === '--output' || a === '--tap') {
       const value = argv[++i];
       if (value === undefined || value.startsWith('--')) { opts.errors.push(`${a} requiere una ruta`); i--; }
       else if (value === '') opts.errors.push(`${a} requiere una ruta`);
@@ -276,6 +284,7 @@ informe JSON en stdout. Códigos de salida estables: 0 = suite completa sin fail
 cancel ni error de protocolo; 1 = fail, cancel, protocolo TAP incompleto, error
 de runner/timeout/desbordamiento o flags inválidos.
 
+  --group <grupo>   Ejecuta solo unit, browser o platform (por defecto: toda la suite).
   --output <ruta>   Guarda además el informe JSON en <ruta> (string).
   --tap <ruta>      Guarda la salida TAP cruda en <ruta> (string).
   --no-coverage     No pide cobertura al runner (booleano).
@@ -390,7 +399,16 @@ export async function main(argv = process.argv.slice(2), { stdout = process.stdo
   if (opts.errors.length) { stderr.write(`baseline: ${opts.errors.join('; ')}\n`); return 1; }
   if (destinationCollision(opts.tap, opts.output)) { stderr.write('baseline: --tap y --output no pueden apuntar al mismo destino\n'); return 1; }
   if (opts.help) { stdout.write(HELP + '\n'); return 0; }
-  const testFiles = discoverTestFiles(repoRoot);
+  let testFiles;
+  if (opts.group) {
+    try {
+      const { groupFiles } = await import('./test-groups.mjs');
+      testFiles = groupFiles(repoRoot, opts.group);
+    } catch (error) {
+      stderr.write(`baseline: ${error.message}\n`);
+      return 1;
+    }
+  } else testFiles = discoverTestFiles(repoRoot);
   if (!testFiles.length) {
     stderr.write('baseline: no se encontraron test/*.test.mjs\n');
     return 1;
@@ -399,6 +417,7 @@ export async function main(argv = process.argv.slice(2), { stdout = process.stdo
   const run = await runner({ cwd: repoRoot, execPath, args });
   const parsed = parseTap(run.stdout);
   const report = buildReport({ repoRoot, testFiles, command: [execPath, ...args], run, parsed, coverageRequested: opts.coverage, gitCommit: readCommit(repoRoot) });
+  if (opts.group) report.tests.group = opts.group;
   const json = JSON.stringify(report, null, 2);
   if (opts.tap) writeFileSync(opts.tap, run.stdout);
   if (opts.output) writeFileSync(opts.output, json + '\n');

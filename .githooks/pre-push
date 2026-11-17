@@ -1,0 +1,3 @@
+#!/bin/sh
+# Optional local fast check. CI still runs independently.
+exec pnpm test:unit
