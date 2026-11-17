@@ -42,6 +42,21 @@ Code safety analyzes JS/TS and workflows; Gitleaks scans for secret patterns.
 Neither passing check is a universal security or prompt-injection guarantee.
 No contributor is required to use Pi or any particular coding assistant.
 
+## Release
+
+A maintainer must configure the GitHub Actions environment `PROD-release` with required
+reviewers and store `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as environment secrets there, not in the
+repository or workflow. Dependency install, font and Node preparation, and builds
+run without the environment or signing secrets. A fresh Windows job, gated by that
+environment, receives only the unsigned installer and notes; it signs using the exact
+Tauri CLI packages verified against the lockfile SHA-512 pins, without installing or
+running repository dependencies. Keep those pins in sync when updating the CLI. The
+workflow creates a draft for review, not a published release. Node sidecar verification
+in CI supports Windows x64 and fails closed on other platforms; local copies remain offline. A real
+Windows workflow run is needed to confirm the installer, signature, updater manifest
+and environment protection.
+
 ## Contribution skill
 
 Assistants can follow the local [contribute skill](.agents/skills/contribute/SKILL.md):

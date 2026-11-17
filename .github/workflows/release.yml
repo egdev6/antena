@@ -22,12 +22,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  windows:
-    name: Instalador de Windows
+  build:
+    name: Compilar instalador de Windows
     runs-on: windows-2022
     timeout-minutes: 90   # compilación en frío de Rust + NSIS, sin caché
     permissions:
-      contents: write   # solo para crear el borrador y subir el .exe
+      contents: read
     env:
       VERSION: ${{ inputs.version }}
     steps:
@@ -44,7 +44,7 @@ jobs:
       - name: Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '24'
+          node-version: '24.22.2'
       - name: Comprobar la versión
         shell: bash
         run: |
@@ -57,16 +57,6 @@ jobs:
             echo "::error::plugins.updater.pubkey de src-tauri/tauri.conf.json sigue siendo el marcador: pon la clave pública de «tauri signer generate»."
             exit 1
           fi
-      - name: Secreto de firma del updater
-        shell: bash
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            echo "::error::Falta el secreto TAURI_SIGNING_PRIVATE_KEY; sin él las actualizaciones no se pueden firmar."
-            exit 1
-          fi
-          echo "Clave de firma presente; su valor nunca se imprime."
       - name: La release no existe todavía
         shell: bash
         env:
@@ -75,6 +65,13 @@ jobs:
           if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Ya existe la release v$VERSION (borrador o publicada)."
             exit 1
+          fi
+          if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Ya existe el tag v$VERSION."
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then echo "::error::No se pudo comprobar el tag v$VERSION."; exit 1; fi
           fi
       - name: pnpm
         run: corepack enable pnpm
@@ -86,25 +83,136 @@ jobs:
         # public/fonts no está en git: sin este paso el overlay saldría con las fuentes de reserva
         run: pnpm fonts
       - name: Node empaquetado con la app
-        run: pnpm desktop:node
-      - name: Activar los artefactos del updater
-        # solo en esta copia de CI: en local `pnpm desktop:build` sigue funcionando sin la clave de firma
-        shell: bash
-        run: |
-          node -e 'const fs=require("fs"),f="src-tauri/tauri.conf.json",c=JSON.parse(fs.readFileSync(f,"utf8"));c.bundle.createUpdaterArtifacts=true;fs.writeFileSync(f,JSON.stringify(c,null,2)+"\n")'
-      - name: Compilar el instalador
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm desktop:build
+          CI: 'true'
+        run: pnpm desktop:node
+      - name: Compilar el panel
+        run: pnpm app:build
+      - name: Compilar el instalador
+        # El panel ya está compilado; ni los hooks ni cargo reciben la clave de firma.
+        shell: bash
+        run: pnpm exec tauri build --config '{"build":{"beforeBuildCommand":null},"bundle":{"createUpdaterArtifacts":false}}' -- --locked
       - name: Localizar el instalador
-        id: exe
+        id: unsigned
         shell: bash
         run: |
           exe=src-tauri/target/release/bundle/nsis/antena_"$VERSION"_x64-setup.exe
           test -f "$exe"
-          test -s "$exe.sig" || { echo "::error::No se generó la firma del updater ($exe.sig)."; exit 1; }
           echo "path=$exe" >> "$GITHUB_OUTPUT"
+      - name: Conservar el instalador sin firmar
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: antena-windows-unsigned
+          path: |
+            ${{ steps.unsigned.outputs.path }}
+            docs/releases/v${{ inputs.version }}.md
+          if-no-files-found: error
+          retention-days: 14
+
+  sign-and-release:
+    name: Firmar y preparar la release
+    needs: build
+    runs-on: windows-2022
+    environment: PROD-release
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.22.2'
+      - name: La release sigue sin existir
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Ya existe la release v$VERSION (borrador o publicada)."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Ya existe el tag v$VERSION."
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then echo "::error::No se pudo comprobar el tag v$VERSION."; exit 1; fi
+          fi
+      - name: Descargar el instalador sin firmar
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: antena-windows-unsigned
+          path: ${{ runner.temp }}/antena-unsigned
+      - name: Localizar el instalador para firma
+        id: exe
+        shell: bash
+        run: |
+          exe=src-tauri/target/release/bundle/nsis/antena_"$VERSION"_x64-setup.exe
+          notes=docs/releases/v"$VERSION".md
+          mkdir -p "$(dirname "$exe")" "$(dirname "$notes")"
+          cp "$RUNNER_TEMP/antena-unsigned/$exe" "$exe"
+          cp "$RUNNER_TEMP/antena-unsigned/$notes" "$notes"
+          test -f "$exe"
+          echo "path=$exe" >> "$GITHUB_OUTPUT"
+      - name: Preparar signer verificado
+        # Ambos paquetes y sus SHA-512 corresponden a pnpm-lock.yaml, pero no se ejecuta código del repo.
+        shell: bash
+        run: |
+          node --input-type=module - <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { mkdir, writeFile } from 'node:fs/promises';
+          import path from 'node:path';
+          const packages = [
+            ['cli.tgz', 'https://registry.npmjs.org/@tauri-apps/cli/-/cli-2.12.3.tgz', 'sha512-f7/LsY74SVb1ChmOPw1ajOpxii0GSzDAgmWHRci8JUYuuai04rXsSbFobpmB0sP2DdlvMD/B5ZotEn8GOGMRUg=='],
+            ['cli-win32-x64-msvc.tgz', 'https://registry.npmjs.org/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-2.12.3.tgz', 'sha512-L7wndWAgX2mLW7alswpL3d1R0P9FN2WYBgHaQkAYEBxHHGkY4vFX9CjcRQ1LAxDAMIJxrY7/aDziFJeChS84NQ=='],
+          ];
+          try {
+            const downloads = [];
+            for (const [file, url, expected] of packages) {
+              const response = await fetch(url);
+              if (!response.ok) throw new Error(`No se pudo descargar ${file} (${response.status}).`);
+              const data = Buffer.from(await response.arrayBuffer());
+              const actual = 'sha512-' + createHash('sha512').update(data).digest('base64');
+              if (actual !== expected) throw new Error(`SHA-512 no coincide para ${file}.`);
+              downloads.push([file, data]);
+            }
+            const dir = path.join(process.env.RUNNER_TEMP, 'tauri-signer');
+            await mkdir(dir, { recursive: true });
+            for (const [file, data] of downloads) await writeFile(path.join(dir, file), data);
+            console.log('Signer de Tauri 2.12.3 verificado.');
+          } catch (error) {
+            console.error(`✗ ${error.message}`);
+            process.exitCode = 1;
+          }
+          NODE
+          mkdir -p "$RUNNER_TEMP/tauri-signer/node_modules/@tauri-apps/cli" "$RUNNER_TEMP/tauri-signer/node_modules/@tauri-apps/cli-win32-x64-msvc"
+          tar -xzf "$RUNNER_TEMP/tauri-signer/cli.tgz" -C "$RUNNER_TEMP/tauri-signer/node_modules/@tauri-apps/cli" --strip-components=1
+          tar -xzf "$RUNNER_TEMP/tauri-signer/cli-win32-x64-msvc.tgz" -C "$RUNNER_TEMP/tauri-signer/node_modules/@tauri-apps/cli-win32-x64-msvc" --strip-components=1
+      - name: Secreto de firma del updater
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::Falta el secreto TAURI_SIGNING_PRIVATE_KEY; sin él las actualizaciones no se pueden firmar."
+            exit 1
+          fi
+          echo "Clave de firma presente; su valor nunca se imprime."
+      - name: Firmar el instalador
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          EXE: ${{ steps.exe.outputs.path }}
+        run: node "$RUNNER_TEMP/tauri-signer/node_modules/@tauri-apps/cli/tauri.js" signer sign --app-version "$VERSION" "$EXE"
+      - name: Comprobar firma del updater
+        shell: bash
+        env:
+          EXE: ${{ steps.exe.outputs.path }}
+        run: |
+          test -s "$EXE.sig" || { echo "::error::No se generó la firma del updater ($EXE.sig)."; exit 1; }
       - name: Manifiesto del updater (latest.json)
         shell: bash
         env:
