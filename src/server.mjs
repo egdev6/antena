@@ -448,11 +448,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Once program settings change, include their public snapshot in every config event:
   // the bus coalesces by event type, so a later chat/alert update must not erase it.
   let includeProgramConfig = false;
+  // #39: an open dock follows saved layout/module and shortcut changes without reloading.
+  let includeDockConfig = false;
   const pushPanelConfig = () => {
     const config = store.publicConfig();
     bus.send('config', {
       prompter: store.config.prompter, chat: store.config.chat, alerts: config.alerts,
       ...(includeProgramConfig ? { program: config.program, obs: config.obs } : {}),
+      ...(includeDockConfig ? { dock: config.dock, shortcuts: config.shortcuts } : {}),
     }, ['panel']);
   };
   store.on('change', patch => {
@@ -472,7 +475,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }
     // El Bus sustituye config por tipo: cada envío debe conservar todas sus secciones.
     // Incluye alertas editadas fuera de este panel (MCP, otra ventana, el móvil).
-    if (patch.prompter || patch.chat || patch.alerts || patch.all) pushPanelConfig();
+    if (patch.dock || patch.shortcuts) includeDockConfig = true;
+    if (patch.prompter || patch.chat || patch.alerts || patch.dock || patch.shortcuts || patch.all) pushPanelConfig();
   });
   // la persistencia puede fallar sin emitir 'change' (o estar en vuelo): el panel necesita su propio canal
   store.on('persistence', state => bus.send('persistence', state, ['panel']));

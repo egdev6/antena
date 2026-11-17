@@ -1,7 +1,6 @@
-// Dock del directo: todo el manejo del directo menos la vista previa (S1) y sin chat (S12).
-// Desde 768 px de ancho se ven las tres columnas Control | Audio | Interactivos, sin importar
-// la orientación; por debajo, una pestaña por sección, con Control primero.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+// Dock del directo: módulos y zonas configurables, sin chat ni vídeo.
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { normalizeDock, visibleDockZones } from '../../../src/dock-layout.mjs';
 import { post, withKey } from '../lib/api';
 import { IC } from '../lib/icons';
 import { live, useLive, useLiveVersion } from '../lib/live';
@@ -10,12 +9,25 @@ import { ConnPill, cx, guard, Icon, mmss, toast, Toaster } from '../lib/ui';
 import { DockQuestions } from './DockQuestions';
 import { DockTierlist } from './DockTierlist';
 import { DockGiveaway } from './DockGiveaway';
-import type { MeldTrack, TeleprompterState, TimelineItem, ViewerPlatform, ViewerSettings } from '../lib/types';
+import type { DockConfig, DockModuleId, DockZone, MeldTrack, TeleprompterState, TimelineItem, ViewerPlatform, ViewerSettings } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
 const INTERACTIVE_TAB = 'egdev.dock.interactive.tab';
-/** Único punto de corte para renderizar las tres columnas y aplicar la clase dock-wide. */
+/** Ambos cortes dependen solo del ancho de la ventana, no de su orientación. */
 const WIDE_MEDIA = '(min-width: 768px)';
+const FORCED_MEDIA = '(min-width: 480px)';
+const storageGet = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
+const storageSet = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* sin almacenamiento */ } };
+const params = new URLSearchParams(location.search);
+const PREVIEW = params.has('preview');
+function previewConfig(): unknown {
+  try {
+    const base64 = (params.get('preview') || '').replace(/-/g, '+').replace(/_/g, '/');
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch { return undefined; }
+}
+const PREVIEW_CONFIG = PREVIEW ? previewConfig() : undefined;
 
 function useNow(ms = 1000) {
   const [now, setNow] = useState(() => Date.now());
@@ -25,17 +37,17 @@ function useNow(ms = 1000) {
 
 /** Forma de la ventana según su ancho; el listener de resize cubre motores que no emiten
  *  «change» al redimensionar la ventana de Tauri. */
-function useWide() {
-  const [wide, setWide] = useState(() => window.matchMedia(WIDE_MEDIA).matches);
+function useMedia(query: string) {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
   useEffect(() => {
-    const mq = window.matchMedia(WIDE_MEDIA);
-    const sync = () => setWide(mq.matches);
+    const mq = window.matchMedia(query);
+    const sync = () => setMatches(mq.matches);
     sync();
     mq.addEventListener('change', sync);
     window.addEventListener('resize', sync);
     return () => { mq.removeEventListener('change', sync); window.removeEventListener('resize', sync); };
-  }, []);
-  return wide;
+  }, [query]);
+  return matches;
 }
 
 function Status() {
@@ -292,110 +304,138 @@ function StreamControl({ control }: { control: ReturnType<typeof useStreamContro
   </section>;
 }
 
-function Control({ stream }: { stream: ReturnType<typeof useStreamControl> }) {
-  useLiveVersion(); // la cronología (pendientes) vive fuera del snapshot de /api/state
+function AlertsModule() {
   const pause = useLive(s => s.status.pause || {});
-  const tp = useLive(s => s.teleprompter) as TeleprompterState | undefined;
-  const credits = useLive(s => (s.widgets?.credits as { names?: string[] }[] | undefined) || []);
+  return <>
+    <button className={cx('d-btn', pause.paused && 'on')} onClick={sd('pausa')} title={pause.paused ? 'Reanudar las alertas' : 'Pausar las alertas que lleguen'}>
+      {pause.paused ? '▶ Reanudar' : '⏸ Pausar'}<small>alertas{pause.held ? ` · ${pause.held} en cola` : ''}</small></button>
+    <button className="d-btn" onClick={sd('saltar', 'Saltada')} title="Quita la alerta que está en pantalla">⏭ Saltar<small>la alerta actual</small></button>
+  </>;
+}
+
+function MarksModule() {
+  useLiveVersion(); // la cronología vive fuera del snapshot de /api/state
   const pend = live.timeline.pending || 0;
-  const names = credits.reduce((n, gr) => n + (gr.names?.length || 0), 0);
+  return <>
+    <button className="d-btn pri" title="Marca este momento para un short"
+      onClick={guard(async () => { const { marker } = await post<{ marker: TimelineItem }>('/api/markers', {}); toast(marker.twitchError ? `Marca local (Twitch: ${marker.twitchError})` : 'Marca creada'); })}>🎬 Marca<small>de short</small></button>
+    <button className="d-btn" disabled={!pend} onClick={sd('agradecido')} title={pend ? `${pend} por agradecer` : 'Nada por agradecer todavía'}>✔ Agradecido<small>{pend} por agradecer</small></button>
+  </>;
+}
+
+function TeleprompterModule() {
+  const tp = useLive(s => s.teleprompter) as TeleprompterState | undefined;
   const script = tp?.script;
   const hasScript = !!script && (script.blocks?.length || 0) > 0;
   const playing = !!tp?.playback?.playing;
   const block = tp?.playback?.block ?? 0;
   const tpAct = (action: string) => guard(() => post('/api/teleprompter/control', { action }))();
-  return <>
-    <StreamControl control={stream} />
-    <div className="d-grid">
-      <button className={cx('d-btn', pause.paused && 'on')} onClick={sd('pausa')} title={pause.paused ? 'Reanudar las alertas' : 'Pausar las alertas que lleguen'}>
-        {pause.paused ? '▶ Reanudar' : '⏸ Pausar'}<small>alertas{pause.held ? ` · ${pause.held} en cola` : ''}</small></button>
-      <button className="d-btn" onClick={sd('saltar', 'Saltada')} title="Quita la alerta que está en pantalla">⏭ Saltar<small>la alerta actual</small></button>
-      <button className="d-btn pri" title="Marca este momento para un short"
-        onClick={guard(async () => { const { marker } = await post<{ marker: TimelineItem }>('/api/markers', {}); toast(marker.twitchError ? `Marca local (Twitch: ${marker.twitchError})` : 'Marca creada'); })}>🎬 Marca<small>de short</small></button>
-      <button className="d-btn" disabled={!pend} onClick={sd('agradecido')} title={pend ? `${pend} por agradecer` : 'Nada por agradecer todavía'}>✔ Agradecido<small>{pend} por agradecer</small></button>
+  return <section className="d-card" aria-label="Teleprompter">
+    <div className="d-card-h">Teleprompter<span className="d-meta">{hasScript ? `«${script!.title}» · ${block + 1}/${script!.blocks.length}` : 'sin guion'}</span></div>
+    <div className="d-row">
+      <button className="d-btn sm" aria-label="Bloque anterior" disabled={!hasScript}
+        title={hasScript ? 'Vuelve al bloque anterior' : 'Necesita un guion cargado en el teleprompter'}
+        onClick={() => tpAct('prev')}><Icon d={IC.arrowLeft} /></button>
+      <button className={cx('d-btn sm grow d-tp-play', playing && 'on')} disabled={!hasScript}
+        title={hasScript ? (playing ? 'Pausa el teleprompter' : 'Pone en marcha el teleprompter') : 'Necesita un guion cargado en el teleprompter'}
+        onClick={() => tpAct('toggle')}>{playing ? '⏸ Pausar' : '▶ Reproducir'}</button>
+      <button className="d-btn sm" aria-label="Bloque siguiente" disabled={!hasScript}
+        title={hasScript ? 'Pasa al bloque siguiente' : 'Necesita un guion cargado en el teleprompter'}
+        onClick={() => tpAct('next')}><Icon d={IC.arrowRight} /></button>
+      <button className="d-btn sm" disabled={!hasScript} title={hasScript ? 'Vuelve al principio del guion' : 'Necesita un guion cargado en el teleprompter'}
+        onClick={() => tpAct('reset')}>Inicio</button>
     </div>
-
-    <section className="d-sec" aria-label="Escenas"><h3 className="d-sub">Escenas</h3><Scenes /></section>
-
-    <section className="d-card" aria-label="Teleprompter">
-      <div className="d-card-h">Teleprompter<span className="d-meta">{hasScript ? `«${script!.title}» · ${block + 1}/${script!.blocks.length}` : 'sin guion'}</span></div>
-      <div className="d-row">
-        <button className="d-btn sm" aria-label="Bloque anterior" disabled={!hasScript}
-          title={hasScript ? 'Vuelve al bloque anterior' : 'Necesita un guion cargado en el teleprompter'}
-          onClick={() => tpAct('prev')}><Icon d={IC.arrowLeft} /></button>
-        <button className={cx('d-btn sm grow d-tp-play', playing && 'on')} disabled={!hasScript}
-          title={hasScript ? (playing ? 'Pausa el teleprompter' : 'Pone en marcha el teleprompter') : 'Necesita un guion cargado en el teleprompter'}
-          onClick={() => tpAct('toggle')}>{playing ? '⏸ Pausar' : '▶ Reproducir'}</button>
-        <button className="d-btn sm" aria-label="Bloque siguiente" disabled={!hasScript}
-          title={hasScript ? 'Pasa al bloque siguiente' : 'Necesita un guion cargado en el teleprompter'}
-          onClick={() => tpAct('next')}><Icon d={IC.arrowRight} /></button>
-        <button className="d-btn sm" disabled={!hasScript} title={hasScript ? 'Vuelve al principio del guion' : 'Necesita un guion cargado en el teleprompter'}
-          onClick={() => tpAct('reset')}>Inicio</button>
-      </div>
-    </section>
-
-    <section className="d-card" aria-label="Cierre">
-      <div className="d-card-h">Cierre<span className="d-meta">{names ? `créditos con ${names} nombres` : 'sin nombres todavía'}</span></div>
-      <div className="d-row">
-        <button className="d-btn sm grow" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>
-        <button className="d-btn sm" onClick={guard(() => post('/api/credits/stop'), 'Créditos parados')}>Parar</button>
-      </div>
-    </section>
-  </>;
+  </section>;
 }
 
-const INTERACTIVE_TABS = [['preguntas', 'Preguntas'], ['tier', 'Tier list'], ['sorteo', 'Sorteo']] as const;
-type InteractiveTab = (typeof INTERACTIVE_TABS)[number][0];
+function CreditsModule() {
+  const credits = useLive(s => (s.widgets?.credits as { names?: string[] }[] | undefined) || []);
+  const names = credits.reduce((n, gr) => n + (gr.names?.length || 0), 0);
+  return <section className="d-card" aria-label="Cierre">
+    <div className="d-card-h">Cierre<span className="d-meta">{names ? `créditos con ${names} nombres` : 'sin nombres todavía'}</span></div>
+    <div className="d-row">
+      <button className="d-btn sm grow" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>
+      <button className="d-btn sm" onClick={guard(() => post('/api/credits/stop'), 'Créditos parados')}>Parar</button>
+    </div>
+  </section>;
+}
 
-function Interactivos() {
+function ShortcutsModule() {
+  const shortcuts = useLive(s => s.config.shortcuts || []);
+  return <section className="d-sec" aria-label="Atajos"><h3 className="d-sub">Atajos</h3>
+    {shortcuts.length ? <div className="d-grid">{shortcuts.map(sc => <button key={sc.id} type="button" className="d-btn sc"
+      onClick={guard(() => post(`/sd/custom/${encodeURIComponent(sc.id)}`))}>{sc.name}</button>)}</div>
+      : <p className="d-muted">No hay atajos configurados.</p>}
+  </section>;
+}
+
+type ModuleContext = { stream: ReturnType<typeof useStreamControl>; meters: Record<string, Meter>; isObs: boolean };
+const MODULES: Record<DockModuleId, (context: ModuleContext) => ReactNode> = {
+  stream: ({ stream }) => <StreamControl control={stream} />,
+  alerts: () => <AlertsModule />,
+  marks: () => <MarksModule />,
+  scenes: () => <section className="d-sec" aria-label="Escenas"><h3 className="d-sub">Escenas</h3><Scenes /></section>,
+  teleprompter: () => <TeleprompterModule />,
+  credits: () => <CreditsModule />,
+  audio: ({ meters, isObs }) => <Audio meters={meters} showMeters={isObs} />,
+  questions: () => <DockQuestions />,
+  tierlist: () => <DockTierlist />,
+  giveaway: () => <DockGiveaway />,
+  shortcuts: () => <ShortcutsModule />,
+};
+const INTERACTIVE = {
+  questions: { id: 'preguntas', label: 'Preguntas' },
+  tierlist: { id: 'tier', label: 'Tier list' },
+  giveaway: { id: 'sorteo', label: 'Sorteo' },
+} as const;
+type InteractiveModule = keyof typeof INTERACTIVE;
+const isInteractive = (id: DockModuleId): id is InteractiveModule => Object.hasOwn(INTERACTIVE, id);
+
+function Interactivos({ ids, context }: { ids: InteractiveModule[]; context: ModuleContext }) {
   const I = useLive(s => s.interactive);
-  const q = I?.questions, g = I?.giveaway, vote = I?.vote;
-  const [tab, setTab] = useState<InteractiveTab>(() => {
-    const saved = localStorage.getItem(INTERACTIVE_TAB);
-    return saved === 'tier' || saved === 'sorteo' ? saved : 'preguntas';
-  });
+  const [tab, setTab] = useState(() => storageGet(INTERACTIVE_TAB) || 'preguntas');
+  const tabs = ids.map(module => ({ module, ...INTERACTIVE[module] }));
+  const selected = tabs.some(item => item.id === tab) ? tab : tabs[0]?.id;
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
-  useEffect(() => { try { localStorage.setItem(INTERACTIVE_TAB, tab); } catch { /* sin almacenamiento */ } }, [tab]);
+  useEffect(() => { if (!PREVIEW && selected) storageSet(INTERACTIVE_TAB, selected); }, [selected]);
   const go = (index: number) => {
-    const i = (index + INTERACTIVE_TABS.length) % INTERACTIVE_TABS.length;
-    setTab(INTERACTIVE_TABS[i][0]); refs.current[i]?.focus();
+    const i = (index + tabs.length) % tabs.length;
+    setTab(tabs[i].id); refs.current[i]?.focus();
   };
   return <div className="d-inter">
     <nav className="d-itabs" role="tablist" aria-label="Interactivos">
-      {INTERACTIVE_TABS.map(([id, label], i) => <button key={id} type="button" role="tab" id={`d-i-${id}`} aria-controls={`d-ip-${id}`}
-        aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} ref={el => { refs.current[i] = el; }} onClick={() => setTab(id)}
+      {tabs.map(({ id, label }, i) => <button key={id} type="button" role="tab" id={`d-i-${id}`} aria-controls={`d-ip-${id}`}
+        aria-selected={selected === id} tabIndex={selected === id ? 0 : -1} ref={el => { refs.current[i] = el; }} onClick={() => setTab(id)}
         onKeyDown={e => {
           if (e.key === 'ArrowRight') { e.preventDefault(); go(i + 1); }
           else if (e.key === 'ArrowLeft') { e.preventDefault(); go(i - 1); }
           else if (e.key === 'Home') { e.preventDefault(); go(0); }
-          else if (e.key === 'End') { e.preventDefault(); go(INTERACTIVE_TABS.length - 1); }
-        }}>{label}{id === 'preguntas' && <span className="d-badge">{q?.pending || 0}</span>}
-        {id === 'tier' && vote && <span className="d-dot vote" role="img" aria-label="Votación abierta" />}
-        {id === 'sorteo' && <span className="d-badge">{g?.count || 0}</span>}
+          else if (e.key === 'End') { e.preventDefault(); go(tabs.length - 1); }
+        }}>{label}{id === 'preguntas' && <span className="d-badge">{I?.questions?.pending || 0}</span>}
+        {id === 'tier' && I?.vote && <span className="d-dot vote" role="img" aria-label="Votación abierta" />}
+        {id === 'sorteo' && <span className="d-badge">{I?.giveaway?.count || 0}</span>}
       </button>)}
     </nav>
-    <div className="d-body" role="tabpanel" id="d-ip-preguntas" aria-labelledby="d-i-preguntas" hidden={tab !== 'preguntas'}>
-      <DockQuestions />
-    </div>
-    <div className="d-body" role="tabpanel" id="d-ip-tier" aria-labelledby="d-i-tier" hidden={tab !== 'tier'}>
-      <DockTierlist />
-    </div>
-    <div className="d-body" role="tabpanel" id="d-ip-sorteo" aria-labelledby="d-i-sorteo" hidden={tab !== 'sorteo'}>
-      <DockGiveaway />
-    </div>
+    {tabs.map(({ module, id }) => <div key={id} className="d-body" role="tabpanel" id={`d-ip-${id}`} aria-labelledby={`d-i-${id}`} hidden={selected !== id}>
+      {MODULES[module](context)}
+    </div>)}
   </div>;
 }
 
-// ---------- forma de la ventana ----------
-const TABS = [['control', 'Control'], ['audio', 'Audio'], ['interactivos', 'Interactivos']] as const;
-type Tab = (typeof TABS)[number][0];
-const tabOf = (value: string | null): Tab => (value === 'interactivos' || value === 'audio' ? value : 'control');
-
-function Col({ id, title, meta, children }: { id: string; title: string; meta?: ReactNode; children?: ReactNode }) {
-  return <section className="d-col" aria-labelledby={`d-h-${id}`}>
-    <h2 className="d-col-h" id={`d-h-${id}`}>{title}{meta ? <span>{meta}</span> : null}</h2>
-    <div className="d-body">{children}</div>
-  </section>;
+function ZoneContent({ zone, context }: { zone: DockZone; context: ModuleContext }) {
+  const interactives = zone.modules.filter(isInteractive);
+  const output: ReactNode[] = [];
+  for (let i = 0; i < zone.modules.length; i++) {
+    const id = zone.modules[i];
+    if (isInteractive(id) && interactives.length >= 2) {
+      if (id === interactives[0]) output.push(<Interactivos key="interactive" ids={interactives} context={context} />);
+    } else if (id === 'alerts' || id === 'marks') {
+      const group: DockModuleId[] = [id];
+      while (zone.modules[i + 1] === 'alerts' || zone.modules[i + 1] === 'marks') group.push(zone.modules[++i]);
+      output.push(<div className="d-grid" key={id}>{group.map(item => <Fragment key={item}>{MODULES[item](context)}</Fragment>)}</div>);
+    } else output.push(<Fragment key={id}>{MODULES[id](context)}</Fragment>);
+  }
+  return <>{output}</>;
 }
 
 function AudioMeta() {
@@ -411,56 +451,71 @@ function ControlMeta() {
   return <>{!known ? 'estado desconocido' : meld.streaming ? 'en directo' : 'sin emitir'}</>;
 }
 
-function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+function Tabs({ zones, tab, onTab }: { zones: DockZone[]; tab: string; onTab: (t: string) => void }) {
   const tracks = useLive(s => s.meld?.session?.tracks || []);
   const scenes = useLive(s => s.meld?.session?.scenes || []);
   const onAir = new Set(scenes.filter(s => s.current).map(s => s.id));
   const meldOn = useLive(s => s.status.meld?.state === 'conectado');
   const muted = meldOn ? tracks.filter(t => t.muted && (!t.parent || onAir.has(t.parent))).length : 0;
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
-  const go = (index: number, focus: boolean) => {
-    const next = TABS[(index + TABS.length) % TABS.length][0];
-    onTab(next);
-    if (focus) refs.current[(index + TABS.length) % TABS.length]?.focus();
+  const go = (index: number) => {
+    const i = (index + zones.length) % zones.length;
+    onTab(zones[i].id); refs.current[i]?.focus();
   };
   return <nav className="d-tabs" role="tablist" aria-label="Secciones del dock">
-    {TABS.map(([id, label], i) => <button key={id} type="button" role="tab" id={`d-t-${id}`} aria-controls={`d-p-${id}`}
+    {zones.map(({ id, label, modules }, i) => <button key={id} type="button" role="tab" id={`d-t-${id}`} aria-controls={`d-p-${id}`}
       aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} ref={el => { refs.current[i] = el; }}
       onClick={() => onTab(id)}
       onKeyDown={e => {
-        if (e.key === 'ArrowRight') { e.preventDefault(); go(i + 1, true); }
-        else if (e.key === 'ArrowLeft') { e.preventDefault(); go(i - 1, true); }
-        else if (e.key === 'Home') { e.preventDefault(); go(0, true); }
-        else if (e.key === 'End') { e.preventDefault(); go(TABS.length - 1, true); }
-      }}>{label}{id === 'audio' && muted > 0 && <span className="d-dot" role="img" aria-label={`${muted} ${muted === 1 ? 'pista desactivada' : 'pistas desactivadas'}`} />}</button>)}
+        if (e.key === 'ArrowRight') { e.preventDefault(); go(i + 1); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); go(i - 1); }
+        else if (e.key === 'Home') { e.preventDefault(); go(0); }
+        else if (e.key === 'End') { e.preventDefault(); go(zones.length - 1); }
+      }}>{label}{modules.includes('audio') && muted > 0 && <span className="d-dot" role="img" aria-label={`${muted} ${muted === 1 ? 'pista desactivada' : 'pistas desactivadas'}`} />}</button>)}
   </nav>;
 }
+
+const onlyInteractive = (zone: DockZone) => zone.modules.length >= 2 && zone.modules.every(isInteractive);
 
 export function Dock() {
   const ready = useLive(s => !!s);
   const offline = useLive(() => live.failed);
-  const wide = useWide();
-  const stream = useStreamControl();
-  const [tab, setTab] = useState<Tab>(() => tabOf(localStorage.getItem(DOCK_TAB)));
+  const saved = useLive(s => s?.config?.dock);
   const isObs = useLive(s => s?.config?.program?.kind === 'obs');
-  const meters = useMeters(ready && isObs && (wide || tab === 'audio'));
+  const wide = useMedia(WIDE_MEDIA), forced = useMedia(FORCED_MEDIA);
+  const stream = useStreamControl();
+  const [tab, setTab] = useState(() => storageGet(DOCK_TAB) || 'control');
+  const dock = normalizeDock(PREVIEW ? PREVIEW_CONFIG : saved) as DockConfig;
+  const layout = dock.layout === 'auto' ? (wide ? 'columns' : 'tabs') : (!forced ? 'tabs' : dock.layout);
+  const zones = visibleDockZones(dock.zones, layout);
+  const selected = zones.some(zone => zone.id === tab) ? tab : zones[0]?.id || '';
+  const watching = zones.some(zone => zone.modules.includes('audio') && (layout !== 'tabs' || zone.id === selected));
+  const meters = useMeters(ready && !PREVIEW && isObs && watching);
   useEffect(() => { live.load().then(() => live.connect('panel')).catch(e => toast(e.message, true)); }, []);
-  useEffect(() => { try { localStorage.setItem(DOCK_TAB, tab); } catch { /* almacenamiento no disponible: se ignora */ } }, [tab]);
+  useEffect(() => { if (ready && !PREVIEW && selected) storageSet(DOCK_TAB, selected); }, [ready, selected]);
   if (!ready) return <div className="d-boot">Conectando con antena…</div>;
-  return <div className={cx('dock', wide && 'dock-wide')}>
+  const context = { stream, meters, isObs };
+  const block = (event: { preventDefault: () => void; stopPropagation: () => void }) => { event.preventDefault(); event.stopPropagation(); };
+  const defaultColumns = layout === 'columns' && zones.map(z => z.id).join(',') === 'control,audio,interactivos';
+  const gridStyle: CSSProperties = layout === 'split-v'
+    ? { gridTemplateRows: `repeat(${Math.max(1, zones.length)}, minmax(0, 1fr))` }
+    : defaultColumns ? {} : { gridTemplateColumns: `repeat(${Math.max(1, zones.length)}, minmax(0, 1fr))` };
+  return <div className={cx('dock', layout !== 'tabs' && 'dock-wide')} inert={PREVIEW || undefined}
+    onClickCapture={PREVIEW ? block : undefined} onSubmitCapture={PREVIEW ? block : undefined}
+    onChangeCapture={PREVIEW ? block : undefined} onInputCapture={PREVIEW ? block : undefined} onKeyDownCapture={PREVIEW ? block : undefined}>
     <Status />
-    {wide
-      ? <div className="d-cols">
-        <Col id="control" title="Control" meta={<ControlMeta />}><Control stream={stream} /></Col>
-        <Col id="audio" title="Audio" meta={<AudioMeta />}><Audio meters={meters} showMeters={isObs} /></Col>
-        <section className="d-col d-col-inter" aria-labelledby="d-h-interactivos"><h2 className="d-col-h" id="d-h-interactivos">Interactivos</h2><Interactivos /></section>
+    {layout !== 'tabs'
+      ? <div className={cx('d-cols', layout === 'split-v' && 'd-split-v')} style={gridStyle}>
+        {zones.map(zone => <section key={zone.id} className={cx('d-col', onlyInteractive(zone) && 'd-col-inter')} aria-labelledby={`d-h-${zone.id}`}>
+          <h2 className="d-col-h" id={`d-h-${zone.id}`}>{zone.label}{zone.id === 'control' && zone.modules.includes('stream') ? <span><ControlMeta /></span> : zone.id === 'audio' && zone.modules.includes('audio') ? <span><AudioMeta /></span> : null}</h2>
+          {onlyInteractive(zone) ? <ZoneContent zone={zone} context={context} /> : <div className="d-body"><ZoneContent zone={zone} context={context} /></div>}
+        </section>)}
       </div>
       : <>
-        <Tabs tab={tab} onTab={setTab} />
+        <Tabs zones={zones} tab={selected} onTab={setTab} />
         <div className="d-panels">
-          <main className="d-body" role="tabpanel" id="d-p-control" aria-labelledby="d-t-control" hidden={tab !== 'control'}><Control stream={stream} /></main>
-          <main className="d-body" role="tabpanel" id="d-p-audio" aria-labelledby="d-t-audio" hidden={tab !== 'audio'}><Audio meters={meters} showMeters={isObs} /></main>
-          <main className="d-inter-panel" role="tabpanel" id="d-p-interactivos" aria-labelledby="d-t-interactivos" hidden={tab !== 'interactivos'}><Interactivos /></main>
+          {zones.map(zone => <main key={zone.id} className={onlyInteractive(zone) ? 'd-inter-panel' : 'd-body'} role="tabpanel"
+            id={`d-p-${zone.id}`} aria-labelledby={`d-t-${zone.id}`} hidden={selected !== zone.id}><ZoneContent zone={zone} context={context} /></main>)}
         </div>
       </>}
     {offline && <div className="d-off">Sin conexión con antena. Reintentando…</div>}

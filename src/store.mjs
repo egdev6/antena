@@ -15,6 +15,7 @@ import { DEFAULT_VIEWERS } from './viewers.mjs';
 import { DEFAULT_INTERACTIVE_CONFIG } from './interactive.mjs';
 import { DEFAULT_TELEPROMPTER } from './teleprompter.mjs';
 import { DEFAULT_THEME } from './theme.mjs';
+import { DEFAULT_DOCK } from './dock-layout.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const DATA = process.env.ANTENA_DATA || path.join(ROOT, 'data');
@@ -41,6 +42,7 @@ export const DEFAULT_CONFIG = {
   // vista del prompter (Elgato Prompter, 1024×600)
   // atajos propios: cada uno lanza una lista de pasos (Stream Deck: /sd/custom/<id>, dock, panel y MCP)
   shortcuts: [],
+  dock: DEFAULT_DOCK,
   viewers: DEFAULT_VIEWERS,           // récord de espectadores a la vez y su anti-spam (src/viewers.mjs)
   teleprompter: DEFAULT_TELEPROMPTER, // guiones y ajustes de lectura (src/teleprompter.mjs)
   customOverlays: [],                // overlays propios HTML/CSS/JS (src/custom-overlays.mjs)
