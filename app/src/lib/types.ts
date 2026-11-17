@@ -228,6 +228,7 @@ export interface YoutubeConfig {
   video?: string;
   pollSeconds?: number;
   subscriberPollSeconds?: number;
+  subscriberCountAlert?: boolean;
   clientId?: string;
   clientSecret?: string;
   [k: string]: unknown;

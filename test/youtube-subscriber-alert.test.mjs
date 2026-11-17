@@ -21,13 +21,15 @@ async function fixture(t, { seconds = 60, clock = true } = {}) {
   const app = await createApp({ dataDir: dir, mediaDir: path.join(dir, 'media'), log: () => {} });
   app.store.secrets.youtube = { access: 'synthetic' };
   app.store.config.youtube.subscriberPollSeconds = seconds;
-  let rows = [], calls = [], fail = null, block = null;
+  let rows = [], calls = [], fail = null, block = null, subscriberCount = 100, hiddenCount = false;
   app.youtube.api = async (url, params, options) => {
     calls.push({ url, params, options });
     const requestedRows = rows;
     if (block && url === '/subscriptions') await block.promise;
     if (fail?.url === url) throw Object.assign(new Error('quota exhausted'), { reason: 'quotaExceeded' });
-    return url === '/subscriptions' ? { items: requestedRows } : { items: [{ statistics: { subscriberCount: '100' } }] };
+    return url === '/subscriptions' ? { items: requestedRows } : { items: [{ id: 'UC-oauth', statistics: {
+      ...(subscriberCount === null ? {} : { subscriberCount: String(subscriberCount) }), hiddenSubscriberCount: hiddenCount,
+    } }] };
   };
   app.channelTotals.readers['subscribers@youtube'] = async () => 100;
   const events = [], publicAlerts = [], handle = app.engine.handleEvent.bind(app.engine), send = app.bus.send.bind(app.bus);
@@ -46,6 +48,7 @@ async function fixture(t, { seconds = 60, clock = true } = {}) {
     await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   return { app, dir, events, publicAlerts, get calls() { return calls; }, get rows() { return rows; }, set rows(value) { rows = value; },
+    set subscriberCount(value) { subscriberCount = value; }, set hiddenCount(value) { hiddenCount = value; },
     set fail(value) { fail = value; }, set block(value) { block = value; } };
 }
 const subscriptions = f => f.calls.filter(c => c.url === '/subscriptions');
@@ -287,6 +290,169 @@ test('S1/S5/S6: schema validates the setting and alert catalog/sample work throu
     assert.equal((await request('/api/config')).body.youtube.subscriberPollSeconds, 500);
     assert.equal(await readFile(path.join(dir, 'config.json'), 'utf8'), before);
   }
+});
+
+test('S2/S3/S5: exact growth subtracts named subscribers, renders once per poll and uses distinct ids', async t => {
+  const f = await fixture(t); await baseline(f);
+  assert.deepEqual(f.events, []);
+  f.rows = [row('public', 'Public Subscriber', later())]; f.subscriberCount = 104;
+  await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => [e.type, e.vars]), [
+    ['ytsub', { user: 'Public Subscriber' }], ['ytsubcount', { amount: 3 }],
+  ]);
+  assert.match(f.events[1].externalId, /^ytsubcount:.+/);
+  assert.deepEqual(f.publicAlerts.map(a => [a.type, a.text, a.sub]), [
+    ['ytsub', 'Public Subscriber', 'se suscribe al canal'], ['ytsubcount', '+3 suscriptores', 'nuevos en el canal'],
+  ]);
+  f.subscriberCount = 107;
+  await f.app.followers.sync('youtube'); await f.app.followers.sync('youtube');
+  const counts = f.events.filter(e => e.type === 'ytsubcount');
+  assert.deepEqual(counts.map(e => e.vars.amount), [3, 3]);
+  assert.notEqual(counts[0].externalId, counts[1].externalId);
+  assert.deepEqual(f.app.followers.list().anonymous.map(a => a.count), [3, 3]);
+  const channelReads = f.calls.filter(c => c.url === '/channels');
+  assert.ok(channelReads.every(c => c.params.mine === 'true' && c.options.auth === true));
+});
+
+test('S2/S3: scheduled growth alerts and a stopped period discards an in-flight count', async t => {
+  const f = await fixture(t); await baseline(f);
+  f.subscriberCount = 103; let reads = subscriptions(f).length;
+  advance(t, 60_000); await until(() => f.events.length === 1, 'scheduled count alert missing');
+  assert.deepEqual(f.events.map(e => [e.type, e.vars]), [['ytsubcount', { amount: 3 }]]);
+  assert.ok(subscriptions(f).length > reads);
+  const blocked = gate(); f.block = blocked; f.subscriberCount = 105; reads = subscriptions(f).length;
+  advance(t, 60_000); await until(() => subscriptions(f).length > reads, 'second poll missing');
+  stopped(f); blocked.release(); f.block = null; await spin(); await spin();
+  assert.equal(f.events.length, 1);
+  assert.deepEqual(f.app.followers.list().anonymous.map(a => a.count), [3]);
+  await baseline(f);
+  assert.equal(f.events.length, 1, 'restart baseline is silent');
+  f.subscriberCount = 106; await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => e.vars.amount), [3, 1]);
+});
+
+test('S3: each listening baseline is silent even when offline totals grew, and its high-water mark resets', async t => {
+  const f = await fixture(t); await f.app.followers.sync('youtube');
+  f.subscriberCount = 105; advance(t, 1000); await baseline(f);
+  assert.deepEqual(f.events, []);
+  assert.deepEqual(f.app.followers.list().anonymous.map(a => a.count), [5]);
+  f.subscriberCount = 100; await f.app.followers.sync('youtube');
+  stopped(f); advance(t, 1000); await baseline(f);
+  assert.deepEqual(f.events, []);
+  f.subscriberCount = 101; await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => [e.type, e.vars]), [['ytsubcount', { amount: 1 }]]);
+});
+
+test('S3: falling and recovering totals do not alert; only new highs minus named subscribers do', async t => {
+  const f = await fixture(t); await baseline(f);
+  for (const total of [95, 100]) { f.subscriberCount = total; await f.app.followers.sync('youtube'); }
+  assert.deepEqual(f.events, []);
+  f.subscriberCount = 102; await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => [e.type, e.vars]), [['ytsubcount', { amount: 2 }]]);
+  f.subscriberCount = 97; await f.app.followers.sync('youtube');
+  f.rows = [row('named-high', 'Named', later())]; f.subscriberCount = 104;
+  await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => [e.type, e.vars]), [
+    ['ytsubcount', { amount: 2 }], ['ytsub', { user: 'Named' }], ['ytsubcount', { amount: 1 }],
+  ]);
+  // Existing registry estimates still use the previous poll, not this alert's high-water mark.
+  assert.deepEqual(f.app.followers.list().anonymous.map(a => a.count), [5, 2, 6]);
+});
+
+test('S3: counts at or above 1000 on either side never produce a generic alert', async t => {
+  const f = await fixture(t); f.subscriberCount = 998; await baseline(f);
+  f.subscriberCount = 999; await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => e.vars), [{ amount: 1 }]);
+  for (const total of [1000, 1001, 999, 998, 999]) {
+    f.subscriberCount = total; await f.app.followers.sync('youtube');
+  }
+  assert.equal(f.events.length, 1);
+});
+
+test('S3: hidden or missing totals suppress both adjacent comparisons, then exact reads resume', async t => {
+  const f = await fixture(t); await baseline(f);
+  f.hiddenCount = true; f.subscriberCount = 103; await f.app.followers.sync('youtube');
+  f.hiddenCount = false; f.subscriberCount = 104; await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events, []);
+  f.subscriberCount = null; await f.app.followers.sync('youtube');
+  f.subscriberCount = 105; await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events, []);
+  f.subscriberCount = 106; await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => [e.type, e.vars]), [['ytsubcount', { amount: 1 }]]);
+});
+
+test('S3: the system alert leaves metrics, latest, ticker, credits, goals and thanks unduplicated', async t => {
+  const f = await fixture(t); await baseline(f);
+  const app = f.app, totalEvents = [], onEvent = app.channelTotals.onEvent.bind(app.channelTotals);
+  app.channelTotals.onEvent = event => { totalEvents.push(event.type); return onEvent(event); };
+  f.rows = [row('seed', 'Seed', later())]; await app.followers.sync('youtube');
+  const before = app.engine.widgetState(), pending = app.session.pendingThanks();
+  const goal = app.session.goalValue('subscribers', 'youtube');
+  const youtubeEvents = app.session.goalValue('events', 'youtube');
+  const list = app.followers.list();
+  f.subscriberCount = 103; await app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => e.type), ['ytsub', 'ytsubcount']);
+  const after = app.engine.widgetState();
+  assert.deepEqual(after.totals, before.totals);
+  assert.deepEqual(after.latest, before.latest);
+  assert.deepEqual(after.recent, before.recent);
+  assert.deepEqual(after.credits, before.credits);
+  assert.deepEqual(after.goals, before.goals);
+  assert.equal(app.session.goalValue('subscribers', 'youtube'), goal);
+  assert.equal(app.session.goalValue('events', 'youtube'), youtubeEvents);
+  assert.deepEqual(totalEvents, ['ytsub'], 'generic alert must not be passed to channel totals');
+  assert.equal(app.session.pendingThanks(), pending);
+  assert.deepEqual(app.followers.list().entries, list.entries);
+  assert.deepEqual(app.followers.list().anonymous.map(a => [a.count, a.thanked]), [[3, false]]);
+  assert.equal(after.thanks.anonymous - before.thanks.anonymous, 3, 'only the pre-existing anonymous estimate feeds thanks');
+});
+
+test('S4: disabling the generic alert preserves named alerts and anonymous registry estimates', async t => {
+  const f = await fixture(t); await baseline(f);
+  await f.app.store.patchConfig({ youtube: { subscriberCountAlert: false } });
+  f.rows = [row('off', 'Named while off', later())]; f.subscriberCount = 104;
+  await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => [e.type, e.vars]), [['ytsub', { user: 'Named while off' }]]);
+  assert.deepEqual(f.app.followers.list().anonymous.map(a => a.count), [3]);
+  await f.app.store.patchConfig({ youtube: { subscriberCountAlert: true } });
+  f.subscriberCount = 106; await f.app.followers.sync('youtube');
+  assert.deepEqual(f.events.map(e => [e.type, e.vars]), [
+    ['ytsub', { user: 'Named while off' }], ['ytsubcount', { amount: 2 }],
+  ]);
+  assert.deepEqual(f.app.followers.list().anonymous.map(a => a.count), [3, 2]);
+});
+
+test('S4/S5: HTTP exposes default, catalog and sample, validates and persists the toggle', async t => {
+  const { app, dir } = await fixture(t, { clock: false });
+  await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const request = async (url, method = 'GET', body) => {
+    const response = await fetch(base + url, { method, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) });
+    return { status: response.status, body: await response.json() };
+  };
+  const state = await request('/api/state');
+  assert.equal(state.status, 200);
+  assert.equal(state.body.config.youtube.subscriberCountAlert, true);
+  assert.deepEqual(state.body.types.ytsubcount, { platform: 'youtube', icon: 'heart', label: 'Suscriptores sin nombre', system: true });
+  assert.deepEqual(state.body.samples.ytsubcount, { amount: 3 });
+  const sample = await request('/api/alerts/ytsubcount/sample');
+  assert.equal(sample.status, 200);
+  assert.deepEqual([sample.body.alert.title, sample.body.alert.text, sample.body.alert.sub], ['Suscriptores sin nombre', '+3 suscriptores', 'nuevos en el canal']);
+  const off = await request('/api/config', 'PUT', { youtube: { subscriberCountAlert: false } });
+  assert.equal(off.status, 200); assert.equal(off.body.config.youtube.subscriberCountAlert, false);
+  const saved = await readFile(path.join(dir, 'config.json'), 'utf8');
+  const counters = (await request('/api/status')).body.persistence;
+  for (const value of ['false', 0, {}, []]) {
+    const response = await request('/api/config', 'PUT', { youtube: { subscriberCountAlert: value } });
+    assert.equal(response.status, 400);
+    assert.deepEqual(response.body, { error: 'youtube.subscriberCountAlert: se esperaba true o false' });
+    assert.equal((await request('/api/config')).body.youtube.subscriberCountAlert, false);
+    assert.deepEqual((await request('/api/status')).body.persistence, counters);
+    assert.equal(await readFile(path.join(dir, 'config.json'), 'utf8'), saved);
+  }
+  const on = await request('/api/config', 'PUT', { youtube: { subscriberCountAlert: true } });
+  assert.equal(on.status, 200); assert.equal(on.body.config.youtube.subscriberCountAlert, true);
+  assert.equal(JSON.parse(await readFile(path.join(dir, 'config.json'), 'utf8')).youtube.subscriberCountAlert, true);
 });
 
 test('PRESERVE: Twitch follows still reach the registry, engine, latest, credits and Twitch total', async t => {

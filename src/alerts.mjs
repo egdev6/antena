@@ -19,6 +19,7 @@ export const ALERT_TYPES = {
   // no cuentan como eventos (métricas, objetivos, últimos, ticker, créditos) ni piden «gracias».
   viewers:     { platform: 'twitch',  icon: 'eye',     label: 'Récord de espectadores', system: true },
   ytviewers:   { platform: 'youtube', icon: 'eye',     label: 'Récord de espectadores', system: true },
+  ytsubcount:  { platform: 'youtube', icon: 'heart',   label: 'Suscriptores sin nombre', system: true },
 };
 
 /** ¿Es una alerta del propio directo (récords…) y no de una persona? */
@@ -98,6 +99,7 @@ export const DEFAULT_ALERTS = {
   giftmember:  { ...base, title: 'Membresías regaladas',text: '{user}', sub: 'regala {amount} membresías' },
   viewers:     { ...base, title: 'Nuevo récord',        text: '{amount} espectadores', sub: 'a la vez en Twitch · antes {previous}' },
   ytviewers:   { ...base, title: 'Nuevo récord',        text: '{amount} espectadores', sub: 'a la vez en YouTube · antes {previous}' },
+  ytsubcount:  { ...base, title: 'Suscriptores sin nombre', text: '+{amount} suscriptores', sub: 'nuevos en el canal' },
 };
 
 // cada alerta con sus propias listas (nunca compartidas)
@@ -125,6 +127,7 @@ export const SAMPLES = {
   giftmember:  { user: 'Pablo M.', amount: 3, level: 'Miembro EGDEV' },
   viewers:     { amount: 48, previous: 41, platform: 'twitch' },
   ytviewers:   { amount: 23, previous: 19, platform: 'youtube' },
+  ytsubcount:  { amount: 3 },
   command:     { user: 'devconcafe', args: 'hola a todos', command: '!hola' },
 };
 

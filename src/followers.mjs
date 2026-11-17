@@ -266,6 +266,7 @@ export class FollowerRegistry extends EventEmitter {
         return this.states[platform].status;
       }
       const baseline = !state.lastSync, discovered = [];
+      let anonymousLive = 0;
       if (platform === 'youtube') {
         const known = new Set(state.knownIds), seen = new Set(); let named = 0;
         for (const item of result.items) {
@@ -289,6 +290,14 @@ export class FollowerRegistry extends EventEmitter {
           const count = Math.max(0, total - state.total - named);
           if (count > 0) state.anonymous.push({ at: startedAt, count, thanked: false });
         }
+        // Keep the alert reference only for this listening period, independent of the
+        // registry estimate above. Rounded and missing reads cannot establish a delta.
+        const highWater = period?.totalHighWater;
+        if (liveRead && period?.ready && total !== null && total < 1000
+          && state.total !== null && state.total < 1000 && highWater != null && highWater < 1000) {
+          anonymousLive = Math.max(0, total - highWater - named);
+        }
+        if (period && total !== null) period.totalHighWater = Math.max(highWater ?? total, total);
         state.total = total; state.totalSource = 'youtube-oauth';
       } else if (!baseline) {
         for (const item of result.items) this.add(platform, { ...item, source: 'offline', thanked: false });
@@ -306,6 +315,8 @@ export class FollowerRegistry extends EventEmitter {
         this.emit('liveFollow', { platform, id: item.id, name: item.name,
           ...(avatar ? { avatar } : {}), ...(result.ownerChannelId ? { ownerChannelId: result.ownerChannelId } : {}) });
       }
+      if (anonymousLive > 0 && current()) this.emit('liveAnonymous', { platform, count: anonymousLive, at: startedAt,
+        ...(result.ownerChannelId ? { ownerChannelId: result.ownerChannelId } : {}) });
       return this.states[platform].status;
     };
     const next = (this.busy[platform] || Promise.resolve()).then(run, run);
@@ -319,7 +330,7 @@ export class FollowerRegistry extends EventEmitter {
   beginYouTubeListening(baseline) {
     this.endYouTubeListening();
     if (this.halted) return;
-    const period = { ready: false, quota: false, pending: true, timer: null, deadline: 0 };
+    const period = { ready: false, quota: false, pending: true, timer: null, deadline: 0, totalHighWater: null };
     this.youtubePeriod = period;
     const active = () => this.youtubePeriod === period;
     const finish = status => {
