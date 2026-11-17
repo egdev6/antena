@@ -21,6 +21,7 @@ import { PLATFORM_METRICS } from './goals.mjs';
 import { TELEPROMPTER_SCRIPTS_MAX_BYTES } from './teleprompter.mjs';
 import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES, CUSTOM_OVERLAY_ACTION_KINDS } from './custom-overlays.mjs';
 import { THEME_RULES, THEME_RANGES, themeFieldError, themeIconError, keepValidIcons } from './theme.mjs';
+import { DOCK_LAYOUTS } from './dock-layout.mjs';
 // #130: animaciones de los mensajes del chat en pantalla, las mismas para entrar y para salir;
 // fuente única compartida con el widget y el panel.
 import { CHAT_ANIMS } from '../public/widgets/chat-anims.js';
@@ -224,6 +225,10 @@ export const CONFIG_SCHEMA = {
     replaceWith: str, blockLinks: bool, maxMessageLength: num({ int: true, min: 0 }),
   },
   shortcuts: list(atajoItem),
+  dock: {
+    modules: list({ id: str, enabled: bool }), layout: en(DOCK_LAYOUTS),
+    zones: list({ id: str, label: str, modules: arrStr() }),
+  },
   // Overlays propios (src/custom-overlays.mjs): HTML/CSS/JS libre del usuario o del agente. Los
   // topes son los de CustomOverlays (CUSTOM_OVERLAYS_MAX_*) para que todo camino de escritura valide igual.
   customOverlays: list({

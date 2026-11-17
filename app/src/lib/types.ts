@@ -233,11 +233,17 @@ export interface YoutubeConfig {
   clientSecret?: string;
   [k: string]: unknown;
 }
+export type DockModuleId = 'stream' | 'alerts' | 'marks' | 'scenes' | 'teleprompter' | 'credits' | 'audio' | 'questions' | 'tierlist' | 'giveaway' | 'shortcuts';
+export type DockLayout = 'auto' | 'tabs' | 'columns' | 'split-v' | 'split-h';
+export interface DockZone { id: string; label: string; modules: DockModuleId[] }
+export interface DockConfig { modules: { id: DockModuleId; enabled: boolean }[]; layout: DockLayout; zones: DockZone[] }
+
 export interface Config {
   alerts: Record<string, AlertConfig>;
   commands: CommandConfig[];
   timers: TimerConfig[];
   shortcuts: ShortcutConfig[];
+  dock?: DockConfig;
   widgets: WidgetsConfig;
   prompter: PrompterConfig;
   chat: ChatConfig;

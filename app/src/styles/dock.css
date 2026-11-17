@@ -53,6 +53,12 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1.2fr);min-height:0}
 .d-col{display:grid;grid-template-rows:auto 1fr;min-height:0;border-right:1px solid var(--line)}
 .d-col:last-child{border-right:0}
+.d-cols.d-split-v{grid-template-columns:minmax(0,1fr)}
+.d-split-v>.d-col{border-right:0;border-bottom:1px solid var(--line)}
+.d-split-v>.d-col:last-child{border-bottom:0}
+.d-body>.d-inter{height:auto;overflow:visible}
+.d-body>.d-inter>.d-body{overflow:visible}
+.dock[inert]{pointer-events:none}
 .d-col-h{display:flex;align-items:baseline;gap:8px;margin:0;padding:10px 12px 8px;border-bottom:1px solid var(--line);background:var(--s0);font:800 14px/1 var(--font-display);text-transform:uppercase;letter-spacing:.08em}
 .d-col-h span{margin-left:auto;font:500 12px/1 var(--font-sans);text-transform:none;letter-spacing:0;color:var(--muted);text-align:right}
 /* ---------- cuerpo común ---------- */

@@ -143,3 +143,14 @@ test('slow panel retains a complete latest thumbnail projection without changing
     assert.equal(Object.hasOwn(theme, 'alertPreviews'), false, 'thumbnail metadata is panel-only');
   }
 });
+
+test('#39: a dock or shortcuts change publishes them so open docks update without reloading', async t => {
+  const app = await fixture(t);
+  await app.store.patchConfig({ dock: { layout: 'tabs' } });
+  const last = app.healthy.configs().at(-1);
+  assert.equal(last.dock.layout, 'tabs');
+  assert.deepEqual(last.shortcuts, app.store.publicConfig().shortcuts);
+  await app.store.patchConfig({ chat: { sendTo: 'youtube' } });
+  assert.equal(app.healthy.configs().at(-1).dock.layout, 'tabs', 'later snapshots keep the dock section');
+  for (const res of app.outsiders) assert.equal(res.configs().length, 0, 'config remains panel-only');
+});
