@@ -199,6 +199,11 @@ export class Store extends EventEmitter {
     return typeof value === 'string' && typeof previous === 'string' && value === cleanUrl(previous) ? previous : value;
   }
   async patchConfig(patch, { replace = false, change = patch, onPersist } = {}) {
+    // configVersion belongs to the store: client patches cannot skip future migrations.
+    if (!replace && patch && typeof patch === 'object' && Object.hasOwn(patch, 'configVersion')) {
+      const { configVersion: _ignored, ...rest } = patch;
+      patch = rest;
+    }
     if (!replace) for (const kind of ['meld', 'obs']) {
       const section = patch?.[kind];
       if (!section || typeof section !== 'object' || Array.isArray(section) || !Object.hasOwn(section, 'url')) continue;
@@ -213,6 +218,8 @@ export class Store extends EventEmitter {
   }
   /** Local restore point: exact prior config bytes and mode, never the separate credential file. */
   async replaceConfigWithBackup(next, expected, change, onCommit) {
+    // An imported file never sets the stored version; keep the version this store loaded.
+    if (next && typeof next === 'object') next = { ...next, configVersion: this.config.configVersion };
     const conflict = () => Object.assign(new Error('La configuración ha cambiado; vuelve a previsualizar'), { status: 409 });
     const barrier = this.chain;
     await barrier;
@@ -257,6 +264,7 @@ export class Store extends EventEmitter {
     if (!keys.length) throw new Error('Ruta vacía');
     // defensa en profundidad (validatePath ya lo rechaza): nunca se escribe en el prototipo
     if (keys.some(k => PROTO_KEYS.has(k))) throw new Error(`Ruta no válida: ${dotted}`);
+    if (keys[0] === 'configVersion') throw Object.assign(new Error('configVersion lo gestiona antena; no se puede cambiar'), { status: 400 });
     if (['meld', 'obs'].includes(keys[0])) {
       if (keys.length === 2 && keys[1] === 'url') value = this.#retainProgramUrl(keys[0], value);
       else if (keys.length === 1 && value && typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, 'url')) {

@@ -276,3 +276,25 @@ test('PUT, config/set y lectura de ajustes existentes conservan su comportamient
   assert.deepEqual(await f.call('POST', '/api/config/set', { path: 'tts.rate', value: 1.25 }), { status: 200, body: { path: 'tts.rate', value: 1.25 } });
   assert.deepEqual(await f.call('GET', '/api/config?path=tts.rate'), { status: 200, body: { path: 'tts.rate', value: 1.25 } });
 });
+
+// Verifier advisory: configVersion is owned by the store; clients and imports cannot set it.
+test('configVersion no se puede fijar desde la API ni desde una importación', async t => {
+  const f = await appFixture(t);
+  const before = (await f.call('GET', '/api/config')).body.configVersion;
+  const set = await f.call('POST', '/api/config/set', { path: 'configVersion', value: 7 });
+  assert.equal(set.status, 400);
+  assert.deepEqual(set.body, { error: 'configVersion lo gestiona antena; no se puede cambiar' });
+  await f.call('PUT', '/api/config', { configVersion: 9, overlay: { volume: 0.3 } });
+  const after = (await f.call('GET', '/api/config')).body;
+  assert.equal(after.configVersion, before);
+  assert.equal(after.overlay.volume, 0.3);
+});
+
+for (const [name, raw] of [['corrupto', '{"meld":{"autoSession":false,,'], ['futuro', JSON.stringify({ configVersion: 99, meld: { autoSession: false } })]])
+  test(`config ${name} no se reescribe ni crea copia`, async t => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'antena-version-')); t.after(() => rm(dir, { recursive: true, force: true }));
+    await writeFile(path.join(dir, 'config.json'), raw);
+    await new Store(dir).load(); await new Store(dir).load();
+    assert.equal(await readFile(path.join(dir, 'config.json'), 'utf8'), raw);
+    assert.deepEqual(await backupNames(dir), []);
+  });
