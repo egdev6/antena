@@ -202,7 +202,7 @@ test('release: el signer independiente está fijado al CLI y a las integridades 
   // GNU tar (Git Bash on the Windows runner) reads «D:\\…» in -f as a remote host: archives must be relative.
   const tarLines = prepare.run.split('\n').filter(l => /^\s*tar\s/.test(l));
   assert.equal(tarLines.length, 2);
-  for (const l of tarLines) assert.doesNotMatch(l, /-x?z?f\s+"?\$RUNNER_TEMP|-xzf\s+"?[A-Za-z]:/, `tar must read a relative archive: ${l.trim()}`);
+  for (const l of tarLines) assert.match(l, /^\s*tar -xzf [\w.-]+\.tgz -C [\w@./-]+ --strip-components=1$/, `tar must read a bare relative archive: ${l.trim()}`);
   const locate = step(steps, 'Localizar el instalador para firma');
   const sign = step(steps, 'Firmar el instalador');
   const check = step(steps, 'Comprobar firma del updater');
