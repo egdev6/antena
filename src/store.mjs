@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeJson } from './json-file.mjs';
+import { cleanUrl } from './http-util.mjs';
 import { sanitizeConfig, schemaAt, PROTO_KEYS, validateChatVariantsTransition } from './config-schema.mjs';
 import { convertLegacyGoals } from './goals.mjs';
 import { DEFAULT_ALERTS } from './alerts.mjs';
@@ -193,7 +194,19 @@ export class Store extends EventEmitter {
     this.chain = run.catch(() => {});
     return run;
   }
+  // Si vuelve exactamente la URL que dimos al panel, conserva la versión privada actual.
+  // Una URL distinta se guarda tal cual: nunca se transfieren credenciales a otro destino.
+  #retainProgramUrl(kind, value) {
+    const previous = this.config[kind]?.url;
+    return typeof value === 'string' && typeof previous === 'string' && value === cleanUrl(previous) ? previous : value;
+  }
   async patchConfig(patch, { replace = false, change = patch, onPersist } = {}) {
+    if (!replace) for (const kind of ['meld', 'obs']) {
+      const section = patch?.[kind];
+      if (!section || typeof section !== 'object' || Array.isArray(section) || !Object.hasOwn(section, 'url')) continue;
+      const url = this.#retainProgramUrl(kind, section.url);
+      if (url !== section.url) patch = { ...patch, [kind]: { ...section, url } };
+    }
     this.config = replace ? patch : deepMerge(this.config, patch);
     await this.write(this.cfgFile, this.config);
     onPersist?.(); // The atomic write has committed even if a change listener throws.
@@ -246,6 +259,13 @@ export class Store extends EventEmitter {
     if (!keys.length) throw new Error('Ruta vacía');
     // defensa en profundidad (validatePath ya lo rechaza): nunca se escribe en el prototipo
     if (keys.some(k => PROTO_KEYS.has(k))) throw new Error(`Ruta no válida: ${dotted}`);
+    if (['meld', 'obs'].includes(keys[0])) {
+      if (keys.length === 2 && keys[1] === 'url') value = this.#retainProgramUrl(keys[0], value);
+      else if (keys.length === 1 && value && typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, 'url')) {
+        const url = this.#retainProgramUrl(keys[0], value.url);
+        if (url !== value.url) value = { ...value, url };
+      }
+    }
     // Simular solo las rutas que tocan variantes sobre una copia, usando exactamente la
     // misma lógica de setPath; así se valida el resultado antes de mutar o emitir nada.
     const checkVariants = keys[0] === 'widgets' && (keys[1] === 'chatVariants' ||
@@ -326,11 +346,12 @@ export class Store extends EventEmitter {
     if (value === undefined) delete this.secrets[key]; else this.secrets[key] = value;
     await this.write(this.secFile, this.secrets);
   }
-  /** Config apta para el panel: oculta la API key de YouTube. */
+  /** Config apta para el panel: oculta secretos y credenciales en las URL de programa. */
   publicConfig() {
     const c = structuredClone(this.config);
-    c.obs = { ...c.obs, passwordSet: !!this.secrets.obs?.password };
+    c.obs = { ...c.obs, url: cleanUrl(c.obs?.url), passwordSet: !!this.secrets.obs?.password };
     delete c.obs.password;
+    if (c.meld && typeof c.meld === 'object') c.meld.url = cleanUrl(c.meld.url);
     c.youtube.apiKeySet = !!c.youtube.apiKey;
     c.youtube.apiKey = c.youtube.apiKey ? '••••' + c.youtube.apiKey.slice(-4) : '';
     c.youtube.clientSecretSet = !!c.youtube.clientSecret;

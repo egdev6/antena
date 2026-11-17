@@ -58,7 +58,7 @@ test('custom overlays: create with defaults, read, list, edit and delete through
     assert.deepEqual({ ...overlay, id: undefined, updatedAt: undefined }, {
       id: undefined, updatedAt: undefined, name: 'Vacío', html: '', css: '', js: '', width: 1920, height: 1080, transparent: true,
       // S11: un overlay nuevo no pide ni tiene nada aprobado.
-      requestedPermissions: [], permissions: [], approvedAt: 0, approvedUpdatedAt: 0,
+      requestedPermissions: [], permissions: [], approvedAt: 0, approvedUpdatedAt: 0, reapprovalRequired: false,
     });
     assert.equal(typeof overlay.updatedAt, 'number');
     const full = (await call('POST', '/api/custom-overlays', SAMPLE)).overlay;

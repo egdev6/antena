@@ -4,7 +4,8 @@
 // públicas (panel, HTTP y SSE): la prueba no lee el estado interno de la vista.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { build } from 'esbuild';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
@@ -18,7 +19,14 @@ async function start(t) {
   if (!bin) return null;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-overlays-panel-'));
   t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
-  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  // Prueba el código fuente actual sin escribir ni usar la compilación previa del worktree.
+  const appDist = path.join(dataDir, 'app-dist');
+  await mkdir(path.join(appDist, 'assets'), { recursive: true });
+  await build({ entryPoints: ['app/src/panel/main.tsx'], outfile: path.join(appDist, 'assets/panel.js'),
+    bundle: true, format: 'esm', jsx: 'automatic', target: 'chrome110', external: ['/fonts/*', '/ds/*'],
+    define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
+  await writeFile(path.join(appDist, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="/ds/tokens.css"><link rel="stylesheet" href="/ds/bundle.css"><link rel="stylesheet" href="/assets/panel.css"></head><body><div id="root"></div><script type="module" src="/assets/panel.js"></script></body></html>');
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), appDist, push: {}, log: () => {} });
   app.store.config.panel = { onboardingDone: true };   // la bienvenida taparía la vista
   await new Promise(r => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
@@ -281,16 +289,11 @@ test('panel: aprueba y revoca permisos, y avisa si el código cambió desde la a
     assert.equal(approved.approvedUpdatedAt, approved.updatedAt, 'aprobar no versiona el código');
     assert.equal(await dom(c, `document.body.textContent.includes(${JSON.stringify(warning)}) ? 1 : 0`), 0, 'sin cambios de código no hay aviso');
 
-    // El agente cambia el JavaScript: el editor avisa y la aprobación se conserva.
+    // El código nuevo retira las aprobaciones y el panel pide revisarlas de nuevo.
     await api('PUT', `/api/custom-overlays/${overlay.id}`, { js: 'antena.on("chat", () => {});' });
     await waitDom(c, `document.body.textContent.includes(${JSON.stringify(warning)})`, { timeoutMs: 12000 });
-    assert.deepEqual((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay.permissions, ['scene']);
-
-    // Revocar desde el panel: el aviso desaparece (no queda nada aprobado).
-    await dom(c, `document.querySelector('[data-perm="scene"] input').click(), 'ok'`);
-    await waitDom(c, `document.querySelector('[data-perm="scene"] input').checked === false`, { timeoutMs: 12000 });
-    await eventually(async () => JSON.stringify((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay.permissions), '[]');
-    await waitDom(c, `document.body.textContent.includes(${JSON.stringify(warning)}) ? 0 : 1`, { timeoutMs: 12000 });
+    assert.deepEqual((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay.permissions, []);
+    assert.equal(await dom(c, `document.querySelector('[data-perm="scene"] input').checked`), false);
 
     // Volver a aprobar el código nuevo deja la aprobación al día: el aviso no vuelve.
     await dom(c, `document.querySelector('[data-perm="scene"] input').click(), 'ok'`);

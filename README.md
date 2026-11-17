@@ -291,7 +291,7 @@ The agent **asks** for permissions when it creates or edits; only you **approve*
 
 - Without approval, `antena.run` is rejected (403) and nothing happens.
 - Cap of **10 actions every 10 seconds** per overlay: above it, 429 and nothing runs.
-- Editing the code does not revoke approvals, but the panel warns when the code has changed since you approved.
+- Changing HTML, CSS or JavaScript revokes approved permissions. Review the new code and approve them again in the panel; changing other settings does not revoke them.
 
 **Security.** User code runs in a sandboxed `<iframe>` with an opaque origin, on a separate page: it has no antena API, cannot read the panel and cannot open the event stream. Data only reaches it through messages from the page hosting it, and the only thing it can ask back are the actions you approve.
 
@@ -504,6 +504,8 @@ The corresponding `meld_*` MCP tools and `/api/meld*` routes remain permanent al
 
 `ver_config` / `cambiar_config` / `fijar_valor` reach any setting by path (`alerts.raid.variations.0.overrides.media`, `widgets.chat.fontSize`, `filters.blockedWords`…). The path is validated with the same schema as `cambiar_config`: it does not accept `__proto__`, `constructor` or `prototype` (neither in the path nor in the value, which are logged), nor going below a simple value. In lists, an index greater than the length is rejected (400) instead of leaving holes, and deleting a leaf or section of the schema restores its default value immediately, just like at startup.
 
+Public configuration omits userinfo and credential-like query parameters from Meld and OBS WebSocket URLs. The full URL remains in the private local configuration for connections; saving or reconnecting with the unchanged public URL preserves its hidden credentials. A different URL is saved as supplied, without copying credentials to the new destination.
+
 Examples of what you can ask Claude to do:
 
 - «Create a variation of the raid for more than 50 people with the raid-grande.webm video and switch to the Raid scene for 10 seconds».
@@ -598,7 +600,7 @@ To write, the chat has to be listening (it is the ongoing stream's chat). Each m
 
 ### Files
 
-Videos, images and sounds are uploaded from the panel (or with `importar_archivo` via MCP) and saved in `media/`. Formats: webm, mp4, gif, png, webp, mp3, ogg, wav; up to 300 MB. In **Log › Files** each file shows its size, the folder total and **where it is used** (alerts and their variations, commands, messages); the «Unused» filter helps clean up.
+Videos, images and sounds are uploaded from the panel (or with `importar_archivo` via MCP) and saved in `media/`. Importing a path from the PC is only available to local clients, not clients using the LAN key; invalid or missing source paths get the same error. Formats: webm, mp4, gif, png, webp, mp3, ogg, wav; up to 300 MB. In **Log › Files** each file shows its size, the folder total and **where it is used** (alerts and their variations, commands, messages); the «Unused» filter helps clean up.
 
 ### Variables
 

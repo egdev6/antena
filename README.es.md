@@ -291,7 +291,7 @@ El agente **pide** permisos al crear o editar; solo tú los **apruebas** en el p
 
 - Sin aprobación, `antena.run` se rechaza (403) y no pasa nada.
 - Tope de **10 acciones cada 10 segundos** por overlay: por encima, 429 y no se ejecuta.
-- Editar el código no retira lo aprobado, pero el panel avisa cuando el código ha cambiado desde que aprobaste.
+- Cambiar el HTML, CSS o JavaScript retira los permisos aprobados. Revisa el código nuevo y vuelve a aprobarlos en el panel; cambiar otros ajustes no los retira.
 
 **Seguridad.** El código corre en un `<iframe sandbox>` con origen opaco, en una página aparte: no tiene la API de antena, no puede leer el panel ni abrir el flujo de eventos. Los datos le llegan solo por mensajes de la página que lo aloja, y lo único que puede pedir de vuelta son las acciones que apruebas.
 
@@ -504,6 +504,8 @@ Las herramientas MCP `meld_*` y las rutas `/api/meld*` siguen siendo alias perma
 
 `ver_config` / `cambiar_config` / `fijar_valor` llegan a cualquier ajuste por ruta (`alerts.raid.variations.0.overrides.media`, `widgets.chat.fontSize`, `filters.blockedWords`…). La ruta se valida con el mismo esquema que `cambiar_config`: no admite `__proto__`, `constructor` ni `prototype` (ni en la ruta ni en el valor, que se avisan en el registro), ni bajar por debajo de un valor simple. En listas, un índice mayor que la longitud se rechaza (400) en vez de dejar agujeros, y borrar una hoja o sección del esquema deja su valor por defecto al momento, igual que al arrancar.
 
+La configuración pública omite el usuario, la contraseña y los parámetros de consulta con credenciales de las URL WebSocket de Meld y OBS. La URL completa se conserva en la configuración local privada para las conexiones; guardar o reconectar con la URL pública sin cambios mantiene las credenciales ocultas. Una URL distinta se guarda tal cual, sin copiar credenciales al nuevo destino.
+
 Ejemplos de lo que se le puede pedir a Claude:
 
 - «Crea una variación del raid para más de 50 personas con el vídeo raid-grande.webm y que cambie a la escena Raid 10 segundos».
@@ -598,7 +600,7 @@ Para escribir, el chat tiene que estar escuchándose (es el del directo en march
 
 ### Archivos
 
-Vídeos, imágenes y sonidos se suben desde el panel (o con `importar_archivo` por MCP) y se guardan en `media/`. Formatos: webm, mp4, gif, png, webp, mp3, ogg, wav; hasta 300 MB. En **Registro › Archivos** cada archivo muestra su tamaño, el total de la carpeta y **dónde se usa** (alertas y sus variaciones, comandos, mensajes); el filtro «Sin usar» ayuda a limpiar.
+Vídeos, imágenes y sonidos se suben desde el panel (o con `importar_archivo` por MCP) y se guardan en `media/`. Importar una ruta del PC solo está disponible para clientes locales, no para los que usan la clave LAN; las rutas inexistentes o no válidas reciben el mismo error. Formatos: webm, mp4, gif, png, webp, mp3, ogg, wav; hasta 300 MB. En **Registro › Archivos** cada archivo muestra su tamaño, el total de la carpeta y **dónde se usa** (alertas y sus variaciones, comandos, mensajes); el filtro «Sin usar» ayuda a limpiar.
 
 ### Variables
 
