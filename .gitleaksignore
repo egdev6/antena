@@ -5,3 +5,9 @@ d58185a73c38b2c51f5d8c30fa323eb13647c6d6:test/ws-stream.test.mjs:generic-api-key
 # False positive: a synthetic Bearer value in a regression test, not a credential.
 3c47bc57ccef589acf946082ace1067f3c0342bc:test/push-export-legacy-owed.test.mjs:generic-api-key:8
 cd10d303ce3e790dee745902e5324c9ce290b27b:test/push-export-legacy-owed.test.mjs:generic-api-key:8
+# False positives: synthetic TEST_* canaries in the #247 security test (commit a264f9b); later commits build them at runtime.
+a264f9bd666e25d9da346d8a0457fd817e275203:test/security-247.test.mjs:generic-api-key:172
+a264f9bd666e25d9da346d8a0457fd817e275203:test/security-247.test.mjs:generic-api-key:173
+a264f9bd666e25d9da346d8a0457fd817e275203:test/security-247.test.mjs:generic-api-key:175
+a264f9bd666e25d9da346d8a0457fd817e275203:test/security-247.test.mjs:generic-api-key:176
+a264f9bd666e25d9da346d8a0457fd817e275203:test/security-247.test.mjs:generic-api-key:177
