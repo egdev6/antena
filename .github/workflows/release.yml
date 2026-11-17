@@ -187,9 +187,11 @@ jobs:
             process.exitCode = 1;
           }
           NODE
-          mkdir -p "$RUNNER_TEMP/tauri-signer/node_modules/@tauri-apps/cli" "$RUNNER_TEMP/tauri-signer/node_modules/@tauri-apps/cli-win32-x64-msvc"
-          tar -xzf "$RUNNER_TEMP/tauri-signer/cli.tgz" -C "$RUNNER_TEMP/tauri-signer/node_modules/@tauri-apps/cli" --strip-components=1
-          tar -xzf "$RUNNER_TEMP/tauri-signer/cli-win32-x64-msvc.tgz" -C "$RUNNER_TEMP/tauri-signer/node_modules/@tauri-apps/cli-win32-x64-msvc" --strip-components=1
+          # GNU tar (Git Bash) reads a «D:\\…» archive path as a remote host, so extract with relative paths.
+          cd "$RUNNER_TEMP/tauri-signer"
+          mkdir -p node_modules/@tauri-apps/cli node_modules/@tauri-apps/cli-win32-x64-msvc
+          tar -xzf cli.tgz -C node_modules/@tauri-apps/cli --strip-components=1
+          tar -xzf cli-win32-x64-msvc.tgz -C node_modules/@tauri-apps/cli-win32-x64-msvc --strip-components=1
       - name: Secreto de firma del updater
         shell: bash
         env:
