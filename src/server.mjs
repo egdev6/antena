@@ -2,7 +2,7 @@
 // Todo lo que hace el panel pasa por esta API REST, que también usa el servidor MCP (src/mcp.mjs).
 import http from 'node:http';
 import os from 'node:os';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { readdir, stat, mkdir, unlink, rename, readFile, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
@@ -370,6 +370,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // An explicit channel may differ from the OAuth account that owns the subscriber list.
     if (!goalChannel || (ownerChannelId && ownerChannelId === goalChannel)) channelTotals.onEvent(event);
     engine.handleEvent(event);
+  });
+  followers.on('liveAnonymous', ({ count }) => {
+    if (store.config.youtube.subscriberCountAlert !== false)
+      engine.handleEvent({ externalId: `ytsubcount:${randomUUID()}`, type: 'ytsubcount', vars: { amount: count } });
   });
   // Capture YouTube ownership before the total read: that read can outlive a listening period.
   const refreshFollowers = (platform, options) => {

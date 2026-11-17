@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { get, post } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { cx, fmtTime, guard, LazyInput, SegField, toast } from '../../lib/ui';
+import { cx, fmtTime, guard, LazyInput, SegField, Switch, toast } from '../../lib/ui';
 import { isSaving, saveAll, useDraftVersion, useManualSave } from '../../lib/draft';
 import { Card, CardGroup, CardSwitch, Dot, PageHead, SaveBar, Slide } from '../../lib/layout';
 import { Icon, PfIcon } from '../../lib/ui';
@@ -186,7 +186,8 @@ function ConexionSlide({ which }: { which: 'twitch' | 'youtube' }) {
           <label>Segundos entre lecturas <input type="number" min={5} max={60} value={c.youtube.pollSeconds || 8} onChange={e => live.patchConfig({ youtube: { pollSeconds: Math.max(5, Number(e.target.value) || 8) } })} /></label>
         </div>
         <label>Segundos entre consultas de suscriptores <input type="number" min={0} step={1} value={c.youtube.subscriberPollSeconds ?? 120} onChange={e => live.patchConfig({ youtube: { subscriberPollSeconds: Math.max(0, Math.floor(Number(e.target.value) || 0)) } })} /></label>
-        <p className="hint">Requiere conectar tu cuenta. Solo detecta suscripciones públicas; la alerta llega con el retraso del intervalo y la API puede limitar los resultados. Usa cuota diaria compartida con el chat. Mínimo 60 s; 0 desactiva el sondeo.</p>
+        <Switch checked={c.youtube.subscriberCountAlert !== false} onChange={v => live.patchConfig({ youtube: { subscriberCountAlert: v } })}>Avisar de suscriptores sin nombre («+N suscriptores»)</Switch>
+        <p className="hint">Requiere conectar tu cuenta. Solo las suscripciones públicas tienen nombre; la alerta sin nombre usa totales exactos por debajo de 1000. La alerta llega con el retraso del intervalo y la API puede limitar los resultados. Usa cuota diaria compartida con el chat. Mínimo 60 s; 0 desactiva el sondeo.</p>
         {st.followers?.youtube?.status === 'quota' && <p className="hint">Sondeo de suscriptores detenido por cuota agotada hasta volver a escuchar el chat. {st.followers.youtube.error}</p>}
         <label>Enlace del directo <small>(si lo dejas vacío, lo busca en tu canal)</small><LazyInput spellCheck={false} placeholder="https://www.youtube.com/live/…" value={c.youtube.video} onCommit={yset('video')} /></label>
         {yt.title && <p className="who">Directo: <b>{yt.title}</b> · {yt.polls || 0} lecturas</p>}

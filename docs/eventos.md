@@ -49,8 +49,21 @@ of 60 seconds, and uses 0 to disable polling. Only public subscriptions can be i
 results can be delayed or capped by the API. List pages and the account-total read share
 the daily quota with chat. `quotaExceeded` stops this polling until the next listening
 period; stale responses from an older period cannot stop or consume the new baseline.
-Anonymous registry estimates do not generate alerts in this feature. Goal totals remain
-separate (#132), and a subscriber event cannot increment a different configured channel.
+
+When the OAuth account total grows by more than the public names found in that poll,
+`ytsubcount` displays «+N suscriptores» / «nuevos en el canal». The total is read from
+`channels.list(mine=true)` for the same connected account as the names, not the separate
+channel-total poll (#132). The alert is on by default; disable it with
+`youtube.subscriberCountAlert` in **Connections › YouTube**. It is a system alert, so it
+adds no follower metric, goal increment, latest/ticker entry, credit or extra thanks record.
+The existing anonymous registry estimate still feeds thanks independently.
+
+The generic alert is delayed by the polling interval and is a net estimate: subscriptions
+may be private, the API can cap the names, and unsubscribes can cancel growth. It needs
+visible exact counts below 1,000 on both sides; missing/hidden counts and totals at or
+above 1,000 do not alert because YouTube rounds them. The baseline is silent, and recovery
+up to the listening period's previous high does not alert again. Goal totals remain
+separate (#132), and a named subscriber event cannot increment a different configured channel.
 
 ## Followers gained while offline
 

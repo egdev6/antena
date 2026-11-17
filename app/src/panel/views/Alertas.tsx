@@ -108,7 +108,7 @@ export function Alertas({ parts }: { parts: string[] }) {
       ...(x.a.ttsEnabled ? [{ t: 'Voz', on: true }] : []),
       ...((x.a.actions || []).length ? [{ t: 'Acciones', on: true }] : []),
       ...(x.vars.length ? [{ t: x.vars.length === 1 ? '1 variación' : `${x.vars.length} variaciones`, on: true }] : []),
-      ...(x.meta.system ? [{ t: 'Récord' }] : []),
+      ...(x.meta.system ? [{ t: x.type === 'ytsubcount' ? 'Sistema' : 'Récord' }] : []),
     ];
     // Server-confirmed alert/CSS/theme, never the optimistic editor draft. Track
     // only this saved media dependency so unrelated uploads do not reload 14 frames.
