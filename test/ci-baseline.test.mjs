@@ -91,6 +91,18 @@ test('CI enumera skips anidados y solo permite excepciones explícitas de plataf
   }
 });
 
+test('CI conserva la puerta de skips y las dos regresiones de navegador en el subset platform', () => {
+  const reason = 'POSIX process groups: Windows escalates the owned Chrome tree with taskkill instead of group signals';
+  const fx = fixture([`    ok 1 - plataforma # SKIP ${reason}`], 'win32');
+  fx.report.tests.group = 'platform';
+  fx.report.tests.files = ['test/close-chrome.test.mjs', 'test/redesign-regressions.test.mjs'];
+  const result = checkCiBaseline(fx.report, fx.tap);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.skips.map(skip => [skip.reason, skip.allowed]), [[reason, true]]);
+  assert.equal(checkCiBaseline(fx.report, fx.tap.replace(reason, 'motivo desconocido')).ok, false);
+  assert.equal(checkCiBaseline(fx.report, fx.tap.replace(browserNames[0], 'regresión ausente')).ok, false);
+});
+
 test('CI no confunde una directiva escapada en el nombre con TODO real', () => {
   const fx = fixture(['ok 3 - nombre literal \\# TODO pendiente']);
   assert.equal(checkCiBaseline(fx.report, fx.tap).ok, true);

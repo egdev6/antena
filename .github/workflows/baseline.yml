@@ -1,5 +1,5 @@
-# Baseline de CI en vigor: suite completa con la interfaz React compilada
-# (pnpm app:build), en Linux/Windows con Node 24 (el mínimo soportado). Reactiva la CI (#69).
+# Baseline con la interfaz React compilada: suite completa en Linux y grupo
+# platform en Windows, ambos con Node 24 (el mínimo soportado).
 name: Baseline
 
 on:
@@ -57,10 +57,16 @@ jobs:
         with:
           chrome-version: stable
           install-dependencies: true
-      - name: Baseline con cobertura
+      - name: Baseline con cobertura (Linux)
+        if: runner.os == 'Linux'
         env:
           CHROME_PATH: ${{ runner.os == 'Linux' && '/usr/bin/google-chrome' || steps.chrome.outputs.chrome-path }}
         run: node scripts/baseline.mjs --output baseline.json --tap baseline.tap
+      - name: Baseline con cobertura (Windows)
+        if: runner.os == 'Windows'
+        env:
+          CHROME_PATH: ${{ runner.os == 'Linux' && '/usr/bin/google-chrome' || steps.chrome.outputs.chrome-path }}
+        run: node scripts/baseline.mjs --group platform --output baseline.json --tap baseline.tap
       - name: Verificar navegador y skips críticos
         if: ${{ always() && !cancelled() }}
         run: node scripts/ci-baseline.mjs baseline.json baseline.tap
