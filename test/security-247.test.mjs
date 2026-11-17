@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import { createApp } from '../src/server.mjs';
 import { fakeMeld } from './helpers/fake-meld.mjs';
@@ -36,7 +37,7 @@ async function fixture(t) {
 }
 
 async function mcp(t, base) {
-  const child = spawn(process.execPath, [new URL('../src/mcp.mjs', import.meta.url).pathname], {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp.mjs', import.meta.url))], {
     env: { PATH: process.env.PATH, ANTENA_URL: base, ANTENA_NO_EMBED: '1' }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   let buffer = '', stderr = '', seq = 0;
