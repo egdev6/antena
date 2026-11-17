@@ -101,7 +101,7 @@ test('OBS password is secret across HTTP, SSE, MCP, errors, logs, restart and cl
   await close(); stream = ''; await open();
   assert.equal((await call('GET', '/api/config')).body.obs.passwordSet, true);
   await checkpoint('restart');
-  const cleared = await tool('borrar_valor', { ruta: 'obs.password' });
+  const cleared = await tool('borrar_valor', { ruta: 'obs.password', confirmar: true });
   assert.ok(!JSON.stringify(cleared).includes(SECRET));
   assert.equal((await call('GET', '/api/config')).body.obs.passwordSet, false);
   assert.ok(!(await readFile(file('secrets.json'), 'utf8')).includes(SECRET));

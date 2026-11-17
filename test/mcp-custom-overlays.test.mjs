@@ -179,7 +179,7 @@ test('MCP: crear, ver, editar, listar, probar y borrar un overlay propio', { tim
     assert.equal(missing.result.isError, true);
     assert.match(missing.result.content[0].text, /No existe ese overlay/);
 
-    await c.call('borrar_overlay', { id: created.id });
+    await c.call('borrar_overlay', { id: created.id, confirmar: true });
     assert.deepEqual(await c.call('listar_overlays'), []);
     assert.deepEqual((await call('GET', '/api/custom-overlays')).overlays, []);
   } finally { c.close(); widget.close(); await close(); }
@@ -221,7 +221,7 @@ test('MCP: pide permisos de acción pero no puede aprobarlos ni ampliarlos', { t
     // Un permiso que el overlay no pide no se aprueba ni desde el panel.
     await assert.rejects(raw('PUT', `/api/custom-overlays/${created.id}/permissions`, { permissions: ['chat'] }), /no ha pedido/);
     assert.deepEqual((await raw('GET', `/api/custom-overlays/${created.id}`)).overlay.permissions, ['scene']);
-    await c.call('borrar_overlay', { id: created.id });
+    await c.call('borrar_overlay', { id: created.id, confirmar: true });
     void call;
   } finally { c.close(); await close(); }
 });
