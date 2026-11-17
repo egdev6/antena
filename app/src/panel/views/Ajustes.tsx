@@ -7,6 +7,7 @@ import { groupMeldScenes } from '../../lib/meld-scenes';
 import { codeTab, cx, EmptyState, guard, Icon, IconBtn, LazyInput, Panel, Range, Sec, Status, Switch, toast } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { stateClass } from './Conexiones';
+import { DockEditor } from './DockEditor';
 import { saveAll, useManualSave } from '../../lib/draft';
 import { PageHead, SaveBar, usePageTab } from '../../lib/layout';
 import type { FiltersConfig, PrompterConfig, TtsConfig } from '../../lib/types';
@@ -223,7 +224,7 @@ export function PrompterAjustes({ parts }: { parts: string[] }) {
           </div>
         </section>
       </>}
-      {tab === 'vista' && <Panel title="Vista">
+      {tab === 'vista' && <><Panel title="Vista">
         <div className="row2">
           <Range label="Tamaño de letra" value={pr.fontSize ?? 22} min={16} max={32} unit="px" onChange={x => P({ fontSize: x })} />
           <label>Mensajes de chat en la vista <input type="number" min={20} max={200} value={pr.chatLines ?? 60} onChange={e => P({ chatLines: Number(e.target.value) })} /></label>
@@ -235,7 +236,7 @@ export function PrompterAjustes({ parts }: { parts: string[] }) {
         <label>CSS propio de la vista <textarea className="code" spellCheck={false} value={pr.css || ''} onKeyDown={codeTab} onChange={e => P({ css: e.target.value })} placeholder=":root { --fs: 24px; --red: #00E0FF; }" /></label>
         <p className="css-help">Clases: <code>.pr</code> <code>.pr-top</code> <code>.pr-main</code> <code>.pr-chat</code> <code>.eg-timeline__item</code> <code>.pr-send</code> <code>.pr-side</code> <code>.pr-pane</code> <code>.ev-pane</code> <code>.ev-block</code> <code>.ev-item</code></p>
         <p className="hint">Los botones del Stream Deck para el prompter (cambiar de pestaña, marcar…) están en <a href="#/atajos">Atajos y Stream Deck</a>.</p>
-      </Panel>}
+      </Panel><DockEditor /></>}
     </div>
     <SaveBar />
   </>;
