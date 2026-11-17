@@ -65,7 +65,7 @@ fn chunks(bytes: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-fn response_id(response: &[u8]) -> Option<(String, bool)> {
+fn response_value(response: &[u8]) -> Option<(serde_json::Value, bool)> {
     if response.len() > MAX_RESPONSE_BYTES { return None; }
     let header_end = response.windows(4).position(|w| w == b"\r\n\r\n")?;
     let header = std::str::from_utf8(&response[..header_end]).ok()?;
@@ -98,9 +98,19 @@ fn response_id(response: &[u8]) -> Option<(String, bool)> {
         _ => return None,
     };
     let json: serde_json::Value = serde_json::from_slice(body).ok()?;
+    Some((json, framed))
+}
+
+fn response_id(response: &[u8]) -> Option<(String, bool)> {
+    let (json, framed) = response_value(response)?;
     let instance = json.get("instance")?;
     if instance.get("app")?.as_str()? != "antena" { return None; }
     Some((instance.get("id")?.as_str()?.to_owned(), framed))
+}
+
+#[cfg(any(windows, test))]
+pub fn persistence(response: &[u8]) -> Option<serde_json::Value> {
+    response_value(response)?.0.get("persistence").cloned()
 }
 
 pub fn decide(taken: bool, response: Option<&[u8]>, expected: Option<&str>) -> Decision {

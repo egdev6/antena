@@ -7,6 +7,9 @@
 // - Al salir se pide un apagado ordenado (POST /api/shutdown) para que guarde todo; si no, se mata.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod nexo_policy;
+#[cfg(test)]
+mod nexo_status_tests;
 mod server_identity;
 
 use std::io::{Read, Write};
@@ -17,6 +20,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use nexo_policy::{hub_menu_items, tray_action, TrayAction};
 use server_identity::{connection_failure, decide, expected_id, framed_match, Decision, MAX_RESPONSE_BYTES};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -80,34 +84,50 @@ impl StartupState {
 
 // ---------- bounded HTTP probe against the local server ----------
 fn status_probe(port: u16, data: &Path, keep_open: bool) -> (Decision, Option<TcpStream>) {
+    let (decision, stream, _) = status_probe_response(port, data, keep_open);
+    (decision, stream)
+}
+
+// Return a response only after the same identity and framing checks used by startup and shutdown.
+fn status_probe_response(port: u16, data: &Path, keep_open: bool) -> (Decision, Option<TcpStream>, Option<Vec<u8>>) {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
         Ok(stream) => stream,
-        Err(err) => return (connection_failure(err.kind()), None),
+        Err(err) => return (connection_failure(err.kind()), None, None),
     };
     let timeout = Duration::from_millis(600);
-    if stream.set_write_timeout(Some(timeout)).is_err() { return (Decision::Conflict, None); }
+    if stream.set_write_timeout(Some(timeout)).is_err() { return (Decision::Conflict, None, None); }
     let connection = if keep_open { "keep-alive" } else { "close" };
     let request = format!("GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: {connection}\r\n\r\n");
-    if stream.write_all(request.as_bytes()).is_err() { return (Decision::Conflict, None); }
+    if stream.write_all(request.as_bytes()).is_err() { return (Decision::Conflict, None, None); }
     let deadline = Instant::now() + timeout;
     let mut response = Vec::new();
     let mut buf = [0u8; 4096];
     loop {
-        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else { return (Decision::Conflict, None) };
-        if remaining.is_zero() || stream.set_read_timeout(Some(remaining)).is_err() { return (Decision::Conflict, None); }
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else { return (Decision::Conflict, None, None) };
+        if remaining.is_zero() || stream.set_read_timeout(Some(remaining)).is_err() { return (Decision::Conflict, None, None); }
         match stream.read(&mut buf) {
-            Ok(0) => return (decide(true, Some(&response), expected_id(data).as_deref()), None),
+            Ok(0) => {
+                let decision = decide(true, Some(&response), expected_id(data).as_deref());
+                let response = (decision == Decision::Reuse).then_some(response);
+                return (decision, None, response);
+            }
             Ok(n) => {
-                if response.len() + n > MAX_RESPONSE_BYTES { return (Decision::Conflict, None); }
+                if response.len() + n > MAX_RESPONSE_BYTES { return (Decision::Conflict, None, None); }
                 response.extend_from_slice(&buf[..n]);
                 if framed_match(&response, expected_id(data).as_deref()) {
-                    return (Decision::Reuse, if keep_open { Some(stream) } else { None });
+                    return (Decision::Reuse, if keep_open { Some(stream) } else { None }, Some(response));
                 }
             }
-            Err(_) => return (Decision::Conflict, None),
+            Err(_) => return (Decision::Conflict, None, None),
         }
     }
+}
+
+#[cfg(any(windows, test))]
+fn persistence_at_server(port: u16, data: &Path) -> Option<serde_json::Value> {
+    let (_, _, response) = status_probe_response(port, data, false);
+    server_identity::persistence(&response?)
 }
 
 fn retry_verification<T>(mut attempt: impl FnMut() -> Option<T>, mut again: impl FnMut() -> bool) -> Option<T> {
@@ -792,11 +812,47 @@ async fn update_install(app: AppHandle, pending: State<'_, PendingUpdate>) -> Re
 }
 
 // ---------- bandeja ----------
-fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Abrir el panel", true, None::<&str>)?;
-    let prompter = MenuItem::with_id(app, "prompter", "Abrir el prompter", true, None::<&str>)?;
-    let dock = MenuItem::with_id(app, "dock", "Abrir el dock", true, None::<&str>)?;
-    let browser = MenuItem::with_id(app, "browser", "Abrir en el navegador", true, None::<&str>)?;
+fn dispatch_tray_action(app: &AppHandle, id: &str) {
+    match tray_action(id) {
+        Some(TrayAction::Open) => show_main(app),
+        Some(TrayAction::Prompter) => {
+            let a = app.clone();
+            tauri::async_runtime::spawn(async move { let _ = open_prompter(a, None, Some(true)).await; });
+        }
+        Some(TrayAction::Dock) => {
+            let a = app.clone();
+            tauri::async_runtime::spawn(async move { let _ = open_dock(a, Some(true)).await; });
+        }
+        Some(TrayAction::Browser) => {
+            if !server_ready(app) { return; }
+            let url = format!("{}/", base_url(app.state::<Server>().port));
+            #[allow(deprecated)]
+            let _ = app.shell().open(url, None);
+        }
+        Some(TrayAction::Quit) => quit_from_tray(app),
+        None => {}
+    }
+}
+
+fn quit_from_tray(app: &AppHandle) {
+    #[cfg(windows)]
+    if let Some(handle) = tauri_plugin_nexo::handle(app) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            handle.shutdown_and_wait().await;
+            app.exit(0);
+        });
+        return;
+    }
+    app.exit(0);
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<tauri::tray::TrayIcon<tauri::Wry>> {
+    let items = hub_menu_items();
+    let open = MenuItem::with_id(app, items[0].0, items[0].1, true, None::<&str>)?;
+    let prompter = MenuItem::with_id(app, items[1].0, items[1].1, true, None::<&str>)?;
+    let dock = MenuItem::with_id(app, items[2].0, items[2].1, true, None::<&str>)?;
+    let browser = MenuItem::with_id(app, items[3].0, items[3].1, true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Salir (apaga las alertas)", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &prompter, &dock, &browser, &sep, &quit])?;
@@ -804,42 +860,60 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.clone());
     }
-    tray.on_menu_event(|app, ev| match ev.id.as_ref() {
-        "open" => show_main(app),
-        "prompter" => {
-            let a = app.clone();
-            tauri::async_runtime::spawn(async move { let _ = open_prompter(a, None, Some(true)).await; });
-        }
-        "dock" => {
-            let a = app.clone();
-            tauri::async_runtime::spawn(async move { let _ = open_dock(a, Some(true)).await; });
-        }
-        "browser" => {
-            if !server_ready(app) { return; }
-            let url = format!("{}/", base_url(app.state::<Server>().port));
-            #[allow(deprecated)]
-            let _ = app.shell().open(url, None);
-        }
-        "quit" => app.exit(0),
-        _ => {}
-    })
+    tray.on_menu_event(|app, ev| dispatch_tray_action(app, ev.id.as_ref()))
     .on_tray_icon_event(|tray, ev| {
         if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = ev {
             show_main(tray.app_handle());
         }
     })
-    .build(app)?;
-    Ok(())
+    .build(app)
+}
+
+#[cfg(windows)]
+fn nexo_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_nexo::{AppInfo, MenuItem as NexoMenuItem, Options, QuitDecision};
+
+    let items = hub_menu_items().iter().map(|&(id, label)| NexoMenuItem {
+        id: id.into(),
+        label: label.into(),
+        enabled: true,
+        checked: None,
+    }).collect();
+    let options = Options::new(
+        AppInfo { id: "antena".into(), name: "Antena".into(), version: env!("CARGO_PKG_VERSION").into() },
+        build_tray,
+    )
+    .menu(items, dispatch_tray_action).expect("el menú de Nexo debe respetar los límites del protocolo")
+    .show(show_main)
+    .quit(
+        |app, _reason, reply| {
+            let server = app.try_state::<Server>().map(|server| (server.port, server.data.clone()));
+            // The protocol decision callback must return promptly; status_probe is bounded but blocking.
+            std::thread::spawn(move || {
+                let persistence = server.and_then(|(port, data)| persistence_at_server(port, &data));
+                let decision = match nexo_policy::quit_decision(persistence.as_ref()) {
+                    nexo_policy::QuitDecision::Accept => QuitDecision::Accept,
+                    nexo_policy::QuitDecision::Refuse(reason) => QuitDecision::Refuse(reason.into()),
+                };
+                reply.respond(decision);
+            });
+        },
+        |app| app.exit(0),
+    );
+    tauri_plugin_nexo::configured(options)
 }
 
 fn main() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // una sola instancia: abrir la app otra vez trae el panel al frente
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_shell::init())
         // actualizaciones firmadas desde GitHub Releases (Ajustes › Acerca de): las usan los comandos
         // update_check y update_install, solo desde la ventana principal (capability `updater`)
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    #[cfg(windows)]
+    let builder = builder.plugin(nexo_plugin());
+    let app = builder
         .manage(PendingUpdate::default())
         .setup(|app| {
             let app_data = app.path().app_data_dir()?;
@@ -858,6 +932,7 @@ fn main() {
                 .center()
                 .background_color(Color(0x12, 0x12, 0x14, 0xff))
                 .build()?;
+            #[cfg(not(windows))]
             build_tray(app.handle())?;
             let handle = app.handle().clone();
             match start_server(&handle) {
