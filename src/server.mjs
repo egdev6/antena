@@ -35,6 +35,12 @@ import { registerMeldRoutes } from './routes/meld.mjs';
 import { registerViewersRoutes } from './routes/viewers.mjs';
 import { registerThemeRoutes } from './routes/theme.mjs';
 import { registerConfigTransferRoutes } from './routes/config-transfer.mjs';
+import { registerAlertRoutes } from './routes/alerts.mjs';
+import { registerCommandRoutes } from './routes/commands.mjs';
+import { registerTimerRoutes } from './routes/timers.mjs';
+import { registerWidgetRoutes } from './routes/widgets.mjs';
+import { registerCreditsRoutes } from './routes/credits.mjs';
+import { setupAutoSession } from './auto-session.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
 import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
@@ -45,11 +51,10 @@ import { Teleprompter } from './teleprompter.mjs';
 import { CustomOverlays, CUSTOM_OVERLAY_ID, FRAME_CSP, shellHtml, frameHtml, publicOverlay } from './custom-overlays.mjs';
 import { httpError, id8, safePath, cleanName, freeName } from './http-util.mjs';
 import { Interactive } from './interactive.mjs';
-import { Timers, newTimer, alertFields, limitWarnings, TIMER_KEYS, TIMER_DESTINATIONS, DEFAULT_TIMER, ANNOUNCE_COLORS } from './timers.mjs';
-import { newCommand, normalizeTrigger } from './commands.mjs';
+import { Timers, TIMER_DESTINATIONS, DEFAULT_TIMER, ANNOUNCE_COLORS } from './timers.mjs';
 import {
   ALERT_TYPES, DEFAULT_ALERTS, LOOK_DEFAULTS, EXTRA_DEFAULTS, ALERT_FIELDS, DEFAULT_CONDITIONS, DEFAULT_COMMAND, SAMPLES,
-  buildAlert, buildCommandAlert, buildCustomAlert, mediaKind, alertConfig, youtubeAvatarUrl,
+  mediaKind, youtubeAvatarUrl,
 } from './alerts.mjs';
 
 const PUBLIC = path.join(ROOT, 'public');
@@ -493,214 +498,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   program.on('session', s => bus.send('meld', s, ['panel']));
   // S2/S12: el panel ve qué acción de chat falló (total o parcialmente) y en qué plataforma; los éxitos no se reenvían.
   engine.on('chatResult', r => { if (!r.ok) bus.send('chatResult', r, ['panel']); });
-  // Capturar antes de invocar startNew: sus listeners síncronos pueden iniciar el cierre.
-  const autoSessionWork = new Set();
-  let autoSessionClosed = false;
-  let autoSessionCaptured = [];
-  let autoSessionDrain = null;
-  const autoSessionLog = message => { try { log(message); } catch {} };
-  const beginAutoSessionDrain = () => {
-    if (autoSessionClosed) return;
-    autoSessionClosed = true;
-    autoSessionCaptured = [...autoSessionWork];
-  };
-  const drainAutoSession = () => {
-    if (autoSessionDrain) return autoSessionDrain;
-    beginAutoSessionDrain();
-    autoSessionDrain = Promise.allSettled(autoSessionCaptured).then(results => {
-      const failure = results.find(result => result.status === 'rejected');
-      if (failure) throw failure.reason;
-    });
-    return autoSessionDrain;
-  };
-  // Una desconexión de Meld no es por sí sola un fin: tras reconectar se contrastan
-  // las observaciones de cada plataforma con la sesión abierta.
-  let autoLive = false, pendingAutoStart = null, pendingAutoStartFrom = null, pendingAutoClose = null, pendingAutoCloseId = null, reconnectCheck = null, meldConnected = false, identityEpoch = 0;
-  youtube.identityEpoch = () => ({ epoch: identityEpoch, target: pendingAutoStart || session.data.id, requestedAt: process.hrtime.bigint() });
-  // YouTube no admite identidad en este sondeo: espera las identidades previas
-  // sin cambiar el contexto original con que Twitch decide su propia admisión.
-  viewers.identityEpoch = platform => {
-    const observation = youtube.identityEpoch();
-    if (platform === 'youtube') observation.target = pendingAutoStart || session.captureIdentity();
-    return observation;
-  };
-  viewers.identityEnabled = () => !!store.config.meld.autoSession && autoLive && !autoSessionClosed;
-  const trackAutoSession = (operation, success, failure) => {
-    let resolve, reject;
-    const work = new Promise((yes, no) => { resolve = yes; reject = no; });
-    autoSessionWork.add(work);
-    work.then(() => {
-      autoSessionWork.delete(work);
-      if (success) autoSessionLog(success);
-    }, () => {
-      autoSessionWork.delete(work);
-      if (failure) autoSessionLog(failure);
-    });
-    try { Promise.resolve(operation()).then(resolve, reject); }
-    catch (err) { reject(err); }
-    return work;
-  };
-  const startAutoSession = () => {
-    // Si el chat ya se escucha, confirmar solo después de crear la sesión nueva.
-    const { videoId, liveChatId } = youtube.status;
-    const listening = youtube.running && youtube.status.state === 'escuchando' && videoId && liveChatId;
-    const fromId = session.data.id;
-    autoLive = true; reconnectCheck = null; identityEpoch++;
-    const work = trackAutoSession(() => session.startNew('', { meldAuto: true }),
-      '[programa de emisión] directo en marcha: nueva sesión', '[programa de emisión] No se pudo iniciar la sesión automática.');
-    pendingAutoStart = work; pendingAutoStartFrom = fromId;
-    if (ownTwitchListening()) recordListener('twitch', {}, chatTarget());
-    work.then(() => { if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; } }, () => {
-      if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; autoLive = false; }
-    });
-    if (listening) trackAutoSession(() => work.then(started => {
-      if (!started || session.data.id !== started.id || !store.config.meld.autoSession || !autoLive) return;
-      return youtube.confirmListeningIdentity().then(() => {
-        if (youtube.status.polls > 0 && youtube.status.videoId === videoId && youtube.status.liveChatId === liveChatId)
-          recordListener('youtube', { videoId, liveChatId }, started.id);
-      });
-    }), null, '[youtube] No se pudo confirmar la identidad del directo.');
-    return work;
-  };
-  const checkReconnectedSession = () => {
-    // El checkpoint espera el corte y las identidades aceptadas antes de reconectar.
-    reconnectCheck = trackAutoSession(() => session.captureIdentity(), null, '[sesión] No se pudo comprobar la identidad.');
-  };
-  const recordIdentity = (platform, data, observation, discovery = true) => {
-    if (autoSessionClosed || !store.config.meld.autoSession || !observation?.target || !data) return;
-    const key = platform === 'youtube' ? 'videoId' : 'streamId';
-    if (typeof data[key] !== 'string' || !data[key]) return;
-    const target = observation.target, after = typeof target === 'string' ? null : target;
-    const reconnect = reconnectCheck, expectedId = after ? null : target;
-    let work;
-    const onRollover = () => {
-      // La sesión decide si cada petición anterior demuestra una identidad nueva.
-      identityEpoch++; reconnectCheck = null; pendingAutoStart = work; pendingAutoStartFrom = session.data.id;
-      if (ownTwitchListening()) recordListener('twitch', {}, chatTarget());
-      work.then(() => { if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; } }, () => {
-        if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; autoLive = false; }
-      });
-    };
-    work = trackAutoSession(() => session.recordPlatform(platform, data, after, {
-      reconnect, expectedId, requestedAt: observation.requestedAt, discovery, onRollover, enabled: () => !!store.config.meld.autoSession,
-    }), null, '[sesión] No se pudo registrar la identidad de la plataforma.');
-    return work;
-  };
-  // Cada resultado lleva la sesión capturada antes de iniciar su petición.
-  youtube.on('status', (st, observation, discovery) => { if (st.state === 'escuchando') recordIdentity('youtube', st, observation, discovery); });
-  viewers.on('streamIdentity', (identity, observation) => {
-    const admission = recordIdentity('twitch', identity, observation);
-    if (observation) observation.viewerAdmission = admission;
-  });
-  viewers.on('seriesObservation', (platform, sample, observation) => {
-    if (autoSessionClosed || !store.config.meld.autoSession || !autoLive || !observation?.target) return;
-    trackAutoSession(() => session.recordViewer(platform, sample, observation.target, observation.viewerAdmission,
-      () => !!store.config.meld.autoSession), null, '[sesión] No se pudo registrar la muestra de espectadores.');
-  });
-  // La contabilidad sigue admitiendo el poll ya aceptado hasta que sus productores
-  // cierren. El corte de identidad de Meld se sella antes y no sirve para ese drenaje.
-  let chatMetricsClosed = false, chatMetricsDrain = null, chatMetricsFailed = false;
-  const chatMetricsWork = new Set();
-  const chatTarget = () => pendingAutoStart || session.captureIdentity();
-  youtube.chatEpoch = () => ({ target: chatTarget() });
-  youtube.on('chat', (m, observation) => engine.handleChat(m, { ...observation, source: 'youtube', at: new Date().toISOString() }));
-  chat.on('message', m => engine.handleChat(m, { source: 'twitch', target: chatTarget(), at: new Date().toISOString() }));
-  const chatMetricError = () => {
-    chatMetricsFailed = true;
-    autoSessionLog('[sesión] No se pudieron registrar las métricas del chat.');
-  };
-  const trackChatMetrics = operation => {
-    let work;
-    try { work = operation(); } catch { chatMetricError(); return; }
-    chatMetricsWork.add(work);
-    work.then(() => chatMetricsWork.delete(work), () => { chatMetricsWork.delete(work); chatMetricError(); });
-  };
-  const ownTwitchListening = () => chat.status.state === 'conectado' && !!chat.channel
-    && chat.channel === String(twitch.status.user || '').toLowerCase();
-  const recordListener = (platform, observation, target) => {
-    if (chatMetricsClosed || !store.config.meld.autoSession || !autoLive || !target) return;
-    trackChatMetrics(() => session.recordChatListener(platform, observation, target, () => !!store.config.meld.autoSession));
-  };
-  chat.on('status', () => { if (ownTwitchListening()) recordListener('twitch', {}, chatTarget()); });
-  youtube.on('chatListening', observation => recordListener('youtube', observation, observation.target));
-  engine.on('chatMetric', (m, observation) => {
-    if (chatMetricsClosed || !store.config.meld.autoSession || !autoLive || observation.source !== m.platform || !observation.target || m.owner) return;
-    if (m.platform === 'twitch' && (!twitch.userId || m.roomId !== twitch.userId || m.authorId === twitch.userId)) return;
-    trackChatMetrics(() => session.recordChat(m.platform, { at: observation.at, authorId: m.authorId,
-      videoId: observation.videoId, liveChatId: observation.liveChatId }, observation.target, () => !!store.config.meld.autoSession));
-  });
-  const drainChatMetrics = () => {
-    if (chatMetricsDrain) return chatMetricsDrain;
-    chatMetricsClosed = true;
-    chatMetricsDrain = Promise.allSettled([...chatMetricsWork]).then(results => {
-      if (chatMetricsFailed || results.some(r => r.status === 'rejected')) throw new Error('No se pudieron completar las métricas del chat.');
-    });
-    return chatMetricsDrain;
-  };
-  const resetAutoSession = () => { autoLive = false; pendingAutoStart = null; pendingAutoStartFrom = null; reconnectCheck = null; identityEpoch++; };
-  const closeAutoSession = ({ expectedId } = {}) => {
-    const manual = expectedId !== undefined, epoch = identityEpoch;
-    // Meld's own stop keeps its existing immediate cut. A manual request cuts only
-    // after success, so an unsuccessful pre-cut flush cannot discard live metrics.
-    if (!manual) resetAutoSession();
-    const work = trackAutoSession(() => session.endCurrent(undefined, { expectedId }).then(closed => closed || structuredClone(session.data)), null, '[programa de emisión] No se pudo cerrar la sesión automática.');
-    pendingAutoClose = work; pendingAutoCloseId = expectedId ?? session.data.id;
-    const settle = () => {
-      // Do not roll back a newer start or a different session. An ended session must
-      // also be cut on a failed final checkpoint so the next Meld live can start.
-      if (manual && identityEpoch === epoch && session.data.id === expectedId && session.data.endedAt) resetAutoSession();
-      if (pendingAutoClose === work) { pendingAutoClose = null; pendingAutoCloseId = null; }
-    };
-    work.then(settle, settle);
-    return work;
-  };
-  const endSession = id => {
-    if (id !== undefined && (typeof id !== 'string' || !id)) throw httpError(400, 'Identificador de sesión no válido.');
-    const expectedId = id ?? session.data.id;
-    if (expectedId !== session.data.id) throw httpError(409, 'La sesión actual ha cambiado. Actualiza antes de terminar el directo.');
-    // Check and enqueue without an await: a live observation cannot slip between them.
-    if (program.status.state === 'conectado' && program.status.streaming)
-      throw httpError(409, 'No se puede terminar el directo mientras el programa de emisión está emitiendo.');
-    return closeAutoSession({ expectedId }).then(async closed => {
-      // An idempotent retry after a failed checkpoint must be durable before success.
-      if (session.lastSaveError) await session.flush();
-      // The checkpoint may have recovered in the background before this retry.
-      session._notifyFinalized(closed);
-      return closed;
-    });
-  };
-  program.on('streaming', live => {
-    if (!store.config.meld.autoSession || autoSessionClosed) return;
-    if (live) { startAutoSession(); return; }
-    closeAutoSession();
-  });
-  program.on('status', st => {
-    const connectedNow = st.state === 'conectado';
-    const reconnected = connectedNow && !meldConnected;
-    meldConnected = connectedNow;
-    if (!connectedNow || !store.config.meld.autoSession || autoSessionClosed) return;
-    if (st.streaming) {
-      // A manual end leaves accounting live until its cut succeeds. A confirmed new
-      // broadcast still queues its start behind that pending end, exactly once.
-      if (pendingAutoClose) {
-        // A pending start for the session being closed is not the next broadcast.
-        if (!pendingAutoStart || pendingAutoStartFrom !== pendingAutoCloseId) startAutoSession();
-        return;
-      }
-      if (autoLive) {
-        if (reconnected) checkReconnectedSession();
-        return;
-      }
-      autoLive = true;
-      // Si hay un fin aceptado pero aún no durable, el siguiente live va detrás de él.
-      if (pendingAutoClose || !session.data.meldAutoSession || session.data.endedAt) startAutoSession();
-      else {
-        identityEpoch++; checkReconnectedSession();
-        if (ownTwitchListening()) recordListener('twitch', {}, chatTarget());
-      }
-    } else if (!pendingAutoClose && (autoLive || (session.data.meldAutoSession && !session.data.endedAt))) {
-      closeAutoSession();
-    }
+  const { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, endSession } = setupAutoSession({
+    store, program, session, youtube, viewers, chat, twitch, engine, log,
   });
   // #73: al empezar el directo se conecta sola la lectura del chat de YouTube, también si
   // antena arranca con el directo ya en marcha (onInit no emite «streaming»).
@@ -724,29 +523,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     } catch { return []; }
   }
 
-  // ---------- helpers de edición ----------
-  const alertOf = type => {
-    if (!ALERT_TYPES[type]) throw httpError(404, `No existe la alerta «${type}». Tipos: ${Object.keys(ALERT_TYPES).join(', ')}`);
-    store.config.alerts[type] = { ...structuredClone(DEFAULT_ALERTS[type]), ...store.config.alerts[type] };
-    return store.config.alerts[type];
-  };
-  const variationOf = (type, id) => {
-    const a = alertOf(type);
-    const v = (a.variations ||= []).find(x => x.id === id || x.name?.toLowerCase() === String(id).toLowerCase());
-    if (!v) throw httpError(404, `La alerta «${type}» no tiene la variación «${id}»`);
-    return v;
-  };
-  const commandOf = id => {
-    const c = (store.config.commands ||= []).find(x => x.id === id || normalizeTrigger(x.trigger) === normalizeTrigger(id));
-    if (!c) throw httpError(404, `No existe el comando «${id}»`);
-    return c;
-  };
-  // overrides de una variación: null borra el campo (vuelve a heredar de la alerta)
-  const mergeOverrides = (cur = {}, patch = {}) => {
-    const out = { ...cur };
-    for (const [k, v] of Object.entries(patch)) { if (v === null) delete out[k]; else out[k] = v; }
-    return out;
-  };
+  // ---------- helpers de edición compartidos ----------
   const pick = (obj, allowed) => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => allowed.includes(k)));
   const ALERT_KEYS = Object.keys(ALERT_FIELDS);
   // Acciones de chat: sin destino siguen yendo a Twitch; un destino desconocido no se guarda.
@@ -757,15 +534,6 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }
   };
   const COMMAND_KEYS = [...ALERT_KEYS, 'trigger', 'permission', 'cooldownSec', 'userCooldownSec', 'platforms', 'outputMode', 'chatReply'];
-  const commandFields = body => {
-    const fields = pick(body, COMMAND_KEYS);
-    for (const key of ['outputMode', 'chatReply']) {
-      const [error] = validatePath(`commands.0.${key}`, fields[key]);
-      if (error) throw httpError(400, error.message);
-    }
-    checkActions(fields.actions);
-    return fields;
-  };
 
   // ---------- ocultado diferido de capas Meld ----------
   // El horario aceptado por POST /api/meld/layer no se toca: el temporizador original sigue
@@ -926,172 +694,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     await previous; try { return await fn(); } finally { release(); }
   };
 
-  // alertas
-  route('GET', '/api/alerts', async () => Object.fromEntries(Object.keys(ALERT_TYPES).map(t => [t, alertConfig(t, store.config)])));
-  route('GET', '/api/alerts/:type', async ({ type }) => ({ type, ...ALERT_TYPES[type], config: alertOf(type) }));
-  route('PUT', '/api/alerts/:type', async ({ type }, body) => {
-    const a = alertOf(type);
-    checkActions(body?.actions, ...(Array.isArray(body?.variations) ? body.variations.map(v => v?.overrides?.actions) : []));
-    Object.assign(a, pick(body, [...ALERT_KEYS, 'variations']));
-    await store.save('alerts');
-    return { type, config: a };
-  });
-  route('POST', '/api/alerts/:type/reset', async ({ type }) => {
-    alertOf(type);
-    store.config.alerts[type] = structuredClone(DEFAULT_ALERTS[type]);
-    await store.save('alerts');
-    return { config: store.publicConfig() };
-  });
-  route('POST', '/api/alerts/:type/variations', async ({ type }, body) => {
-    const a = alertOf(type);
-    checkActions(body.overrides?.actions);
-    const v = { id: id8(), name: body.name || `Variación ${(a.variations?.length || 0) + 1}`, enabled: body.enabled !== false,
-      conditions: { ...DEFAULT_CONDITIONS, ...(body.conditions || {}) }, overrides: pick(body.overrides, ALERT_KEYS) };
-    (a.variations ||= []).push(v);
-    await store.save('alerts');
-    return { type, variation: v };
-  });
-  route('PUT', '/api/alerts/:type/variations/:id', async ({ type, id }, body) => {
-    const v = variationOf(type, decodeURIComponent(id));
-    checkActions(body.overrides?.actions);
-    if (body.name !== undefined) v.name = String(body.name);
-    if (body.enabled !== undefined) v.enabled = !!body.enabled;
-    if (body.conditions) v.conditions = { ...DEFAULT_CONDITIONS, ...v.conditions, ...body.conditions };
-    if (body.overrides) v.overrides = mergeOverrides(v.overrides, pick(body.overrides, ALERT_KEYS));
-    await store.save('alerts');
-    return { type, variation: v };
-  });
-  route('DELETE', '/api/alerts/:type/variations/:id', async ({ type, id }) => {
-    const v = variationOf(type, decodeURIComponent(id));
-    const a = alertOf(type); a.variations = a.variations.filter(x => x !== v);
-    await store.save('alerts');
-    return { type, variations: a.variations };
-  });
-  route('POST', '/api/alerts/:type/variations-order', async ({ type }, { ids = [] }) => {
-    const a = alertOf(type);
-    const byId = new Map(a.variations.map(v => [v.id, v]));
-    a.variations = [...ids.map(i => byId.get(i)).filter(Boolean), ...a.variations.filter(v => !ids.includes(v.id))];
-    await store.save('alerts');
-    return { type, variations: a.variations };
-  });
-
-  // probar, alertas libres, cola
-  // `draft` (guardado manual del panel): la alerta, variación, comando o mensaje SIN guardar, solo para
-  // la vista previa. Se construye sobre una copia de la configuración; nada se guarda.
-  route('POST', '/api/test', async ({ type, vars, target = 'live', variationId, commandId, timerId, draft, globalCss }) => {
-    let a;
-    const useDraft = draft && typeof draft === 'object' && !Array.isArray(draft) && target === 'preview';
-    const cfg = useDraft ? structuredClone(store.config) : store.config;
-    if (timerId) a = { ...buildCustomAlert(alertFields(useDraft ? { ...timerOf(timerId), ...draft } : timerOf(timerId)), { ...timers.vars(), ...(vars || {}) }, cfg), test: true };
-    else if (commandId) {
-      const command = useDraft ? { ...commandOf(commandId), ...draft } : commandOf(commandId);
-      if (command.outputMode === 'chat') throw httpError(400, 'Los comandos de solo chat se prueban desde el simulador del chat.');
-      a = buildCommandAlert(command, { ...SAMPLES.command, ...(vars || {}) }, cfg, { test: true });
-    }
-    else {
-      if (!ALERT_TYPES[type]) throw httpError(400, 'Tipo desconocido');
-      if (useDraft && !variationId) cfg.alerts[type] = { ...cfg.alerts[type], ...draft };
-      if (useDraft && variationId) cfg.alerts[type] = { ...cfg.alerts[type], variations: (cfg.alerts[type]?.variations || []).map(x => (x.id === variationId ? { ...x, ...draft } : x)) };
-      const v = variationId ? (cfg.alerts[type]?.variations || []).find(x => x.id === variationId) || variationOf(type, variationId) : null;
-      const sample = { ...SAMPLES[type], ...(v ? conditionSample(v.conditions) : {}), ...(vars || {}) };
-      a = buildAlert(type, sample, cfg, { test: true, variationId: v?.id });
-    }
-    // vista previa con el CSS común sin guardar (borrador del panel)
-    if (target === 'preview' && typeof globalCss === 'string' && a) a.globalCss = globalCss;
-    engine.deliver(a, { target: target === 'preview' ? 'preview' : 'live' });
-    return { ok: true, overlays: bus.overlayCount(), alert: summary(a) };
-  });
-  // miniatura de una alerta en el panel (/overlay?still=<tipo>): la alerta de ejemplo tal y como saldría
-  // con la configuración y el tema guardados, sin entregarla a nadie
-  route('GET', '/api/alerts/:type/sample', async ({ type }) => {
-    if (!ALERT_TYPES[type]) throw httpError(404, 'Tipo desconocido');
-    return { alert: buildAlert(type, { ...SAMPLES[type] }, store.config, { test: true }), theme: publicTheme(store.config.theme) };
-  });
-  route('POST', '/api/simulate', async ({ type, vars = {} }) => {
-    if (!ALERT_TYPES[type]) throw httpError(400, 'Tipo desconocido');
-    const a = engine.handleEvent({ externalId: 'sim:' + id8(), type, vars: { ...SAMPLES[type], ...vars } });
-    return { ok: !!a, alert: a ? summary(a) : null, note: a ? undefined : 'No ha generado alerta (desactivada, bajo el mínimo o usuario bloqueado).' };
-  });
-  route('POST', '/api/alert/custom', async ({ vars, ...fields }) => ({ alert: summary(engine.custom(fields, vars)) }));
-  route('POST', '/api/replay', async ({ id }) => {
-    const a = bus.history.find(h => h.id === id);
-    if (!a) throw httpError(404, 'No está en el historial');
-    engine.send({ ...a, replay: true, id: a.id + ':' + Date.now() });
-    return { ok: true };
-  });
-  route('GET', '/api/history', async () => bus.history.slice(0, 100).map(summary));
-  route('POST', '/api/skip', async () => { bus.send('control', { action: 'skip' }, ['overlay']); return { ok: true }; });
-  route('POST', '/api/clear', async () => { bus.send('control', { action: 'clear' }, ['overlay']); return { ok: true }; });
-  route('POST', '/api/pause', async () => { await engine.pause(); return engine.pauseState(); });
-  route('POST', '/api/resume', async ({ discard } = {}) => ({ ...(await engine.resume({ discard })), ...engine.pauseState() }));
-  route('POST', '/api/say', async ({ text, ...opts }) => { if (!text) throw httpError(400, 'Falta «text»'); return engine.say(text, opts); });
-  route('POST', '/api/overlay/shown', async ({ id }) => {
-    // Tras el await del cuerpo y en la MISMA continuación síncrona: solo el id de una generación
-    // pendiente genuina inicia acciones; desconocido/stale/no pendiente recibe el 503 constante.
-    if (!ackAdmits(id)) throw httpError(503, CLOSING_MESSAGE);
-    engine.alertShown(id);
-    return { ok: true };
-  });
-
-  // comandos de chat
-  route('GET', '/api/commands', async () => store.config.commands || []);
-  route('POST', '/api/commands', async body => {
-    const c = newCommand(commandFields(body));
-    if ((store.config.commands || []).some(x => normalizeTrigger(x.trigger) === c.trigger)) throw httpError(409, `Ya existe el comando ${c.trigger}`);
-    (store.config.commands ||= []).push(c);
-    await store.save('commands');
-    return { command: c };
-  });
-  route('PUT', '/api/commands/:id', async ({ id }, body) => {
-    const c = commandOf(decodeURIComponent(id));
-    Object.assign(c, commandFields(body));
-    if (body.trigger) c.trigger = normalizeTrigger(body.trigger);
-    await store.save('commands');
-    return { command: c };
-  });
-  route('DELETE', '/api/commands/:id', async ({ id }) => {
-    const c = commandOf(decodeURIComponent(id));
-    store.config.commands = store.config.commands.filter(x => x !== c);
-    await store.save('commands');
-    return { commands: store.config.commands };
-  });
-
-  // mensajes programados
-  const timerOf = id => {
-    const t = (store.config.timers ||= []).find(x => x.id === id || x.name?.toLowerCase() === String(id).toLowerCase());
-    if (!t) throw httpError(404, `No existe el mensaje programado «${id}»`);
-    return t;
-  };
-  const TIMER_FIELDS = [...COMMAND_KEYS.filter(k => !['trigger', 'permission', 'cooldownSec', 'userCooldownSec', 'platforms', 'outputMode', 'chatReply'].includes(k)), ...TIMER_KEYS];
-  // Ausente = Twitch; cualquier otro valor se rechaza sin guardar nada.
-  const timerFields = body => {
-    const fields = pick(body, TIMER_FIELDS);
-    if ('destination' in fields && !TIMER_DESTINATIONS.includes(fields.destination)) throw httpError(400, 'Destino de mensaje no válido. Usa twitch, youtube o both.');
-    checkActions(fields.actions);
-    return fields;
-  };
-  route('GET', '/api/timers', async () => timers.snapshot());
-  route('POST', '/api/timers', async body => {
-    const t = newTimer(timerFields(body));
-    (store.config.timers ||= []).push(t);
-    await store.save('timers');
-    return { timer: t, warnings: limitWarnings(t) };
-  });
-  route('PUT', '/api/timers/:id', async ({ id }, body) => {
-    const t = timerOf(decodeURIComponent(id));
-    Object.assign(t, timerFields(body));
-    if (body.intervalMin !== undefined) timers.reset(t.id);
-    await store.save('timers');
-    return { timer: t, warnings: limitWarnings(t) };
-  });
-  route('DELETE', '/api/timers/:id', async ({ id }) => {
-    const t = timerOf(decodeURIComponent(id));
-    store.config.timers = store.config.timers.filter(x => x !== t);
-    timers.reset(t.id);
-    await store.save('timers');
-    return { timers: store.config.timers };
-  });
-  route('POST', '/api/timers/:id/fire', async ({ id }) => timers.fire(timerOf(decodeURIComponent(id)).id));
+  // Deferred lookups keep previews and ACK admission bound to the same instances,
+  // while each group registers at its original position in the route table.
+  registerAlertRoutes({ route, store, engine, bus, timers, checkActions, pick, ALERT_KEYS,
+    commandOf: id => commandOf(id), timerOf: id => timerOf(id), ackAdmits: id => ackAdmits(id), CLOSING_MESSAGE });
+  const commandOf = registerCommandRoutes({ route, store, checkActions, pick, COMMAND_KEYS });
+  const timerOf = registerTimerRoutes({ route, store, timers, checkActions, pick, COMMAND_KEYS });
 
   // ---------- interactivos, chat y Meld: módulos propios (patrón de rutas por áreas, #71/#107/#119) ----------
   // Registra /api/chat* (anuncios incluidos), los interactivos (preguntas, tier lists,
@@ -1118,33 +726,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // chat
 
   // widgets y objetivos
-  route('GET', '/api/widgets', async () => engine.widgetState());
-  route('PUT', '/api/widgets', async body => {
-    const patch = { ...body }; delete patch.goals;
-    // Solo el campo nuevo se valida aquí: el resto del merge legacy no cambia.
-    if (patch.chat && Object.hasOwn(patch.chat, 'layout')) {
-      const [error] = validatePath('widgets.chat.layout', patch.chat.layout ?? false);
-      if (error) throw httpError(400, error.message);
-    }
-    if (Object.hasOwn(patch, 'thanks')) {
-      const [error] = validatePath('widgets.thanks', patch.thanks);
-      if (error) throw httpError(400, error.message);
-    }
-    if (Object.hasOwn(patch, 'chatVariants')) {
-      const [error] = validateChatVariantsTransition(store.config.widgets?.chatVariants, patch.chatVariants, store.config.widgets?.chat);
-      if (error) throw httpError(400, error.message);
-    }
-    store.config.widgets = deepMerge(store.config.widgets, patch);
-    if (Array.isArray(body.goals)) store.config.widgets.goals = body.goals;
-    await store.save('widgets');
-    return { widgets: store.config.widgets };
-  });
+  registerWidgetRoutes({ route, store, engine });
   // widgets y objetivos (#128: rutas de cajas/barras en módulo propio, mismo punto y orden)
   registerChatVariantsRoutes({ route, store });
   registerGoalsRoutes({ route, store, session, id8 });
   registerFollowersRoutes({ route, followers, thanksSelection });
-  route('POST', '/api/credits/play', async () => { bus.send('credits', { action: 'play' }, ['widget']); return { ok: true }; });
-  route('POST', '/api/credits/stop', async () => { bus.send('credits', { action: 'stop' }, ['widget']); return { ok: true }; });
+  registerCreditsRoutes({ route, bus });
 
   // ---------- sesión y cronología: módulo propio (patrón de rutas por áreas, #71/#107) ----------
   // Registra /api/session*, /api/sessions, /api/timeline* y /api/markers. Los patrones
@@ -1599,21 +1186,6 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const app = { server, store, bus, twitch, youtube, chat, meld, program, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
   return app;
 }
-
-/** Datos de ejemplo que cumplen las condiciones de una variación (para probarla). */
-function conditionSample(c = {}) {
-  const out = {};
-  const n = v => (v === '' || v == null ? null : Number(v));
-  if (n(c.minAmount) !== null) out.amount = n(c.minAmount);
-  else if (n(c.maxAmount) !== null) out.amount = n(c.maxAmount);
-  if (out.amount !== undefined) out.amountText = out.amount + ' €';
-  if (n(c.tier) !== null) out.tier = n(c.tier);
-  const u = String(c.users || '').split(',')[0].trim(); if (u) out.user = u;
-  const w = String(c.messageContains || '').split(',')[0].trim(); if (w) out.message = `mensaje con ${w}`;
-  return out;
-}
-
-const summary = a => a && ({ id: a.id, type: a.type, title: a.title, text: a.text, sub: a.sub, variation: a.variation, layout: a.look?.layout, at: a.at, tts: a.tts?.text || null, actions: a.actions?.length || 0 });
 
 // Archivos estáticos con soporte de Range (los vídeos lo necesitan para leer la duración y saltar).
 async function serveFile(req, res, dir, rel) {
