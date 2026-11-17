@@ -165,7 +165,7 @@ function mcp(t, url) {
 const tools = [
   ['estado', '', {}, undefined],
   ['conectar', '/connect', { url: 'ws://127.0.0.1:13376' }, { url: 'ws://127.0.0.1:13376' }],
-  ['desconectar', '/disconnect', {}, {}],
+  ['desconectar', '/disconnect', { confirmar: true }, {}],
   ['escena', '/scene', { escena: 'Pantalla' }, { scene: 'Pantalla' }],
   ['capa', '/layer', { escena: 'Cámara', capa: 'Alertas', visible: true, segundos: 3 }, { scene: 'Cámara', layer: 'Alertas', visible: true, seconds: 3 }],
   ['efecto', '/effect', { escena: 'Cámara', capa: 'Alertas', efecto: 'Brillo' }, { scene: 'Cámara', layer: 'Alertas', effect: 'Brillo' }],
@@ -174,7 +174,7 @@ const tools = [
   ['audio', '/track', { pista: 'Micro', accion: 'gain', ganancia: 0.25 }, { track: 'Micro', action: 'gain', gain: 0.25 }],
   ['media', '/media', { capa: 'Alertas', accion: 'play' }, { layer: 'Alertas', command: 'play' }],
   ['propiedad', '/property', { id: 'l1', propiedad: 'opacity', valor: 0.75 }, { id: 'l1', property: 'opacity', value: 0.75 }],
-  ['llamar', '/call', { metodo: 'sendCommand', args: ['meld.recordClip'] }, { method: 'sendCommand', args: ['meld.recordClip'] }],
+  ['llamar', '/call', { metodo: 'sendCommand', args: ['meld.recordClip'], confirmar: true }, { method: 'sendCommand', args: ['meld.recordClip'] }],
 ];
 
 test('MCP: metadata snapshot and every pair uses its route', { timeout: 30000 }, async t => {
@@ -194,8 +194,16 @@ test('MCP: metadata snapshot and every pair uses its route', { timeout: 30000 },
   const legacy = tools.map(([name]) => list.find(tool => tool.name === `meld_${name}`));
   await t.test('base metadata snapshot', () => {
     assert.ok(legacy.every(Boolean));
-    // Names, updated descriptions and schemas remain byte-stable.
-    assert.equal(createHash('sha256').update(JSON.stringify(legacy)).digest('hex'), 'df6da1cfe96383a1f268630e0bd2c22080e13a144c6bc51437930a84235ba0b2');
+    // Keep the original snapshot for all pre-existing metadata; the security test
+    // separately checks the newly added confirmation fields and annotations.
+    const originalMetadata = legacy.map(({ annotations, ...tool }) => {
+      void annotations;
+      if (!['meld_desconectar', 'meld_comando', 'meld_llamar'].includes(tool.name)) return tool;
+      const { confirmar, ...properties } = tool.inputSchema.properties;
+      void confirmar;
+      return { ...tool, inputSchema: { ...tool.inputSchema, properties, required: tool.inputSchema.required.filter(key => key !== 'confirmar') } };
+    });
+    assert.equal(createHash('sha256').update(JSON.stringify(originalMetadata)).digest('hex'), 'df6da1cfe96383a1f268630e0bd2c22080e13a144c6bc51437930a84235ba0b2');
   });
   for (const [name, suffix, args, body] of tools) await t.test(name, async () => {
     const old = list.find(tool => tool.name === `meld_${name}`), generic = list.find(tool => tool.name === `programa_${name}`);

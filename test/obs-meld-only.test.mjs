@@ -199,8 +199,9 @@ test('S3: real MCP program and Meld aliases surface the same OBS error', async t
   await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
   const before = await f.snapshot();
   for (const prefix of ['programa', 'meld']) for (const [name, args] of [
-    ['evento', { evento: 'CONFETTIPOP_TRIGGER' }], ['comando', { comando: 'meld.recordClip' }],
-    ['propiedad', { id: 'l1', propiedad: 'x', valor: 1 }], ['llamar', { metodo: 'setStagedScene', args: ['s1'] }],
+    // #250: recordClip and raw calls need confirmar:true; with it, OBS still answers its Meld-only error.
+    ['evento', { evento: 'CONFETTIPOP_TRIGGER' }], ['comando', { comando: 'meld.recordClip', confirmar: true }],
+    ['propiedad', { id: 'l1', propiedad: 'x', valor: 1 }], ['llamar', { metodo: 'setStagedScene', args: ['s1'], confirmar: true }],
   ]) {
     const response = await rpc('tools/call', { name: `${prefix}_${name}`, arguments: args });
     assert.deepEqual(response.result, { content: [{ type: 'text', text: `Error: ${MESSAGE}` }], isError: true });
