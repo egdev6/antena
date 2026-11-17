@@ -17,9 +17,27 @@ Preserve Node >=24, the current ESM/vanilla stack and zero runtime dependencies.
 Keep relevant tests and documentation with each reviewable change.
 Use test-first development when a meaningful deterministic test applies;
 for passive documentation/configuration, record structural checks without fake RED.
-Declared checks are `pnpm test` and `pnpm baseline`; record what actually ran.
-Baseline CI covers Linux/Windows with Node 24 and browser checks, with its
-existing skip policy. New security checks do not replace this functional matrix.
+Declared checks include `pnpm test` (the full suite) and `pnpm baseline` (the
+full TAP/JSON/coverage baseline); record what actually ran. Tests are assigned
+exactly once in `test/groups.json`. Update that manifest when adding, moving or
+removing a `test/*.test.mjs` file; `test/test-groups.test.mjs` checks it.
+
+- `pnpm test:unit`: fast unit and route tests, without a browser.
+- `pnpm test:browser`: Chrome/CDP UI and widget tests.
+- `pnpm test:platform`: Windows-sensitive paths, ACLs, file modes, processes,
+  shutdown, identity, release/workflow scripts and Chrome launching. Some of
+  these tests also launch Chrome because platform coverage takes precedence.
+
+`pnpm baseline --group platform` runs the same TAP/JSON/coverage pipeline on a
+subset; the other group names work too. Baseline CI runs the full suite on
+Ubuntu and the `platform` group on Windows, with Node 24 on both. Both jobs
+retain the existing browser-regression and skip gates. New security checks do not
+replace this functional matrix.
+
+To opt in to the dependency-free pre-push hook, run `pnpm hooks:install`; it sets
+`core.hooksPath` to `.githooks` and runs `pnpm test:unit` before a push. It is not
+installed by `pnpm install`. Git has `--no-verify`; CI still runs independently.
+
 Baseline (Linux and Windows; Windows is required since #83), Rust (`cargo test` of the
 desktop app on Windows), Code safety (Semgrep and zizmor) and Secrets scan (gitleaks) run on
 every pull request and on every push to main.
