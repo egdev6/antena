@@ -146,7 +146,7 @@ function ConfigTransfer() {
   };
   return <Panel title="Copia de la configuración">
     <p className="hint">Exporta la configuración guardada y los medios, o importa una copia después de revisar los cambios.</p>
-    <label><input type="checkbox" aria-label="Incluir directos pasados" checked={includeSessions} disabled={exporting} onChange={e => setIncludeSessions(e.target.checked)} /> Incluir directos pasados</label>
+    <Switch checked={includeSessions} disabled={exporting} onChange={setIncludeSessions}>Incluir directos pasados</Switch>
     <p className="hint">Incluye nombres y mensajes de tu chat.</p>
     <div className="row mt">
       <button type="button" className="eg-btn eg-btn--secondary" disabled={exporting} onClick={() => void exportConfig()}>Exportar configuración</button>

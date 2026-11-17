@@ -129,8 +129,8 @@ test('selector experimental guarda la elección y restaura la tarjeta y conexió
   assert.equal((await api('GET', '/api/config')).program.kind, 'meld');
   await input('#obs-url', obsUrl); await save();
   assert.equal((await api('GET', '/api/config')).program.kind, 'obs');
-  await wait(page, `!!(${card('OBS')}) && /Contraseña de OBS incorrecta\./.test((${card('OBS')}).textContent)`);
-  assert.match(await dom(page, `(${card('OBS')}).textContent`), /Error/);
+  await wait(page, `!!(${card('OBS Studio')}) && /Contraseña de OBS incorrecta\./.test((${card('OBS Studio')}).textContent)`);
+  assert.match(await dom(page, `(${card('OBS Studio')}).textContent`), /Error/);
   assert.equal(await dom(page, `!!(${card('Meld Studio')})`), false);
   await choose('Meld'); await save();
   assert.equal((await api('GET', '/api/config')).program.kind, 'meld');
@@ -146,7 +146,7 @@ test('al volver de OBS inaccesible Meld no muestra el error anterior', { timeout
   await api('PUT', '/api/config', { meld: { enabled: false } });
   await choose('OBS'); await wait(page, `!!document.querySelector('#obs-url')`);
   await input('#obs-url', 'ws://127.0.0.1:1'); await save();
-  await wait(page, `!!(${card('OBS')}) && /No se puede conectar con OBS/.test((${card('OBS')}).textContent)`);
+  await wait(page, `!!(${card('OBS Studio')}) && /No se puede conectar con OBS/.test((${card('OBS Studio')}).textContent)`);
   await choose('Meld'); await save();
   await wait(page, `!!(${card('Meld Studio')})`);
   const status = await api('GET', '/api/status');
@@ -177,7 +177,7 @@ test('URL inválida muestra el 400 exacto y no guarda ni programa ni contraseña
   // The previously stored value, not merely the masked indicator, still authenticates.
   await choose('OBS'); await wait(page, `!!document.querySelector('#obs-url')`);
   await input('#obs-url', obsUrl); await save();
-  await wait(page, `!!(${card('OBS')}) && /Conectado/i.test((${card('OBS')}).textContent)`);
+  await wait(page, `!!(${card('OBS Studio')}) && /Conectado/i.test((${card('OBS Studio')}).textContent)`);
 });
 
 test('contraseña es de solo escritura, se puede cambiar y borrar sin filtrarla', { timeout: 60000 }, async t => {
@@ -197,18 +197,18 @@ test('contraseña es de solo escritura, se puede cambiar y borrar sin filtrarla'
   await input('#obs-url', obsUrl); await input('#obs-password', password);
   await assertNoLeaks();
   await save();
-  await wait(page, `!!(${card('OBS')}) && /Conectado/i.test((${card('OBS')}).textContent)`);
+  await wait(page, `!!(${card('OBS Studio')}) && /Conectado/i.test((${card('OBS Studio')}).textContent)`);
   assert.equal((await api('GET', '/api/config')).obs.passwordSet, true);
   assert.equal(await dom(page, `document.querySelector('#obs-password').value`), '');
   assert.match(await dom(page, `document.querySelector('#programa-emision').textContent`), /Contraseña guardada/);
   await input('#obs-password', wrong); await assertNoLeaks(); await save();
-  await wait(page, `/Contraseña de OBS incorrecta\./.test((${card('OBS')}).textContent)`);
+  await wait(page, `/Contraseña de OBS incorrecta\./.test((${card('OBS Studio')}).textContent)`);
   assert.equal(await dom(page, `document.querySelector('#obs-password').value`), '');
   await input('#obs-password', password); await assertNoLeaks(); await save();
-  await wait(page, `/Conectado/i.test((${card('OBS')}).textContent)`);
+  await wait(page, `/Conectado/i.test((${card('OBS Studio')}).textContent)`);
   await clickWhen(page.cdp, `Array.from(document.querySelectorAll('#programa-emision button')).find(b => b.textContent.trim() === 'Quitar contraseña')`);
   await save();
-  await wait(page, `/Contraseña de OBS incorrecta\./.test((${card('OBS')}).textContent)`);
+  await wait(page, `/Contraseña de OBS incorrecta\./.test((${card('OBS Studio')}).textContent)`);
   assert.equal((await api('GET', '/api/config')).obs.passwordSet, false);
   assert.equal(await dom(page, `document.querySelector('#obs-password').value`), '');
   assert.doesNotMatch(await dom(page, `document.querySelector('#programa-emision').textContent`), /Contraseña guardada/);
@@ -234,7 +234,7 @@ test('vaciar el campo no cambia la contraseña; solo Quitar contraseña la borra
   await api('PUT', '/api/config', { obs: { password } });
   await choose('OBS'); await wait(page, `!!document.querySelector('#obs-password')`);
   await input('#obs-url', obsUrl); await save();
-  await wait(page, `!!(${card('OBS')}) && /Conectado/i.test((${card('OBS')}).textContent)`);
+  await wait(page, `!!(${card('OBS Studio')}) && /Conectado/i.test((${card('OBS Studio')}).textContent)`);
   await input('#obs-password', 'x'); await input('#obs-password', '');
   const before = await dom(page, `window.__requests.length`);
   await save();
@@ -291,9 +291,12 @@ test('el estado corresponde al programa activo aunque se edite durante un guarda
   await wait(page, `window.__saveHeld === true`);
   assert.equal((await api('GET', '/api/config')).program.kind, 'obs');
   await choose('Meld');
-  assert.equal(await dom(page, `!!(${card('Meld Studio')})`), false);
+  assert.equal(await dom(page, `!!(${card('Meld Studio')})`), true);
+  assert.equal(await dom(page, `(${card('Meld Studio')}).querySelector('button').disabled`), true);
   await dom(page, `window.__releaseSave()`);
-  await wait(page, `!!(${card('OBS')}) && /Contraseña de OBS incorrecta/.test((${card('OBS')}).textContent)`);
+  await wait(page, `!!(${card('Meld Studio')}) && (${card('Meld Studio')}).querySelector('button').disabled`);
+  assert.equal((await api('GET', '/api/status')).program.kind, 'obs');
+  assert.doesNotMatch(await dom(page, `(${card('Meld Studio')}).textContent`), /Contraseña de OBS incorrecta/);
   assert.equal(await dom(page, `${radio('Meld')}.getAttribute('aria-checked')`), 'true');
   // Restore the observer so a second save can complete.
   await dom(page, `window.fetch = window.__unheldFetch`);
@@ -307,7 +310,7 @@ test('un cambio de programa desde otra interfaz actualiza el selector y el estad
   const { page, api, obsUrl } = f;
   await wait(page, `!!${radio('Meld')}`);
   await api('PUT', '/api/config', { program: { kind: 'obs' }, obs: { url: obsUrl, password } });
-  await wait(page, `!!(${card('OBS')}) && /Conectado/i.test((${card('OBS')}).textContent)`);
+  await wait(page, `!!(${card('OBS Studio')}) && /Conectado/i.test((${card('OBS Studio')}).textContent)`);
   await wait(page, `${radio('OBS')}.getAttribute('aria-checked') === 'true' && !!document.querySelector('#obs-password')`);
   assert.equal(await dom(page, `document.querySelector('#obs-password').value`), '');
   assert.match(await dom(page, `document.querySelector('#programa-emision').textContent`), /Contraseña guardada/);
@@ -341,11 +344,11 @@ test('descartar mantiene el programa y la contraseña guardados', { timeout: 600
   await wait(page, `!!${radio('OBS')}`); await choose('OBS');
   await wait(page, `!!document.querySelector('#obs-password')`);
   await input('#obs-url', obsUrl); await input('#obs-password', password); await save();
-  await wait(page, `/Conectado/i.test((${card('OBS')}).textContent)`);
+  await wait(page, `/Conectado/i.test((${card('OBS Studio')}).textContent)`);
   await input('#obs-password', wrong);
   await clickWhen(page.cdp, saveButton('Descartar'));
   await wait(page, `document.querySelector('#obs-password').value === '' && !document.querySelector('.lv-savebar.is-open')`);
   assert.equal((await api('GET', '/api/config')).obs.passwordSet, true);
   assert.match(await dom(page, `document.querySelector('#programa-emision').textContent`), /Contraseña guardada/);
-  assert.match(await dom(page, `(${card('OBS')}).textContent`), /Conectado/i);
+  assert.match(await dom(page, `(${card('OBS Studio')}).textContent`), /Conectado/i);
 });

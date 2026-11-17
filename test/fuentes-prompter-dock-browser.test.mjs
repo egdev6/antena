@@ -26,7 +26,7 @@ test('Fuentes para Meld lists the layers without tabs', { timeout: 60000 }, asyn
   let chrome;
   try {
     chrome = await openChromePage(ctx.bin, `${ctx.base}/#/fuentes`);
-    await waitDom(chrome.cdp, `document.querySelector('main h1')?.textContent.trim() === 'Fuentes del programa de emisión' && !!document.querySelector('main .lv-list tbody tr')`, { timeoutMs: 15000 });
+    await waitDom(chrome.cdp, `document.querySelector('main h1')?.textContent.trim() === 'Fuentes' && !!document.querySelector('main .lv-list tbody tr')`, { timeoutMs: 15000 });
     assert.equal(await dom(chrome, `document.querySelectorAll('main [role=tab]').length`), 0, 'no tabs');
     const text = await dom(chrome, `document.querySelector('main').textContent`);
     assert.match(text, /Alertas/);

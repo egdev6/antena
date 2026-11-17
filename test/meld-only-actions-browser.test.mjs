@@ -196,7 +196,7 @@ test('OBS: aviso y botones Meld inactivos; la grabación sigue funcionando', { t
   const f = await fixture(t); if (!f) return;
   await dom(f.page, `location.hash = '#/meld/escenas'`);
   await wait(f.page, `!!${button('Guardar clip y marcar')} && !!${button('Grabar')}`);
-  assert.match(await dom(f.page, `document.querySelector('main').textContent`), /Estás usando OBS\. Esta página es solo para Meld\./);
+  assert.match(await dom(f.page, `document.querySelector('main').textContent`), /Estás usando OBS\. Los efectos, clips y capturas de esta sección solo funcionan con Meld\./);
   await dom(f.page, `(() => { const original = window.fetch; window.__posts = []; window.fetch = (...args) => { if (args[1]?.method === 'POST') window.__posts.push([String(args[0]), args[1].body]); return original(...args); }; })()`);
   for (const name of meldButtons) {
     assert.equal(await dom(f.page, `${button(name)}.disabled`), true, name);

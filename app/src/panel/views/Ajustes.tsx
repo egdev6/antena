@@ -20,7 +20,8 @@ export function Meld({ parts }: { parts: string[] }) {
   useManualSave();
   const [tab, setTab] = usePageTab(parts, 'meld', ['escenas', 'capas', 'audio', 'conexion']);
   const st = useLive(s => s.status.meld || {});
-  const obs = useLive(s => s.config.program?.kind === 'obs');
+  const obs = useLive(s => (s.status.program?.kind ?? s.config.program?.kind) === 'obs');
+  const obsUrl = useLive(s => s.config.obs?.url || 'ws://127.0.0.1:4455');
   const m = useLive(s => s.config.meld || {});
   const ses = useLive(s => s.meld?.session || { scenes: [], tracks: [] });
   const [url, setUrl] = useState(m.url || '');
@@ -30,7 +31,12 @@ export function Meld({ parts }: { parts: string[] }) {
   const current = ses.scenes.find(x => x.current) || ses.scenes[0];
   const scenes = groupMeldScenes(ses.scenes);
   const mic = ses.tracks.find(t => /mic/i.test(t.name));
-  const connection = <Sec title="Conexión" id="h-con" tour="meld-connection">
+  const connection = obs ? <Sec title="Opciones del directo" id="h-con" tour="meld-connection">
+    <Switch checked={!!m.autoSession} onChange={x => live.patchConfig({ meld: { autoSession: x } })}>Empezar un directo nuevo en el panel al empezar a emitir</Switch>
+    <Switch checked={!!m.recordOnStart} onChange={x => live.patchConfig({ meld: { recordOnStart: x } })}>Grabar al empezar el directo</Switch>
+    <p className="hint">Solo al iniciar desde antena y cuando el programa de emisión confirme la emisión. Si ya estabas grabando, antena no toca esa grabación.</p>
+    <p className="hint">Configura la conexión de OBS en <a href="#/conexiones">Conexiones</a>.</p>
+  </Sec> : <Sec title="Conexión" id="h-con" tour="meld-connection">
     <ol className="steps"><li>En Meld: <b>Ajustes › Avanzado › Allow remote connections</b>.</li><li>Pulsa <b>Conectar</b>. Se reconecta solo si cierras Meld.</li></ol>
     <div className="row2"><label>Dirección <input value={url} onChange={e => setUrl(e.target.value)} className="mono" /></label>
       <Switch checked={!!m.autoSession} onChange={x => live.patchConfig({ meld: { autoSession: x } })}>Empezar un directo nuevo en el panel al empezar a emitir</Switch></div>
@@ -40,15 +46,14 @@ export function Meld({ parts }: { parts: string[] }) {
     <div className="row tight"><button className="eg-btn eg-btn--primary eg-btn--sm" onClick={guard(async () => { await saveAll(); await post('/api/meld/connect', { url: url.trim() }); }, 'Conectando con Meld…')}>{on ? 'Guardar y reconectar' : 'Guardar y conectar'}</button><button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/meld/disconnect'))}>Desconectar</button></div>
   </Sec>;
   return <>
-    {obs && <p className="hint" role="status">Estás usando OBS. Esta página es solo para Meld.</p>}
-    <PageHead tour="meld-head" crumb="Producción" title="Meld Studio" desc="Cambia de escena, muestra capas y lanza efectos desde las alertas, el panel, los atajos o el MCP."
+    <PageHead tour="meld-head" crumb="Producción" title="Programa de emisión" desc={obs ? 'Controla las escenas, el audio y la grabación del programa de emisión.' : 'Cambia de escena, muestra capas y lanza efectos desde las alertas, el panel, los atajos o el MCP.'}
       tabs={[{ id: 'escenas', label: 'Escenas', count: scenes.length }, { id: 'capas', label: 'Capas' }, { id: 'audio', label: 'Audio', count: ses.tracks.length }, { id: 'conexion', label: 'Conexión', warn: !on }]} tab={on ? tab : 'conexion'} onTab={setTab}
       actions={<>
-        {on ? <Status tone="success" icon={IC.check}>Conectado · {m.url || 'ws://127.0.0.1:13376'}</Status> : <Status tone={st.state === 'error' ? 'danger' : 'neutral'} icon={IC.plug}>{st.state || 'Sin conectar'}</Status>}
-        <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { await saveAll(); await post('/api/meld/connect', { url: (url || m.url || '').trim() }); }, 'Conectando con Meld…')}>{on ? 'Reconectar' : 'Conectar'}</button>
+        {on ? <Status tone="success" icon={IC.check}>Conectado · {obs ? obsUrl : m.url || 'ws://127.0.0.1:13376'}</Status> : <Status tone={st.state === 'error' ? 'danger' : 'neutral'} icon={IC.plug}>{st.state || 'Sin conectar'}</Status>}
+        {obs ? <a className="eg-btn eg-btn--ghost eg-btn--sm" href="#/conexiones">Configurar conexión</a> : <button className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(async () => { await saveAll(); await post('/api/meld/connect', { url: (url || m.url || '').trim() }); }, 'Conectando con Meld…')}>{on ? 'Reconectar' : 'Conectar'}</button>}
       </>} />
     {!on || tab === 'conexion' ? <>{connection}<SaveBar /></> : <>
-      {tab === 'escenas' && <><section aria-label="Atajos" className="row tight meld-quick">
+      {tab === 'escenas' && <>{obs && <p className="hint" role="status">Estás usando OBS. Los efectos, clips y capturas de esta sección solo funcionan con Meld.</p>}<section aria-label="Atajos" className="row tight meld-quick">
         <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={obs} onClick={guard(async () => { await post('/api/meld/command', { command: 'meld.recordClip' }); await post('/api/markers', {}); }, 'Clip guardado y momento marcado')}><Icon d={IC.bookmark} className="eg-btn__icon" />Guardar clip y marcar</button>
         {mic && <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/meld/track', { track: mic.id, action: 'mute' }))}><Icon d={mic.muted ? IC.mic : IC.micOff} className="eg-btn__icon" />{mic.muted ? 'Activar micro' : 'Silenciar micro'}</button>}
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={obs} onClick={evt('CONFETTIPOP_TRIGGER')}><Icon d={IC.sparkle} className="eg-btn__icon" />Confeti</button>

@@ -75,6 +75,12 @@ export function Conexiones({ parts }: { parts: string[] }) {
   const nOk = [twOk, ytOk, mdOk, !!access.lan].filter(Boolean).length;
   const ytWrite = !!yt.account && !!yt.liveChatId;
   const meldUrl = c.meld?.url || 'ws://127.0.0.1:13376';
+  const obsUrl = c.obs?.url || 'ws://127.0.0.1:4455';
+  // The selected tab may be a draft. Never label or control the active program as the other one.
+  const selectedActive = !switching && activeKind === kind && st.program?.kind === kind;
+  const selectedStatus = selectedActive ? md : {};
+  const selectedOk = selectedStatus.state === 'conectado';
+  const obsActionsEnabled = selectedActive && !live.programSource.dirty();
   const scene = scenes.find((x: any) => x.current);
   return <>
     <PageHead tour="conexiones-head" crumb={`Ajustes · ${nOk} de 4 conectadas`} title="Conexiones" desc="Conecta tus cuentas una vez; la sesión se guarda en tu PC. Pulsa una tarjeta para ver sus ajustes." />
@@ -116,21 +122,21 @@ export function Conexiones({ parts }: { parts: string[] }) {
         </Card>
       </CardGroup>
       <CardGroup title="Producción y acceso" count={2} note="Lo que controla la app y desde dónde la manejas" wide>
-        {switching || activeKind === null ? <Card className="lv-conn" label="Estado del programa activo"
-          title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={IC.monitor} /></span><span><b>Programa activo</b></span></span>}>
-          <Dot tone={tone(md.state)}>{cap(md.state)}</Dot>
-          {md.error ? <p className="lv-cnote is-warn">{md.error}</p> : null}
-        </Card> : activeKind === 'meld' ? <Card className="lv-conn" href="#/meld/conexion" label="Abrir Meld Studio"
+        {kind === 'meld' ? <Card className="lv-conn" href="#/meld/conexion" label="Abrir Meld Studio"
           title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={IC.monitor} /></span><span><b>Meld Studio</b><small>Escenas, capas y efectos</small></span></span>}
-          foot={<><span className="lv-cnote">{mdOk ? 'Se reconecta solo si cierras Meld' : 'Activa «Allow remote connections» en Meld'}</span><span className="sp" />
-            <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/meld/connect', { url: meldUrl }), 'Conectando con Meld…')}>{mdOk ? 'Reconectar' : 'Conectar'}</button></>}>
-          <Dot tone={mdOk ? 'ok' : md.state === 'error' ? 'warn' : 'off'}>{cap(md.state)}</Dot>
-          <dl className="lv-kv"><dt>Dirección</dt><dd>{meldUrl}</dd><dt>Escenas</dt><dd>{scenes.length ? `${scenes.length}${scene ? ` · en directo «${scene.name}»` : ''}` : '—'}</dd><dt>Al emitir</dt><dd>{c.meld?.autoSession ? 'Empieza un directo nuevo' : 'Sigue el directo actual'}</dd></dl>
-          {md.error ? <p className="lv-cnote is-warn">{md.error}</p> : null}
-        </Card> : <Card className="lv-conn" label="Estado de OBS"
-          title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={IC.monitor} /></span><span><b>OBS</b><small>Conexión experimental</small></span></span>}>
-          <Dot tone={tone(md.state)}>{cap(md.state)}</Dot>
-          {md.error ? <p className="lv-cnote is-warn">{md.error}</p> : null}
+          foot={<><span className="lv-cnote">{!selectedActive ? 'Guarda el programa seleccionado para conectarlo' : selectedOk ? 'Se reconecta solo si cierras Meld' : 'Activa «Allow remote connections» en Meld'}</span><span className="sp" />
+            <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!selectedActive} onClick={guard(() => post('/api/meld/connect', { url: meldUrl }), 'Conectando con Meld…')}>{selectedOk ? 'Reconectar' : 'Conectar'}</button></>}>
+          <Dot tone={selectedOk ? 'ok' : selectedStatus.state === 'error' ? 'warn' : 'off'}>{selectedActive ? cap(selectedStatus.state) : 'Pendiente de guardar'}</Dot>
+          <dl className="lv-kv"><dt>Dirección</dt><dd>{meldUrl}</dd><dt>Escenas</dt><dd>{selectedActive && scenes.length ? `${scenes.length}${scene ? ` · en directo «${scene.name}»` : ''}` : '—'}</dd><dt>Al emitir</dt><dd>{c.meld?.autoSession ? 'Empieza un directo nuevo' : 'Sigue el directo actual'}</dd></dl>
+          {selectedStatus.error ? <p className="lv-cnote is-warn">{selectedStatus.error}</p> : null}
+        </Card> : <Card className="lv-conn" label="Estado de OBS Studio"
+          title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={IC.monitor} /></span><span><b>OBS Studio</b><small>Conexión experimental</small></span></span>}
+          foot={<><span className="lv-cnote">{obsActionsEnabled ? 'Usa la conexión guardada de OBS' : 'Guarda los cambios para conectar OBS'}</span><span className="sp" />
+            <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!obsActionsEnabled} onClick={guard(() => post('/api/program/connect'), 'Conectando con OBS…')}>Conectar</button>
+            <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={!obsActionsEnabled} onClick={guard(() => post('/api/program/disconnect'), 'OBS desconectado')}>Desconectar</button></>}>
+          <Dot tone={tone(selectedStatus.state)}>{selectedActive ? cap(selectedStatus.state) : 'Pendiente de guardar'}</Dot>
+          <dl className="lv-kv"><dt>Dirección</dt><dd>{obsUrl}</dd></dl>
+          {selectedStatus.error ? <p className="lv-cnote is-warn">{selectedStatus.error}</p> : null}
         </Card>}
         <Card className="lv-conn" href="#/general/movil" label="Abrir acceso desde el móvil"
           title={<span className="lv-conn-h"><span className="lv-logo"><Icon d={PHONE} /></span><span><b>Acceso desde el móvil</b><small>El panel en la misma wifi, con clave</small></span></span>}
