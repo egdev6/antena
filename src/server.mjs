@@ -62,6 +62,16 @@ const HELD_MAX_BATCH_BYTES = 8 * 1024 * 1024;
 const HELD_LIST_LIMIT = 100;
 // Cierre de admisión: mensaje constante y seguro para toda petición rechazada.
 const CLOSING_MESSAGE = 'La app se está cerrando.';
+const INTERNAL_ERROR = 'Error interno del servidor';
+// Deliberate Spanish errors (e.g. «Falta el Client ID…») stay visible to the panel; system errors
+// (fs/net with a code, which may carry paths) and programming errors are hidden behind a generic text.
+const PROGRAMMING_ERRORS = [TypeError, ReferenceError, SyntaxError, RangeError];
+const publicMessage = err => {
+  const system = err?.syscall || err?.path || /^(E[A-Z]+|ERR_[A-Z_]+)$/.test(String(err?.code || ''));
+  if (!(err instanceof Error) || system || PROGRAMMING_ERRORS.some(T => err instanceof T) || !err.message) return INTERNAL_ERROR;
+  return err.message;
+};
+const MEDIA_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.md': 'text/markdown; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -877,11 +887,11 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
   route('POST', '/api/config/set', async ({ path: p, value }) => {
     if (!p) throw httpError(400, 'Falta «path»');
-    if (String(p).split('.')[0] === 'customOverlays') {
-      await customOverlays.setPath(p, value);
-      return { path: p, value: store.getPath(p) };
-    }
     const keys = configPathKeys(p);
+    if (keys[0] === 'customOverlays') {
+      await customOverlays.setPath(keys.join('.'), value);
+      return { path: p, value: store.getPath(p, store.publicConfig()) };
+    }
     const clearObs = keys.length === 1 && keys[0] === 'obs' && value == null;
     if (clearObs) value = undefined; // null y ausencia borran la sección por igual
     // #106: el valor se valida contra el esquema en su ruta; las rutas nuevas se aceptan.
@@ -891,7 +901,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (keys.length === 2 && keys[0] === 'obs' && keys[1] === 'password') {
       await setObsPassword(value);
       afterConfig({ obs: true });
-      return { path: p, passwordSet: !!store.secrets.obs?.password };
+      return { path: p, passwordSet: store.publicConfig().obs.passwordSet };
     }
     const hasPassword = keys.length === 1 && keys[0] === 'obs' && value && typeof value === 'object' && Object.hasOwn(value, 'password');
     const password = hasPassword ? value.password : undefined;
@@ -903,7 +913,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (hasPassword || (clearObs && store.secrets.obs !== undefined)) await setObsPassword(password);
     const onlyRecording = keys.length === 2 && keys[0] === 'meld' && keys[1] === 'recordOnStart';
     afterConfig({ [p.split('.')[0]]: !onlyRecording });
-    return { path: p, value: store.getPath(p, keys[0] === 'obs' ? store.publicConfig() : store.config) };
+    return { path: p, value: store.getPath(p, store.publicConfig()) };
   });
 
   // Export v1 excludes credentials; import previews the same strict schema before a local backup.
@@ -1387,16 +1397,22 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     pushStatus();
   };
 
+  const reportServerError = err => {
+    // El cierre esperado también se registra, pero no es un fallo del drenaje del servidor.
+    const label = (err?.message || err) === CLOSING_MESSAGE ? '[cierre]' : '[error]';
+    try { log(label, err); } catch { /* El registro no impide responder. */ }
+  };
   const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname.startsWith('/media/')) res.setHeader('Content-Security-Policy', MEDIA_CSP);
     if (closing) {
       // La ventana ACK solo deja pasar la ruta exacta POST /api/overlay/shown en open/captured.
       let allowed = false;
       if (ackWindowActive() && req.method === 'POST') {
         try { allowed = new URL(req.url, 'http://localhost').pathname === '/api/overlay/shown'; } catch { allowed = false; }
       }
-      if (!allowed) return json(res, 503, { error: CLOSING_MESSAGE });
+      if (!allowed) { reportServerError(CLOSING_MESSAGE); return json(res, 503, { error: CLOSING_MESSAGE }); }
     }
-    const url = new URL(req.url, 'http://localhost');
     activeHandlers += 1;
     try {
       if (!hostTrusted(req)) return json(res, 403, { error: 'Host no permitido: usa localhost, 127.0.0.1 o la IP del panel.' });
@@ -1406,6 +1422,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       const auth = authorized(req, url, res);
       if (auth === 'redirect') return; // canje de clave: ya respondimos con la redirección
       if (!auth) return json(res, 401, { error: 'Acceso desde la red: abre el enlace con la clave que aparece en el panel (General › Acceso desde el móvil).' });
+      if (req.method === 'POST' && url.pathname === '/api/media/import' && !isLoopback(req.socket.remoteAddress || '')) {
+        throw httpError(403, 'Solo desde este PC');
+      }
       if (url.pathname === '/oauth/youtube') {
         let html;
         try {
@@ -1478,8 +1497,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       const page = { '/overlay': 'overlay.html', '/probe': 'probe.html' }[url.pathname] || url.pathname.slice(1);
       return serveFile(req, res, PUBLIC, page);
     } catch (err) {
+      const status = err?.status || 500;
+      if (status >= 500) reportServerError(err);
       if (!res.headersSent) {
-        try { json(res, err.status || 500, { error: err.message }); } catch { /* la conexión pudo cerrarse antes de responder */ }
+        try { json(res, status, { error: status >= 500 ? publicMessage(err) : err.message }); } catch { /* la conexión pudo cerrarse antes de responder */ }
       }
     } finally {
       activeHandlers -= 1;
@@ -1506,8 +1527,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   server.on('upgrade', (req, socket, head) => {
     socket.on('error', () => { /* el cliente puede irse antes de completar el upgrade */ });
     const reject = (code, message) => {
+      if (code >= 500) reportServerError(message);
       const body = JSON.stringify({ error: message });
-      socket.end(`HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`, () => socket.destroy());
+      let media = false;
+      try { media = new URL(req.url, 'http://localhost').pathname.startsWith('/media/'); } catch { /* ruta inválida */ }
+      const csp = media ? `Content-Security-Policy: ${MEDIA_CSP}\r\n` : '';
+      socket.end(`HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r\nContent-Type: application/json; charset=utf-8\r\n${csp}Content-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`, () => socket.destroy());
     };
     if (closing || !server.listening) return reject(503, CLOSING_MESSAGE);
     let url;

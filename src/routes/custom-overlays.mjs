@@ -71,6 +71,9 @@ export function registerCustomOverlayRoutes({ route, customOverlays, bus, engine
     checkActions([action]);
     if (!isApprovedAction(overlay, action.kind)) {
       log('[overlays]', overlay.id, 'acción rechazada sin permiso:', action.kind);
+      if (overlay.reapprovalRequired && overlay.requestedPermissions?.includes(action.kind)) {
+        throw httpError(403, 'El código del overlay ha cambiado. Revísalo y vuelve a aprobar sus permisos desde el panel.');
+      }
       throw httpError(403, `El overlay no tiene permiso para «${action.kind}». Los permisos los aprueba el usuario desde el panel.`);
     }
     if (!admitAction(overlay.id)) {

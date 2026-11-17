@@ -11,7 +11,9 @@ import { Card, CardGroup, PageHead, SaveBar, Slide, Tabs } from '../../lib/layou
 import { IC } from '../../lib/icons';
 import { go } from '../router';
 import { origin } from './Widgets';
-import type { CustomOverlay } from '../../lib/types';
+import type { CustomOverlay as BaseCustomOverlay } from '../../lib/types';
+
+type CustomOverlay = BaseCustomOverlay & { reapprovalRequired?: boolean };
 
 type OverlayDraft = Omit<CustomOverlay, 'id' | 'updatedAt'>;
 const CODE_TABS = [{ id: 'html', label: 'HTML' }, { id: 'css', label: 'CSS' }, { id: 'js', label: 'JavaScript' }];
@@ -32,7 +34,7 @@ const PERMISOS: Record<string, string> = {
 };
 /** Firma de las aprobaciones: aprobar no cambia updatedAt, así que el editor compara esta firma. */
 const approvalsOf = (o: CustomOverlay | null | undefined) => o
-  ? `${o.approvedAt ?? 0}|${(o.requestedPermissions ?? []).join(',')}|${(o.permissions ?? []).join(',')}`
+  ? `${o.approvedAt ?? 0}|${!!o.reapprovalRequired}|${(o.requestedPermissions ?? []).join(',')}|${(o.permissions ?? []).join(',')}`
   : '';
 
 /** Catálogo de overlays propios. Lo que crea el agente por MCP aparece aquí sin recargar. */
@@ -112,6 +114,7 @@ function OverlaySlide({ id }: { id: string }) {
       ...cur,
       requestedPermissions: overlay.requestedPermissions ?? [], permissions: overlay.permissions ?? [],
       approvedAt: overlay.approvedAt ?? 0, approvedUpdatedAt: overlay.approvedUpdatedAt ?? 0,
+      reapprovalRequired: !!overlay.reapprovalRequired,
     };
     savedRef.current = next;
     setSaved(next);
@@ -161,8 +164,8 @@ function OverlaySlide({ id }: { id: string }) {
   const field = (['html', 'css', 'js'].includes(tab) ? tab : 'html') as 'html' | 'css' | 'js';
   const requested = saved.requestedPermissions ?? [];
   const approved = saved.permissions ?? [];
-  // S11d: el usuario aprobó una versión del código; si el código cambió después, se avisa.
-  const codeChanged = approved.length > 0 && Number(saved.updatedAt || 0) > Number(saved.approvedUpdatedAt || 0);
+  // El servidor retira los permisos si cambia el código; los ajustes no disparan el aviso.
+  const codeChanged = !!saved.reapprovalRequired;
   return <Slide crumb={<><a href="#/overlays">Overlays</a> › {saved.name}</>} back="#/overlays" wide
     title={<input className="lv-title-input" aria-label="Nombre del overlay" value={cur.name} onChange={e => set({ name: e.target.value })} />}
     head={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={remove}>Borrar overlay…</button>}
@@ -198,14 +201,14 @@ function OverlaySlide({ id }: { id: string }) {
           {requested.length
             ? <div className="lv-permisos">
               {requested.map(kind => <div key={kind} data-perm={kind}>
-                <Switch checked={approved.includes(kind)} onChange={v => approve(kind, v, saved)}>{PERMISOS[kind] ?? kind}</Switch>
+                <Switch checked={approved.includes(kind)} disabled={!!pending} onChange={v => approve(kind, v, saved)}>{PERMISOS[kind] ?? kind}</Switch>
                 {PERMISOS[kind] ? null : <span className="hint"> Tipo de acción desconocido para el panel: {kind}.</span>}
               </div>)}
             </div>
             : <p className="hint">Este overlay no pide ningún permiso. Si necesita cambiar de escena, escribir en el chat o hablar, pídeselo al agente (por MCP) y apruébalo aquí.</p>}
           {codeChanged ? <div className="eg-notice eg-notice--warning eg-notice--sm" role="alert" data-approval-stale>
             <Icon d={IC.bell} />
-            <span className="eg-notice__text">El código ha cambiado desde que aprobaste los permisos. Revísalo y vuelve a aprobarlo si sigue haciendo lo que esperas.</span>
+            <span className="eg-notice__text">El código ha cambiado desde que aprobaste los permisos. Se han retirado: revísalo y vuelve a aprobarlos si sigue haciendo lo que esperas.</span>
           </div> : null}
           <p className="hint">Las acciones (<code>antena.run(…)</code>) solo se ejecutan con lo que apruebas aquí; el agente las pide, no las aprueba. Un bucle que pida demasiadas se frena a las 10 acciones cada 10 segundos.</p>
         </div>

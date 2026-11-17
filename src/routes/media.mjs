@@ -31,16 +31,18 @@ async function rutaReal(p) {
   try { return await realpath(p); } catch { return path.resolve(p); }
 }
 
+const origenNoValido = () => httpError(400, 'No se puede importar el archivo indicado');
+
 async function origenImportable(dir, src) {
   let file;
-  try { file = await realpath(String(src)); } catch { throw httpError(404, 'No encuentro el archivo indicado'); }
+  try { file = await realpath(src); } catch { throw origenNoValido(); }
   const mismoCamino = f => process.platform === 'win32' ? f.toLowerCase() : f;
   const datos = mismoCamino(await rutaReal(dir));
   const real = mismoCamino(file);
   if (real === datos || real.startsWith(datos + path.sep)) {
-    throw httpError(400, 'No se pueden importar archivos de la carpeta de datos.');
+    throw origenNoValido();
   }
-  if (!mediaKind(path.basename(file))) throw httpError(400, 'Formato no admitido. Usa webm, mp4, gif, png, webp, mp3, ogg, wav o una fuente (woff2, woff, ttf, otf).');
+  if (!mediaKind(path.basename(file))) throw origenNoValido();
   return file;
 }
 
@@ -51,13 +53,15 @@ export function registerMediaRoutes({ route, store, mediaDir, listMedia, MAX_UPL
     return { media: await listMedia() };
   });
   route('POST', '/api/media/import', async ({ path: src, name }) => {
-    if (!src) throw httpError(400, 'Falta «path» con la ruta del archivo en tu PC');
+    if (typeof src !== 'string' || !src.trim()) throw origenNoValido();
     const base = cleanName(name || path.basename(src));
-    if (!mediaKind(base)) throw httpError(400, 'Formato no admitido. Usa webm, mp4, gif, png, webp, mp3, ogg, wav o una fuente (woff2, woff, ttf, otf).');
-    // Se valida el origen real (enlaces simbólicos resueltos), no solo el nombre de destino:
-    // extensión de media y fuera de la carpeta de datos.
+    // Valida un nombre explícito antes de mirar el origen: tampoco puede usarse como oráculo.
+    if (name && !mediaKind(base)) throw httpError(400, 'Formato no admitido. Usa webm, mp4, gif, png, webp, mp3, ogg, wav o una fuente (woff2, woff, ttf, otf).');
+    // Todas las rutas inexistentes o inválidas tienen el mismo resultado, sin revelar si existen.
+    if (!mediaKind(base)) throw origenNoValido();
     const origen = await origenImportable(store.dir, src);
-    const st = await stat(origen).catch(() => { throw httpError(404, 'No encuentro el archivo indicado'); });
+    const st = await stat(origen).catch(() => { throw origenNoValido(); });
+    if (!st.isFile()) throw origenNoValido();
     if (st.size > MAX_UPLOAD) throw httpError(413, 'El archivo pasa de 300 MB.');
     const dest = await freeName(mediaDir, base);
     await copyFile(origen, dest);

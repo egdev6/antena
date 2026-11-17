@@ -535,9 +535,9 @@ test('composite variantes y overlays valida antes de una sola escritura y conser
   const [actual, untouched] = result.body.config.customOverlays;
   assert.equal(actual.name, 'Marco nuevo');
   assert.deepEqual(actual.requestedPermissions, ['scene', 'chat']);
-  assert.deepEqual(actual.permissions, ['scene']);
-  assert.equal(actual.approvedAt, approved.approvedAt);
-  assert.equal(actual.approvedUpdatedAt, approved.approvedUpdatedAt);
+  // #247: the css changed, so the approved permissions are revoked until the panel approves them again.
+  assert.deepEqual(actual.permissions, []);
+  assert.equal(actual.reapprovalRequired, true);
   assert.ok(actual.updatedAt > approved.updatedAt);
   assert.deepEqual(untouched, b);
   assert.deepEqual(result.body.config.widgets.chatVariants, [changedVariant]);

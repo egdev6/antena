@@ -7,7 +7,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { ROOT, DEFAULT_CONFIG, deepMerge } from '../store.mjs';
 import { PROTO_KEYS, validatePatch, validateImportedChatVariants } from '../config-schema.mjs';
-import { httpError } from '../http-util.mjs';
+import { httpError, credential, credentialParam, cleanUrl } from '../http-util.mjs';
 import { checkZipName, openZip, writeZip, MAX_ZIP_TOTAL, MAX_ZIP_ENTRIES, MAX_SESSION } from '../zip-archive.mjs';
 import { isImportableArchive } from '../session.mjs';
 import { serialize } from '../json-file.mjs';
@@ -23,37 +23,6 @@ const validStream = (id, data) => {
 
 const VERSION = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
 const object = value => value !== null && typeof value === 'object';
-// Unknown schema fields are accepted by generic writes; do not export common credential names.
-const credential = (key, prefix) => (prefix === 'access' && key === 'key') ||
-  /token|secret|password|passwd|apikey|privatekey|credential|^passphrase$|^authorization$/i.test(key.replace(/[_-]/g, '')) ||
-  (['twitch', 'youtube'].includes(prefix) && ['access', 'refresh'].includes(key));
-const credentialParam = key => ['key', 'pass', 'pwd', 'auth'].includes(key.toLowerCase()) || credential(key, '');
-
-// Only portable URL parts leave the PC; whitespace must not bypass credential detection.
-function cleanUrl(value) {
-  if (typeof value !== 'string') return value;
-  const trimmed = value.trim();
-  if (!/^wss?:\/\//i.test(trimmed)) return value;
-  try {
-    const url = new URL(trimmed); let changed = !!(url.username || url.password);
-    url.username = ''; url.password = '';
-    for (const key of [...url.searchParams.keys()]) if (credentialParam(key)) { url.searchParams.delete(key); changed = true; }
-    return changed ? url.toString() : trimmed;
-  } catch {
-    // Meld accepts arbitrary text, including malformed URLs. Redact their authority and query
-    // without relying on URL parsing; if even the split is ambiguous, fail closed.
-    const parts = /^(wss?:\/\/)([^/?#]*)([^?#]*)(?:\?([^#]*))?(#.*)?$/is.exec(trimmed);
-    if (!parts) return '';
-    const at = parts[2].lastIndexOf('@');
-    let changed = at !== -1;
-    const query = new URLSearchParams(parts[4] || '');
-    for (const key of [...query.keys()]) if (credentialParam(key)) { query.delete(key); changed = true; }
-    if (!changed) return trimmed;
-    const params = query.toString();
-    return `${parts[1]}${parts[2].slice(at + 1)}${parts[3]}${params ? '?' + params : ''}${parts[5] || ''}`;
-  }
-}
-
 // Retain only local credentials, never the old destination, and only for the same endpoint.
 function withLocalUrlCredentials(previous, imported) {
   if (typeof previous !== 'string' || typeof imported !== 'string') return imported;

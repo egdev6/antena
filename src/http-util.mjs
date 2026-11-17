@@ -9,6 +9,37 @@ import path from 'node:path';
 
 export function httpError(status, message) { return Object.assign(new Error(message), { status }); }
 
+// Las mismas reglas sirven a la configuración pública y a la transferencia portable.
+export const credential = (key, prefix) => (prefix === 'access' && key === 'key') ||
+  /token|secret|password|passwd|apikey|privatekey|credential|^passphrase$|^authorization$/i.test(key.replace(/[_-]/g, '')) ||
+  (['twitch', 'youtube'].includes(prefix) && ['access', 'refresh'].includes(key));
+export const credentialParam = key => ['key', 'pass', 'pwd', 'auth'].includes(key.toLowerCase()) || credential(key, '');
+
+// Only portable URL parts leave the PC; whitespace must not bypass credential detection.
+export function cleanUrl(value) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!/^wss?:\/\//i.test(trimmed)) return value;
+  try {
+    const url = new URL(trimmed); let changed = !!(url.username || url.password);
+    url.username = ''; url.password = '';
+    for (const key of [...url.searchParams.keys()]) if (credentialParam(key)) { url.searchParams.delete(key); changed = true; }
+    return changed ? url.toString() : trimmed;
+  } catch {
+    // Meld accepts arbitrary text, including malformed URLs. Redact their authority and query
+    // without relying on URL parsing; if even the split is ambiguous, fail closed.
+    const parts = /^(wss?:\/\/)([^/?#]*)([^?#]*)(?:\?([^#]*))?(#.*)?$/is.exec(trimmed);
+    if (!parts) return '';
+    const at = parts[2].lastIndexOf('@');
+    let changed = at !== -1;
+    const query = new URLSearchParams(parts[4] || '');
+    for (const key of [...query.keys()]) if (credentialParam(key)) { query.delete(key); changed = true; }
+    if (!changed) return trimmed;
+    const params = query.toString();
+    return `${parts[1]}${parts[2].slice(at + 1)}${parts[3]}${params ? '?' + params : ''}${parts[5] || ''}`;
+  }
+}
+
 export const id8 = () => randomBytes(4).toString('hex');
 
 export function safePath(dir, rel) {

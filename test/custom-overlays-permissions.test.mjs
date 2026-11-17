@@ -99,16 +99,16 @@ test('S11a: crear, editar, config genérica y setPath nunca aprueban ni amplían
     assert.equal(approved.overlay.approvedUpdatedAt, overlay.updatedAt, 'guarda la versión aprobada');
     assert.equal(approved.overlay.updatedAt, overlay.updatedAt, 'aprobar no versiona el código: las capas no recargan');
 
-    // Editar el código intentando ampliar: los permisos aprobados se quedan como estaban.
+    // Editar el código intentando ampliar retira todos los permisos aprobados.
     const edited = await call('PUT', `/api/custom-overlays/${overlay.id}`, { js: 'x', permissions: ['scene', 'chat', 'say'], approvedAt: 1 });
-    assert.deepEqual(edited.overlay.permissions, ['scene']);
+    assert.deepEqual(edited.overlay.permissions, []);
     assert.equal(edited.overlay.approvedAt, approved.overlay.approvedAt, 'la marca de aprobación no se reescribe');
 
     // Escritura genérica de configuración (PUT /api/config) y de ruta (POST /api/config/set).
     await call('PUT', '/api/config', { customOverlays: [{ ...edited.overlay, permissions: ['chat', 'say'] }] });
     await call('POST', '/api/config/set', { path: 'customOverlays.0.permissions', value: ['chat', 'say'] });
     const [stored] = (await call('GET', '/api/custom-overlays')).overlays;
-    assert.deepEqual(stored.permissions, ['scene'], 'las escrituras genéricas conservan lo aprobado');
+    assert.deepEqual(stored.permissions, [], 'las escrituras genéricas no vuelven a aprobar');
     assert.equal(stored.approvedAt, approved.overlay.approvedAt);
     assert.deepEqual(stored.requestedPermissions, ['scene', 'chat']);
   } finally { await close(); }

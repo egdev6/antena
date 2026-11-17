@@ -56,6 +56,7 @@ export function publicOverlay(o) {
     permissions: approvalsWithinRequest(o.permissions, requestedPermissions),
     approvedAt: Number(o.approvedAt) || 0,
     approvedUpdatedAt: Number(o.approvedUpdatedAt) || 0,
+    reapprovalRequired: !!o.reapprovalRequired,
   };
 }
 
@@ -189,6 +190,19 @@ export function overlayTestPayload(body) {
   return { event, data };
 }
 
+// Las aprobaciones pertenecen al código, no al id ni a updatedAt (que también cambia por
+// ajustes). Solo la aprobación del panel limpia el aviso tras un cambio real de HTML/CSS/JS.
+function permissionState(prev, next) {
+  const changed = !!prev && ['html', 'css', 'js'].some(k => (prev[k] ?? '') !== (next[k] ?? ''));
+  const requested = next.requestedPermissions;
+  return {
+    permissions: changed ? [] : approvalsWithinRequest(prev?.permissions, requested),
+    approvedAt: prev?.approvedAt ?? 0,
+    approvedUpdatedAt: prev?.approvedUpdatedAt ?? 0,
+    reapprovalRequired: !!requested.length && (!!prev?.reapprovalRequired || (changed && !!prev?.permissions?.length)),
+  };
+}
+
 function checkSize(overlay, list) {
   if (JSON.stringify(overlay).length > CUSTOM_OVERLAY_MAX_BYTES) throw httpError(400, `El overlay es demasiado grande (máx. ${Math.round(CUSTOM_OVERLAY_MAX_BYTES / 1000)} KB)`);
   if (list.length > CUSTOM_OVERLAYS_MAX_ITEMS) throw httpError(400, `Ya hay ${CUSTOM_OVERLAYS_MAX_ITEMS} overlays: borra alguno antes de crear otro`);
@@ -216,7 +230,7 @@ export class CustomOverlays {
     const overlay = {
       id: '', ...DEFAULT_CUSTOM_OVERLAY, requestedPermissions: [], ...clean(input, { partial: false }),
       // Un overlay nuevo no trae aprobaciones: el usuario las da después, en el panel.
-      permissions: [], approvedAt: 0, approvedUpdatedAt: 0,
+      permissions: [], approvedAt: 0, approvedUpdatedAt: 0, reapprovalRequired: false,
     };
     const taken = new Set(this.list().map(o => o.id));
     do overlay.id = id8(); while (taken.has(overlay.id));
@@ -235,12 +249,7 @@ export class CustomOverlays {
       id,
       updatedAt: this.#stamp(prev.updatedAt),
       requestedPermissions,
-      // Se conservan las aprobaciones que el overlay sigue pidiendo. Aprobar es cosa del usuario:
-      // ni editar ni la config genérica aprueban ni amplían nada.
-      permissions: approvalsWithinRequest(prev.permissions, requestedPermissions),
-      approvedAt: prev.approvedAt ?? 0,
-      // Versión aprobada por el usuario: si el código cambió después, el panel lo avisa (S11d).
-      approvedUpdatedAt: prev.approvedUpdatedAt ?? 0,
+      ...permissionState(prev, { ...prev, ...patch, requestedPermissions }),
     };
     const next = this.list().map(o => (o.id === id ? overlay : o));
     checkSize(overlay, next);
@@ -259,11 +268,8 @@ export class CustomOverlays {
       seen.add(id);
       const overlay = { id, ...DEFAULT_CUSTOM_OVERLAY, requestedPermissions: [], ...clean(item, { partial: false }) };
       const old = prev.get(id);
-      // La config genérica (PUT /api/config, POST /api/config/set, cambiar_config del MCP) jamás
-      // aprueba: mantiene las aprobaciones guardadas de ese id (o ninguna si el id es nuevo).
-      overlay.permissions = approvalsWithinRequest(old?.permissions, overlay.requestedPermissions);
-      overlay.approvedAt = old?.approvedAt ?? 0;
-      overlay.approvedUpdatedAt = old?.approvedUpdatedAt ?? 0;
+      // Config genérica e importaciones siguen exactamente la misma regla que update.
+      Object.assign(overlay, permissionState(old, overlay));
       // Cambiar solo lo PEDIDO (no el código) no versiona el overlay: las capas abiertas no recargan.
       const same = old && Object.keys(DEFAULT_CUSTOM_OVERLAY).every(k => old[k] === overlay[k]);
       overlay.updatedAt = same ? old.updatedAt : this.#stamp(old?.updatedAt);
@@ -315,6 +321,7 @@ export class CustomOverlays {
       permissions: approvalsWithinRequest(wanted, requestedPermissions),
       approvedAt: Date.now(),
       approvedUpdatedAt: Number(overlay.updatedAt) || 0,
+      reapprovalRequired: false,
     };
     const next = this.list().map(o => (o.id === id ? approved : o));
     await this.#commit(next);

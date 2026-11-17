@@ -71,7 +71,7 @@ test('POST /api/media/delete: borra, 404 si falta y 403 si se sale del directori
   await assert.rejects(find('POST', '/api/media/delete').fn({ name: '..%2Fsecreto.json' }), e => e.status === 403);
 });
 
-test('POST /api/media/import: copia con nombre libre, 400/404/413 en los casos de siempre', async t => {
+test('POST /api/media/import: copia con nombre libre y error genérico para rutas inválidas', async t => {
   const base = await ownDir(t, 'egdev-media-');
   const mediaDir = path.join(base, 'media'), dataDir = path.join(base, 'data');
   await mkdir(mediaDir); await mkdir(dataDir);
@@ -84,15 +84,15 @@ test('POST /api/media/import: copia con nombre libre, 400/404/413 en los casos d
   assert.equal(out.name, 'c-1.png');
   assert.deepEqual(out.media.map(x => x.name), ['c-1.png', 'c.png']);
   // sin path
-  await assert.rejects(find('POST', '/api/media/import').fn({}), /Falta «path»/);
+  await assert.rejects(find('POST', '/api/media/import').fn({}), e => e.status === 400 && e.message === 'No se puede importar el archivo indicado');
   // formato no admitido (nombre y por basename del path)
   await assert.rejects(find('POST', '/api/media/import').fn({ path: origen, name: 'mal.exe' }), /Formato no admitido/);
-  await assert.rejects(find('POST', '/api/media/import').fn({ path: path.join(base, 'sinformato') }), /Formato no admitido/);
+  await assert.rejects(find('POST', '/api/media/import').fn({ path: path.join(base, 'sinformato') }), e => e.status === 400 && e.message === 'No se puede importar el archivo indicado');
   // origen inexistente
-  await assert.rejects(find('POST', '/api/media/import').fn({ path: path.join(base, 'no.png') }), /No encuentro el archivo indicado/);
+  await assert.rejects(find('POST', '/api/media/import').fn({ path: path.join(base, 'no.png') }), e => e.status === 400 && e.message === 'No se puede importar el archivo indicado');
   // origen dentro de la carpeta de datos
   await writeFile(path.join(dataDir, 'd.png'), 'x');
-  await assert.rejects(find('POST', '/api/media/import').fn({ path: path.join(dataDir, 'd.png') }), /No se pueden importar archivos de la carpeta de datos/);
+  await assert.rejects(find('POST', '/api/media/import').fn({ path: path.join(dataDir, 'd.png') }), e => e.status === 400 && e.message === 'No se puede importar el archivo indicado');
   // tamaño por encima del tope del ctx
   const { find: findTope } = fakeCtx(t, mediaDir, dataDir, 0);
   await assert.rejects(findTope('POST', '/api/media/import').fn({ path: origen, name: 'g.png' }), e => e.status === 413);
