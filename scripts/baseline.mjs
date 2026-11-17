@@ -6,6 +6,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { lstatSync, readdirSync, readlinkSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 export const SCHEMA = 'antena.baseline/1';
@@ -51,25 +52,44 @@ function toNum(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+// El agregado de Node sigue siendo crudo; solo se filtran las entradas individuales.
+function excludedCoverageFile(file) {
+  const normalized = file.replaceAll('\\', '/').replace(/^\.\//, '');
+  const comparable = process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  const tmp = tmpdir().replaceAll('\\', '/').replace(/\/$/, '');
+  const root = resolveRepoRoot().replaceAll('\\', '/');
+  const inDir = dir => {
+    const prefix = process.platform === 'win32' ? dir.toLowerCase() : dir;
+    return comparable === prefix || comparable.startsWith(prefix + '/');
+  };
+  return inDir('test') || inDir(root + '/test') || inDir(tmp) ||
+    /^\/?(?:var\/tmp|tmp)(?:\/|$)/.test(comparable) ||
+    /(?:^|\/)(?:antena-stub-|odd09-config-)[^/]*\//.test(comparable);
+}
+
 /** Extrae agregado y ficheros del bloque de cobertura (formato Node 22 y 24). */
 export function parseCoverage(lines) {
   const start = lines.findIndex(l => /^#\s*start of coverage report/.test(l));
   if (start === -1) return null;
-  const files = [];
+  const files = [], folders = [];
   let aggregate = null;
-  let folder = null;
   for (let i = start + 1; i < lines.length; i++) {
     if (/^#\s*end of coverage report/.test(lines[i])) break;
-    const row = /^#\s+(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|/.exec(lines[i]);
+    // El espacio tras # es del reporter TAP; los siguientes indican profundidad.
+    const row = /^# (.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|/.exec(lines[i]);
     if (!row) continue;
     const name = row[1].trim();
+    const depth = row[1].length - row[1].trimStart().length;
     const metrics = { lines: toNum(row[2]), branches: toNum(row[3]), functions: toNum(row[4]) };
+    if (/^all files$/i.test(name)) { aggregate = { file: 'all files', ...metrics }; continue; }
+    if (!name || name === 'file') continue;
+    while (folders.length && folders.at(-1).depth >= depth) folders.pop();
     if (metrics.lines === null && metrics.branches === null && metrics.functions === null) {
-      if (name && name !== 'file' && !/^all files$/i.test(name)) folder = name;
+      folders.push({ depth, name });
       continue;
     }
-    if (/^all files$/i.test(name)) { aggregate = { file: 'all files', ...metrics }; continue; }
-    files.push({ file: name.includes('/') ? name : (folder ? `${folder}/${name}` : name), ...metrics });
+    const file = [ ...folders.map(folder => folder.name), name ].join('/');
+    if (!excludedCoverageFile(file)) files.push({ file, ...metrics });
   }
   return files.length || aggregate ? { available: true, aggregate, files } : null;
 }

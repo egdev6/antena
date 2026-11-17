@@ -7,19 +7,18 @@
 // Fuentes de los enums y rangos (contrato del motor, no del slider de la UI):
 // - TIMER_DESTINATIONS y ANNOUNCE_COLORS: src/timers.mjs (exportadas).
 // - Permisos: los que entiende canUse (src/commands.mjs:16-22); mismo enum documentado en el MCP (src/mcp.mjs, CMD_HELP).
-// - Kinds de acción: los despachados por Engine.#execAction (src/engine.mjs:499) y los pasos
-//   de atajo de src/routes/shortcuts.mjs:30 (SHORTCUT_ENGINE_KINDS); ninguna de las dos listas
-//   está exportada, así que se replican aquí citando la línea.
+// - Kinds de acción: src/actions.mjs, los despachados por Engine.#execAction y los pasos de atajo.
 // Rangos: solo mínimos con significado real; el motor recorta intervalMin con Math.max(1, …)
 // (src/timers.mjs:158), así que el mínimo 1 es su contrato. Los topes de los sliders de la UI
 // no son contrato: fontSize, mediaSize, textWidth, minLength, maxPerUser, memberLuck o
 // rollSeconds aceptan cualquier valor por encima del mínimo.
 import { isDeepStrictEqual } from 'node:util';
+import { ACTION_KINDS } from './actions.mjs';
 import { TIMER_DESTINATIONS, ANNOUNCE_COLORS, DEFAULT_TIMER } from './timers.mjs';
 import { DEFAULT_ALERTS, DEFAULT_COMMAND } from './alerts.mjs';
 import { PLATFORM_METRICS } from './goals.mjs';
 import { TELEPROMPTER_SCRIPTS_MAX_BYTES } from './teleprompter.mjs';
-import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES, CUSTOM_OVERLAY_ACTION_KINDS } from './custom-overlays.mjs';
+import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES } from './custom-overlays.mjs';
 import { THEME_RULES, THEME_RANGES, themeFieldError, themeIconError, keepValidIcons } from './theme.mjs';
 import { DOCK_LAYOUTS } from './dock-layout.mjs';
 // #130: animaciones de los mensajes del chat en pantalla, las mismas para entrar y para salir;
@@ -87,10 +86,9 @@ export function chatVariantId(name, variants) {
 
 // ---------- enums compartidos (fuentes citadas arriba) ----------
 const PERMISOS = ['everyone', 'members', 'vips', 'mods', 'broadcaster'];   // canUse (src/commands.mjs:16)
-// Kind de acción del motor: la lista vive en src/custom-overlays.mjs (CUSTOM_OVERLAY_ACTION_KINDS),
-// compartida con los permisos de los overlays (S11) y el enum del MCP; es la de Engine.#execAction.
-const ACCION_KINDS = CUSTOM_OVERLAY_ACTION_KINDS;
-const PASO_KINDS = ['builtin', ...ACCION_KINDS];   // cleanSteps de src/routes/shortcuts.mjs (builtin + SHORTCUT_ENGINE_KINDS, línea 30)
+// Lista única para acciones del motor, permisos de overlays, atajos y enum del MCP.
+const ACCION_KINDS = ACTION_KINDS;
+const PASO_KINDS = ['builtin', ...ACCION_KINDS];   // cleanSteps de src/routes/shortcuts.mjs
 
 // ---------- hojas de alerta (ALERT_FIELDS, src/alerts.mjs) ----------
 // Campos de acción de Meld/chat/voz; los que dependen de Meld (scene, layer, effect…) quedan
@@ -238,7 +236,7 @@ export const CONFIG_SCHEMA = {
     // S11: lo pedido por el agente y lo aprobado por el usuario. Las escrituras genéricas
     // (PUT /api/config, /api/config/set, cambiar_config) validan los tipos pero NUNCA cambian
     // `permissions`: CustomOverlays.replaceAll conserva las aprobaciones guardadas de ese id.
-    requestedPermissions: arrStr(CUSTOM_OVERLAY_ACTION_KINDS), permissions: arrStr(CUSTOM_OVERLAY_ACTION_KINDS),
+    requestedPermissions: arrStr(ACTION_KINDS), permissions: arrStr(ACTION_KINDS),
     approvedAt: num({ min: 0 }), approvedUpdatedAt: num({ min: 0 }),
   }, { maxItems: CUSTOM_OVERLAYS_MAX_ITEMS, maxBytes: CUSTOM_OVERLAYS_MAX_BYTES }),
   viewers: {

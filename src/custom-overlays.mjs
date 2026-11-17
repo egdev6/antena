@@ -6,6 +6,7 @@
 // it cannot read the API or open the SSE stream. Data reaches it only via postMessage, and the
 // only way back out is the action bridge (S11): the SDK posts a run request to this shell, which
 // forwards it to the overlay's own action route and answers with ok/error only.
+import { ACTION_KINDS } from './actions.mjs';
 import { httpError, id8 } from './http-util.mjs';
 import { MELD_STREAM_EVENTS } from './programs/index.mjs';
 
@@ -18,7 +19,7 @@ export const FRAME_CSP = 'sandbox allow-scripts';
 /** Action kinds an overlay may request (S11): exactly the ones Engine.#execAction dispatches
  *  (src/engine.mjs) — the same list alerts, timers and shortcuts run. Single source for the
  *  schema (src/config-schema.mjs), the MCP enum and the route validation. */
-export const CUSTOM_OVERLAY_ACTION_KINDS = ['scene', 'layer', 'hideLayer', 'toggleLayer', 'effect', 'command', 'streamEvent', 'chat', 'say'];
+export const CUSTOM_OVERLAY_ACTION_KINDS = ACTION_KINDS;
 
 /** Per-overlay rate limit of the action bridge (S11c): 10 actions in a sliding window of 10 s. */
 export const CUSTOM_OVERLAY_RATE = { max: 10, windowMs: 10_000 };

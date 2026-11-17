@@ -43,6 +43,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Compilar interfaz React
         run: pnpm app:build
+      - name: Comprobar tipos
+        run: pnpm typecheck
       - name: Chrome del runner (Linux)
         if: runner.os == 'Linux'
         run: |

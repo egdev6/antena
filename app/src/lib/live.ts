@@ -1,5 +1,5 @@
 // Estado en vivo: /api/state + eventos SSE (/api/stream). Un solo almacén para toda la vista.
-import { useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { AntenaStream } from '../../../public/stream-client.js';
 import { warnUnknownClientEvent } from '../../../src/events.mjs'; // contrato único de eventos SSE (#72)
 import { mergeChat } from './chat-merge.mjs';
@@ -21,6 +21,31 @@ export function deepMerge<T>(a: T | undefined, b: unknown): T {
     o[k] = v && typeof v === 'object' && !Array.isArray(v) ? deepMerge(o[k], v) : v;
   }
   return o as T;
+}
+
+// Draft protection reapplies intent on every update and may recreate equal nested objects.
+// Compare only the branches it replaced, retaining identity when their contents are unchanged.
+function sameContent(left: unknown, right: unknown): boolean {
+  const pending: [unknown, unknown][] = [[left, right]];
+  const seen = new WeakMap<object, WeakSet<object>>();
+  while (pending.length) {
+    const [a, b] = pending.pop()!;
+    if (Object.is(a, b)) continue;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    const proto = Object.getPrototypeOf(a);
+    if (proto !== Object.getPrototypeOf(b) || (proto !== Object.prototype && proto !== null && proto !== Array.prototype)) return false;
+    if (Array.isArray(a) && a.length !== (b as unknown[]).length) return false;
+    if (seen.get(a)?.has(b)) continue;
+    if (!seen.has(a)) seen.set(a, new WeakSet());
+    seen.get(a)!.add(b);
+    const keys = Object.keys(a), other = Object.keys(b);
+    if (keys.length !== other.length) return false;
+    for (const key of keys) {
+      if (!Object.hasOwn(b, key)) return false;
+      pending.push([(a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]]);
+    }
+  }
+  return true;
 }
 
 /** Slices that every update replaces whole (no partial patches, unlike status or widgets):
@@ -123,7 +148,13 @@ class Live {
     // Un cambio local de config marca época: los snapshots pedidos antes de él quedan obsoletos.
     if (patch.config) this.cfgTouch++;
     for (const k of Object.keys(patch) as (keyof AppState)[]) if (WHOLE.includes(k) || k === 'meld') this.touched[k] = (this.touched[k] ?? 0) + 1;
-    this.state = protectDrafts({ ...s, ...patch });
+    const next = protectDrafts({ ...s, ...patch });
+    // Keep the actual protected result whenever it changed; only recover identity for
+    // untouched slices whose reconstructed draft has exactly the same contents.
+    if (s) for (const key of Object.keys(s) as (keyof AppState)[]) {
+      if (!Object.hasOwn(patch, key) && next[key] !== s[key] && sameContent(s[key], next[key])) Object.assign(next, { [key]: s[key] });
+    }
+    this.state = next;
     this.emit();
   }
 
@@ -324,9 +355,38 @@ export function makeChatLoader(fetch: () => Promise<ChatMessage[]>, apply: (snap
 
 export const live = new Live();
 
-/** Re-renderiza cuando cambia el estado en vivo y devuelve lo que pide el selector. */
+// Selectores que crean arrays u objetos superficiales necesitan una referencia estable para
+// useSyncExternalStore; objetos especiales (Date, Map...) conservan igualdad por identidad.
+function sameSelection(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  const proto = Object.getPrototypeOf(a);
+  if (proto !== Object.getPrototypeOf(b) || (proto !== Object.prototype && proto !== null && proto !== Array.prototype)) return false;
+  if (Array.isArray(a) && a.length !== (b as unknown[]).length) return false;
+  const keys = Object.keys(a), other = Object.keys(b);
+  return keys.length === other.length && keys.every(key => Object.hasOwn(b, key) && Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
+}
+
+/** Re-renderiza solo si cambia la selección, también al cambiar el selector por sus props. */
 export function useLive<T>(sel: (s: AppState) => T): T {
-  useSyncExternalStore(live.subscribe, () => live.version);
-  return sel(live.state as AppState);
+  type Snapshot = { value: T };
+  const committed = useRef<{ snapshot?: Snapshot }>({});
+  const getSelection = useMemo(() => {
+    let version = -1;
+    let snapshot: Snapshot | undefined;
+    return () => {
+      if (snapshot && version === live.version) return snapshot;
+      const value = sel(live.state as AppState);
+      const previous = snapshot ?? committed.current.snapshot;
+      version = live.version;
+      // Vistas antiguas que seleccionan el estado completo también leen live.timeline fuera
+      // de ese objeto. Deben seguir recibiendo todos los emit, incluso sin cambio de state.
+      snapshot = value !== live.state && previous && sameSelection(previous.value, value) ? previous : { value };
+      return snapshot;
+    };
+  }, [sel]);
+  const selected = useSyncExternalStore(live.subscribe, getSelection, getSelection);
+  useEffect(() => { committed.current.snapshot = selected; }, [selected]);
+  return selected.value;
 }
 export function useLiveVersion() { return useSyncExternalStore(live.subscribe, () => live.version); }

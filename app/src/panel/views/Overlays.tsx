@@ -2,6 +2,7 @@
 // previa en vivo y las pruebas. Lo que el agente crea o cambia por MCP llega por SSE; si hay
 // cambios sin guardar, el editor no los pisa: avisa y deja cargar la versión nueva a mano.
 import { useEffect, useRef, useState } from 'react';
+import { OVERLAY_ACTION_LABELS } from '../../../../src/actions.mjs';
 import { del, enc, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { ManualDraft } from '../../lib/manual-draft';
@@ -25,13 +26,8 @@ const CODE_TIP: Record<string, string> = {
 const PROBAR: [string, string][] = [['alert', 'Probar alerta'], ['chat', 'Probar chat'], ['viewers', 'Probar espectadores']];
 const size = (o: { width: number; height: number }) => `${o.width}×${o.height}`;
 
-/** Tipos de acción de S11 con su nombre en el panel: lo mismo que CUSTOM_OVERLAY_ACTION_KINDS
- *  (src/custom-overlays.mjs). Un tipo pedido que no esté aquí se enseña tal cual. */
-const PERMISOS: Record<string, string> = {
-  scene: 'Cambiar de escena', layer: 'Mostrar una capa', hideLayer: 'Ocultar una capa', toggleLayer: 'Alternar una capa',
-  effect: 'Activar un efecto', command: 'Lanzar un comando de Meld', streamEvent: 'Disparar un evento de Meld',
-  chat: 'Escribir en el chat', say: 'Leer en voz alta',
-};
+/** Un tipo pedido que no esté en el catálogo compartido se enseña tal cual. */
+const PERMISOS: Record<string, string> = OVERLAY_ACTION_LABELS;
 /** Firma de las aprobaciones: aprobar no cambia updatedAt, así que el editor compara esta firma. */
 const approvalsOf = (o: CustomOverlay | null | undefined) => o
   ? `${o.approvedAt ?? 0}|${!!o.reapprovalRequired}|${(o.requestedPermissions ?? []).join(',')}|${(o.permissions ?? []).join(',')}`
