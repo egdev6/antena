@@ -2246,7 +2246,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 [[package]]
 name = "nexo-protocol"
 version = "0.1.0"
-source = "git+https://github.com/egdev6/tauri-plugin-nexo?tag=v0.1.0#9ebb49fa21f76c884f361f0e611d13d1e99dc7f9"
+source = "git+https://github.com/egdev6/tauri-plugin-nexo?tag=v0.1.1#81663e61efeaf9f7b83d34d814cfdcc9d2d9449a"
 dependencies = [
  "serde",
  "serde_json",
@@ -3880,8 +3880,8 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-nexo"
-version = "0.1.0"
-source = "git+https://github.com/egdev6/tauri-plugin-nexo?tag=v0.1.0#9ebb49fa21f76c884f361f0e611d13d1e99dc7f9"
+version = "0.1.1"
+source = "git+https://github.com/egdev6/tauri-plugin-nexo?tag=v0.1.1#81663e61efeaf9f7b83d34d814cfdcc9d2d9449a"
 dependencies = [
  "log",
  "nexo-protocol",
