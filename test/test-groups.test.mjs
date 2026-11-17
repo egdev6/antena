@@ -164,6 +164,8 @@ test('package scripts and opt-in POSIX pre-push hook run only the unit group', a
   const hook = fileURLToPath(new URL('../.githooks/pre-push', import.meta.url));
   assert.match(await readFile(hook, 'utf8'), /^#!\/bin\/sh\n/);
   if (process.platform !== 'win32') assert.ok((await stat(hook)).mode & constants.S_IXUSR, 'hook must be executable');
+  // The hook is POSIX sh (Git for Windows runs it with its own sh); CI Windows has no sh on PATH for spawnSync.
+  if (process.platform === 'win32') return;
   const dir = await mkdtemp(path.join(tmpdir(), 'antena-hook-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const fake = path.join(dir, 'pnpm');
