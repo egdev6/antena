@@ -6,7 +6,7 @@
 // pestaña y el título se quedaban revertidos aunque el servidor tuviera «Guion B» activo.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -23,7 +23,7 @@ class FakeEventSource {
 async function bundleLive() {
   const esbuild = await import('esbuild');
   const ts = await readFile(path.join(ROOT, 'app/src/lib/live.ts'), 'utf8');
-  const stub = 'export const useSyncExternalStore = () => () => {};\n' + 'export const useEffect = () => {};\n' +
+  const stub = 'export const useSyncExternalStore = () => () => {};\n' + 'export const useEffect = () => {};\n' + 'export const useMemo = () => {};\nexport const useRef = () => {};\n' +
     'export const warnUnknownClientEvent = () => false;\n' +
     'export const api = (m, p, b) => globalThis.__apiImpl(m, p, b);\n' +
     'export const withKey = (u) => u;';
@@ -40,8 +40,10 @@ async function bundleLive() {
   }).then(r => r.outputFiles[0].text);
   const dir = await mkdtemp(path.join(tmpdir(), 'egdev-tp-snapshot-'));
   const file = path.join(dir, 'live.test.mjs');
-  await writeFile(file, bundled);
-  return import(pathToFileURL(file).href);
+  try {
+    await writeFile(file, bundled);
+    return await import(pathToFileURL(file).href);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 }
 
 const tp = (activeId, title) => ({ activeId, scripts: [{ id: 'a', title: 'Guion A' }, { id: 'b', title: 'Guion B' }], script: { id: activeId, title } });

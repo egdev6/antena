@@ -5,7 +5,7 @@
 // cargas que resuelven en orden inverso, igual que haría hardening-62 con live.ts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -23,7 +23,7 @@ class FakeEventSource {
 async function bundleLive(withPatchers = false) {
   const esbuild = await import('esbuild');
   const ts = await (await import('node:fs/promises')).readFile(path.join(ROOT, 'app/src/lib/live.ts'), 'utf8');
-  const stub = 'export const useSyncExternalStore = () => () => {};\nexport const useEffect = () => {};\n' +
+  const stub = 'export const useSyncExternalStore = () => () => {};\nexport const useEffect = () => {};\nexport const useMemo = () => {};\nexport const useRef = () => {};\n' +
     'export const warnUnknownClientEvent = () => false;\n' +
     'export const api = (m, p, b) => globalThis.__apiImpl(m, p, b);\n' +
     'export const withKey = (u) => u; export const toast = () => {};';
@@ -41,8 +41,10 @@ async function bundleLive(withPatchers = false) {
   }).then(r => r.outputFiles[0].text);
   const dir = await mkdtemp(path.join(tmpdir(), 'egdev-load-race-'));
   const file = path.join(dir, 'live.test.mjs');
-  await writeFile(file, bundled);
-  return import(pathToFileURL(file).href);   // en Windows, import() exige file://
+  try {
+    await writeFile(file, bundled);
+    return await import(pathToFileURL(file).href);   // en Windows, import() exige file://
+  } finally { await rm(dir, { recursive: true, force: true }); }
 }
 
 for (const alreadySaving of [false, true]) {

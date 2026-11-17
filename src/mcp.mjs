@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CUSTOM_OVERLAY_ACTION_KINDS } from './custom-overlays.mjs';
+import { ACTION_KINDS as CUSTOM_OVERLAY_ACTION_KINDS } from './actions.mjs';
 import { MELD_COMMANDS, MELD_STREAM_EVENTS } from './programs/index.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

@@ -1,5 +1,6 @@
 // Editor de alerta, variación, comando de chat o mensaje programado (mismo formulario, distintas partes).
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ACTION_LABELS, OBS_COMMANDS as SHARED_OBS_COMMANDS } from '../../../../src/actions.mjs';
 import { del, enc, post, put, get } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { ManualDraft } from '../../lib/manual-draft';
@@ -19,15 +20,8 @@ const ANIM_OUT: [string, string][] = [['fade', 'Fundido'], ['slide', 'Hacia arri
 const AMOUNT_TYPES = ['cheer', 'raid', 'giftsub', 'superchat', 'supersticker', 'giftmember'];
 const TIER_TYPES = ['sub', 'resub', 'giftsub'];
 const TIER_OPTIONS: [string, string][] = [['', 'Cualquiera'], ['1', 'Tier 1'], ['2', 'Tier 2'], ['3', 'Tier 3']];
-export const ACTIONS: Record<string, string> = {
-  scene: 'Cambiar a escena', layer: 'Mostrar capa unos segundos', hideLayer: 'Ocultar capa', toggleLayer: 'Alternar capa',
-  effect: 'Alternar efecto', command: 'Comando de Meld', streamEvent: 'Evento de widget de Meld', chat: 'Escribir en el chat', say: 'Decir en voz alta',
-};
-// Refleja STREAM_COMMANDS y RECORD_COMMANDS de src/programs/obs-adapter.mjs.
-export const OBS_COMMANDS: readonly string[] = [
-  'meld.startStreamingAction', 'meld.stopStreamingAction', 'meld.toggleStreamingAction',
-  'meld.startRecordingAction', 'meld.stopRecordingAction', 'meld.toggleRecordingAction',
-];
+export const ACTIONS: Record<string, string> = ACTION_LABELS;
+export const OBS_COMMANDS: readonly string[] = SHARED_OBS_COMMANDS;
 export function ActionOptions() {
   const obs = useLive(s => s.config.program?.kind === 'obs');
   return <>{Object.entries(ACTIONS).map(([kind, label]) => <option key={kind} value={kind} disabled={obs && kind === 'streamEvent'}>

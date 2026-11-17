@@ -10,13 +10,15 @@
 //   dependen de la app (checkActions) y constantes de createApp (PROMPTER_TABS). Los
 //   helpers puros (httpError, id8) se importan de src/http-util.mjs (#107): el ctx
 //   ya no tiene que pasarlos, aunque se aceptan por compatibilidad con los tests.
-//   Las constantes solo de esta área viven aquí (BROWSER_SOURCES, SHORTCUT_ENGINE_KINDS).
+//   Las fuentes de navegador viven aquí; los tipos de acción se comparten en src/actions.mjs.
 // - El orden de registro importa: server.mjs llama a register en el punto exacto
 //   donde estaban las rutas, porque los patrones se resuelven en orden.
 // - Handlers con la misma convención del dispatcher: con :vars en el patrón,
 //   fn(vars, body, url, req); sin vars, fn(body, null, url, req).
 // - Se puede probar sin arrancar la app: construyendo un ctx falso y llamando a los
 //   handlers directamente (ver test/routes-shortcuts.test.mjs).
+import { ACTION_KINDS as SHORTCUT_ENGINE_KINDS } from '../actions.mjs';
+
 const BROWSER_SOURCES = [
   { id: 'overlay', name: 'Alertas', path: '/overlay', width: 1920, height: 1080, note: 'Configura el audio de la fuente de navegador para oír sonidos y voz.' },
   { id: 'chat', name: 'Chat en pantalla', path: '/widget/chat', width: 600, height: 900 },
@@ -29,7 +31,6 @@ const BROWSER_SOURCES = [
   { id: 'viewers', name: 'Espectadores', path: '/widget/viewers', width: 900, height: 160 },
   { id: 'thanks', name: 'Agradecimientos', path: '/widget/thanks', width: 900, height: 200 },
 ];
-const SHORTCUT_ENGINE_KINDS = ['scene', 'layer', 'hideLayer', 'toggleLayer', 'effect', 'command', 'streamEvent', 'chat', 'say'];
 // S10: pestañas del prompter retiradas. La API ya no las ofrece (prompterTabs y la lista de
 // acciones solo tienen las vigentes), pero un atajo guardado con ellas sigue siendo válido y se
 // ejecuta como no-op (setPrompterTab las registra y devuelve el estado actual).

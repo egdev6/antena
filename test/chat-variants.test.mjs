@@ -747,7 +747,7 @@ test('MCP ver_widgets conserva las URLs anteriores y expone las de cada variante
   await mkdir(path.join(dir, 'src', 'programs'), { recursive: true });
   await Promise.all([
     copyFile(new URL('../package.json', import.meta.url), path.join(dir, 'package.json')),
-    ...['mcp.mjs', 'custom-overlays.mjs', 'http-util.mjs', 'meld.mjs',
+    ...['mcp.mjs', 'actions.mjs', 'custom-overlays.mjs', 'http-util.mjs', 'meld.mjs',
       'programs/index.mjs', 'programs/meld-adapter.mjs', 'programs/program.mjs']
       .map(file => copyFile(new URL(`../src/${file}`, import.meta.url), path.join(dir, 'src', file))),
   ]);
