@@ -210,7 +210,7 @@ export interface PrompterConfig {
 }
 export interface ChatConfig { sendTo?: Destination; twitchChannel?: string; [k: string]: unknown }
 export interface OverlayConfig { css?: string; volume?: number; queueMax?: number; [k: string]: unknown }
-export interface MeldConfig { enabled?: boolean; autoSession?: boolean; recordOnStart?: boolean; url?: string; [k: string]: unknown }
+export interface MeldConfig { enabled?: boolean; url?: string; [k: string]: unknown }
 export interface TtsConfig { enabled?: boolean; voice?: string; rate?: number; pitch?: number; volume?: number; maxChars?: number; [k: string]: unknown }
 export interface FiltersConfig {
   enabled?: boolean;
@@ -239,6 +239,7 @@ export interface DockZone { id: string; label: string; modules: DockModuleId[] }
 export interface DockConfig { modules: { id: DockModuleId; enabled: boolean }[]; layout: DockLayout; zones: DockZone[] }
 
 export interface Config {
+  configVersion?: number;
   alerts: Record<string, AlertConfig>;
   commands: CommandConfig[];
   timers: TimerConfig[];
@@ -249,7 +250,7 @@ export interface Config {
   chat: ChatConfig;
   overlay: OverlayConfig;
   meld: MeldConfig;
-  program?: { kind?: 'meld' | 'obs' };
+  program?: { kind?: 'meld' | 'obs'; autoSession?: boolean; recordOnStart?: boolean };
   obs?: { url?: string; passwordSet?: boolean; [key: string]: unknown };
   panel: { onboardingDone?: boolean };
   tts: TtsConfig;

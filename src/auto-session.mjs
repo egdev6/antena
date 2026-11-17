@@ -33,7 +33,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     if (platform === 'youtube') observation.target = pendingAutoStart || session.captureIdentity();
     return observation;
   };
-  viewers.identityEnabled = () => !!store.config.meld.autoSession && autoLive && !autoSessionClosed;
+  viewers.identityEnabled = () => !!store.config.program.autoSession && autoLive && !autoSessionClosed;
   const trackAutoSession = (operation, success, failure) => {
     let resolve, reject;
     const work = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -63,7 +63,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
       if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; autoLive = false; }
     });
     if (listening) trackAutoSession(() => work.then(started => {
-      if (!started || session.data.id !== started.id || !store.config.meld.autoSession || !autoLive) return;
+      if (!started || session.data.id !== started.id || !store.config.program.autoSession || !autoLive) return;
       return youtube.confirmListeningIdentity().then(() => {
         if (youtube.status.polls > 0 && youtube.status.videoId === videoId && youtube.status.liveChatId === liveChatId)
           recordListener('youtube', { videoId, liveChatId }, started.id);
@@ -76,7 +76,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     reconnectCheck = trackAutoSession(() => session.captureIdentity(), null, '[sesión] No se pudo comprobar la identidad.');
   };
   const recordIdentity = (platform, data, observation, discovery = true) => {
-    if (autoSessionClosed || !store.config.meld.autoSession || !observation?.target || !data) return;
+    if (autoSessionClosed || !store.config.program.autoSession || !observation?.target || !data) return;
     const key = platform === 'youtube' ? 'videoId' : 'streamId';
     if (typeof data[key] !== 'string' || !data[key]) return;
     const target = observation.target, after = typeof target === 'string' ? null : target;
@@ -91,7 +91,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
       });
     };
     work = trackAutoSession(() => session.recordPlatform(platform, data, after, {
-      reconnect, expectedId, requestedAt: observation.requestedAt, discovery, onRollover, enabled: () => !!store.config.meld.autoSession,
+      reconnect, expectedId, requestedAt: observation.requestedAt, discovery, onRollover, enabled: () => !!store.config.program.autoSession,
     }), null, '[sesión] No se pudo registrar la identidad de la plataforma.');
     return work;
   };
@@ -102,9 +102,9 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     if (observation) observation.viewerAdmission = admission;
   });
   viewers.on('seriesObservation', (platform, sample, observation) => {
-    if (autoSessionClosed || !store.config.meld.autoSession || !autoLive || !observation?.target) return;
+    if (autoSessionClosed || !store.config.program.autoSession || !autoLive || !observation?.target) return;
     trackAutoSession(() => session.recordViewer(platform, sample, observation.target, observation.viewerAdmission,
-      () => !!store.config.meld.autoSession), null, '[sesión] No se pudo registrar la muestra de espectadores.');
+      () => !!store.config.program.autoSession), null, '[sesión] No se pudo registrar la muestra de espectadores.');
   });
   // La contabilidad sigue admitiendo el poll ya aceptado hasta que sus productores
   // cierren. El corte de identidad de Meld se sella antes y no sirve para ese drenaje.
@@ -127,16 +127,16 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
   const ownTwitchListening = () => chat.status.state === 'conectado' && !!chat.channel
     && chat.channel === String(twitch.status.user || '').toLowerCase();
   const recordListener = (platform, observation, target) => {
-    if (chatMetricsClosed || !store.config.meld.autoSession || !autoLive || !target) return;
-    trackChatMetrics(() => session.recordChatListener(platform, observation, target, () => !!store.config.meld.autoSession));
+    if (chatMetricsClosed || !store.config.program.autoSession || !autoLive || !target) return;
+    trackChatMetrics(() => session.recordChatListener(platform, observation, target, () => !!store.config.program.autoSession));
   };
   chat.on('status', () => { if (ownTwitchListening()) recordListener('twitch', {}, chatTarget()); });
   youtube.on('chatListening', observation => recordListener('youtube', observation, observation.target));
   engine.on('chatMetric', (m, observation) => {
-    if (chatMetricsClosed || !store.config.meld.autoSession || !autoLive || observation.source !== m.platform || !observation.target || m.owner) return;
+    if (chatMetricsClosed || !store.config.program.autoSession || !autoLive || observation.source !== m.platform || !observation.target || m.owner) return;
     if (m.platform === 'twitch' && (!twitch.userId || m.roomId !== twitch.userId || m.authorId === twitch.userId)) return;
     trackChatMetrics(() => session.recordChat(m.platform, { at: observation.at, authorId: m.authorId,
-      videoId: observation.videoId, liveChatId: observation.liveChatId }, observation.target, () => !!store.config.meld.autoSession));
+      videoId: observation.videoId, liveChatId: observation.liveChatId }, observation.target, () => !!store.config.program.autoSession));
   });
   const drainChatMetrics = () => {
     if (chatMetricsDrain) return chatMetricsDrain;
@@ -179,7 +179,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     });
   };
   program.on('streaming', live => {
-    if (!store.config.meld.autoSession || autoSessionClosed) return;
+    if (!store.config.program.autoSession || autoSessionClosed) return;
     if (live) { startAutoSession(); return; }
     closeAutoSession();
   });
@@ -187,7 +187,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     const connectedNow = st.state === 'conectado';
     const reconnected = connectedNow && !meldConnected;
     meldConnected = connectedNow;
-    if (!connectedNow || !store.config.meld.autoSession || autoSessionClosed) return;
+    if (!connectedNow || !store.config.program.autoSession || autoSessionClosed) return;
     if (st.streaming) {
       // A manual end leaves accounting live until its cut succeeds. A confirmed new
       // broadcast still queues its start behind that pending end, exactly once.

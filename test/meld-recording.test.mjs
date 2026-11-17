@@ -78,7 +78,7 @@ async function startOwned(f) {
 test('setting: legacy/default false, validated writes, persistence and rejected inputs do not change public state', async t => {
   const f = await setup(t, { initial: { meld: { autoSession: false } } });
   await f.connect();
-  assert.equal((await f.api('GET', '/api/config')).body.meld.recordOnStart, false);
+  assert.equal((await f.api('GET', '/api/config')).body.program.recordOnStart, false);
   assert.equal((await f.api('GET', '/api/status')).body.meld.recordingKnown, true);
   const before = await f.session(), archives = await f.sessions();
   for (const [method, url, body] of [
@@ -88,10 +88,10 @@ test('setting: legacy/default false, validated writes, persistence and rejected 
     ['POST', '/api/config/set', { path: 'meld.recordOnStart', value: null }],
   ]) {
     assert.deepEqual(await f.api(method, url, body), { status: 400, body: { error: 'meld.recordOnStart: se esperaba true o false' } });
-    assert.equal((await f.api('GET', '/api/config')).body.meld.recordOnStart, false);
+    assert.equal((await f.api('GET', '/api/config')).body.program.recordOnStart, false);
     assert.deepEqual(await f.session(), before); assert.deepEqual(await f.sessions(), archives); assert.deepEqual(f.calls(), []);
   }
-  assert.equal((await f.config(true)).body.config.meld.recordOnStart, true);
+  assert.equal((await f.config(true)).body.config.program.recordOnStart, true);
   const other = await createApp({ dataDir: f.dataDir, mediaDir: f.mediaDir, push: {}, log: () => {} });
   try {
     await new Promise(resolve => other.server.listen(0, '127.0.0.1', resolve));
@@ -106,7 +106,7 @@ test('setting alone through both public writers keeps connection; old Meld field
   let disconnected = 0;
   f.app.meld.on('status', st => { if (st.state !== 'conectado') disconnected++; });
   let result = await f.api('PUT', '/api/config', { meld: { recordOnStart: true }, overlay: { volume: 0.8 } });
-  assert.equal(result.status, 200); assert.equal(result.body.config.meld.recordOnStart, true);
+  assert.equal(result.status, 200); assert.equal(result.body.config.program.recordOnStart, true);
   assert.equal(result.body.config.overlay.volume, 0.8);
   assert.deepEqual(await f.api('POST', '/api/config/set', { path: 'meld.recordOnStart', value: false }),
     { status: 200, body: { path: 'meld.recordOnStart', value: false } });

@@ -294,7 +294,7 @@ test('#116: al cerrar el directo desaparece el aviso del hueco abierto', { timeo
 // S2: a fresh watcher reading is usable without inventing aggregate session metrics.
 test('#116: espectadores actuales del sondeo sin serie de sesión', { timeout: 90000 }, async t => {
   const f = await fixture(t, { withoutSeries: true }); if (!f) return;
-  f.app.store.config.meld.autoSession = false;
+  f.app.store.config.program.autoSession = false;
   f.app.viewers.observe('twitch', { live: true, viewers: 42 });
   const session = await api(f.base, 'GET', '/api/session');
   assert.equal(session.viewers, undefined); assert.equal(session.viewerMetrics, undefined);

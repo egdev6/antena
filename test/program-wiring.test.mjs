@@ -337,13 +337,13 @@ test('YouTube auto reacts to live program status after auto-session and before f
   app.program.emit('status', app.program.status);
   assert.deepEqual(order, ['broadcast', 'session-start', 'youtube-begin']);
   await app.session.transitionChain;
-  app.store.config.meld.autoSession = false;
+  app.store.config.program.autoSession = false;
   for (const status of [{ state: 'desconectado', streaming: true }, { state: 'reintentando', streaming: true },
     { state: 'conectado', streaming: false }]) {
     order.length = 0; app.program.emit('status', status);
     assert.deepEqual(order, ['broadcast']);
   }
-  app.store.config.meld.autoSession = true; forwarded = true;
+  app.store.config.program.autoSession = true; forwarded = true;
   app.meld.setStatus({ state: 'reintentando' }); order.length = 0;
   app.meld.setStatus({ state: 'conectado', streaming: true });
   assert.deepEqual(order, ['broadcast', 'identity-check', 'youtube-begin', 'recording', 'later-raw']);
@@ -354,7 +354,7 @@ async function routeWiring(t) {
   const app = await createApp({ dataDir: path.join(dir, 'data'), mediaDir: path.join(dir, 'media'), push: {}, log: () => {} });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await app.drainAutoSession(); await app.session.flush(); app.meld.stop(); app.program.dispose(); await app.closeHttp(); await rm(dir, { recursive: true, force: true }); });
-  app.store.config.meld.autoSession = false;
+  app.store.config.program.autoSession = false;
   app.meld.status = { ...app.meld.status, state: 'conectado', streaming: false, streamingKnown: true, recording: false, recordingKnown: true };
   const calls = [];
   app.meld.command = command => { calls.push(command); app.meld.emit('controlCommand', command); return Promise.resolve(); };
@@ -368,7 +368,7 @@ async function routeWiring(t) {
 
 test('recording and guard react to program status after YouTube', async t => {
   const { app, calls, post, report } = await routeWiring(t), order = [];
-  app.store.config.meld.recordOnStart = true;
+  app.store.config.program.recordOnStart = true;
   const begin = YouTubeAutoConnect.prototype.begin;
   YouTubeAutoConnect.prototype.begin = () => order.push('youtube');
   t.after(() => { YouTubeAutoConnect.prototype.begin = begin; });
@@ -381,7 +381,7 @@ test('recording and guard react to program status after YouTube', async t => {
 
 test('program controlCommand revokes an owned recording', async t => {
   const { app, calls, post } = await routeWiring(t);
-  app.store.config.meld.recordOnStart = true;
+  app.store.config.program.recordOnStart = true;
   assert.equal((await post('/api/meld/stream', { action: 'start' })).status, 200);
   app.meld.setStatus({ streaming: true }); app.meld.setStatus({ recording: true });
   await new Promise(resolve => setImmediate(resolve)); // recording acknowledgement plus confirmation

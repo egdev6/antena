@@ -168,11 +168,11 @@ test('S4: opciones compartidas funcionan en OBS y no se anuncian como exclusivas
   assert.doesNotMatch(await f.dom(`document.querySelector('main .view-head .hint').textContent`), /Meld/);
   assert.doesNotMatch(await f.dom(`document.querySelector('main').textContent`), /Esta página es solo para Meld|Allow remote connections/);
   assert.equal(await f.dom(`${session}.disabled || ${record}.disabled`), false);
-  const before = (await f.api('GET', '/api/config')).meld;
+  const before = (await f.api('GET', '/api/config')).program;
   await f.click(session); await f.click(record);
   await f.click(button(`document.querySelector('.lv-savebar')`, 'Guardar'));
   await f.wait(`!document.querySelector('.lv-savebar.is-open')`);
-  const after = (await f.api('GET', '/api/config')).meld;
+  const after = (await f.api('GET', '/api/config')).program;
   assert.equal(after.autoSession, !before.autoSession); assert.equal(after.recordOnStart, !before.recordOnStart);
   await f.dom(`location.hash = '#/meld/escenas'`);
   await f.wait(`!!${button('document', 'Confeti')}`);

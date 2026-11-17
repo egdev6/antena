@@ -123,7 +123,7 @@ export async function autoSessionTrace(t) {
   idle = wire.idleCount(); fake.report({ streaming: false }); await wire.waitIdleAfter(idle);
   await sessionWhere(s => s.id === fourth.id && !!s.endedAt);
   await new Promise(resolve => setImmediate(resolve));
-  app.store.config.meld.autoSession = false;
+  app.store.config.program.autoSession = false;
   app.store.config.youtube = { ...app.store.config.youtube, apiKey: 'fake', channelId: 'UCcanal' };
   const youtube = [], yt = app.youtube, start = yt.start.bind(yt), stop = yt.stop.bind(yt);
   let failStop = false, stopRejected;

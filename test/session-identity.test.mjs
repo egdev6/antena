@@ -169,7 +169,7 @@ test('plataforma sin conectar ausente, nunca inventada, incluso en archivo', { t
 
 test('autoSession desactivado no abre, cierra ni registra identidades', { timeout: 12000 }, async t => {
   const { start } = await setup(t); const ctx = await start();
-  ctx.app.store.config.meld.autoSession = false;
+  ctx.app.store.config.program.autoSession = false;
   const before = await ctx.get('/api/session');
   ctx.app.meld.emit('streaming', true);
   ctx.app.meld.setStatus({ state: 'conectado', streaming: true });
@@ -393,7 +393,7 @@ test('100 compact regressions', async t => {
     let release; const gate = new Promise(r => { release = r; });
     if (k === 'off') {
       const {readFile} = await import('node:fs/promises');
-      a.store.config.meld.autoSession = false; await a.session.flush();
+      a.store.config.program.autoSession = false; await a.session.flush();
       const before = await readFile(a.session.file);
       a.meld.setStatus({state:'conectado',streaming:true}); a.youtube.setStatus(video);
       stubTwitch(a,stream); await a.viewers.tick(); a.meld.emit('streaming',false);

@@ -142,7 +142,7 @@ async function startApp(t) {
   const dataDir = path.join(root, 'data');
   await mkdir(dataDir, { recursive: true });
   const app = await createApp({ dataDir, mediaDir: path.join(root, 'media'), log: () => {} });
-  app.store.config.meld.autoSession = false;
+  app.store.config.program.autoSession = false;
   app.store.config.youtube = { ...app.store.config.youtube, apiKey: 'fake', channelId: 'UCcanal' };
   const starts = [];
   app.youtube.start = () => { starts.push(1); app.youtube.setStatus({ state: 'escuchando', liveChatId: 'chat-1', videoId: 'v' }); return Promise.resolve(); };

@@ -167,10 +167,11 @@ const THEME_SCHEMA = Object.fromEntries(Object.keys(THEME_RULES).map(k => [k, {
   ...(k === 'icons' ? { repair: keepValidIcons } : {}),
 }]));
 
-const PROGRAM_SCHEMA = { kind: { ...en(['meld', 'obs']), rejectNull: true } };
+const PROGRAM_SCHEMA = { kind: { ...en(['meld', 'obs']), rejectNull: true }, autoSession: bool, recordOnStart: { ...bool, rejectNull: true } };
 const OBS_SCHEMA = { url: { kind: 'wsurl' }, password: str, passwordSet: bool };
 
 export const CONFIG_SCHEMA = {
+  configVersion: num({ int: true, min: 0, rejectNull: true }),
   port: num({ int: true, min: 1, max: 65535 }),
   program: PROGRAM_SCHEMA,
   obs: OBS_SCHEMA,
@@ -197,6 +198,7 @@ export const CONFIG_SCHEMA = {
     volume: num({ min: 0, max: 1 }),
     maxChars: num({ int: true, min: 20, max: 2000 }),   // la UI ya acota desde 20
   },
+  // Los nombres antiguos siguen validándose para que los clientes reciban el mismo error.
   meld: { enabled: bool, url: str, autoSession: bool, recordOnStart: { ...bool, rejectNull: true } },
   panel: { onboardingDone: bool },   // bienvenida del panel vista (relanzable desde General)
   access: { lan: bool, key: str },

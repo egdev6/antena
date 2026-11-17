@@ -8,6 +8,7 @@ import { readdir, stat, mkdir, unlink, rename, readFile, writeFile } from 'node:
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { Store, ROOT, DEFAULT_CONFIG, deepMerge, configPathKeys } from './store.mjs';
+import { MIGRATIONS } from './config-migrations.mjs';
 import { instanceId } from './instance-id.mjs';
 import { validatePatch, validatePath, validateChatVariantsTransition, warnUnknownKeys } from './config-schema.mjs';
 import { Bus } from './bus.mjs';
@@ -600,14 +601,20 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   }));
   route('GET', '/api/status', async () => ({ ...status(), instance: { app: 'antena', id } }));
 
+  // Los clientes antiguos pueden seguir usando las rutas de Meld para estas dos hojas.
+  const configAliasPath = dotted => {
+    const keys = configPathKeys(dotted);
+    return keys[0] === 'meld' && ['autoSession', 'recordOnStart'].includes(keys[1])
+      ? ['program', ...keys.slice(1)].join('.') : dotted;
+  };
   // config completa
   route('GET', '/api/config', async (_, __, url) => {
     const p = url.searchParams.get('path');
-    return p ? { path: p, value: store.getPath(p, store.publicConfig()) } : store.publicConfig();
+    return p ? { path: p, value: store.getPath(configAliasPath(p), store.publicConfig()) } : store.publicConfig();
   });
   const setObsPassword = value => store.setSecret('obs', value ? { password: value } : undefined);
   route('PUT', '/api/config', async body => {
-    const patch = { ...body };
+    let patch = { ...body };
     if (patch.obs && typeof patch.obs === 'object' && !Array.isArray(patch.obs)) patch.obs = { ...patch.obs };
     if (patch.youtube && (patch.youtube.apiKey === undefined || String(patch.youtube.apiKey).startsWith('••••'))) delete patch.youtube?.apiKey;
     // Igual que con apiKey: la máscara que devuelve publicConfig() no puede pisar el secreto real.
@@ -626,6 +633,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // #106: validación por esquema antes de guardar nada; las claves desconocidas se aceptan y se avisan.
     const errors = validatePatch(patch);
     if (errors.length) throw httpError(400, errors.map(e => e.message).join('; '));
+    // La validación anterior conserva las rutas y mensajes históricos de los alias.
+    const onlyRecording = patch.meld && typeof patch.meld === 'object' && !Array.isArray(patch.meld)
+      && Object.keys(patch.meld).length === 1 && Object.hasOwn(patch.meld, 'recordOnStart');
+    patch = MIGRATIONS[1].up(patch);
     const hasPassword = patch.obs && Object.hasOwn(patch.obs, 'password');
     const password = hasPassword ? patch.obs.password : undefined;
     if (patch.obs && typeof patch.obs === 'object') { delete patch.obs.password; delete patch.obs.passwordSet; }
@@ -648,8 +659,6 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (hasPassword) await setObsPassword(password);
     // El borrador puede incluir otras secciones. Solo este campo de Meld no exige reconectar;
     // cualquier otra entrada de Meld conserva la semántica histórica, incluso si no cambia.
-    const onlyRecording = patch.meld && typeof patch.meld === 'object' && !Array.isArray(patch.meld)
-      && Object.keys(patch.meld).length === 1 && Object.hasOwn(patch.meld, 'recordOnStart');
     afterConfig(onlyRecording ? { ...patch, meld: false } : patch);
     return { config: store.publicConfig() };
   });
@@ -677,11 +686,19 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       value = deepMerge(DEFAULT_CONFIG[keys[0]], value);
       if (keys[0] === 'obs') { delete value.password; delete value.passwordSet; }
     }
-    await store.setPath(p, value);
+    // Sustituir la sección Meld también puede traer los nombres antiguos: guardar
+    // ambas secciones en una sola escritura sin perder la retención privada de URL.
+    let programPatch;
+    if (keys.length === 1 && keys[0] === 'meld' && value && typeof value === 'object' && !Array.isArray(value)) {
+      const migrated = MIGRATIONS[1].up({ meld: value });
+      if (migrated.program) { value = migrated.meld; programPatch = migrated.program; }
+    }
+    const target = configAliasPath(p);
+    await store.setPath(target, value, { programPatch });
     if (hasPassword || (clearObs && store.secrets.obs !== undefined)) await setObsPassword(password);
     const onlyRecording = keys.length === 2 && keys[0] === 'meld' && keys[1] === 'recordOnStart';
-    afterConfig({ [p.split('.')[0]]: !onlyRecording });
-    return { path: p, value: store.getPath(p, store.publicConfig()) };
+    afterConfig({ [p.split('.')[0]]: !onlyRecording, ...(target !== p || programPatch ? { program: true } : {}) });
+    return { path: p, value: store.getPath(target, store.publicConfig()) };
   });
 
   // Export v1 excludes credentials; import previews the same strict schema before a local backup.
