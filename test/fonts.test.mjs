@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = path.join(ROOT, 'scripts', 'fonts.mjs');
@@ -39,7 +39,7 @@ globalThis.fetch = async url => {
   mkdirSync(out, { recursive: true });
   for (const file of files) writeFileSync(path.join(out, name(file)), 'original');
   const log = path.join(dir, 'requests');
-  const run = () => spawnSync(process.execPath, ['--import', preload, script], {
+  const run = () => spawnSync(process.execPath, ['--import', pathToFileURL(preload).href, script], {
     encoding: 'utf8', timeout: 60_000,
     env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, MODE: mode, REQUEST_LOG: log },
   });

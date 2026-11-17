@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOW = path.join(ROOT, '.github', 'workflows', 'release.yml');
@@ -240,7 +240,7 @@ globalThis.fetch = async url => {
   return new Response(tampered ? 'tampered-package' : 'synthetic-package');
 };
 `);
-  const run = () => spawnSync(process.execPath, ['--import', preload, '--input-type=module', '-'], {
+  const run = () => spawnSync(process.execPath, ['--import', pathToFileURL(preload).href, '--input-type=module', '-'], {
     input: script.replace(/sha512-[A-Za-z0-9+/=]+/g, hash), encoding: 'utf8', timeout: 60_000,
     env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, RUNNER_TEMP: dir, REQUEST_LOG: log, MODE: mode },
   });
