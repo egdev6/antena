@@ -94,7 +94,7 @@ test('exportar descarga un ZIP con JSON versionado y medios sin credenciales', a
   const f = await fixture(t); if (!f) return;
   await writeFile(path.join(f.media, 'saludo.png'), 'imagen de prueba');
   await f.wait(`!!${control('Exportar configuración')}`);
-  const checkbox = `document.querySelector('input[aria-label="Incluir directos pasados"]')`;
+  const checkbox = `([...document.querySelectorAll('label')].find(e => e.textContent.trim() === 'Incluir directos pasados')?.querySelector('input'))`;
   assert.equal(await f.dom(`${checkbox}?.checked`), true);
   assert.ok(await f.dom(`document.body.textContent.includes('Incluye nombres y mensajes de tu chat.')`));
   await f.dom(`(() => { const original = window.fetch, click = HTMLAnchorElement.prototype.click;

@@ -281,6 +281,7 @@ export interface Status {
   youtube?: YoutubeStatus;
   chat?: { state?: string; channel?: string; [k: string]: unknown };
   meld?: MeldStatus;
+  program?: { kind?: 'meld' | 'obs'; capabilities?: string[] };
   overlays: number;
   pause?: PauseState;
   persistence?: PersistenceState;
