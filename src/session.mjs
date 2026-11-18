@@ -924,6 +924,33 @@ export class Session extends EventEmitter {
       throw e;
     }
   }
+  /** Renames the live stream or an archived one. Runs on the transition queue so it never races
+   *  a cutover, retention or import; the archive and its .meta.json cache are rewritten together. */
+  rename(id, title) {
+    const value = String(title || '');
+    const fail = (status, message) => Object.assign(new Error(message), { status });
+    const run = this.transitionChain.then(async () => {
+      if (typeof id !== 'string' || !SAFE_ROOT_ID.test(id)) throw fail(400, 'Id de directo no válido.');
+      if (id === this.data.id) { this.data.title = value; this.save(); return { id, title: value }; }
+      if (this.pendingArchive?.data.id === id) throw fail(409, 'Ese directo aún se está archivando; vuelve a intentarlo en unos segundos.');
+      let data;
+      try { data = await this.getArchived(id); }
+      catch (err) { throw err.status === 404 ? fail(404, 'No existe ese directo') : err; }
+      data.title = value;
+      const target = path.join(this.dir, id + '.json');
+      await this.writer(target, data, { text: serialize(data) });
+      // The meta file is only a listing cache: if it cannot be rewritten, drop it so list()
+      // falls back to the renamed archive instead of showing the old title.
+      try { await this.writer(this._metaFile(target), this._metaOf(data)); }
+      catch (err) {
+        try { await this.io.unlink(this._metaFile(target)); }
+        catch (unlinkErr) { if (unlinkErr.code !== 'ENOENT') throw err; }
+      }
+      return { id, title: value };
+    });
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
   async get(id) {
     if (id && this.pendingArchive?.data.id === id) return this.getPending();
     if (!id || id === this.data.id) return this.data;

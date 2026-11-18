@@ -1,6 +1,6 @@
 // Registro (v2): directos anteriores y archivos de media/, como listado → slide.
 import { useEffect, useState } from 'react';
-import { enc, get, post } from '../../lib/api';
+import { enc, get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { confirmDelete, copy, guard } from '../../lib/ui';
 import { Box, Dot, Kpis, ListPanel, NameCell, PageHead, Slide, Tags, useListFilter } from '../../lib/layout';
@@ -82,6 +82,11 @@ export function Directos({ parts }: { parts: string[] }) {
     return () => { active = false; };
   }, [selected, summaryAttempt]);
   const retrySummary = () => setSummaryAttempt(n => n + 1);
+  const rename = guard(async (id: string, title: string) => {
+    await put(`/api/sessions/${enc(id)}`, { title });
+    setPast(list => list.map(p => p.id === id ? { ...p, title } : p));
+    setSummary(s => s.id === id && s.data ? { ...s, data: { ...s.data, title } } : s);
+  });
   return <>
     <PageHead crumb={`Registro · ${plural(past.length, 'directo', 'directos')}`} title="Directos anteriores"
       desc="Elige un directo y explora sus métricas sin perder la comparación."
@@ -89,7 +94,7 @@ export function Directos({ parts }: { parts: string[] }) {
     <div className="dx-explorer">
       <SessionList past={past} filtered={past.filter(p => f.match(p.title, dateTime(p.startedAt)))} query={f.q} onQuery={f.setQ}
         selected={selected} onSelect={setSelected} loading={listState === 'loading'} error={listState === 'error'} retry={() => setListAttempt(n => n + 1)} />
-      <SessionDetail selected={selected} session={past.find(p => p.id === selected)} summary={summary} retry={retrySummary} types={state.types} />
+      <SessionDetail selected={selected} session={past.find(p => p.id === selected)} summary={summary} retry={retrySummary} types={state.types} onRename={rename} />
     </div>
     <p className="dx-foot">Cobertura: tiempo con muestras de espectadores sobre la duración. Las plataformas no se suman; un dato ausente no es cero.</p>
     {open ? <DirectoSlide key={open} id={open} summary={summary} retry={retrySummary} tab={['resumen', 'cronologia', 'marcas', 'exportar'].includes(parts[2]) ? parts[2] : 'resumen'} /> : null}
