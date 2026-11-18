@@ -42,6 +42,8 @@ export function registerSessionRoutes({ route, session, timelinePayload, addMark
   route('POST', '/api/session/new', async ({ title = '' } = {}) => ({ session: publicSession(await session.startNew(title)) }));
   route('POST', '/api/session/end', async body => ({ session: publicSession(await endSession(body?.id)) }));
   route('PUT', '/api/session', async ({ title }) => { session.data.title = String(title || ''); session.save(); return { ok: true }; });
+  // Rename any stream by id: the live one or an archived one (archive + .meta.json cache).
+  route('PUT', '/api/sessions/:id', async ({ id }, body) => ({ ok: true, ...(await session.rename(id, body?.title)) }));
   route('GET', '/api/sessions', async () => ({ current: { id: session.data.id, title: session.data.title, startedAt: session.data.startedAt, events: session.data.events.length,
     ...(session.data.endedAt !== undefined ? { endedAt: session.data.endedAt } : {}), ...(session.data.platforms !== undefined ? { platforms: session.data.platforms } : {}),
     ...(session.data.viewers !== undefined ? { viewerMetrics: viewerMetrics(session.data) } : {}),

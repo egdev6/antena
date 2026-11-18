@@ -955,6 +955,7 @@ main:has(> .lv-savebar.is-open),.lv-slide:has(> .lv-savebar.is-open) .lv-sbody{p
 .dx-detail-head,.dx-detail-body{padding:var(--space-4) var(--space-5)}
 .dx-detail-head{border-bottom:1px solid var(--color-border-default)}
 .dx-detail-head h2{display:block;margin:var(--space-1) 0;font:800 var(--text-display-stat-sm)/1 var(--font-display);overflow-wrap:anywhere}
+.dx-detail-head .title-input{display:block;margin:var(--space-1) 0 var(--space-1) -7px;width:100%;font:800 var(--text-display-stat-sm)/1 var(--font-display)}
 .dx-detail-head p{margin:0;color:var(--color-fg-secondary);font-size:var(--text-body-default)}
 .dx-detail-title>a{flex:none;white-space:normal}
 .dx-coverage{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3)}

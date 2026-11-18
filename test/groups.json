@@ -81,6 +81,7 @@
     "test/routes-shortcuts.test.mjs",
     "test/sd-origin.test.mjs",
     "test/session-end.test.mjs",
+    "test/session-rename.test.mjs",
     "test/session-retention.test.mjs",
     "test/session-save-cost.test.mjs",
     "test/shortcuts-neutral-texts.test.mjs",

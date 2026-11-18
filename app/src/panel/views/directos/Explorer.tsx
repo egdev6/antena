@@ -1,6 +1,6 @@
 import { ChatChart, ViewerChart, viewerGapReason } from '../../../lib/charts';
 import { enc } from '../../../lib/api';
-import { EmptyState, fmtTime } from '../../../lib/ui';
+import { EmptyState, fmtTime, LazyInput } from '../../../lib/ui';
 import type { AlertType, Platform } from '../../../lib/types';
 import { dateTime, duration, formatCoverage, formatNumber, hasMetrics, platformNames, platforms, plural, type Past, type Summary } from './model';
 
@@ -51,7 +51,7 @@ export function SessionList({ past, filtered, query, onQuery, selected, onSelect
   </section>;
 }
 
-export function SessionDetail({ selected, session, summary, retry, types }: { selected: string | null; session?: Past; summary: SummaryState; retry: () => void; types: Record<string, AlertType> }) {
+export function SessionDetail({ selected, session, summary, retry, types, onRename }: { selected: string | null; session?: Past; summary: SummaryState; retry: () => void; types: Record<string, AlertType>; onRename: (id: string, title: string) => void }) {
   const data = summary.id === selected ? summary.data : null;
   const loading = selected && (summary.id !== selected || summary.loading);
   const error = summary.id === selected && summary.error;
@@ -69,8 +69,10 @@ export function SessionDetail({ selected, session, summary, retry, types }: { se
   });
   return <section className="lv-panel dx-detail" id="detalle" aria-labelledby="dx-detail-title">
     {!selected ? <div className="dx-detail-head"><h2 id="dx-detail-title">Selecciona un directo</h2><p>Elige un directo de la lista para ver su análisis.</p></div> : <>
-      <div className="dx-detail-head"><div className="dx-detail-title"><div><span className="dx-eyebrow">Directo seleccionado · solo lectura</span>
-        <h2 id="dx-detail-title">{title}</h2><p>{dateTime(data?.startedAt || session?.startedAt)} · {duration(data?.startedAt || session?.startedAt, data?.endedAt || session?.endedAt)} · {plural(data ? events.length : (session?.events ?? 0), 'evento', 'eventos')}</p></div>
+      <div className="dx-detail-head"><div className="dx-detail-title"><div><span className="dx-eyebrow">Directo seleccionado</span>
+        <h2 id="dx-detail-title" className="sr-only">{title}</h2>
+        <LazyInput key={selected} className="title-input" value={data?.title ?? session?.title ?? ''} placeholder="Sin título" aria-label="Título del directo"
+          disabled={!!session?.pending} title={session?.pending ? 'Se podrá renombrar cuando termine de archivarse' : undefined} onCommit={(v: string) => onRename(selected, v)} /><p>{dateTime(data?.startedAt || session?.startedAt)} · {duration(data?.startedAt || session?.startedAt, data?.endedAt || session?.endedAt)} · {plural(data ? events.length : (session?.events ?? 0), 'evento', 'eventos')}</p></div>
         <a className="eg-btn eg-btn--secondary eg-btn--sm" href={`#/directos/${enc(selected)}/resumen`}>Resumen completo</a></div>
         {data && hasMetrics(data) ? <div className="dx-coverage">{platforms.map(p => <span key={p} className="dx-badge">{platformNames[p]} · espectadores <Coverage ratio={data.viewerMetrics?.[p]?.coverage?.ratio} /></span>)}</div> : null}
       </div>
