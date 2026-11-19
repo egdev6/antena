@@ -114,6 +114,8 @@ export class Engine extends EventEmitter {
     delete m.authorId;
     delete m.roomId;
     m.command = /^[!¡]/.test(text.trim());
+    // eco de un mensaje programado (el prompter puede ocultarlo: prompter.hideTimers)
+    if (this.timers?.claimEcho(m)) m.timer = true;
     if (m.highlighted) this.session.addNote({ kind: 'highlight', text: m.text, user: m.user, platform: m.platform, msgId: m.id });
     this.timers?.onChat(m);
     // preguntas, votos de la tier list y sorteo: el mensaje se marca como «usado» (el prompter lo oculta)

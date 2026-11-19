@@ -27,6 +27,8 @@ export interface ChatMessage {
   highlighted?: boolean;
   command?: boolean;
   used?: boolean;
+  /** Echo of a scheduled message (server-tagged). */
+  timer?: boolean;
   [k: string]: unknown;
 }
 export interface ChatSendResult { sent?: Record<string, unknown>; errors?: Record<string, string>; [k: string]: unknown }
@@ -203,6 +205,7 @@ export interface PrompterConfig {
   fontSize?: number;
   chatLines?: number;
   hideCommands?: boolean;
+  hideTimers?: boolean;
   autoSwitch?: boolean;
   mirror?: boolean;
   css?: string;
