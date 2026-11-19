@@ -72,6 +72,18 @@ so Meld desktop most likely serves that socket. Not verified: whether a Node
 client can connect (Origin or token checks) and whether TikTok events arrive.
 Being undocumented, it can change without notice.
 
+Terms (read 2026-11-20, [Terms of Use](https://meldstudio.co/terms/) last
+modified 2026-04-15): there is no developer or API licence and no
+interoperability exception. §13 forbids accessing the Services by "automated
+means" (iv), deriving source code (vi) and any use "outside of the scope of the
+rights expressly granted" (xv); §8.3 forbids redistributing Company Content,
+including code; New York law (§19). The only integration Meld invites is the
+WebChannel API ([docs/api](https://meldstudio.co/docs/api/)). Using the socket
+without written permission is a grey area: the obligation falls on each
+streamer, and the realistic consequence is Meld closing the port or adding a
+token. antena must never copy or ship `firehose.js`. Recommended: ask Meld for
+permission or a documented endpoint before building on it.
+
 Other sources checked: Streamer.bot, SAMMI, Firebot and Touch Portal integrate
 with Meld through WebChannel only (control and state, no chat); Social Stream
 Ninja works the other way (it collects chat and Meld displays it). TikTok has no
