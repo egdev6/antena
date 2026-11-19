@@ -15,7 +15,7 @@ Status (2026-11-19): desk research done; Meld live test done (Meld Studio
 | Produce a simultaneous vertical output | Yes, Multi Canvas + per-output canvas, no antena code | Yes, vertical canvas with its own outputs |
 | Observe vertical output state | No: only a global `isStreaming`, unchanged when one output stops (tested) | Yes: `status` per canvas + vendor events |
 | Start/stop vertical output alone | No: only global `toggleStream` / start/stop | Yes: `start_streaming` / `stop_streaming` per canvas |
-| Read TikTok chat from antena | No: stays inside Meld | Not applicable (no TikTok chat in OBS) |
+| Read TikTok chat from antena | Not through WebChannel; possible through an undocumented local event socket (untested) | Not applicable (no TikTok chat in OBS) |
 | antena code needed | None to produce; per-output control impossible today | Vendor request + vendor event support in `obs-adapter` |
 
 ## Meld Studio
@@ -54,10 +54,28 @@ stopped and restarted on its own, and turned `false` only on End Stream.
 
 Meld's TikTok output has a Login that brings TikTok chat, follows and gifts into
 Meld's chat dock, activity feed and built-in widgets
-([TikTok output docs](https://meldstudio.co/docs/outputs/tiktok/)). None of it is
-exposed through WebChannel, a local server or a documented widget URL. antena
-cannot read it. In the live test, the only layers exposing a `url` in `session`
-were antena's own browser sources (`http://127.0.0.1:4500/widget/...`).
+([TikTok output docs](https://meldstudio.co/docs/outputs/tiktok/)). WebChannel
+does not expose any of it: in the live test the interface had no chat members,
+and the only layers exposing a `url` in `session` were antena's own browser
+sources (`http://127.0.0.1:4500/widget/...`).
+
+Undocumented path (found 2026-11-20, untested): Meld's gallery elements (for
+example the [Multiplatform Color Chat](https://meldstudio.co/gallery/multiplatform-chat/))
+load [`firehose.js`](https://elements.meldstudio.co/cdn/v1/firehose.js), which
+opens `ws://{meld_host ?? 127.0.0.1}:{meld_port ?? 44423}/events` (plus
+`?token=` only when the page URL carries one) and maps JSON messages by
+`event_type`: `RICH_MESSAGE` (chat), `SUBSCRIPTION`, `FOLLOW`, `RAID`,
+`STREAM_STATUS`, `VIEWER_COUNT`, `VIEWER_LIST`, `PURCHASE` (including
+`TIKTOK_COINS`), `X_MELD_STATE`, plus `CATCHUP`/`X_HISTORY`. User ids look like
+`id;PLATFORM`. The gallery says these elements need Meld Studio or Spark Plug,
+so Meld desktop most likely serves that socket. Not verified: whether a Node
+client can connect (Origin or token checks) and whether TikTok events arrive.
+Being undocumented, it can change without notice.
+
+Other sources checked: Streamer.bot, SAMMI, Firebot and Touch Portal integrate
+with Meld through WebChannel only (control and state, no chat); Social Stream
+Ninja works the other way (it collects chat and Meld displays it). TikTok has no
+public LIVE comments API; tools like TikFinity are unofficial.
 
 ### Draft feature request to Meld
 
@@ -76,8 +94,9 @@ were antena's own browser sources (`http://127.0.0.1:4500/widget/...`).
 >    an `outputsChanged` signal (or per-output `isStreamingChanged`).
 > 2. Commands to start/stop/toggle one output by `id`.
 > 3. The canvas of each scene (`vertical`) documented in `session`.
-> 4. Optional: platform chat/activity (including TikTok via the output Login) as a
->    signal, so external tools can use the official chat Meld already receives.
+> 4. Document and support the local event socket (`:44423/events`) that the
+>    gallery elements use, so external tools can rely on the chat and activity
+>    (including TikTok via the output Login) Meld already receives.
 
 ## OBS + Aitum Vertical
 
