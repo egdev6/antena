@@ -260,7 +260,7 @@ export const CONFIG_SCHEMA = {
   },
   prompter: {
     fontSize: num({ min: 10, max: 40 }),                // slider de la UI: 16–32
-    mirror: bool, hideCommands: bool, autoSwitch: bool,
+    mirror: bool, hideCommands: bool, hideTimers: bool, autoSwitch: bool,
     chatLines: num({ int: true, min: 10, max: 200 }),   // la UI ya acota 20–200
     micTrack: str, css: str,
   },

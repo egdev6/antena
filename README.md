@@ -374,7 +374,7 @@ A 1024×600 view designed for the **Elgato Prompter**: you read chat and handle 
 What it carries:
 
 - **Top:** stream time and warnings only when something is wrong (mic muted in the broadcast program, alerts paused, Twitch or YouTube down, no overlay), about half the height it used to be.
-- **Left, the Twitch and YouTube chat in one column.** Commands and votes do not appear. Messages a viewer sends with «Highlight my message» appear highlighted. On mouse hover, the chat pauses and each message gets ❓ (to the question queue) and 📌 (save to the timeline). At the bottom you can write to the Twitch chat.
+- **Left, the Twitch and YouTube chat in one column.** Commands and votes do not appear; scheduled messages can be hidden with «Ocultar los mensajes programados del chat» (**Settings › Prompter › View**, off by default). Messages a viewer sends with «Highlight my message» appear highlighted. On mouse hover, the chat pauses and each message gets ❓ (to the question queue) and 📌 (save to the timeline). At the bottom you can write to the Twitch chat.
 - **Right, two tabs:**
   - **Events,** two stacked blocks that fill the height. **Timeline:** alerts with ✔ (thanked) and ↺ (replay), short bookmarks (rename them with a click), questions shown and winners, each with its minute and its platform logo, and a «to thank» mark on alerts you have not thanked yet. **Highlights:** the messages a viewer highlights in Twitch and the ones you save with «Save», with platform logo, user and minute. The tab counts what is still to thank.
   - **Questions:** take any of them out of the queue with a click, next, hide and discard; the tab counts the ones waiting.

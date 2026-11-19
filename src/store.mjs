@@ -49,7 +49,7 @@ export const DEFAULT_CONFIG = {
   teleprompter: DEFAULT_TELEPROMPTER, // guiones y ajustes de lectura (src/teleprompter.mjs)
   customOverlays: [],                // overlays propios HTML/CSS/JS (src/custom-overlays.mjs)
   theme: DEFAULT_THEME,               // Apariencia: tema de overlay y widgets (src/theme.mjs)
-  prompter: { fontSize: 22, mirror: false, hideCommands: true, autoSwitch: true, chatLines: 60, micTrack: '', css: '' },  // micTrack: pista de Meld del micro (vacío = la primera que se llame «mic…»)
+  prompter: { fontSize: 22, mirror: false, hideCommands: true, hideTimers: false, autoSwitch: true, chatLines: 60, micTrack: '', css: '' },  // micTrack: pista de Meld del micro (vacío = la primera que se llame «mic…»)
   widgets: {
     chat: { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide', layout: 'vertical', css: '' },  // hideOwner: tus mensajes no salen en pantalla; animIn/animOut #130
     chatVariants: [],

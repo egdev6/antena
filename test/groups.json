@@ -69,6 +69,7 @@
     "test/program-contract.test.mjs",
     "test/program-meld-adapter.test.mjs",
     "test/program-obs-adapter.test.mjs",
+    "test/prompter-hide-timers.test.mjs",
     "test/prompter-tokens.test.mjs",
     "test/prompter.test.mjs",
     "test/push-export-current-id-owed.test.mjs",

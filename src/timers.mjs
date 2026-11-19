@@ -28,6 +28,8 @@ export const TIMER_KEYS = ['name', 'enabled', 'message', 'intervalMin', 'minChat
 export const TIMER_DESTINATIONS = ['twitch', 'youtube', 'both'];
 export const CHAT_LIMITS = { twitch: 500, youtube: 200 };
 export const PLATFORM_NAMES = { twitch: 'Twitch', youtube: 'YouTube' };
+// Tiempo máximo para que el eco de un mensaje programado vuelva por el chat (YouTube va por sondeo).
+const ECHO_TTL_MS = 2 * 60_000;
 
 /** Plataformas de un timer o de una acción de chat: sin destino, solo Twitch. */
 export function timerPlatforms(t) {
@@ -128,6 +130,32 @@ export class Timers {
     const results = await Promise.allSettled([...this._work]);
     const errors = results.flatMap(r => r.status === 'rejected' ? [r.reason] : r.value.errors);
     if (errors.length) throw new AggregateError(errors, 'No se pudieron cerrar los mensajes programados.');
+  }
+
+  /**
+   * Eco de un mensaje programado: vuelve por el chat como mensaje tuyo. Se registra antes de enviar
+   * (por si el eco llega antes que la respuesta) y se empareja por id o, si no, por plataforma y texto.
+   * Cada registro se usa una sola vez y caduca a los ECHO_TTL_MS.
+   */
+  expectEcho(platform, text) {
+    const now = Date.now();
+    this.echoes = (this.echoes || []).filter(e => now - e.at < ECHO_TTL_MS);
+    const entry = { platform, text: text.trim(), id: null, at: now };
+    this.echoes.push(entry);
+    return entry;
+  }
+
+  /** true si el mensaje (tuyo) es el eco de un mensaje programado; consume el registro. */
+  claimEcho(msg) {
+    if (!msg.owner || !this.echoes?.length) return false;
+    const now = Date.now();
+    this.echoes = this.echoes.filter(e => now - e.at < ECHO_TTL_MS);
+    const text = String(msg.text ?? '').trim();
+    const i = this.echoes.findIndex(e => e.id && e.id === msg.id);
+    const j = i >= 0 ? i : this.echoes.findIndex(e => e.platform === msg.platform && e.text === text);
+    if (j < 0) return false;
+    this.echoes.splice(j, 1);
+    return true;
   }
 
   /** Cada mensaje del chat (que no sea tuyo) cuenta para «minChatLines». */
@@ -266,8 +294,16 @@ export class Timers {
   /** Envía a una plataforma; el anuncio solo existe en Twitch, YouTube recibe el mismo texto normal. */
   async _send(p, t, text, errors) {
     const provider = p === 'twitch' ? this.twitch : this.youtube;
+    // Los anuncios de Twitch no vuelven como mensaje de chat: no hay eco que esperar.
+    const echo = p === 'twitch' && t.announce ? null : this.expectEcho(p, text);
     const r = await sendToPlatform(p, provider, text, { announce: t.announce, color: t.announceColor }, errors);
-    if (!r.ok) this.log('[timers]', t.name, PLATFORM_NAMES[p], r.error);
+    if (!r.ok) {
+      if (echo) this.echoes = this.echoes.filter(e => e !== echo);
+      this.log('[timers]', t.name, PLATFORM_NAMES[p], r.error);
+    } else if (echo) {
+      const id = p === 'twitch' ? r.result?.message_id : r.result?.id;
+      if (id) echo.id = `${p === 'twitch' ? 'tw' : 'yt'}:${id}`;
+    }
     return r;
   }
 

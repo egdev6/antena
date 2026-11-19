@@ -82,7 +82,7 @@ function Chat() {
     ];
     return () => offs.forEach(f => f());
   }, []);
-  const visible = list.filter(m => !(pr.hideCommands !== false && (m.command || m.used))).slice(-(Number(pr.chatLines) || 60));
+  const visible = list.filter(m => !(pr.hideCommands !== false && (m.command || m.used)) && !(pr.hideTimers && m.timer)).slice(-(Number(pr.chatLines) || 60));
   const lastId = visible.at(-1)?.id;
   const scrollEnd = () => { const el = box.current; if (el) el.scrollTop = el.scrollHeight; setUnseen(0); };
   useLayoutEffect(() => {

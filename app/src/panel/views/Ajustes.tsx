@@ -231,6 +231,7 @@ export function PrompterAjustes({ parts }: { parts: string[] }) {
           <label>Mensajes de chat en la vista <input type="number" min={20} max={200} value={pr.chatLines ?? 60} onChange={e => P({ chatLines: Number(e.target.value) })} /></label>
         </div>
         <Switch checked={pr.hideCommands !== false} onChange={x => P({ hideCommands: x })}>Ocultar comandos y votos del chat (<code>!sorteo</code>, «S»…)</Switch>
+        <Switch checked={!!pr.hideTimers} onChange={x => P({ hideTimers: x })}>Ocultar los mensajes programados del chat</Switch>
         <Switch checked={!!pr.mirror} onChange={x => P({ mirror: x })}>Espejo (solo si la imagen sale al revés)</Switch>
         <label>Pista del micro en el programa de emisión (avisa en grande si está silenciado)
           <select value={pr.micTrack || ''} onChange={e => P({ micTrack: e.target.value })}><option value="">Automática (la que se llame «mic…»)</option>{tracks.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></label>
