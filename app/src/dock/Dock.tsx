@@ -5,7 +5,7 @@ import { post, withKey } from '../lib/api';
 import { IC } from '../lib/icons';
 import { live, useLive, useLiveVersion } from '../lib/live';
 import { groupMeldScenes } from '../lib/meld-scenes';
-import { ConnPill, cx, guard, Icon, mmss, toast, Toaster } from '../lib/ui';
+import { ConnPill, cx, guard, Icon, mmss, PfIcon, toast, Toaster } from '../lib/ui';
 import { DockQuestions } from './DockQuestions';
 import { DockTierlist } from './DockTierlist';
 import { DockGiveaway } from './DockGiveaway';
@@ -298,7 +298,9 @@ function StreamControl({ control }: { control: ReturnType<typeof useStreamContro
     <p className="d-stream-notice" role="status">{control.notice}</p>
     <div className="d-viewers" aria-label="Espectadores por plataforma">{(['twitch', 'youtube'] as const).map(platform => {
       const value = offline ? null : currentViewers(viewers?.platforms?.[platform], viewers?.settings, now);
-      return <div key={platform} data-platform={platform}><span>{platform === 'twitch' ? 'Twitch' : 'YouTube'}</span><b>{value === null ? 'sin dato' : value.toLocaleString('es-ES')}</b></div>;
+      return <div key={platform} data-platform={platform} className={cx(value === null && 'is-empty')}>
+        <PfIcon platform={platform} className="d-viewers-logo" />
+        <b>{value === null ? 'sin dato' : value.toLocaleString('es-ES')}</b></div>;
     })}</div>
     <StreamDialog control={control} />
   </section>;

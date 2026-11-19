@@ -92,8 +92,10 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:none;box-shadow
 .d-stream-notice{margin:0;color:var(--warn);font-size:12px;overflow-wrap:anywhere}
 .d-stream-notice:empty{display:none}
 .d-viewers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.d-viewers>div{display:flex;align-items:baseline;justify-content:space-between;gap:6px;color:var(--grey);font-size:12px;min-width:0}
-.d-viewers b{color:var(--text);font:600 12px/1.2 var(--font-mono);font-variant-numeric:tabular-nums}
+.d-viewers>div{display:flex;align-items:center;gap:8px;padding:6px 10px;color:var(--grey);font-size:12px;min-width:0;background:var(--s2);border-radius:var(--radius-sm)}
+.d-viewers-logo{flex:none;width:20px;height:20px}
+.d-viewers b{margin-left:auto;color:#fff;font:700 20px/1.1 var(--font-mono);font-variant-numeric:tabular-nums}
+.d-viewers .is-empty b{color:var(--muted);font:600 12px/1.2 var(--font-mono)}
 .d-confirm{width:min(420px,calc(100% - 24px));max-height:calc(100% - 24px);padding:16px;color:var(--text);background:var(--s1);border:1px solid var(--line2);border-radius:var(--radius-md);box-shadow:var(--shadow-elev-1)}
 .d-confirm::backdrop{background:var(--color-bg-scrim)}
 .d-confirm h2{margin:0;font:800 20px/1.1 var(--font-display)}
