@@ -56,7 +56,7 @@ async function withSecondLoadInFlight(t) {
   t.after(() => { delete globalThis.EventSource; delete globalThis.__apiImpl; delete globalThis.__fakeEs; });
   const states = [], chats = [];
   globalThis.__apiImpl = (m, p) => {
-    if (p === '/api/timeline' || p === '/api/prompter') return Promise.resolve({});
+    if (p === '/api/timeline' || p === '/api/prompter' || p === '/api/interview-control') return Promise.resolve({});
     if (p === '/api/chat?limit=200') return new Promise(r => chats.push(r));
     return new Promise(r => states.push(r));
   };

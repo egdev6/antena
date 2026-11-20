@@ -26,7 +26,7 @@ test('prompter React: pestañas, chat por SSE y marca en la cronología guardada
 
     // pestañas del prompter: Eventos (cronología y destacados) y Preguntas (S7)
     const tabs = await ev(`Array.from(document.querySelectorAll('.pr-side .tabs .tab')).map(b => b.textContent.replace(/\\d+|●/g, '').trim())`);
-    assert.deepEqual(tabs, ['Eventos', 'Preguntas']);
+    assert.deepEqual(tabs, ['Eventos', 'Preguntas', 'Entrevista']);
 
     // chat: un mensaje inyectado en el motor llega por SSE y se pinta con su autor y texto
     app.engine.handleChat({ id: 'c-test-1', user: 'EspectadorBot', text: 'hola desde el test', platform: 'twitch', color: '#3B5CFF' });

@@ -14,10 +14,13 @@ import { ACTIONS, ActionFields, ActionOptions } from './Editor';
 export const SD_HELP: Record<string, string> = {
   marca: 'Marca de short (con su minuto y marcador de Twitch)', pausa: 'Pausar / reanudar alertas', saltar: 'Saltar la alerta en pantalla',
   'siguiente-pregunta': 'Sacar la siguiente pregunta', 'ocultar-pregunta': 'Quitar la pregunta de pantalla', 'cerrar-votacion': 'Cerrar la votación de la tier list',
-  'abrir-sorteo': 'Abrir el sorteo', 'cerrar-sorteo': 'Cerrar la inscripción', sortear: 'Sortear', agradecido: 'Marcar como agradecido el más antiguo pendiente',
+  'abrir-sorteo': 'Abrir el sorteo', 'cerrar-sorteo': 'Cerrar la inscripción', sortear: 'Sortear',
+  'entrevista-siguiente': 'Entrevista: siguiente pregunta', 'entrevista-anterior': 'Entrevista: pregunta anterior', 'entrevista-ir': 'Entrevista: ir a un ítem (id)',
+  'entrevista-mostrar-media': 'Entrevista: mostrar la media', 'entrevista-ocultar-media': 'Entrevista: ocultar la media', 'entrevista-ocultar': 'Entrevista: ocultar el widget',
+  agradecido: 'Marcar como agradecido el más antiguo pendiente',
 };
 // S10: el prompter ofrece dos pestañas; las retiradas se muestran si un atajo guardado aún las usa.
-const TAB_NAMES: Record<string, string> = { cronologia: 'Eventos', preguntas: 'Preguntas', tierlist: 'Tier list', sorteo: 'Sorteo' };
+const TAB_NAMES: Record<string, string> = { cronologia: 'Eventos', preguntas: 'Preguntas', entrevista: 'Entrevista', tierlist: 'Tier list', sorteo: 'Sorteo' };
 export const sdLabel = (a: string) => SD_HELP[a] || (a.startsWith('prompter/') ? `Prompter: pestaña ${TAB_NAMES[a.split('/')[1]] || a.split('/')[1]}` : a);
 const COLORS = ['', '#FF335E', '#FF8FA6', '#00E0FF', '#7CFF6B', '#FFC94D', '#B58CFF'];
 
@@ -47,7 +50,7 @@ function StepsEditor({ steps, info, onChange }: { steps: Step[]; info: Info; onC
         <optgroup label="Programa de emisión, chat y voz"><ActionOptions /></optgroup>
       </select>
       {st.kind === 'builtin'
-        ? <div className="afields">{st.action === 'prompter' && <label>Pestaña<select value={st.arg} onChange={e => repl(i, { ...st, arg: e.target.value })}>{info.prompterTabs.map(t => <option key={t} value={t}>{TAB_NAMES[t] || t}</option>)}</select></label>}</div>
+        ? <div className="afields">{st.action === 'entrevista-ir' && <label>Id del ítem<input value={st.arg || ''} maxLength={40} onChange={e => repl(i, { ...st, arg: e.target.value })} /></label>}{st.action === 'prompter' && <label>Pestaña<select value={st.arg} onChange={e => repl(i, { ...st, arg: e.target.value })}>{info.prompterTabs.map(t => <option key={t} value={t}>{TAB_NAMES[t] || t}</option>)}</select></label>}</div>
         : <ActionFields act={st} uid={'s' + i} onChange={a => repl(i, a)} />}
       <span className="vbtns">
         <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={() => move(i, -1)} />

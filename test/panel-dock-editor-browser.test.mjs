@@ -79,10 +79,13 @@ test('S3/S5 dock editor: draft, preview, live save and reset', { timeout: 120000
   await t.test('S3: ordered Spanish module switches and accessible reorder stay in the draft', async () => {
     await editor(c);
     const ids = DEFAULT_DOCK.modules.map(m => m.id);
-    const labels = ['Emisión', 'Alertas', 'Marca y agradecidos', 'Escenas', 'Teleprompter', 'Créditos', 'Audio', 'Preguntas', 'Tier list', 'Sorteo', 'Atajos'];
+    const labels = ['Emisión', 'Alertas', 'Marca y agradecidos', 'Escenas', 'Teleprompter', 'Créditos', 'Audio', 'Preguntas', 'Tier list', 'Sorteo', 'Atajos', 'Entrevista'];
     assert.deepEqual(await dom(c, `[...document.querySelectorAll('main [data-dock-module]')].map(r => [r.dataset.dockModule, r.querySelector('label.switch').textContent.trim()])`), ids.map((id, i) => [id, labels[i]]));
     assert.equal(await dom(c, `${row('stream')}.querySelector('[aria-label="Subir Emisión"]').disabled`), true);
-    assert.equal(await dom(c, `${row('shortcuts')}.querySelector('[aria-label="Bajar Atajos"]').disabled`), true);
+    // #278: «Entrevista» is the last module now, so it is the one that cannot move down
+    assert.equal(await dom(c, `${row('interview')}.querySelector('[aria-label="Bajar Entrevista"]').disabled`), true);
+    assert.equal(await dom(c, `${row('shortcuts')}.querySelector('[aria-label="Bajar Atajos"]').disabled`), false);
+    assert.equal(await dom(c, `${row('interview')}.querySelector('input').checked`), false);
     assert.equal(await dom(c, `${row('shortcuts')}.querySelector('input').checked`), false);
     await waitDom(c, `${frame}.contentWindow?.location.search === new URL(${frame}.src).search && !!${frame}.contentDocument?.querySelector('.dock[inert]')`, { timeoutMs: 15000 });
     await c.send('Page.bringToFront');
@@ -92,7 +95,8 @@ test('S3/S5 dock editor: draft, preview, live save and reset', { timeout: 120000
     await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     await waitDom(c, `${row('shortcuts')}.nextElementSibling?.dataset.dockModule === 'giveaway'`);
     await click(c, `${row('shortcuts')}.querySelector('input')`);
-    assert.deepEqual((await preview(c)).modules.slice(-2), [{ id: 'shortcuts', enabled: true }, { id: 'giveaway', enabled: true }]);
+    // #278: «Entrevista» (disabled) stays last, after the reordered pair
+    assert.deepEqual((await preview(c)).modules.slice(-3), [{ id: 'shortcuts', enabled: true }, { id: 'giveaway', enabled: true }, { id: 'interview', enabled: false }]);
     assert.deepEqual((await api('GET', '/api/config')).dock, DEFAULT_DOCK, 'draft never autosaves');
     await click(c, button('Descartar'));
     assert.deepEqual(await preview(c), DEFAULT_DOCK);

@@ -10,7 +10,7 @@ import type { DockConfig, DockLayout, DockModuleId, DockZone } from '../../lib/t
 const MODULE_LABELS: Record<DockModuleId, string> = {
   stream: 'Emisión', alerts: 'Alertas', marks: 'Marca y agradecidos', scenes: 'Escenas',
   teleprompter: 'Teleprompter', credits: 'Créditos', audio: 'Audio', questions: 'Preguntas',
-  tierlist: 'Tier list', giveaway: 'Sorteo', shortcuts: 'Atajos',
+  tierlist: 'Tier list', giveaway: 'Sorteo', shortcuts: 'Atajos', interview: 'Entrevista',
 };
 const defaults = DEFAULT_DOCK as DockConfig;
 const isKnown = (id: string): id is DockModuleId => Object.hasOwn(MODULE_LABELS, id);

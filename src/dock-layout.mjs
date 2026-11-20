@@ -1,13 +1,13 @@
 // Shared, side-effect-free dock defaults and rendering projection.
-export const DOCK_MODULE_IDS = ['stream', 'alerts', 'marks', 'scenes', 'teleprompter', 'credits', 'audio', 'questions', 'tierlist', 'giveaway', 'shortcuts'];
+export const DOCK_MODULE_IDS = ['stream', 'alerts', 'marks', 'scenes', 'teleprompter', 'credits', 'audio', 'questions', 'tierlist', 'giveaway', 'shortcuts', 'interview'];
 export const DOCK_LAYOUTS = ['auto', 'tabs', 'columns', 'split-v', 'split-h'];
 export const DEFAULT_DOCK = {
-  modules: DOCK_MODULE_IDS.map(id => ({ id, enabled: id !== 'shortcuts' })),
+  modules: DOCK_MODULE_IDS.map(id => ({ id, enabled: id !== 'shortcuts' && id !== 'interview' })),
   layout: 'auto',
   zones: [
     { id: 'control', label: 'Control', modules: ['stream', 'alerts', 'marks', 'scenes', 'teleprompter', 'credits'] },
     { id: 'audio', label: 'Audio', modules: ['audio'] },
-    { id: 'interactivos', label: 'Interactivos', modules: ['questions', 'tierlist', 'giveaway'] },
+    { id: 'interactivos', label: 'Interactivos', modules: ['questions', 'tierlist', 'giveaway', 'interview'] },
   ],
 };
 

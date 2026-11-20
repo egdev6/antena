@@ -7,11 +7,12 @@ import { live, makeChatLoader, useLive } from '../lib/live';
 import { mergeChat } from '../lib/chat-merge.mjs';
 import { ConnPill, cx, EmptyState, fmtTime, guard, Icon, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
 import { IC, type IconData } from '../lib/icons';
+import { InterviewPad, useInterview } from '../lib/InterviewControls';
 import type { ChatMessage, ChatSendResult, Question, TimelineItem } from '../lib/types';
 
 // S7: dos pestañas. Eventos (cronología y destacados) es el id 'cronologia' por compatibilidad
 // con el contrato del servidor; las pestañas retiradas (tierlist, sorteo) caen en Eventos.
-const TABS: [string, string][] = [['cronologia', 'Eventos'], ['preguntas', 'Preguntas']];
+const TABS: [string, string][] = [['cronologia', 'Eventos'], ['preguntas', 'Preguntas'], ['entrevista', 'Entrevista']];
 const P = () => live.state?.config?.prompter || {};
 
 // ---------- barra superior ----------
@@ -163,6 +164,11 @@ function Preguntas() {
   </>;
 }
 
+// ---------- entrevista (#278): the only on-stage-free place with the private notes and the «n / total» progress ----------
+function Entrevista() {
+  return <InterviewPad label="Entrevista" cls={{ btn: 'eg-btn eg-btn--secondary', primary: 'eg-btn eg-btn--primary pr-grow', muted: 'pr-muted', row: 'pr-btns', note: 'pr-note', title: 'eg-eyebrow pr-eyebrow' }} />;
+}
+
 // ---------- eventos: cronología + destacados ----------
 // S7/S8: el panel derecho son dos pestañas. «Eventos» apila dos bloques que llenan el alto:
 // Cronología (alertas, marcas y demás notas) y Destacados (mensajes destacados y guardados).
@@ -252,6 +258,7 @@ export function Prompter() {
   const tab = useLive(() => live.prompter.tab || 'cronologia');
   const current = TABS.some(([k]) => k === tab) ? tab : 'cronologia';
   const I = useLive(s => s?.interactive);
+  const interview = useInterview();
   const pending = useLive(() => live.timeline.pending || 0);
   const pr = useLive(s => s?.config?.prompter || {});
   useEffect(() => { live.load().then(() => live.connect('panel')).catch(e => toast(e.message, true)); }, []);
@@ -264,6 +271,7 @@ export function Prompter() {
   const badges: Record<string, ReactNode> = {
     cronologia: pending || null,
     preguntas: I?.questions?.pending || null,
+    entrevista: interview?.active && interview.progress.total ? `${interview.progress.index}/${interview.progress.total}` : null,
   };
   return <>
     <style>{pr.css || ''}</style>
@@ -275,6 +283,7 @@ export function Prompter() {
           <div className="eg-tabs eg-tabs--lg tabs" role="tablist" aria-label="Herramientas">{TABS.map(([k, l]) => <button key={k} type="button" role="tab" className={cx('eg-tabs__item tab', current === k && 'on')} aria-selected={current === k} onClick={() => setTab(k)}>{l}{badges[k] ? <span className="eg-tabs__count n">{badges[k]}</span> : null}</button>)}</div>
           {current === 'preguntas'
             ? <div className="pr-pane pane on" role="tabpanel" aria-label="Preguntas"><Preguntas /></div>
+            : current === 'entrevista' ? <div className="pr-pane pane on" role="tabpanel" aria-label="Entrevista"><Entrevista /></div>
             : <Eventos />}
         </section>
       </div>

@@ -2,8 +2,12 @@
 // The widget has no settings of its own: it shows the active, approved item of the active interview
 // (chosen with POST /api/interviews/select or the MCP tool elegir_entrevista). This column explains
 // what appears on screen and how to try it.
+import { InterviewPad } from '../../lib/InterviewControls';
+
 export function InterviewSettings() {
   return <>
+    <h3 className="hint mt">Controles en directo</h3>
+    <InterviewPad cls={{ btn: 'eg-btn eg-btn--secondary eg-btn--sm', primary: 'eg-btn eg-btn--primary eg-btn--sm', muted: 'hint', row: 'row tight', note: 'hint', title: 'hint' }} />
     <p className="hint">Muestra en pantalla completa el ítem activo de la entrevista activa: la pregunta, su imagen, vídeo local, vídeo de YouTube o tarjeta de post, y la fuente cuando hay media. Solo se ve un ítem aprobado; sin ítem activo, el widget queda vacío y la escena se transparenta.</p>
     <ul className="hint">
       <li>Las notas privadas del presentador nunca salen en pantalla.</li>

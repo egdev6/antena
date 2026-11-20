@@ -236,7 +236,7 @@ export interface YoutubeConfig {
   clientSecret?: string;
   [k: string]: unknown;
 }
-export type DockModuleId = 'stream' | 'alerts' | 'marks' | 'scenes' | 'teleprompter' | 'credits' | 'audio' | 'questions' | 'tierlist' | 'giveaway' | 'shortcuts';
+export type DockModuleId = 'stream' | 'alerts' | 'marks' | 'scenes' | 'teleprompter' | 'credits' | 'audio' | 'questions' | 'tierlist' | 'giveaway' | 'shortcuts' | 'interview';
 export type DockLayout = 'auto' | 'tabs' | 'columns' | 'split-v' | 'split-h';
 export interface DockZone { id: string; label: string; modules: DockModuleId[] }
 export interface DockConfig { modules: { id: DockModuleId; enabled: boolean }[]; layout: DockLayout; zones: DockZone[] }
@@ -485,6 +485,15 @@ export interface AppState {
   customOverlays?: CustomOverlay[];
 }
 
+/** Presenter view of the live interview (GET /api/interview-control, SSE `interviewControl`): carries private notes. */
+export interface InterviewStep { id: string; question: string; notes?: string; round: string; media: string | null }
+export interface InterviewControl {
+  active: boolean; interviewId: string; title: string; guest: string;
+  progress: { index: number; total: number }; mediaHidden: boolean;
+  current: InterviewStep | null; next: InterviewStep | null;
+  items: { id: string; question: string; round: string; media: string | null; current: boolean }[];
+}
+
 /** Pestañas del prompter y estado del prompter (/api/prompter). */
 export interface PrompterState { tab?: string; at?: number; [k: string]: unknown }
 
@@ -506,6 +515,7 @@ export interface LiveEvents {
   chatClear: { login: string };
   timeline: Timeline;
   prompter: PrompterState;
+  interviewControl: InterviewControl;
   config: Partial<Config>;
   viewers: ViewersState;
   teleprompter: TeleprompterState;

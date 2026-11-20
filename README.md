@@ -510,7 +510,7 @@ Claude Desktop (`claude_desktop_config.json`):
 | Timeline and prompter | `cronologia`, `crear_marca`, `nota_cronologia`, `editar_nota_cronologia`, `borrar_nota_cronologia`, `marcar_agradecido`, `prompter_pestana` |
 | Broadcast program | `programa_estado`, `programa_conectar`, `programa_desconectar`, `programa_escena`, `programa_capa`, `programa_efecto`, `programa_comando`, `programa_evento`, `programa_audio`, `programa_media`, `programa_propiedad`, `programa_llamar`, `ejecutar_acciones` |
 | Teleprompter | `estado_teleprompter`, `controlar_teleprompter` (play, pause, toggle, reset, next, prev, block, seek, faster, slower), `configurar_teleprompter`, `crear_guion`, `editar_guion`, `elegir_guion`, `borrar_guion` |
-| Interviews | `listar_entrevistas`, `ver_entrevista`, `crear_entrevista`, `importar_entrevista`, `editar_entrevista`, `elegir_entrevista`, `borrar_entrevista` (format: [docs/entrevista-formato.md](docs/entrevista-formato.md)) |
+| Interviews | `listar_entrevistas`, `ver_entrevista`, `crear_entrevista`, `importar_entrevista`, `editar_entrevista`, `elegir_entrevista`, `borrar_entrevista`; live control: `entrevista_estado`, `entrevista_siguiente`, `entrevista_anterior`, `entrevista_ir`, `entrevista_media`, `entrevista_ocultar` (format and controls: [docs/entrevista-formato.md](docs/entrevista-formato.md)) |
 | Connections | `twitch_conectar`, `twitch_desconectar`, `youtube_escuchar`, `youtube_parar`, `acceso_movil` |
 
 The corresponding `meld_*` MCP tools and `/api/meld*` routes remain permanent aliases of `programa_*` and `/api/program*`.

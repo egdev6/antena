@@ -119,7 +119,7 @@ test('cargas solapadas que resuelven en orden inverso no pierden el chat en curs
   // espera de que el test lo resuelva; el orden es state y luego chat dentro de cada carga.
   const pendings = [], chats = [];
   globalThis.__apiImpl = (_m, p) => {
-    if (p === '/api/timeline' || p === '/api/prompter') return Promise.resolve({});
+    if (p === '/api/timeline' || p === '/api/prompter' || p === '/api/interview-control') return Promise.resolve({});
     if (p === '/api/chat?limit=200') return new Promise(r => chats.push(r));
     return new Promise(r => pendings.push(r));
   };
@@ -159,7 +159,7 @@ test('la carga más antigua que resuelve al final no pisa config, history ni sta
 
   const pendings = [], chats = [];
   globalThis.__apiImpl = (_m, p) => {
-    if (p === '/api/timeline' || p === '/api/prompter') return Promise.resolve({});
+    if (p === '/api/timeline' || p === '/api/prompter' || p === '/api/interview-control') return Promise.resolve({});
     if (p === '/api/chat?limit=200') return new Promise(r => chats.push(r));
     return new Promise(r => pendings.push(r));
   };
@@ -200,7 +200,7 @@ test('un snapshot en vuelo que resuelve tarde no revierte un cambio optimista de
 
   const pendings = [], chats = [];
   globalThis.__apiImpl = (_m, p) => {
-    if (p === '/api/timeline' || p === '/api/prompter') return Promise.resolve({});
+    if (p === '/api/timeline' || p === '/api/prompter' || p === '/api/interview-control') return Promise.resolve({});
     if (p === '/api/chat?limit=200') return new Promise(r => chats.push(r));
     return new Promise(r => pendings.push(r));
   };
@@ -324,4 +324,89 @@ test('chat local: un borrado anterior a la carga no filtra la respuesta nueva', 
   resolvers[0]([msg('a', 'ana'), msg('b', 'beto')]);
   await done;
   assert.deepEqual(applied[0].map(m => m.id), ['a', 'b']);
+});
+
+// La entrevista es adicional al estado principal: sus respuestas pueden tardar, fallar o
+// cruzarse entre sí y con un evento SSE sin bloquear el panel ni revertir la vista viva.
+async function interviewLoads(t) {
+  globalThis.EventSource = FakeEventSource;
+  const { live } = await bundleLive();
+  const requests = [], loads = [];
+  let revision = 0;
+  globalThis.__apiImpl = (_m, p) => {
+    if (p === '/api/state') return Promise.resolve({ config: { revision: ++revision }, history: [], status: {}, widgets: {} });
+    if (p === '/api/chat?limit=200') return Promise.resolve([]);
+    if (p === '/api/timeline' || p === '/api/prompter') return Promise.resolve({});
+    if (p === '/api/interview-control') return new Promise((resolve, reject) => requests.push({ resolve, reject }));
+    throw new Error(`Unexpected request: ${p}`);
+  };
+  live.connect('test');
+  t.after(async () => {
+    for (const request of requests) request.reject(new Error('test cleanup'));
+    await Promise.allSettled(loads);
+    delete globalThis.EventSource; delete globalThis.__apiImpl; delete globalThis.__fakeEs;
+  });
+  const load = () => { const promise = live.load(); loads.push(promise); return promise; };
+  return { live, requests, load };
+}
+const turn = () => new Promise(resolve => setImmediate(resolve));
+
+test('entrevista pendiente no bloquea ni oculta la carga principal', async t => {
+  const { live, requests, load } = await interviewLoads(t);
+  const observed = [];
+  live.subscribe(() => observed.push({ revision: live.state?.config.revision, interview: live.interview }));
+  let finished = false;
+  load().then(() => { finished = true; });
+  await turn();
+  assert.equal(requests.length, 1);
+  assert.equal(finished, true, 'load termina sin esperar la entrevista');
+  assert.equal(live.state.config.revision, 1);
+  assert.deepEqual(observed, [{ revision: 1, interview: null }], 'el estado principal se notifica antes de la entrevista');
+  const interview = { active: true, title: 'Entrevista actual' };
+  requests[0].resolve(interview);
+  await turn();
+  assert.deepEqual(live.interview, interview);
+  assert.deepEqual(observed.at(-1), { revision: 1, interview }, 'la entrevista se notifica al llegar');
+});
+
+test('entrevista: un snapshot antiguo no pisa otro más reciente', async t => {
+  const { live, requests, load } = await interviewLoads(t);
+  load(); await turn();
+  load(); await turn();
+  assert.equal(requests.length, 2);
+  const newer = { active: true, title: 'Nueva' };
+  requests[1].resolve(newer); await turn();
+  assert.deepEqual(live.interview, newer);
+  const version = live.version;
+  requests[0].resolve({ active: true, title: 'Antigua' }); await turn();
+  assert.deepEqual(live.interview, newer);
+  assert.equal(live.version, version, 'el snapshot descartado no notifica');
+});
+
+test('entrevista: un evento SSE en vuelo gana al snapshot anterior', async t => {
+  const { live, requests, load } = await interviewLoads(t);
+  load(); await turn();
+  assert.equal(requests.length, 1);
+  const newer = { active: true, title: 'Cambio en directo' };
+  globalThis.__fakeEs.emit('interviewControl', newer);
+  assert.deepEqual(live.interview, newer);
+  const version = live.version;
+  requests[0].resolve({ active: true, title: 'Snapshot anterior' }); await turn();
+  assert.deepEqual(live.interview, newer);
+  assert.equal(live.version, version, 'el snapshot descartado no notifica');
+});
+
+test('entrevista: un fallo conserva la vista anterior y no bloquea el estado', async t => {
+  const { live, requests, load } = await interviewLoads(t);
+  load(); await turn();
+  const interview = { active: true, title: 'Conservada' };
+  requests[0].resolve(interview); await turn();
+  let finished = false;
+  load().then(() => { finished = true; });
+  await turn();
+  assert.equal(requests.length, 2);
+  requests[1].reject(new Error('red caída')); await turn();
+  assert.equal(finished, true);
+  assert.equal(live.state.config.revision, 2);
+  assert.deepEqual(live.interview, interview);
 });

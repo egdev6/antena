@@ -6,7 +6,7 @@ import { mergeChat } from './chat-merge.mjs';
 import { api, withKey } from './api';
 import { holding, protectDrafts, registerDraft, type DraftSource } from './draft';
 import { ManualDraft } from './manual-draft';
-import type { AppState, ChatMessage, Config, LiveEventName, LiveEvents, PrompterState, Timeline } from './types';
+import type { AppState, ChatMessage, Config, LiveEventName, InterviewControl, LiveEvents, PrompterState, Timeline } from './types';
 
 type Listener = () => void;
 /** Un manejador de evento, con el payload tipado por el mapa LiveEvents. */
@@ -57,6 +57,8 @@ class Live {
   state: AppState | null = null;
   timeline: Timeline = { items: [], pending: 0 };
   prompter: PrompterState = { tab: 'cronologia' };
+  /** Presenter view of the live interview (notes included); null until loaded. */
+  interview: InterviewControl | null = null;
   connected = false;
   /** true tras perder la conexión (no al arrancar): para el aviso de «sin conexión». */
   failed = false;
@@ -73,6 +75,9 @@ class Live {
    *  resuelve después de una más reciente no debe pisar config, history ni status. */
   private appliedGen = 0;
   private loadSeq = 0;
+  /** Interview snapshots have their own ordering and must not overwrite an in-flight SSE update. */
+  private interviewAppliedGen = 0;
+  private interviewTouch = 0;
   /** Cambios optimistas de config aplicados desde update(): una edición local (p. ej.
    *  añadir una barra a un objetivo en el panel) es más nueva que cualquier snapshot de
    *  /api/state pedido antes, así que ese snapshot no debe revertirla al aplicarse. */
@@ -219,7 +224,15 @@ class Live {
       if (gen < this.appliedGen) return;
       this.prompter = pr;
     } catch { /* la vista funciona sin prompter */ }
+    // The interview is optional: a stalled request must not delay the main view or its SSE connection.
     this.emit();
+    const interviewAtStart = this.interviewTouch;
+    void api<InterviewControl>('GET', '/api/interview-control').then(iv => {
+      if (gen <= this.interviewAppliedGen || this.interviewTouch !== interviewAtStart) return;
+      this.interviewAppliedGen = gen;
+      this.interview = iv;
+      this.emit();
+    }).catch(() => { /* the views work without the interview controls */ });
   }
 
   /** Registra una función que se ejecuta en cada apertura del SSE (arranque y reconexiones):
@@ -315,6 +328,7 @@ class Live {
       this.update(s => ({ widgets: { ...s.widgets, chat: (s.widgets?.chat || []).filter(m => login && m.login !== login) } }));
     });
     on('timeline', tl => { this.timeline = tl; this.emit(); });
+    on('interviewControl', c => { this.interviewTouch++; this.interview = c; this.emit(); });
     on('prompter', p => { this.prompter = { ...this.prompter, ...p }; this.emit(); });
     on('config', c => this.update(s => ({ config: { ...s.config, ...c } })));
   }

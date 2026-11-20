@@ -187,3 +187,27 @@ after every change (select, edit, delete, import); the payload carries the quest
 
 MCP tools: `listar_entrevistas`, `ver_entrevista`, `crear_entrevista`, `importar_entrevista`,
 `editar_entrevista` and `borrar_entrevista` (both ask for `confirmar: true`), `elegir_entrevista`.
+
+## Driving the interview live
+
+Once an interview is active (`POST /api/interviews/select`), the presenter steps through it.
+Next and previous follow round order and **skip items that are not approved**. After hiding the widget, next and
+previous continue from the last item shown (choosing the interview again starts it over). Every item shown
+adds a mark to the stream timeline (question text and item id). Without an active interview each
+action answers with a 4xx warning and changes nothing.
+
+| Action | API | MCP tool | Shortcut / Stream Deck |
+| --- | --- | --- | --- |
+| Presenter state | `GET /api/interview-control` | `entrevista_estado` | — |
+| Next approved item | `POST /api/interview-control/next` | `entrevista_siguiente` | `entrevista-siguiente` |
+| Previous approved item | `POST /api/interview-control/previous` | `entrevista_anterior` | `entrevista-anterior` |
+| Go to an item | `POST /api/interview-control/goto` `{ itemId }` | `entrevista_ir` | `entrevista-ir` (`/sd/entrevista-ir/<itemId>`) |
+| Show or hide the media | `POST /api/interview-control/media` `{ visible }` | `entrevista_media` | `entrevista-mostrar-media`, `entrevista-ocultar-media` |
+| Hide the widget | `POST /api/interview-control/hide` | `entrevista_ocultar` | `entrevista-ocultar` |
+
+The same controls are in the dock module **Entrevista** (off by default; enable it in the dock
+editor, group *Interactivos*), in Widgets › Entrevista and in the prompter tab **Entrevista**.
+
+The presenter state (`GET /api/interview-control`) includes the progress (`index` / `total`), the
+current and next item **with their private notes**. It only reaches the panel, dock and prompter;
+the widget keeps receiving the `interview` event without notes, approval flag or progress counter.
