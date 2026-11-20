@@ -250,6 +250,7 @@
     "test/config-versioning.test.mjs",
     "test/desktop-identity-regression.test.mjs",
     "test/desktop.test.mjs",
+    "test/diag-chrome-282.test.mjs",
     "test/engine-shutdown-ownership.test.mjs",
     "test/fetch-node.test.mjs",
     "test/fonts.test.mjs",
