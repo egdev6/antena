@@ -47,6 +47,8 @@ import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
 import { FollowerRegistry } from './followers.mjs';
 import { registerTeleprompterRoutes } from './routes/teleprompter.mjs';
+import { registerInterviewRoutes } from './routes/interviews.mjs';
+import { Interviews } from './interviews.mjs';
 import { registerCustomOverlayRoutes } from './routes/custom-overlays.mjs';
 import { Teleprompter } from './teleprompter.mjs';
 import { CustomOverlays, CUSTOM_OVERLAY_ID, FRAME_CSP, shellHtml, frameHtml, publicOverlay } from './custom-overlays.mjs';
@@ -271,6 +273,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
   // teleprompter: guion y avance compartidos por panel y su ventana dedicada (kind propio SSE)
   const teleprompter = new Teleprompter({ store, log });
+  // entrevistas (#276): paquetes validados y la activa; sin estado vivo, solo configuración
+  const interviews = new Interviews({ store, log });
   // kind propio de SSE: el guion es contenido privado, nunca va a los widgets genéricos.
   teleprompter.on('change', snap => bus.send('teleprompter', snap, ['teleprompter', 'panel']));
   // Overlays propios (src/custom-overlays.mjs): el panel recibe la lista completa (editor y
@@ -626,6 +630,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const hasOverlays = Object.hasOwn(patch, 'customOverlays');
     const overlaysInput = patch.customOverlays;
     delete patch.customOverlays;
+    // Interviews (#276) only change through /api/interviews or MCP: they need the strict pack validation.
+    if (Object.hasOwn(patch, 'interviews')) throw httpError(400, 'interviews: se gestionan con /api/interviews (o las herramientas MCP), no con la configuración genérica');
     // El panel puede devolver la proyección pública, pero no modificar el indicador.
     if (patch.obs && typeof patch.obs === 'object' && !Array.isArray(patch.obs) &&
         Object.hasOwn(patch.obs, 'passwordSet') && patch.obs.passwordSet !== !!store.secrets.obs?.password)
@@ -665,6 +671,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   route('POST', '/api/config/set', async ({ path: p, value }) => {
     if (!p) throw httpError(400, 'Falta «path»');
     const keys = configPathKeys(p);
+    if (keys[0] === 'interviews') throw httpError(400, 'interviews: se gestionan con /api/interviews (o las herramientas MCP), no con la configuración genérica');
     if (keys[0] === 'customOverlays') {
       await customOverlays.setPath(keys.join('.'), value);
       return { path: p, value: store.getPath(p, store.publicConfig()) };
@@ -728,6 +735,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   registerInteractiveRoutes({ route, store, interactive });
   registerViewersRoutes({ route, store, viewers });
   registerTeleprompterRoutes({ route, teleprompter });
+  registerInterviewRoutes({ route, interviews });
   registerCustomOverlayRoutes({ route, customOverlays, bus, engine, checkActions, log });
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
   const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
@@ -851,7 +859,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // ---------- subida de archivos (cuerpo = archivo; nombre en ?name=) ----------
   async function upload(req, url) {
     const name = cleanName(url.searchParams.get('name'));
-    if (!name || !mediaKind(name)) throw httpError(400, 'Formato no admitido. Usa webm, mp4, gif, png, webp, mp3, ogg, wav o una fuente (woff2, woff, ttf, otf).');
+    if (!name || !mediaKind(name)) throw httpError(400, 'Formato no admitido. Usa webm, mp4, gif, png, jpg, jpeg, webp, mp3, ogg, wav o una fuente (woff2, woff, ttf, otf).');
     const len = Number(req.headers['content-length'] || 0);
     if (len > MAX_UPLOAD) throw httpError(413, 'El archivo pasa de 300 MB.');
     const final = await freeName(mediaDir, name);
@@ -1200,7 +1208,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, program, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
+  const app = { server, store, bus, twitch, youtube, chat, meld, program, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, interviews, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
   return app;
 }
 

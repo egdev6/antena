@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "id": "ana-garcia-ia",
+  "title": "Ana García y el futuro de la IA en el código",
+  "guest": {
+    "name": "Ana García",
+    "bio": "Ingeniera de software y divulgadora."
+  },
+  "rounds": [
+    {
+      "id": "calentamiento",
+      "title": "Calentamiento",
+      "items": [
+        {
+          "id": "q1",
+          "question": "¿Cómo empezaste en la programación?",
+          "media": { "type": "image", "file": "ana-foto.jpg" },
+          "source": { "url": "https://example.com/entrevista-previa", "date": "2026-03-14" },
+          "notes": "Dejar que cuente la anécdota del primer ordenador.",
+          "aprobado": true
+        },
+        {
+          "id": "q2",
+          "question": "¿Qué opinas de este vídeo?",
+          "media": { "type": "video", "file": "demo.mp4" },
+          "aprobado": true
+        }
+      ]
+    },
+    {
+      "id": "tema",
+      "title": "El tema",
+      "items": [
+        {
+          "id": "q3",
+          "question": "Esta charla lo explica muy bien, ¿estás de acuerdo?",
+          "media": { "type": "youtube", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "startMinute": 12 },
+          "source": { "url": "https://example.com/charla", "date": "2026-02-01" },
+          "aprobado": true
+        },
+        {
+          "id": "q4",
+          "question": "¿Qué te parece lo que dijo esta persona?",
+          "media": {
+            "type": "post",
+            "author": "@ejemplo",
+            "text": "Los tests son documentación ejecutable.",
+            "date": "2026-05-20T10:30:00Z",
+            "url": "https://example.com/post/123"
+          },
+          "notes": "Pendiente de confirmar con el invitado.",
+          "aprobado": false
+        }
+      ]
+    }
+  ]
+}

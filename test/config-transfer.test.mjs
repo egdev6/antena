@@ -413,3 +413,29 @@ test('PUT y config/set existentes mantienen su comportamiento', async t => {
   assert.equal((await f.ok('PUT', '/api/config', { overlay: { volume: 0.8 } })).config.overlay.volume, 0.8);
   assert.deepEqual(await f.ok('POST', '/api/config/set', { path: 'tts.rate', value: 1.25 }), { path: 'tts.rate', value: 1.25 });
 });
+
+test('importar config con entrevistas: un paquete inválido o un activo sin aprobar se rechaza sin cambiar nada; uno válido entra', async t => {
+  const f = await fixture(t);
+  const pack = { version: 1, id: 'ana', title: 'T', guest: { name: 'G' }, rounds: [{ id: 'r1', title: 'R', items: [{ id: 'q1', question: '¿?', aprobado: true }, { id: 'q2', question: '¿?', aprobado: false }] }] };
+  const file = interviews => ({ format: 'antena-config', version: 1, config: { interviews } });
+  const good = { version: 1, activeId: 'ana', activeItemId: 'q1', items: [pack] };
+  const before = await f.snapshot();
+  const invalid = [
+    { ...good, items: [{ ...pack, rounds: [{ id: 'r1', title: 'R', items: [{ id: 'q1', question: '¿?', aprobado: true, media: { type: 'youtube', url: 'http://youtu.be/x' } }] }] }] },
+    { ...good, items: [{ id: 'z', title: 'x' }] },
+    { ...good, activeItemId: 'q2' },
+    { ...good, activeItemId: 'nope' },
+    { ...good, activeId: 'otra' },
+  ];
+  for (const [i, iv] of invalid.entries()) {
+    const body = file(iv);
+    const p = await preview(f, body);
+    const r = p.status === 200 ? await applyFingerprint(f, body, p.body.fingerprint) : p;
+    assert.equal(r.status, 400, `caso ${i}: ${JSON.stringify(r.body)}`);
+  }
+  assert.deepEqual(await f.snapshot(), before);
+  const okFile = file(good);
+  const r = await apply(f, okFile);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(JSON.parse(await readFile(f.config, 'utf8')).interviews.activeItemId, 'q1');
+});

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeJson } from './json-file.mjs';
 import { cleanUrl } from './http-util.mjs';
+import { sanitizeInterviews } from './interviews.mjs';
 import { sanitizeConfig, schemaAt, PROTO_KEYS, validateChatVariantsTransition } from './config-schema.mjs';
 import { CURRENT_CONFIG_VERSION, migrateConfig } from './config-migrations.mjs';
 import { DEFAULT_ALERTS } from './alerts.mjs';
@@ -170,6 +171,12 @@ export class Store extends EventEmitter {
     if (migration.changed) await this.replaceConfigWithBackup(this.config, this.config, { all: true });
     // #106: cada hoja inválida de config.json vuelve a su default con un aviso; el arranque sigue
     const warnings = sanitizeConfig(this.config, DEFAULT_CONFIG);
+    // #276: un paquete incompleto o un ítem activo sin aprobar nunca llega a la API ni al directo.
+    if (this.config.interviews !== undefined) {
+      const clean = sanitizeInterviews(this.config.interviews);
+      this.config.interviews = clean.section;
+      for (const message of clean.warnings) warnings.push({ path: 'interviews', message });
+    }
     this.configWarnings = warnings.map(w => w.path);
     for (const w of warnings) console.warn(`config.json: ${w.message}`);
     this.secrets = await readJson(this.secFile, {});

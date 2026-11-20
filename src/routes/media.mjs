@@ -56,7 +56,7 @@ export function registerMediaRoutes({ route, store, mediaDir, listMedia, MAX_UPL
     if (typeof src !== 'string' || !src.trim()) throw origenNoValido();
     const base = cleanName(name || path.basename(src));
     // Valida un nombre explícito antes de mirar el origen: tampoco puede usarse como oráculo.
-    if (name && !mediaKind(base)) throw httpError(400, 'Formato no admitido. Usa webm, mp4, gif, png, webp, mp3, ogg, wav o una fuente (woff2, woff, ttf, otf).');
+    if (name && !mediaKind(base)) throw httpError(400, 'Formato no admitido. Usa webm, mp4, gif, png, jpg, jpeg, webp, mp3, ogg, wav o una fuente (woff2, woff, ttf, otf).');
     // Todas las rutas inexistentes o inválidas tienen el mismo resultado, sin revelar si existen.
     if (!mediaKind(base)) throw origenNoValido();
     const origen = await origenImportable(store.dir, src);

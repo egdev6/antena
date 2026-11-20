@@ -18,6 +18,7 @@ import { TIMER_DESTINATIONS, ANNOUNCE_COLORS, DEFAULT_TIMER } from './timers.mjs
 import { DEFAULT_ALERTS, DEFAULT_COMMAND } from './alerts.mjs';
 import { PLATFORM_METRICS } from './goals.mjs';
 import { TELEPROMPTER_SCRIPTS_MAX_BYTES } from './teleprompter.mjs';
+import { INTERVIEWS_MAX_BYTES, INTERVIEWS_MAX_ITEMS } from './interviews.mjs';
 import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES } from './custom-overlays.mjs';
 import { THEME_RULES, THEME_RANGES, themeFieldError, themeIconError, keepValidIcons } from './theme.mjs';
 import { DOCK_LAYOUTS } from './dock-layout.mjs';
@@ -257,6 +258,23 @@ export const CONFIG_SCHEMA = {
     // Tope de tamaño total de los guiones (TELEPROMPTER_SCRIPTS_MAX_BYTES, src/teleprompter.mjs): por debajo
     // del límite de cuerpo de 2e6 bytes de readBody (src/server.mjs), así un PUT nunca truena por tamaño.
     scripts: list({ id: str, title: str, blocks: list({ id: str, title: str, text: str }) }, { maxItems: 50, maxBytes: TELEPROMPTER_SCRIPTS_MAX_BYTES }),
+  },
+  // Entrevistas (#276). Estructura y tipos; las reglas estrictas del paquete (URLs https, media de
+  // media/, límites de texto) las aplica validateInterview (src/interviews.mjs) en la API y el MCP.
+  interviews: {
+    version: num({ int: true, min: 1, max: 1 }), activeId: str, activeItemId: str,
+    items: list({
+      id: str, title: str, version: num({ int: true, min: 1, max: 1 }),
+      guest: { name: str, bio: str },
+      rounds: list({
+        id: str, title: str,
+        items: list({
+          id: str, question: str, notes: str, aprobado: bool,
+          media: { type: en(['image', 'video', 'youtube', 'post']), file: str, url: str, startMinute: num({ int: true, min: 0 }), author: str, text: str, date: str },
+          source: { url: str, date: str },
+        }),
+      }),
+    }, { maxItems: INTERVIEWS_MAX_ITEMS, maxBytes: INTERVIEWS_MAX_BYTES }),
   },
   prompter: {
     fontSize: num({ min: 10, max: 40 }),                // slider de la UI: 16–32
