@@ -299,25 +299,30 @@ export class Interviews {
     const iv = s.items.find(x => x.id === s.activeId);
     if (!iv) throw httpError(409, 'No hay entrevista activa: elige una (elegir_entrevista o POST /api/interviews/select) antes de usar los controles');
     const seq = iv.rounds.flatMap(r => r.items).filter(x => x.aprobado);
-    return { s, iv, seq, at: seq.findIndex(x => x.id === s.activeItemId) };
+    const at = seq.findIndex(x => x.id === s.activeItemId);
+    // With nothing on screen (after hide), next/previous continue from the last item shown in
+    // this interview; it only applies to the same active interview.
+    const last = this.lastShown?.interviewId === iv.id ? seq.findIndex(x => x.id === this.lastShown.itemId) : -1;
+    return { s, iv, seq, at, from: at >= 0 ? at : last };
   }
-  async #show({ s, seq }, item) {
+  async #show({ s, iv }, item) {
     await this.#commit({ ...s, activeItemId: item.id });
+    this.lastShown = { interviewId: iv.id, itemId: item.id };
     return this.control();
   }
-  /** Next approved item; with nothing on screen it starts at the first one. */
+  /** Next approved item; with nothing on screen it continues after the last shown, or starts at the first. */
   async next() {
     const live = this.#live();
     if (!live.seq.length) throw httpError(409, 'La entrevista activa no tiene ítems aprobados');
-    if (live.at >= live.seq.length - 1 && live.at >= 0) throw httpError(409, 'Ya estás en el último ítem aprobado');
-    return this.#show(live, live.seq[live.at + 1]);
+    if (live.from >= live.seq.length - 1) throw httpError(409, 'Ya estás en el último ítem aprobado');
+    return this.#show(live, live.seq[live.from + 1]);
   }
-  /** Previous approved item; it needs an item on screen. */
+  /** Previous approved item, from the item on screen or the last one shown. */
   async previous() {
     const live = this.#live();
-    if (live.at < 0) throw httpError(409, 'No hay ningún ítem en pantalla desde el que retroceder');
-    if (live.at === 0) throw httpError(409, 'Ya estás en el primer ítem aprobado');
-    return this.#show(live, live.seq[live.at - 1]);
+    if (live.from < 0) throw httpError(409, 'No hay ningún ítem en pantalla desde el que retroceder');
+    if (live.from === 0) throw httpError(409, 'Ya estás en el primer ítem aprobado');
+    return this.#show(live, live.seq[live.from - 1]);
   }
   /** Go to a specific approved item of the active interview. */
   async goto(itemIdRaw) {
@@ -438,6 +443,8 @@ export class Interviews {
       activeItemId = item.id;
     }
     await this.#commit({ ...s, activeId: iv.id, activeItemId });
+    // Choosing an interview starts it over: next/previous no longer resume from an earlier pass.
+    this.lastShown = activeItemId ? { interviewId: iv.id, itemId: activeItemId } : null;
     return this.snapshot();
   }
 }

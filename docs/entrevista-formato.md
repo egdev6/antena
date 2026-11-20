@@ -191,7 +191,8 @@ MCP tools: `listar_entrevistas`, `ver_entrevista`, `crear_entrevista`, `importar
 ## Driving the interview live
 
 Once an interview is active (`POST /api/interviews/select`), the presenter steps through it.
-Next and previous follow round order and **skip items that are not approved**. Every item shown
+Next and previous follow round order and **skip items that are not approved**. After hiding the widget, next and
+previous continue from the last item shown (choosing the interview again starts it over). Every item shown
 adds a mark to the stream timeline (question text and item id). Without an active interview each
 action answers with a 4xx warning and changes nothing.
 

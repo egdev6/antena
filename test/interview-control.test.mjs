@@ -148,11 +148,14 @@ test('widget SSE follows every action and never carries the private notes', asyn
   assert.equal((await api('GET', '/api/interview-control')).body.active, true);
   assert.doesNotMatch(widget.raw(), NOTES);
   // media and hide need an item on screen
-  for (const [p, b] of [['media', { visible: false }], ['hide'], ['previous']]) {
+  for (const [p, b] of [['media', { visible: false }], ['hide']]) {
     const r = await api('POST', '/api/interview-control/' + p, b);
     assert.equal(r.status, 409, p); assert.match(r.body.error, /No hay ningún ítem/, p);
   }
-  assert.equal((await api('POST', '/api/interview-control/next')).body.current.id, 'a', 'next from empty starts at the first');
+  // after hiding, next and previous continue from the last item shown (c), not from the start
+  assert.equal((await api('POST', '/api/interview-control/next')).body.current.id, 'd', 'next after hide continues after the last shown');
+  await api('POST', '/api/interview-control/hide');
+  assert.equal((await api('POST', '/api/interview-control/previous')).body.current.id, 'c', 'previous after hide goes back from the last shown');
   assert.equal((await api('POST', '/api/interview-control/media', { visible: 'no' })).status, 400);
 });
 

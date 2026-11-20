@@ -86,10 +86,14 @@ test('dock, panel and prompter drive the interview; widget follows; notes only i
     // panel: Widgets › Entrevista runs the same actions
     await c.send('Page.navigate', { url: `${base}/#/widgets/interview` });
     await waitDom(c, `!!document.querySelector('main [data-interview-act="next"]')`, { timeoutMs: 20000 });
+    // the dock hid the widget on the first item: next continues after it, not from the start
     await act('next');
+    await waitDom(c, `document.querySelector('main [data-interview-current]')?.textContent === 'Segunda pregunta'`, { timeoutMs: 9000 });
+    assert.equal(widget().id, 'c');
+    assert.match(await text('main [data-interview-notes]'), /NOTA-PRIVADA-C/, 'panel shows the notes');
+    await act('previous');
     await waitDom(c, `document.querySelector('main [data-interview-current]')?.textContent === 'Primera pregunta'`, { timeoutMs: 9000 });
-    assert.equal(widget().id, 'a');
-    assert.match(await text('main [data-interview-notes]'), /NOTA-PRIVADA-A/, 'panel shows the notes');
+    assert.match(await text('main [data-interview-notes]'), /NOTA-PRIVADA-A/);
     await act('next');
     await waitDom(c, `document.querySelector('main [data-interview-current]')?.textContent === 'Segunda pregunta'`, { timeoutMs: 9000 });
     assert.equal(widget().id, 'c');
@@ -110,7 +114,7 @@ test('dock, panel and prompter drive the interview; widget follows; notes only i
 
     // every shown question left a mark; the widget stream never saw a note
     const marks = (await call('GET', '/api/timeline?kinds=question')).body.items;
-    assert.deepEqual(marks.map(m => m.itemId), ['a', 'c', 'd', 'c', 'a', 'a', 'c', 'd'], 'one mark per shown question, in order');
+    assert.deepEqual(marks.map(m => m.itemId), ['a', 'c', 'd', 'c', 'a', 'c', 'a', 'c', 'd'], 'one mark per shown question, in order');
     assert.doesNotMatch(widgetRaw, /NOTA-PRIVADA/);
     assert.match(widgetRaw, /event: interview/);
   } finally { await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => { app.teleprompter.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(r); })); }
