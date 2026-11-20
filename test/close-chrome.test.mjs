@@ -13,23 +13,15 @@ import { closeChrome, findChrome, openChromePage } from './helpers/react-browser
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 test('Chrome opens a usable page and close removes its profile once', { timeout: 30000 }, async t => {
-  // TEMPORARY phase timings for #282 (removed before merge)
-  const t0 = Date.now(), mark = label => process.stderr.write(`[diag282] ${label} +${Date.now() - t0}ms\n`);
-  const timer = setInterval(() => mark('still running'), 5000); timer.unref();
-  t.after(() => clearInterval(timer));
   const bin = await findChrome();
-  mark('findChrome ' + bin);
   if (!bin) return t.skip('Chrome is not available');
   const chrome = await openChromePage(bin, 'about:blank');
-  mark('opened');
   t.after(() => closeChrome(chrome));
   assert.equal(await evaluateChrome(chrome.cdp, '1 + 1'), 2);
-  mark('evaluated');
   assert.equal((await fs.stat(chrome.profile)).isDirectory(), true);
   let closed = false;
   chrome.child.once('close', () => { closed = true; });
   await Promise.all([closeChrome(chrome), closeChrome(chrome)]);
-  mark('closed');
   assert.equal(closed, true, 'process streams are closed before cleanup returns');
   assert.ok(chrome.child.exitCode !== null || chrome.child.signalCode !== null);
   await assert.rejects(fs.stat(chrome.profile), { code: 'ENOENT' });
