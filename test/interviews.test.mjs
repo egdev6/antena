@@ -95,6 +95,7 @@ test('los paquetes inválidos se rechazan con un error claro y sin cambiar lo gu
     ['post con enlace http', mut(p => { p.rounds[1].items[1].media.url = 'http://example.com/p'; }), /https/],
     ['post con texto enorme', mut(p => { p.rounds[1].items[1].media.text = 'x'.repeat(2001); }), /text/],
     ['post con más de 20 líneas', mut(p => { p.rounds[1].items[1].media.text = Array(21).fill('línea').join('\n'); }), /líneas/],
+    ['post con 21 líneas CRLF', mut(p => { p.rounds[1].items[1].media.text = Array(21).fill('l').join('\r\n'); }), /líneas/],
     ['ids de ítem repetidos', mut(p => { p.rounds[1].items[0].id = 'q1'; }), /q1/],
     ['id de entrevista inválido', mut(p => { p.id = 'Con Espacios'; }), /id/],
     ['demasiadas rondas', mut(p => { p.rounds = Array.from({ length: 21 }, (_, i) => ({ title: `R${i}`, items: [] })); }), /rounds/],
@@ -292,4 +293,13 @@ test('una entrevista incompleta guardada a mano no rompe el listado y se limpia 
   assert.equal(body.activeItemId, '');
   assert.ok(warnings.some(w => w.includes('interviews')), warnings.join('\n'));
   assert.equal((await fetch(base + '/api/interviews/z')).status, 404);
+});
+
+test('un post en el límite se acepta: 20 líneas, también con salto final (S4)', async t => {
+  const { raw } = await start(t);
+  for (const [i, text] of [Array(20).fill('l').join('\n'), Array(20).fill('l').join('\n') + '\n', Array(20).fill('l').join('\r\n') + '\r\n'].entries()) {
+    const p = clone(VALID); p.id = `limite-${i}`; p.rounds[1].items[1].media.text = text;
+    const res = await raw('POST', '/api/interviews/import', p);
+    assert.equal(res.status, 200, `caso ${i}: ${res.body?.error}`);
+  }
 });

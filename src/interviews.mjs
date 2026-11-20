@@ -111,8 +111,10 @@ function cleanMedia(m, path) {
       out.author = text(m.author, `${path}.author`, INTERVIEW_LIMITS.author);
       out.text = text(m.text, `${path}.text`, INTERVIEW_LIMITS.postText);
       // The widget fits up to this many lines on screen without cutting them (#277).
-      if (out.text.split('\n').length > INTERVIEW_LIMITS.postLines) {
-        fail(`${path}.text`, `como mucho ${INTERVIEW_LIMITS.postLines} líneas`);
+      // Trailing line breaks (common in pasted text) do not count as lines.
+      const lines = out.text.replace(/(\r?\n)+$/, '').split('\n').length;
+      if (lines > INTERVIEW_LIMITS.postLines) {
+        fail(`${path}.text`, `como mucho ${INTERVIEW_LIMITS.postLines} líneas (tiene ${lines})`);
       }
       out.date = date(m.date, `${path}.date`);
       out.url = httpsUrl(m.url, `${path}.url`);
