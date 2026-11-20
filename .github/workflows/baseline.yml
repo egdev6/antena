@@ -57,6 +57,20 @@ jobs:
         with:
           chrome-version: stable
           install-dependencies: true
+      - name: Calentar Chrome (Windows)
+        # The first launch of a freshly installed Chrome on the Windows runner takes ~50 s (#282);
+        # pay it here so no test starts against a cold binary.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          $warmupDir = Join-Path $env:RUNNER_TEMP 'chrome-warmup'
+          $watch = [Diagnostics.Stopwatch]::StartNew()
+          $chrome = Start-Process -FilePath $env:CHROME_BIN -PassThru -NoNewWindow -ArgumentList @('--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', "--user-data-dir=$warmupDir", '--dump-dom', 'about:blank')
+          if (-not $chrome.WaitForExit(180000)) { $chrome.Kill($true); throw 'Chrome warm-up did not finish within 180 s' }
+          "Chrome warm-up took {0:N1} s" -f $watch.Elapsed.TotalSeconds
+          Remove-Item -Recurse -Force $warmupDir -ErrorAction SilentlyContinue
       - name: Baseline con cobertura (Linux)
         if: runner.os == 'Linux'
         env:
