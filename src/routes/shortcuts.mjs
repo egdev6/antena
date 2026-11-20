@@ -30,6 +30,7 @@ const BROWSER_SOURCES = [
   { id: 'giveaway', name: 'Sorteo', path: '/widget/giveaway', width: 1920, height: 1080 },
   { id: 'viewers', name: 'Espectadores', path: '/widget/viewers', width: 900, height: 160 },
   { id: 'thanks', name: 'Agradecimientos', path: '/widget/thanks', width: 900, height: 200 },
+  { id: 'interview', name: 'Entrevista', path: '/widget/interview', width: 1920, height: 1080 },
 ];
 // S10: pestañas del prompter retiradas. La API ya no las ofrece (prompterTabs y la lista de
 // acciones solo tienen las vigentes), pero un atajo guardado con ellas sigue siendo válido y se

@@ -230,8 +230,10 @@ let uidCounter = 0;
 const uid = p => p + Date.now().toString(36) + (uidCounter++).toString(36) + Math.random().toString(36).slice(2, 5);
 
 export class Interviews {
-  constructor({ store, log = () => {} } = {}) {
-    this.store = store; this.log = log;
+  /** `onChange()` runs after every stored change (create, import, edit, delete, select): the server
+   *  uses it to push the active item to the widgets. */
+  constructor({ store, log = () => {}, onChange = () => {} } = {}) {
+    this.store = store; this.log = log; this.onChange = onChange;
   }
 
   /** Stored section, filled with defaults. Nothing is written until a change is saved. */
@@ -252,6 +254,23 @@ export class Interviews {
     }
     this.store.config.interviews = next;
     await this.store.save('interviews');
+    try { this.onChange(); } catch (e) { this.log('[interviews] onChange', e); }
+  }
+
+  /**
+   * What the widget may show: the active approved item as { id, question, media?, source? } or null.
+   * Private notes and the approval flag are left out on purpose: this is the only shape that
+   * leaves the server for the screen.
+   */
+  activeItem() {
+    const s = this.#section();
+    const iv = s.items.find(x => x.id === s.activeId);
+    const item = iv && s.activeItemId ? iv.rounds.flatMap(r => r.items).find(x => x.id === s.activeItemId && x.aprobado) : null;
+    if (!item) return null;
+    const out = { id: item.id, question: item.question };
+    if (item.media) out.media = structuredClone(item.media);
+    if (item.source) out.source = { ...item.source };
+    return out;
   }
 
   snapshot() {

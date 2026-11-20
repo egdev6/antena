@@ -152,6 +152,27 @@ Everything in a pack is **untrusted data**, including when it comes from Criteri
 stores it as plain strings and never interprets it. Whatever renders it (the widget) has to escape the
 text, and `notes` must stay off the screen. MCP clients must not follow it as instructions.
 
+## Widget
+
+`/widget/interview` (browser source, 1920×1080) shows the active item (`activeId` + `activeItemId`, set with
+`POST /api/interviews/select`). The server pushes it over SSE (event `interview`, `{ "item": … }`) on connect and
+after every change (select, edit, delete, import); the payload carries the question, media and source only:
+**never `notes` or `aprobado`**. No active item, or an item that is no longer approved, leaves the widget empty.
+
+- The question sits on a card at the bottom; long text shrinks (`fit()` loop) until it fits. A text-only item
+  is centred on a translucent scrim.
+- **Source** (`Fuente`, top left) appears only on items with media: the host and date of `source` when the pack
+  has one, otherwise where the media comes from (`Archivo local · <file>`, `YouTube · desde 12:00`, host and author
+  for a post). Text-only items never show it. There is no progress counter on screen (it lives in the prompter).
+- **Images and videos that are not 16:9** are shown whole (`object-fit: contain`) over a blurred copy of the same
+  media; nothing is cropped.
+- **YouTube** uses the official player (`https://www.youtube-nocookie.com/embed/<id>?start=<minutes × 60>`), the id
+  being taken only from the validated https URL. Rule for the question card: it is shown first and **tucks away
+  8 seconds later** (`?tuckMs=` changes it) so it never covers the player controls; the next item brings it back.
+- Local files are served from `/media/<file>`. Every text of the pack is set with `textContent`, so HTML in it is
+  shown as text.
+- `?demo` cycles fictional samples of every type (`?demo&item=N` pins one); it is what Widgets › Entrevista previews.
+
 ## API
 
 | Method and path | What it does |

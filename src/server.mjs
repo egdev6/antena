@@ -87,7 +87,7 @@ const MIME = {
   '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
   '.webm': 'video/webm', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
 };
-export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter', 'viewers', 'thanks'];
+export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter', 'viewers', 'thanks', 'interview'];
 
 /** Viewer counts for on-screen widgets: only what the widget shows, never settings or errors. */
 export function publicViewers(snap) {
@@ -274,7 +274,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // teleprompter: guion y avance compartidos por panel y su ventana dedicada (kind propio SSE)
   const teleprompter = new Teleprompter({ store, log });
   // entrevistas (#276): paquetes validados y la activa; sin estado vivo, solo configuración
-  const interviews = new Interviews({ store, log });
+  // el widget `interview` recibe solo el ítem activo y aprobado, sin notas privadas (activeItem()).
+  const interviews = new Interviews({ store, log, onChange: () => bus.send('interview', { item: interviews.activeItem() }, ['widget']) });
   // kind propio de SSE: el guion es contenido privado, nunca va a los widgets genéricos.
   teleprompter.on('change', snap => bus.send('teleprompter', snap, ['teleprompter', 'panel']));
   // Overlays propios (src/custom-overlays.mjs): el panel recibe la lista completa (editor y
@@ -852,6 +853,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }
     if (patch.chat && store.config.chat.twitchChannel) chat.join(store.config.chat.twitchChannel);
     if (patch.paused !== undefined) engine.pushPause();
+    // A config import may replace the interviews and the active item.
+    if (patch.interviews) bus.send('interview', { item: interviews.activeItem() }, ['widget']);
     // Publish only after password changes have completed; publicConfig masks the value.
     if (patch.program || patch.obs) { includeProgramConfig = true; pushPanelConfig(); }
   }
@@ -996,6 +999,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (kind === 'panel') res.write(`event: status\ndata: ${JSON.stringify(status())}\n\n`);
     if (kind === 'widget') res.write(`event: widgets\ndata: ${JSON.stringify(engine.widgetState())}\n\n`);
     if (kind === 'widget') res.write(`event: interactive\ndata: ${JSON.stringify(interactive.snapshot())}\n\n`);
+    if (kind === 'widget') res.write(`event: interview\ndata: ${JSON.stringify({ item: interviews.activeItem() })}\n\n`);
     // Espectadores: solo las cifras públicas, para los widgets y los overlays propios que cargan tarde (S6).
     if (kind === 'widget') res.write(`event: viewers\ndata: ${JSON.stringify(publicViewers(viewers.snapshot()))}\n\n`);
     // Versiones de los overlays propios: la shell recarga su iframe al cambiar la suya.

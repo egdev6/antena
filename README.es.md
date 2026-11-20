@@ -158,6 +158,9 @@ En el panel, la página «Fuentes del programa de emisión» lista todas con su 
 | Sorteo | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
 | Espectadores | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
 | Agradecimientos | `http://127.0.0.1:4500/widget/thanks` | 900×200 |
+| Entrevista | `http://127.0.0.1:4500/widget/interview` | 1920×1080 |
+
+**Entrevista.** Capa a pantalla completa para el ítem activo y aprobado de la entrevista activa (ver `docs/entrevista-formato.md`): la pregunta en una tarjeta inferior sobre su imagen, vídeo local, reproductor de YouTube (desde el minuto guardado) o tarjeta de post, con la fuente en cada ítem que lleve media. Sin ítem activo la capa queda vacía. Pruébala con `?demo`.
 
 **Agradecimientos sin conexión.** Esta capa muestra un seguidor pendiente cada vez y puede terminar con el recuento anónimo de YouTube. En Widgets › Agradecimientos eliges plataformas, todo el tiempo / desde el último directo archivado / un número de días, máximo de nombres e intervalo. Las fechas desconocidas se incluyen; si no hay directos archivados, la ventana desde el último no tiene corte. Sin pendientes la capa queda transparente. Las acciones individuales y en bloque con confirmación se aplican al momento; el bloque marca solo los nombres y registros anónimos seleccionados con los ajustes guardados, no los demás pendientes.
 
