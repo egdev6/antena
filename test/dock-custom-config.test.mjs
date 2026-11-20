@@ -8,16 +8,17 @@ import { DEFAULT_CONFIG } from '../src/store.mjs';
 import { validatePatch, validatePath } from '../src/config-schema.mjs';
 import { createApp } from '../src/server.mjs';
 
-const ids = ['stream', 'alerts', 'marks', 'scenes', 'teleprompter', 'credits', 'audio', 'questions', 'tierlist', 'giveaway', 'shortcuts'];
-const modules = ids.map(id => ({ id, enabled: id !== 'shortcuts' }));
+const ids = ['stream', 'alerts', 'marks', 'scenes', 'teleprompter', 'credits', 'audio', 'questions', 'tierlist', 'giveaway', 'shortcuts', 'interview'];
+const modules = ids.map(id => ({ id, enabled: id !== 'shortcuts' && id !== 'interview' }));
 const zones = [
   { id: 'control', label: 'Control', modules: ids.slice(0, 6) },
   { id: 'audio', label: 'Audio', modules: ['audio'] },
   { id: 'interactivos', label: 'Interactivos', modules: ['questions', 'tierlist', 'giveaway'] },
 ];
 
-test('S4/S5: default config reproduces the original three zones and disables shortcuts', () => {
-  assert.deepEqual(DEFAULT_CONFIG.dock, { modules, layout: 'auto', zones });
+test('S4/S5: default config reproduces the original three zones and disables shortcuts and interview', () => {
+  const defaultZones = [...zones.slice(0, 2), { ...zones[2], modules: [...zones[2].modules, 'interview'] }];
+  assert.deepEqual(DEFAULT_CONFIG.dock, { modules, layout: 'auto', zones: defaultZones });
   assert.deepEqual(validatePatch({ dock: DEFAULT_CONFIG.dock }), []);
 });
 

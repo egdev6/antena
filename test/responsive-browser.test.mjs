@@ -136,7 +136,7 @@ test('a 1024 la barra lateral corta grupo e items por palabra y el placeholder d
   } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
-test('en /prompter las dos pestañas caben y los bloques de Eventos llenan el alto con scroll propio', { timeout: 120000 }, async t => {
+test('en /prompter las tres pestañas caben y los bloques de Eventos llenan el alto con scroll propio', { timeout: 120000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;
   const { bin, base, close } = ctx;
@@ -147,10 +147,10 @@ test('en /prompter las dos pestañas caben y los bloques de Eventos llenan el al
     await viewport(c, 1280);
     await waitDom(c, `!!(document.querySelector('.top .clock') && document.querySelector('.ev-pane'))`, { timeoutMs: 15000 });
 
-    // S7: solo las dos pestañas nuevas, sin la fila de filtros retirada, y caben a lo ancho
-    assert.equal(await dom(c, `document.querySelectorAll('.pr-side .tabs .tab').length`), 2);
+    // S7 + #278: las tres pestañas (Cronología, Preguntas, Entrevista), sin la fila de filtros retirada, y caben a lo ancho
+    assert.equal(await dom(c, `document.querySelectorAll('.pr-side .tabs .tab').length`), 3);
     assert.equal(await dom(c, `!!document.querySelector('.pr-filters, .pr-filters-cue')`), false, 'la pista de scroll de los filtros se retiró con ellos');
-    assert.equal(await dom(c, `(() => { const t = document.querySelector('.pr-side .tabs'); return t.scrollWidth <= t.clientWidth + 1; })()`), true, 'las dos pestañas no desbordan el panel');
+    assert.equal(await dom(c, `(() => { const t = document.querySelector('.pr-side .tabs'); return t.scrollWidth <= t.clientWidth + 1; })()`), true, 'las tres pestañas no desbordan el panel');
 
     // llenamos los dos bloques por la API para forzar desborde vertical
     const post = (p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

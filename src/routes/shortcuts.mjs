@@ -39,7 +39,7 @@ export const PROMPTER_LEGACY_TABS = ['tierlist', 'sorteo'];
 
 import { httpError as httpErrorBase, id8 as id8Base } from '../http-util.mjs';
 
-export function registerShortcutRoutes({ route, store, engine, session, interactive, bus, setPrompterTab, addMarker, id8 = id8Base, checkActions, httpError = httpErrorBase, PROMPTER_TABS, teleprompter }) {
+export function registerShortcutRoutes({ route, store, engine, session, interactive, bus, setPrompterTab, addMarker, id8 = id8Base, checkActions, httpError = httpErrorBase, PROMPTER_TABS, teleprompter, interviews }) {
   // ---------- fuentes de navegador para Meld ----------
   route('GET', '/api/sources', async (_, __, url, req) => {
     const base = `http://127.0.0.1:${req.socket.localPort}`;
@@ -93,7 +93,7 @@ export function registerShortcutRoutes({ route, store, engine, session, interact
     const results = [], errors = [];
     for (const st of sc.steps || []) {
       try {
-        if (st.kind === 'builtin') results.push(st.action === 'prompter' ? setPrompterTab(st.arg) : await SD[st.action]());
+        if (st.kind === 'builtin') results.push(st.action === 'prompter' ? setPrompterTab(st.arg) : await SD[st.action](st.arg));
         else { await engine.runActions([st]); results.push({ ok: true }); }
       } catch (e) { errors.push(`${st.kind === 'builtin' ? st.action : st.kind}: ${e.message}`); }
     }
@@ -136,6 +136,16 @@ export function registerShortcutRoutes({ route, store, engine, session, interact
       'teleprompter-anterior': async () => teleprompter.control('prev').playback,
       'teleprompter-inicio': async () => teleprompter.control('reset').playback,
     }),
+    // Interview control (#278): same actions as /api/interview-control and the MCP tools.
+    // «entrevista-ir» takes the item id as its argument (/sd/entrevista-ir/<id>).
+    ...(interviews && {
+      'entrevista-siguiente': async () => interviews.next(),
+      'entrevista-anterior': async () => interviews.previous(),
+      'entrevista-ir': async arg => interviews.goto(arg),
+      'entrevista-mostrar-media': async () => interviews.setMedia(true),
+      'entrevista-ocultar-media': async () => interviews.setMedia(false),
+      'entrevista-ocultar': async () => interviews.hide(),
+    }),
     'agradecido': async () => { const ev = session.data.events.find(e => !e.thanked); if (!ev) return { ok: true, pending: 0 }; session.setThanked(ev.id, true); return { id: ev.id, user: ev.user, pending: session.pendingThanks() }; },
   };
   const sdHandler = async ({ action, arg }) => {
@@ -143,7 +153,7 @@ export function registerShortcutRoutes({ route, store, engine, session, interact
     if (action === 'custom') return runShortcut(shortcutOf(decodeURIComponent(arg || '')));
     const fn = SD[action];
     if (!fn) throw httpError(404, `Atajo desconocido: ${action}. Atajos: ${[...Object.keys(SD), 'prompter/<pestaña>', 'custom/<id>'].join(', ')}`);
-    return fn();
+    return fn(action === 'entrevista-ir' ? decodeURIComponent(arg || '') : undefined);
   };
   for (const m of ['GET', 'POST']) { route(m, '/sd/:action', p => sdHandler(p)); route(m, '/sd/:action/:arg', p => sdHandler(p)); }
   route('GET', '/api/shortcuts', async () => ({

@@ -9,6 +9,7 @@ import { ConnPill, cx, guard, Icon, mmss, PfIcon, toast, Toaster } from '../lib/
 import { DockQuestions } from './DockQuestions';
 import { DockTierlist } from './DockTierlist';
 import { DockGiveaway } from './DockGiveaway';
+import { InterviewPad } from '../lib/InterviewControls';
 import type { DockConfig, DockModuleId, DockZone, MeldTrack, TeleprompterState, TimelineItem, ViewerPlatform, ViewerSettings } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
@@ -371,6 +372,13 @@ function ShortcutsModule() {
   </section>;
 }
 
+function InterviewModule() {
+  return <section className="d-card" aria-label="Entrevista">
+    <div className="d-card-h">Entrevista</div>
+    <InterviewPad cls={{ root: 'd-interview', btn: 'd-btn sm', primary: 'd-btn sm pri grow', muted: 'd-muted', row: 'd-row', note: 'd-muted', title: 'd-sub' }} />
+  </section>;
+}
+
 type ModuleContext = { stream: ReturnType<typeof useStreamControl>; meters: Record<string, Meter>; isObs: boolean };
 const MODULES: Record<DockModuleId, (context: ModuleContext) => ReactNode> = {
   stream: ({ stream }) => <StreamControl control={stream} />,
@@ -384,6 +392,7 @@ const MODULES: Record<DockModuleId, (context: ModuleContext) => ReactNode> = {
   tierlist: () => <DockTierlist />,
   giveaway: () => <DockGiveaway />,
   shortcuts: () => <ShortcutsModule />,
+  interview: () => <InterviewModule />,
 };
 const INTERACTIVE = {
   questions: { id: 'preguntas', label: 'Preguntas' },

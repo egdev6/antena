@@ -58,12 +58,14 @@ test('cronología: mensajes destacados, marcas, guardados y agradecidos', async 
   } finally { await close(); }
 });
 
-test('prompter: dos pestañas, las retiradas son un no-op registrado y votación/sorteo no cambian de pestaña', async () => {
+test('prompter: tres pestañas (#278 añade entrevista), las retiradas son un no-op registrado y votación/sorteo no cambian de pestaña', async () => {
   const logs = [];
   const { call, close } = await start(logs);
   try {
     const inicial = await call('GET', '/api/prompter');
-    assert.deepEqual(inicial.tabs, ['cronologia', 'preguntas']);
+    assert.deepEqual(inicial.tabs, ['cronologia', 'preguntas', 'entrevista']);
+    assert.equal((await call('POST', '/api/prompter', { tab: 'entrevista' })).tab, 'entrevista');
+    await call('POST', '/api/prompter', { tab: 'cronologia' });
     assert.equal(inicial.tab, 'cronologia');
 
     // S10: las pestañas retiradas (tierlist, sorteo) se aceptan por API sin cambiar de pestaña

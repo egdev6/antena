@@ -31,7 +31,7 @@ test('prompter: Eventos con Cronología y Destacados, cabecera compacta y sin lo
 
     // S7: dos pestañas, Eventos primero; nada de tier list, sorteo, filtros ni «Por agradecer»
     const tabs = await json(c, `Array.from(document.querySelectorAll('.pr-side .tabs .tab')).map(b => b.textContent.replace(/\\d+/g, '').trim())`);
-    assert.deepEqual(tabs, ['Eventos', 'Preguntas']);
+    assert.deepEqual(tabs, ['Eventos', 'Preguntas', 'Entrevista']);
     assert.equal(await dom(c, `!!document.querySelector('.pr-filters, .pr-filters-cue')`), false, 'la cronología ya no tiene pestañas de filtro (#5 retirado)');
     assert.equal(await dom(c, `Array.from(document.querySelectorAll('.pr-top button')).length`), 0, 'la cabecera ya no tiene el botón «Por agradecer»');
     assert.equal(await dom(c, `Array.from(document.querySelectorAll('button')).some(b => b.textContent.trim() === 'Marca de short')`), false, 'el botón «Marca de short» ya no está');

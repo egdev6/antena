@@ -60,6 +60,7 @@ const readTools = [
   'estado_espectadores', 'ver_tema', 'estado_teleprompter', 'listar_archivos', 'leer_chat', 'ver_widgets',
   'listar_overlays', 'ver_overlay', 'metricas_directo', 'resumen_directo', 'listar_directos',
   'eventos_directo', 'cronologia', 'listar_atajos', 'fuentes_meld', 'meld_estado', 'programa_estado',
+  'entrevista_estado',
 ];
 
 async function fixture(t) {

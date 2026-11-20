@@ -15,7 +15,7 @@
 // Eventos cuyo payload es siempre un snapshot sustituible del estado actual.
 export const REPLACEABLE_EVENTS = new Set([
   'status', 'persistence', 'interactive', 'widgets', 'pause',
-  'meld', 'meters', 'timeline', 'config', 'prompter', 'timers', 'history', 'viewers', 'teleprompter', 'theme', 'interview',
+  'meld', 'meters', 'timeline', 'config', 'prompter', 'timers', 'history', 'viewers', 'teleprompter', 'theme', 'interview', 'interviewControl',
   'customOverlays', 'customOverlayVersions',
 ]);
 

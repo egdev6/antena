@@ -238,8 +238,11 @@ const uid = p => p + Date.now().toString(36) + (uidCounter++).toString(36) + Mat
 export class Interviews {
   /** `onChange()` runs after every stored change (create, import, edit, delete, select): the server
    *  uses it to push the active item to the widgets. */
-  constructor({ store, log = () => {}, onChange = () => {} } = {}) {
-    this.store = store; this.log = log; this.onChange = onChange;
+  constructor({ store, log = () => {}, onChange = () => {}, onShow = () => {} } = {}) {
+    this.store = store; this.log = log; this.onChange = onChange; this.onShow = onShow;
+    // Live-control state that is not part of the stored pack: media hidden for the item on screen.
+    // It resets whenever the item on screen changes (see #commit) and on restart.
+    this.mediaHidden = false;
   }
 
   /** Stored section, filled with defaults. Nothing is written until a change is saved. */
@@ -258,9 +261,17 @@ export class Interviews {
     if (JSON.stringify(next.items).length > INTERVIEW_LIMITS.totalBytes) {
       throw httpError(400, errorMessage || `Las entrevistas ocupan demasiado: el tope total es ${INTERVIEW_LIMITS.totalBytes} bytes`);
     }
+    const prev = this.#section();
+    const changed = prev.activeId !== next.activeId || prev.activeItemId !== next.activeItemId;
     this.store.config.interviews = next;
+    if (changed) this.mediaHidden = false;
     await this.store.save('interviews');
     try { this.onChange(); } catch (e) { this.log('[interviews] onChange', e); }
+    // A newly shown question (next, previous, go-to, select with item) is reported once, with its private data.
+    if (changed && next.activeItemId) {
+      const shown = next.items.find(x => x.id === next.activeId)?.rounds.flatMap(r => r.items).find(x => x.id === next.activeItemId);
+      if (shown) { try { this.onShow({ id: shown.id, question: shown.question, interviewId: next.activeId }); } catch (e) { this.log('[interviews] onShow', e); } }
+    }
   }
 
   /**
@@ -274,9 +285,87 @@ export class Interviews {
     const item = iv && s.activeItemId ? iv.rounds.flatMap(r => r.items).find(x => x.id === s.activeItemId && x.aprobado) : null;
     if (!item) return null;
     const out = { id: item.id, question: item.question };
-    if (item.media) out.media = structuredClone(item.media);
-    if (item.source) out.source = { ...item.source };
+    // With the media hidden the widget gets the plain question: no media and no source line.
+    if (item.media && !this.mediaHidden) out.media = structuredClone(item.media);
+    if (item.source && !this.mediaHidden) out.source = { ...item.source };
     return out;
+  }
+
+  // ---------- live control (#278) ----------
+  // Every action needs an active interview; otherwise it answers 409 with a clear message and
+  // changes nothing. Items are walked in round order and only approved ones are ever reachable.
+  #live() {
+    const s = this.#section();
+    const iv = s.items.find(x => x.id === s.activeId);
+    if (!iv) throw httpError(409, 'No hay entrevista activa: elige una (elegir_entrevista o POST /api/interviews/select) antes de usar los controles');
+    const seq = iv.rounds.flatMap(r => r.items).filter(x => x.aprobado);
+    return { s, iv, seq, at: seq.findIndex(x => x.id === s.activeItemId) };
+  }
+  async #show({ s, seq }, item) {
+    await this.#commit({ ...s, activeItemId: item.id });
+    return this.control();
+  }
+  /** Next approved item; with nothing on screen it starts at the first one. */
+  async next() {
+    const live = this.#live();
+    if (!live.seq.length) throw httpError(409, 'La entrevista activa no tiene ítems aprobados');
+    if (live.at >= live.seq.length - 1 && live.at >= 0) throw httpError(409, 'Ya estás en el último ítem aprobado');
+    return this.#show(live, live.seq[live.at + 1]);
+  }
+  /** Previous approved item; it needs an item on screen. */
+  async previous() {
+    const live = this.#live();
+    if (live.at < 0) throw httpError(409, 'No hay ningún ítem en pantalla desde el que retroceder');
+    if (live.at === 0) throw httpError(409, 'Ya estás en el primer ítem aprobado');
+    return this.#show(live, live.seq[live.at - 1]);
+  }
+  /** Go to a specific approved item of the active interview. */
+  async goto(itemIdRaw) {
+    const live = this.#live();
+    const itemId = String(itemIdRaw ?? '');
+    if (!itemId) throw httpError(400, 'Falta el id del ítem al que ir');
+    const item = live.iv.rounds.flatMap(r => r.items).find(x => x.id === itemId);
+    if (!item) throw httpError(404, `No existe el ítem «${itemId.slice(0, 60)}» en la entrevista activa`);
+    if (!item.aprobado) throw httpError(409, `El ítem «${item.id}» no está aprobado (aprobado: false): no se puede mostrar`);
+    return this.#show(live, item);
+  }
+  /** Shows or hides the media of the item on screen (the question stays). */
+  async setMedia(visible) {
+    const live = this.#live();
+    if (live.at < 0) throw httpError(409, 'No hay ningún ítem en pantalla');
+    if (typeof visible !== 'boolean') throw httpError(400, 'visible tiene que ser true o false');
+    this.mediaHidden = !visible;
+    try { this.onChange(); } catch (e) { this.log('[interviews] onChange', e); }
+    return this.control();
+  }
+  /** Hides the widget (empty state) keeping the interview active. */
+  async hide() {
+    const live = this.#live();
+    if (live.at < 0) throw httpError(409, 'No hay ningún ítem en pantalla');
+    await this.#commit({ ...live.s, activeItemId: '' });
+    return this.control();
+  }
+
+  /**
+   * State for whoever drives the interview (panel, dock, prompter, MCP): progress, current and next
+   * item WITH their private notes. It never goes to the widget: only to the panel SSE clients and
+   * authenticated API callers.
+   */
+  control() {
+    const s = this.#section();
+    const iv = s.items.find(x => x.id === s.activeId);
+    if (!iv) return { active: false, interviewId: '', title: '', guest: '', progress: { index: 0, total: 0 }, mediaHidden: false, current: null, next: null, items: [] };
+    const rounds = iv.rounds.flatMap(r => r.items.filter(x => x.aprobado).map(x => ({ ...x, round: r.title })));
+    const at = rounds.findIndex(x => x.id === s.activeItemId);
+    const view = x => (x ? { id: x.id, question: x.question, notes: x.notes || '', round: x.round, media: x.media?.type || null } : null);
+    return {
+      active: true, interviewId: iv.id, title: iv.title, guest: iv.guest.name,
+      progress: { index: at + 1, total: rounds.length },
+      mediaHidden: at >= 0 && this.mediaHidden,
+      current: at >= 0 ? view(rounds[at]) : null,
+      next: view(rounds[at + 1]),
+      items: rounds.map(x => ({ id: x.id, question: x.question, round: x.round, media: x.media?.type || null, current: x.id === s.activeItemId })),
+    };
   }
 
   snapshot() {

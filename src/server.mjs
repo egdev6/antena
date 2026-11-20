@@ -275,7 +275,13 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const teleprompter = new Teleprompter({ store, log });
   // entrevistas (#276): paquetes validados y la activa; sin estado vivo, solo configuración
   // el widget `interview` recibe solo el ítem activo y aprobado, sin notas privadas (activeItem()).
-  const interviews = new Interviews({ store, log, onChange: () => bus.send('interview', { item: interviews.activeItem() }, ['widget']) });
+  // `interviewControl` is the presenter view WITH private notes: panel clients only (#278).
+  const interviews = new Interviews({
+    store, log,
+    onChange: () => { bus.send('interview', { item: interviews.activeItem() }, ['widget']); bus.send('interviewControl', interviews.control(), ['panel']); },
+    // each question shown is marked in the live timeline (the notes never go there)
+    onShow: q => session.addNote({ kind: 'question', text: q.question, label: 'Entrevista', interviewId: q.interviewId, itemId: q.id }),
+  });
   // kind propio de SSE: el guion es contenido privado, nunca va a los widgets genéricos.
   teleprompter.on('change', snap => bus.send('teleprompter', snap, ['teleprompter', 'panel']));
   // Overlays propios (src/custom-overlays.mjs): el panel recibe la lista completa (editor y
@@ -428,7 +434,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // se aceptan como no-op registrado para que los atajos guardados y /sd/prompter/<tab> sigan
   // funcionando; lo desconocido sigue siendo 400. Ya no hay salto automático al abrir votación
   // o sorteo (viven en el dock y en su vista del panel).
-  const PROMPTER_TABS = ['cronologia', 'preguntas'];
+  const PROMPTER_TABS = ['cronologia', 'preguntas', 'entrevista'];
   const prompter = { tab: 'cronologia', at: Date.now() };
   const setPrompterTab = tab => {
     const t = String(tab || '').toLowerCase().replace('cronología', 'cronologia').replace('tier list', 'tierlist').replace('preguntas', 'preguntas');
@@ -788,7 +794,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // ---------- atajos y fuentes: módulo propio (patrón de rutas por áreas, #71) ----------
   // Registra /api/sources, /api/shortcuts* y /sd/*. Se llama en el punto exacto donde
   // estaban esas rutas: el orden de registro importa (ver cabecera de src/routes/shortcuts.mjs).
-  registerShortcutRoutes({ route, store, engine, session, interactive, bus, setPrompterTab, addMarker, checkActions, PROMPTER_TABS, teleprompter });
+  registerShortcutRoutes({ route, store, engine, session, interactive, bus, setPrompterTab, addMarker, checkActions, PROMPTER_TABS, teleprompter, interviews });
 
   // ---------- apagado ordenado (lo usa la app de escritorio al cerrar) ----------
   route('POST', '/api/shutdown', async (_, __, ___, req) => {
@@ -854,7 +860,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (patch.chat && store.config.chat.twitchChannel) chat.join(store.config.chat.twitchChannel);
     if (patch.paused !== undefined) engine.pushPause();
     // A config import may replace the interviews and the active item.
-    if (patch.interviews) bus.send('interview', { item: interviews.activeItem() }, ['widget']);
+    if (patch.interviews) { bus.send('interview', { item: interviews.activeItem() }, ['widget']); bus.send('interviewControl', interviews.control(), ['panel']); }
     // Publish only after password changes have completed; publicConfig masks the value.
     if (patch.program || patch.obs) { includeProgramConfig = true; pushPanelConfig(); }
   }

@@ -11,6 +11,14 @@ function decodeId(raw) {
 }
 
 export function registerInterviewRoutes({ route, interviews }) {
+  // Live control (#278). Own prefix: «live», «next»… are valid interview ids, so they cannot live
+  // under /api/interviews/:id. GET returns the presenter view (private notes included).
+  route('GET', '/api/interview-control', async () => interviews.control());
+  route('POST', '/api/interview-control/next', async () => interviews.next());
+  route('POST', '/api/interview-control/previous', async () => interviews.previous());
+  route('POST', '/api/interview-control/goto', async (body = {}) => interviews.goto(body?.itemId));
+  route('POST', '/api/interview-control/media', async (body = {}) => interviews.setMedia(body?.visible));
+  route('POST', '/api/interview-control/hide', async () => interviews.hide());
   route('GET', '/api/interviews', async () => interviews.snapshot());
   route('POST', '/api/interviews', async body => interviews.create(body));
   // Import is strict: the pack must carry `version` and is stored as it came (ids are filled in if missing).
