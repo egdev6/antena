@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>antena · entrevista</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@500;600&display=swap" rel="stylesheet">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+/* Direction B · "Cine a sangre": the media fills 1920×1080 under a vignette, the source sits top left
+   and the question is a card at the bottom. Without media the question or the post sits on a scrim. */
+@layer egdev {
+.root{opacity:0;transition:opacity .4s}
+.root.on{opacity:1}
+.full{position:absolute;inset:0;overflow:hidden;background:#000}
+.full .bg,.full .fg{position:absolute;inset:0;width:100%;height:100%}
+/* Not 16:9? The whole picture stays visible (contain) over a blurred copy of itself: nothing is cropped. */
+.full .bg{object-fit:cover;filter:blur(48px) brightness(.55) saturate(1.2);transform:scale(1.2)}
+.full .fg{object-fit:contain}
+.full iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}
+.full .ph{position:absolute;inset:0;background:radial-gradient(70% 70% at 50% 40%,#2a1c22,#0b0b0d)}
+.full::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 120% 90% at 50% 45%,transparent 35%,rgba(0,0,0,.55) 75%,rgba(0,0,0,.92) 100%),linear-gradient(0deg,rgba(0,0,0,.85),transparent 40%)}
+.full.yt::after{background:radial-gradient(ellipse 120% 90% at 50% 45%,transparent 55%,rgba(0,0,0,.45) 100%)}
+.play{position:absolute;left:50%;top:42%;width:140px;height:140px;margin:-70px;border-radius:50%;background:color-mix(in srgb,var(--red) 90%,transparent);display:grid;place-items:center;box-shadow:0 0 40px color-mix(in srgb,var(--red) calc(60% * var(--glow,1)),transparent)}
+.play::after{content:"";border-left:50px solid #fff;border-top:30px solid transparent;border-bottom:30px solid transparent;margin-left:14px}
+.scrim{position:absolute;inset:0;background:radial-gradient(ellipse 70% 60% at 50% 50%,rgba(6,1,3,.82),rgba(6,1,3,.35) 70%,transparent)}
+.src{position:absolute;top:56px;left:96px;z-index:3;display:flex;align-items:center;gap:14px;max-width:1100px;background:rgba(0,0,0,.78);border:1px solid rgba(255,255,255,.22);border-radius:12px;padding:12px 22px 12px 12px;font:500 26px/1.2 var(--f-body);color:#fff}
+.src i{font:700 20px var(--f-cond);font-style:normal;letter-spacing:.18em;text-transform:uppercase;color:#000;background:var(--pink);border-radius:6px;padding:6px 10px 4px;flex:none}
+.src span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.q{position:absolute;z-index:3;left:96px;right:96px;bottom:60px;padding:26px 44px 30px;max-height:300px;overflow:hidden}
+/* YouTube: the card shows first and tucks away after a few seconds so it never covers the player controls. */
+.q.tuck{transform:translateY(calc(100% + 80px));opacity:0;transition:transform .6s cubic-bezier(.5,0,.2,1),opacity .5s}
+/* No transition on .q itself: toggling .solo must not animate the card's position (it would be measured mid-flight). */
+.solo .q.tuck{transform:translate(-50%,-50%) translateY(calc(100% + 80px))}
+.q .kick{margin-bottom:12px;font-size:22px}
+.q .text{font:600 54px/1.18 var(--f-body);text-wrap:pretty;overflow-wrap:anywhere;word-break:break-word;min-width:0;color:var(--white)}
+.solo .q{left:50%;bottom:auto;top:50%;transform:translate(-50%,-50%);width:1500px;max-height:760px;padding:56px 72px 60px;overflow:visible}
+.solo .q .inner{max-height:640px;overflow:hidden}
+.solo .q::before{content:"?";position:absolute;right:30px;top:-110px;font:800 260px/1 var(--f-cond);color:color-mix(in srgb,var(--red) calc(25% * var(--glow,1)),transparent);transform:rotate(10deg);pointer-events:none}
+.solo .q .text{font:800 96px/1.08 var(--f-cond);text-transform:uppercase}
+.solo .q.long .text{font:600 56px/1.2 var(--f-body);text-transform:none}
+.postbox{position:absolute;z-index:2;left:96px;right:96px;top:150px;bottom:400px;display:grid;place-items:center}
+.post{width:1200px;max-width:100%;max-height:100%;overflow:hidden;padding:44px 52px 40px}
+.post .h{display:flex;align-items:center;gap:20px;margin-bottom:22px}
+.av{flex:none;width:84px;height:84px;border-radius:50%;background:linear-gradient(135deg,var(--red),var(--red-dark));display:grid;place-items:center;font:800 36px var(--f-cond);color:#fff}
+.post .n{font:800 40px/1.15 var(--f-cond);text-transform:uppercase;letter-spacing:.04em;overflow-wrap:anywhere}
+.post .u{font:500 26px var(--f-mono);color:var(--muted);margin-top:6px;overflow-wrap:anywhere}
+.post .t{font:500 44px/1.28 var(--f-body);text-wrap:pretty;overflow-wrap:anywhere;white-space:pre-line}
+.post .d{margin-top:22px;font:500 24px var(--f-mono);color:var(--muted)}
+/* Very long posts: the card widens, tightens and takes a little more of the free area (never the question card). */
+.postbox.dense{top:132px;bottom:376px}
+.dense .post{width:1728px;padding:22px 44px 20px}
+.dense .post .h{gap:14px;margin-bottom:10px}
+.dense .av{width:52px;height:52px;font-size:24px}
+.dense .post .n{font-size:28px}
+.dense .post .u{font-size:20px;margin-top:2px}
+.dense .post .t{line-height:1.2}
+.dense .post .d{margin-top:10px;font-size:20px}
+}
+</style></head>
+<body><div class="root" id="root" aria-live="polite">
+  <div class="full" id="full" hidden></div>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="src" id="src" hidden><i>Fuente</i><span id="srcText"></span></div>
+  <div class="postbox" id="postbox" hidden><div class="post eg-card" id="post">
+    <div class="h"><div class="av" id="av"></div><div><p class="n" id="pn"></p><p class="u" id="pu"></p></div></div>
+    <p class="t" id="pt"></p><p class="d" id="pd"></p>
+  </div></div>
+  <div class="q eg-card" id="q"><div class="inner"><p class="kick">Pregunta</p><p class="text" id="text"></p></div></div>
+</div>
+<script type="module">
+import { connect, DEMO, qs } from '/widgets/widget.js';
+const $ = id => document.getElementById(id);
+const FADE_MS = 400;
+const TUCK_MS = Number(qs.get('tuckMs')) || 8000;      // YouTube: how long the question card stays before tucking away
+const DEMO_MS = Number(qs.get('demoMs')) || 7000;      // demo: time per sample item
+
+// ---- pure helpers (every string below ends up in textContent, never in innerHTML) ----
+export function ytId(url) {
+  try {
+    const u = new URL(url), h = u.hostname.toLowerCase();
+    let id = '';
+    if (u.protocol !== 'https:') return '';
+    if (h === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+    else if (u.pathname === '/watch') id = u.searchParams.get('v') || '';
+    else { const m = /^\/(?:embed|shorts|live|v)\/([^/?#]+)/.exec(u.pathname); if (m) id = m[1]; }
+    return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : '';
+  } catch { return ''; }
+}
+const mediaUrl = m => (DEMO && m.demoSrc) || '/media/' + encodeURIComponent(m.file);
+const host = url => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } };
+const clock = min => { const h = Math.floor(min / 60), m = min % 60; return h ? `${h}:${String(m).padStart(2, '0')}:00` : `${m}:00`; };
+function fmtDate(v) {
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+  const opts = { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' };
+  if (/T/.test(v)) Object.assign(opts, { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('es-ES', opts);
+}
+/** Source line, only for items with media: the pack source if any, otherwise where the media comes from. */
+function sourceText(item) {
+  const m = item.media; if (!m) return '';
+  if (item.source) return [host(item.source.url), fmtDate(item.source.date)].filter(Boolean).join(' · ');
+  if (m.type === 'image' || m.type === 'video') return `Archivo local · ${m.file}`;
+  if (m.type === 'youtube') return `YouTube${m.startMinute ? ` · desde ${clock(m.startMinute)}` : ''}`;
+  return [host(m.url), m.author].filter(Boolean).join(' · ');
+}
+function fit(text, box, { start, min, max }) {
+  let size = start; text.style.fontSize = size + 'px';
+  while (box.scrollHeight > max && size > min) { size -= 2; text.style.fontSize = size + 'px'; }
+}
+
+/** Post text: normal card first; if it still overflows at 20px, switch to the dense card and shrink down to 16px. */
+function fitPost() {
+  const box = $('postbox'), t = $('pt');
+  box.classList.remove('dense');
+  fit(t, $('post'), { start: 44, min: 20, max: box.clientHeight - 4 });
+  if ($('post').scrollHeight > box.clientHeight - 4) {
+    box.classList.add('dense');
+    fit(t, $('post'), { start: 28, min: 16, max: box.clientHeight - 4 });
+  }
+}
+
+// ---- rendering ----
+let key = '', timer = 0, tuckTimer = 0, token = 0;
+function clearMedia() { $('full').replaceChildren(); $('full').hidden = true; $('full').className = 'full'; }
+const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
+
+function paint(item) {
+  const m = item.media;
+  clearTimeout(tuckTimer);
+  clearMedia();
+  for (const id of ['scrim', 'postbox', 'src']) $(id).hidden = true;
+  const solo = !m || m.type === 'post';
+  $('root').classList.toggle('solo', !m);
+  $('q').classList.remove('tuck');
+  $('text').textContent = item.question;
+  $('q').classList.toggle('long', item.question.length > 90);
+
+  const full = $('full');
+  if (m && m.type !== 'post') {
+    full.hidden = false;
+    if (m.type === 'image' || (m.type === 'video' && DEMO)) {
+      const src = mediaUrl(m);
+      full.append(el('img', { className: 'bg', src, alt: '' }), el('img', { className: 'fg', src, alt: '' }));
+      if (m.type === 'video') full.append(el('div', { className: 'play' }));
+    } else if (m.type === 'video') {
+      const src = mediaUrl(m);
+      const bg = el('video', { className: 'bg', src, muted: true, loop: true, autoplay: true, playsInline: true });
+      const fg = el('video', { className: 'fg', src, autoplay: true, playsInline: true });
+      full.append(bg, fg);
+      fg.play?.().catch(() => {});
+    } else if (m.type === 'youtube') {
+      full.classList.add('yt');
+      const id = ytId(m.url);
+      if (!id || DEMO) full.append(el('div', { className: 'ph' }), el('div', { className: 'play' }));
+      if (id && !DEMO) {
+        const q = `start=${(m.startMinute || 0) * 60}&autoplay=1&rel=0&playsinline=1`;
+        const f = el('iframe', { src: `https://www.youtube-nocookie.com/embed/${id}?${q}`, title: 'YouTube', allowFullscreen: true, referrerPolicy: 'strict-origin-when-cross-origin' });
+        f.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture');
+        f.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
+        full.append(f);
+      }
+      tuckTimer = setTimeout(() => $('q').classList.add('tuck'), TUCK_MS);
+    }
+  }
+  if (solo) $('scrim').hidden = false;
+  if (m?.type === 'post') {
+    $('postbox').hidden = false;
+    $('av').textContent = (m.author.replace(/^@/, '').match(/[\p{L}\p{N}]/gu) || ['?']).slice(0, 2).join('').toUpperCase();
+    $('pn').textContent = m.author; $('pu').textContent = host(m.url);
+    $('pt').textContent = m.text; $('pd').textContent = fmtDate(m.date);
+  }
+  const s = sourceText(item);
+  if (s) { $('srcText').textContent = s; $('src').hidden = false; }
+  fitAll(item);
+}
+function fitAll(item) {
+  $('root').dataset.fitted = '0';
+  const m = item.media, q = $('q');
+  if (!m) fit($('text'), $('q').querySelector('.inner'), { start: item.question.length > 90 ? 56 : 96, min: 28, max: 640 });
+  else fit($('text'), q, { start: 54, min: 26, max: 296 }   /* card max-height 300 minus its 2×2px border */);
+  if (m?.type === 'post') fitPost();
+  // Settled flag: set once fonts are in (the first pass may run before the web font swaps in).
+  const mine = token;
+  (document.fonts?.ready || Promise.resolve()).then(() => { if (mine !== token) return; fitFinal(item); });
+}
+function fitFinal(item) {
+  const m = item.media, q = $('q');
+  if (!m) fit($('text'), q.querySelector('.inner'), { start: item.question.length > 90 ? 56 : 96, min: 28, max: 640 });
+  else fit($('text'), q, { start: 54, min: 26, max: 296 });
+  if (m?.type === 'post') fitPost();
+  $('root').dataset.fitted = '1';
+}
+
+let cur = null;   // item on screen, re-fitted when a font finishes loading or the window resizes
+const refit = () => { if (cur && $('root').classList.contains('on')) fitFinal(cur); };
+document.fonts?.addEventListener?.('loadingdone', refit);
+addEventListener('resize', refit);
+
+function show(item) {
+  const next = item ? JSON.stringify(item) : '';
+  if (next === key) return;
+  key = next;
+  const mine = ++token;
+  clearTimeout(timer);
+  const wasOn = $('root').classList.contains('on');
+  $('root').classList.remove('on');
+  const after = () => {
+    if (mine !== token) return;
+    if (!item) { cur = null; clearMedia(); clearTimeout(tuckTimer); return; }
+    paint(item);
+    cur = item;
+    $('root').classList.add('on');
+  };
+  if (wasOn) timer = setTimeout(after, FADE_MS); else after();
+}
+
+// ---- demo: fictional items of every type (stable, no pack data) ----
+const svg = (w, h, a, b) => 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="${w}" height="${h}" fill="url(#g)"/><circle cx="${w * .72}" cy="${h * .3}" r="${h * .14}" fill="#e8b36a" opacity=".85"/><path d="M0 ${h}V${h * .68}l${w * .16} -${h * .2} ${w * .18} ${h * .22} ${w * .17} -${h * .3} ${w * .2} ${h * .33} ${w * .29} -${h * .25}V${h}z" fill="#0c1218"/></svg>`);
+const LONG_Q = 'Cuando miras atrás, a esos primeros meses sin audiencia, sin dinero y con muchísimas dudas sobre si merecía la pena seguir, ¿qué decisión concreta crees que lo cambió todo, y qué consejo darías a alguien que hoy está justo en ese punto y piensa en dejarlo?';
+const LONG_POST = 'Hoy hace un año publiqué mi primer proyecto abierto. Tuvo tres estrellas, dos de ellas de mi familia. Lo cuento porque a veces olvidamos que todo lo que ahora parece sólido empezó siendo una cosa pequeña, torpe y bastante fea. Gracias a quienes se quedaron: sin vosotros esto sería un repositorio olvidado en una carpeta.';
+export const DEMO_ITEMS = [
+  { id: 'd1', question: '¿Qué harías distinto?' },
+  { id: 'd2', question: LONG_Q },
+  { id: 'd3', question: '¿Dónde se hizo esta foto?', media: { type: 'image', file: 'retrato-estudio.jpg', demoSrc: svg(900, 1200, '#3a1a2a', '#14293a') }, source: { url: 'https://ejemplo.com/archivo', date: '2026-03-14' } },
+  { id: 'd4', question: LONG_Q, media: { type: 'image', file: 'paisaje.jpg', demoSrc: svg(1600, 900, '#14293a', '#3a1a2a') } },
+  { id: 'd5', question: '¿Cómo grabasteis esta demo?', media: { type: 'video', file: 'demo-lanzamiento.mp4', demoSrc: svg(1600, 900, '#2a1c22', '#0b0b0d') } },
+  { id: 'd6', question: '¿Qué pasa en esta parte de la charla?', media: { type: 'youtube', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', startMinute: 12 } },
+  { id: 'd7', question: '¿Sigues pensando lo mismo?', media: { type: 'post', author: 'Marta Ibáñez', text: 'Acabo de lanzar la versión 2.0. Al fin.', date: '2026-03-14T18:42:00Z', url: 'https://pluma.ejemplo.com/post/1' } },
+  { id: 'd8', question: '¿Qué sentiste al escribir esto?', media: { type: 'post', author: 'Marta Ibáñez', text: LONG_POST, date: '2026-03-14T18:42:00Z', url: 'https://pluma.ejemplo.com/post/1' } },
+];
+
+if (DEMO) {
+  // ?demo cycles the samples; ?demo&item=N pins sample N (1-based).
+  const pin = Number(qs.get('item'));
+  if (pin >= 1 && pin <= DEMO_ITEMS.length) show(DEMO_ITEMS[pin - 1]);
+  else { let i = 0; const tick = () => show(DEMO_ITEMS[i++ % DEMO_ITEMS.length]); tick(); setInterval(tick, DEMO_MS); }
+} else {
+  connect({ interview: s => show(s?.item || null) });
+}
+</script></body></html>

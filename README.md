@@ -158,6 +158,9 @@ In the panel, the «Fuentes del programa de emisión» page lists all of them wi
 | Giveaway | `http://127.0.0.1:4500/widget/giveaway` | 1920×1080 |
 | Viewers | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
 | Thank-yous | `http://127.0.0.1:4500/widget/thanks` | 900×200 |
+| Interview | `http://127.0.0.1:4500/widget/interview` | 1920×1080 |
+
+**Interview.** Fullscreen layer for the active, approved item of the active interview (see `docs/entrevista-formato.md`): the question on a card at the bottom over its image, local video, YouTube player (starting at the saved minute) or social post card, with the source shown on every item that has media. Without an active item the layer is empty. Try it with `?demo`.
 
 **Offline thank-yous.** This layer rotates one pending offline follower at a time and can finish with YouTube's anonymous count. In Widgets › Agradecimientos, choose platforms, all time / since the last archived stream / a number of days, the maximum names and rotation interval. Unknown follow dates remain included; with no archived stream, the last-stream window has no cutoff. Nothing pending leaves the layer transparent. Individual and confirmed bulk thank-you actions apply immediately; bulk affects only the names and anonymous records selected for the saved widget settings, not other pending followers.
 

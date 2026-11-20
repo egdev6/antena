@@ -18,7 +18,7 @@ export const INTERVIEW_LIMITS = {
   rounds: 20,               // per interview
   items: 50,                // per round
   title: 120, name: 120, bio: 2000,
-  question: 500, notes: 2000, postText: 2000, author: 120,
+  question: 500, notes: 2000, postText: 2000, postLines: 20, author: 120,
   url: 2048, file: 200,
   maxStartMinute: 1439,
   interviewBytes: 250_000,  // one interview, as JSON
@@ -110,6 +110,12 @@ function cleanMedia(m, path) {
       onlyKeys(m, ['type', 'author', 'text', 'date', 'url'], path);
       out.author = text(m.author, `${path}.author`, INTERVIEW_LIMITS.author);
       out.text = text(m.text, `${path}.text`, INTERVIEW_LIMITS.postText);
+      // The widget fits up to this many lines on screen without cutting them (#277).
+      // Trailing line breaks (common in pasted text) do not count as lines.
+      const lines = out.text.replace(/(\r?\n)+$/, '').split('\n').length;
+      if (lines > INTERVIEW_LIMITS.postLines) {
+        fail(`${path}.text`, `como mucho ${INTERVIEW_LIMITS.postLines} líneas (tiene ${lines})`);
+      }
       out.date = date(m.date, `${path}.date`);
       out.url = httpsUrl(m.url, `${path}.url`);
       break;
@@ -230,8 +236,10 @@ let uidCounter = 0;
 const uid = p => p + Date.now().toString(36) + (uidCounter++).toString(36) + Math.random().toString(36).slice(2, 5);
 
 export class Interviews {
-  constructor({ store, log = () => {} } = {}) {
-    this.store = store; this.log = log;
+  /** `onChange()` runs after every stored change (create, import, edit, delete, select): the server
+   *  uses it to push the active item to the widgets. */
+  constructor({ store, log = () => {}, onChange = () => {} } = {}) {
+    this.store = store; this.log = log; this.onChange = onChange;
   }
 
   /** Stored section, filled with defaults. Nothing is written until a change is saved. */
@@ -252,6 +260,23 @@ export class Interviews {
     }
     this.store.config.interviews = next;
     await this.store.save('interviews');
+    try { this.onChange(); } catch (e) { this.log('[interviews] onChange', e); }
+  }
+
+  /**
+   * What the widget may show: the active approved item as { id, question, media?, source? } or null.
+   * Private notes and the approval flag are left out on purpose: this is the only shape that
+   * leaves the server for the screen.
+   */
+  activeItem() {
+    const s = this.#section();
+    const iv = s.items.find(x => x.id === s.activeId);
+    const item = iv && s.activeItemId ? iv.rounds.flatMap(r => r.items).find(x => x.id === s.activeItemId && x.aprobado) : null;
+    if (!item) return null;
+    const out = { id: item.id, question: item.question };
+    if (item.media) out.media = structuredClone(item.media);
+    if (item.source) out.source = { ...item.source };
+    return out;
   }
 
   snapshot() {
