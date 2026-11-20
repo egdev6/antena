@@ -294,7 +294,7 @@ test('247 S7: importación local sin oráculo y clave LAN rechazada sin efectos'
     assert.deepEqual(await f.ok('GET', '/api/media'), before);
   }
   // El nombre de destino inválido tampoco permite distinguir un origen existente de uno ausente.
-  const badName = { status: 400, body: { error: 'Formato no admitido. Usa webm, mp4, gif, png, webp, mp3, ogg, wav o una fuente (woff2, woff, ttf, otf).' } };
+  const badName = { status: 400, body: { error: 'Formato no admitido. Usa webm, mp4, gif, png, jpg, jpeg, webp, mp3, ogg, wav o una fuente (woff2, woff, ttf, otf).' } };
   for (const src of [valid, missing]) {
     assert.deepEqual(await f.request('POST', '/api/media/import', { path: src, name: 'destino.exe' }), badName);
     assert.deepEqual(await f.ok('GET', '/api/media'), before);

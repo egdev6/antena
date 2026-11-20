@@ -12,6 +12,7 @@ import { httpError, credential, credentialParam, cleanUrl } from '../http-util.m
 import { checkZipName, openZip, writeZip, MAX_ZIP_TOTAL, MAX_ZIP_ENTRIES, MAX_SESSION } from '../zip-archive.mjs';
 import { isImportableArchive } from '../session.mjs';
 import { serialize } from '../json-file.mjs';
+import { checkInterviewsSection } from '../interviews.mjs';
 import { MAX_UPLOAD } from './media.mjs';
 import { metricsDocument } from './metrics.mjs';
 
@@ -113,6 +114,7 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
     const chat = deepMerge(structuredClone(DEFAULT_CONFIG.widgets.chat), before.widgets?.chat || {});
     const [variantError] = validateImportedChatVariants(before.widgets?.chatVariants, next.widgets?.chatVariants, chat);
     if (variantError) throw httpError(400, variantError.message);
+    if (Object.hasOwn(next, 'interviews')) next.interviews = checkInterviewsSection(next.interviews);
     next.customOverlays = customOverlays.prepareReplacement(next.customOverlays);
     const summary = changes(portable(before), portable(next));
     return { before, next, summary };
