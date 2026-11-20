@@ -177,6 +177,44 @@ test('live: each pack state renders from the API, long texts autosize and nothin
   } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
+test('live: a 2000-char post (with or without line breaks) and a 500-char unbroken question fit without cuts', { timeout: 240000 }, async t => {
+  const ctx = await start(t); if (!ctx) return;
+  const { bin, base, api, close } = ctx;
+  let chrome;
+  try {
+    const flat = 'Esta es una frase de prueba para el post con palabras normales y datos. '.repeat(28).slice(0, 2000);
+    const step = Math.ceil(flat.length / 20);
+    const broken = Array.from({ length: 20 }, (_, i) => flat.slice(i * step, (i + 1) * step)).join('\n').slice(0, 2000);
+    assert.equal(broken.split('\n').length, 20);
+    const post = text => ({ type: 'post', author: '@ficticia', text, date: '2026-05-20T10:30:00Z', url: 'https://example.com/p' });
+    const WORD = 'x'.repeat(500);
+    const pack = { ...PACK, rounds: [{ id: 'r', title: 'Ronda', items: [
+      item('post-2000', '¿Qué opinas de esto?', { media: post(flat) }),
+      item('post-2000-nl', '¿Y con saltos de línea?', { media: post(broken) }),
+      item('q-palabra', WORD, { media: { type: 'image', file: 'paisaje.svg' } }),
+    ] }] };
+    assert.equal((await api('POST', '/api/interviews/import', pack)).status, 200);
+    chrome = await open(bin, `${base}/widget/interview`);
+    const c = chrome.cdp;
+    for (const [id, q] of [['post-2000', '¿Qué opinas de esto?'], ['post-2000-nl', '¿Y con saltos de línea?'], ['q-palabra', WORD]]) {
+      assert.equal((await api('POST', '/api/interviews/select', { id: 'cine', itemId: id })).status, 200, id);
+      await waitDom(c, `${shown(q)} && ${FITTED}`, { timeoutMs: 15000 });
+      await settle();
+      const r = await report(c);
+      assert.deepEqual({ outside: r.outside, clipped: r.clipped, overlap: r.overlap, hScroll: r.hScroll }, { outside: [], clipped: [], overlap: false, hScroll: false }, id);
+      if (id !== 'q-palabra') {
+        const m = JSON.parse(await run(c, `JSON.stringify({ sh: post.scrollHeight, ch: post.clientHeight, fs: parseFloat(getComputedStyle(pt).fontSize), len: pt.textContent.length })`));
+        assert.ok(m.sh <= m.ch + 1, `${id}: post content fits its box (${m.sh} <= ${m.ch})`);
+        assert.ok(m.fs >= 16, `${id}: post text stays legible (${m.fs}px)`);
+        assert.equal(m.len, 2000);
+      } else {
+        assert.ok(await run(c, `document.getElementById('q').scrollHeight <= document.getElementById('q').clientHeight + 1`), 'unbroken question wraps inside the card');
+      }
+    }
+    assert.deepEqual(await run(c, `window.__errors`), []);
+  } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
+});
+
 test('pack text is shown as text: no element is injected and no script runs', { timeout: 120000 }, async t => {
   const ctx = await start(t); if (!ctx) return;
   const { bin, base, api, close } = ctx;

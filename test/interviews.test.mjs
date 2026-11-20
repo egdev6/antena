@@ -94,6 +94,7 @@ test('los paquetes inválidos se rechazan con un error claro y sin cambiar lo gu
     ['post sin autor', mut(p => { delete p.rounds[1].items[1].media.author; }), /author/],
     ['post con enlace http', mut(p => { p.rounds[1].items[1].media.url = 'http://example.com/p'; }), /https/],
     ['post con texto enorme', mut(p => { p.rounds[1].items[1].media.text = 'x'.repeat(2001); }), /text/],
+    ['post con más de 20 líneas', mut(p => { p.rounds[1].items[1].media.text = Array(21).fill('línea').join('\n'); }), /líneas/],
     ['ids de ítem repetidos', mut(p => { p.rounds[1].items[0].id = 'q1'; }), /q1/],
     ['id de entrevista inválido', mut(p => { p.id = 'Con Espacios'; }), /id/],
     ['demasiadas rondas', mut(p => { p.rounds = Array.from({ length: 21 }, (_, i) => ({ title: `R${i}`, items: [] })); }), /rounds/],

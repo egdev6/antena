@@ -114,7 +114,7 @@ Every text is plain text, at most the limit shown, without control characters. U
 | `image` | `file` | A file name inside `media/` with an image extension (`png`, `jpg`, `jpeg`, `webp`, `gif`, `apng`, `avif`, `svg`). |
 | `video` | `file` | A file name inside `media/` with a video extension (`webm`, `mp4`, `mov`, `m4v`). |
 | `youtube` | `url`, `startMinute` (optional) | `https` link on `youtube.com`, `www.youtube.com`, `m.youtube.com`, `music.youtube.com`, `youtu.be` or `www.youtube-nocookie.com`. `startMinute` is a whole number of minutes from 0 to 1439. |
-| `post` | `author`, `text`, `date`, `url` | A card for a social post: author (up to 120), text (up to 2000), date and `https` link to the original. |
+| `post` | `author`, `text`, `date`, `url` | A card for a social post: author (up to 120), text (up to 2000 characters and 20 lines), date and `https` link to the original. |
 
 Local media (`file`) is only the **name** of a file in `media/`: no folders, no `/`, `\`, `:` or `..`, no
 absolute paths, up to 200 characters. antena does not check that the file exists when importing (the

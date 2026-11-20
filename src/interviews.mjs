@@ -18,7 +18,7 @@ export const INTERVIEW_LIMITS = {
   rounds: 20,               // per interview
   items: 50,                // per round
   title: 120, name: 120, bio: 2000,
-  question: 500, notes: 2000, postText: 2000, author: 120,
+  question: 500, notes: 2000, postText: 2000, postLines: 20, author: 120,
   url: 2048, file: 200,
   maxStartMinute: 1439,
   interviewBytes: 250_000,  // one interview, as JSON
@@ -110,6 +110,10 @@ function cleanMedia(m, path) {
       onlyKeys(m, ['type', 'author', 'text', 'date', 'url'], path);
       out.author = text(m.author, `${path}.author`, INTERVIEW_LIMITS.author);
       out.text = text(m.text, `${path}.text`, INTERVIEW_LIMITS.postText);
+      // The widget fits up to this many lines on screen without cutting them (#277).
+      if (out.text.split('\n').length > INTERVIEW_LIMITS.postLines) {
+        fail(`${path}.text`, `como mucho ${INTERVIEW_LIMITS.postLines} líneas`);
+      }
       out.date = date(m.date, `${path}.date`);
       out.url = httpsUrl(m.url, `${path}.url`);
       break;

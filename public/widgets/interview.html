@@ -30,7 +30,7 @@
 /* No transition on .q itself: toggling .solo must not animate the card's position (it would be measured mid-flight). */
 .solo .q.tuck{transform:translate(-50%,-50%) translateY(calc(100% + 80px))}
 .q .kick{margin-bottom:12px;font-size:22px}
-.q .text{font:600 54px/1.18 var(--f-body);text-wrap:pretty;overflow-wrap:anywhere;color:var(--white)}
+.q .text{font:600 54px/1.18 var(--f-body);text-wrap:pretty;overflow-wrap:anywhere;word-break:break-word;min-width:0;color:var(--white)}
 .solo .q{left:50%;bottom:auto;top:50%;transform:translate(-50%,-50%);width:1500px;max-height:760px;padding:56px 72px 60px;overflow:visible}
 .solo .q .inner{max-height:640px;overflow:hidden}
 .solo .q::before{content:"?";position:absolute;right:30px;top:-110px;font:800 260px/1 var(--f-cond);color:color-mix(in srgb,var(--red) calc(25% * var(--glow,1)),transparent);transform:rotate(10deg);pointer-events:none}
@@ -44,6 +44,15 @@
 .post .u{font:500 26px var(--f-mono);color:var(--muted);margin-top:6px;overflow-wrap:anywhere}
 .post .t{font:500 44px/1.28 var(--f-body);text-wrap:pretty;overflow-wrap:anywhere;white-space:pre-line}
 .post .d{margin-top:22px;font:500 24px var(--f-mono);color:var(--muted)}
+/* Very long posts: the card widens, tightens and takes a little more of the free area (never the question card). */
+.postbox.dense{top:132px;bottom:376px}
+.dense .post{width:1728px;padding:22px 44px 20px}
+.dense .post .h{gap:14px;margin-bottom:10px}
+.dense .av{width:52px;height:52px;font-size:24px}
+.dense .post .n{font-size:28px}
+.dense .post .u{font-size:20px;margin-top:2px}
+.dense .post .t{line-height:1.2}
+.dense .post .d{margin-top:10px;font-size:20px}
 }
 </style></head>
 <body><div class="root" id="root" aria-live="polite">
@@ -96,6 +105,17 @@ function sourceText(item) {
 function fit(text, box, { start, min, max }) {
   let size = start; text.style.fontSize = size + 'px';
   while (box.scrollHeight > max && size > min) { size -= 2; text.style.fontSize = size + 'px'; }
+}
+
+/** Post text: normal card first; if it still overflows at 20px, switch to the dense card and shrink down to 16px. */
+function fitPost() {
+  const box = $('postbox'), t = $('pt');
+  box.classList.remove('dense');
+  fit(t, $('post'), { start: 44, min: 20, max: box.clientHeight - 4 });
+  if ($('post').scrollHeight > box.clientHeight - 4) {
+    box.classList.add('dense');
+    fit(t, $('post'), { start: 28, min: 16, max: box.clientHeight - 4 });
+  }
 }
 
 // ---- rendering ----
@@ -157,7 +177,7 @@ function fitAll(item) {
   const m = item.media, q = $('q');
   if (!m) fit($('text'), $('q').querySelector('.inner'), { start: item.question.length > 90 ? 56 : 96, min: 28, max: 640 });
   else fit($('text'), q, { start: 54, min: 26, max: 296 }   /* card max-height 300 minus its 2×2px border */);
-  if (m?.type === 'post') fit($('pt'), $('post'), { start: 44, min: 20, max: $('postbox').clientHeight - 4 });
+  if (m?.type === 'post') fitPost();
   // Settled flag: set once fonts are in (the first pass may run before the web font swaps in).
   const mine = token;
   (document.fonts?.ready || Promise.resolve()).then(() => { if (mine !== token) return; fitFinal(item); });
@@ -166,7 +186,7 @@ function fitFinal(item) {
   const m = item.media, q = $('q');
   if (!m) fit($('text'), q.querySelector('.inner'), { start: item.question.length > 90 ? 56 : 96, min: 28, max: 640 });
   else fit($('text'), q, { start: 54, min: 26, max: 296 });
-  if (m?.type === 'post') fit($('pt'), $('post'), { start: 44, min: 20, max: $('postbox').clientHeight - 4 });
+  if (m?.type === 'post') fitPost();
   $('root').dataset.fitted = '1';
 }
 
