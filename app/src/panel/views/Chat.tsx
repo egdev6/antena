@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { enc, get, post, put } from '../../lib/api';
+import { post } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
-import { cx, EmptyState, fmtTime, guard, PfIcon, PLATFORM_NAMES, ScaledFrame, Seg, toast, ViewHead } from '../../lib/ui';
-import type { ChatSendResult, ChatVariant } from '../../lib/types';
+import { cx, EmptyState, fmtTime, guard, PfIcon, PLATFORM_NAMES, toast, ViewHead } from '../../lib/ui';
+import type { ChatSendResult } from '../../lib/types';
 
 export function sendResultText(r: any) {
   const errs = Object.entries<string>(r.errors || {});
@@ -16,83 +16,11 @@ export function SendTo({ value, onChange }: { value: string; onChange: (v: strin
   </div>;
 }
 
-// Keep the original Directo keys so existing preferences survive the move to Chat.
-const PREVIEW_VISIBLE = 'egdev.panel.directo.chat-preview.visible';
-const PREVIEW_VARIANT = 'egdev.panel.directo.chat-preview.variant';
-const VARIANTS_ROUTE = '/api/widgets/chat/variants';
-
 export function readPreviewPreference(key: string) {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 export function writePreviewPreference(key: string, value: string) {
   try { localStorage.setItem(key, value); } catch { /* el panel funciona sin almacenamiento */ }
-}
-
-/** The editor's example widget, independent of its unsaved drafts. */
-function ChatPreview() {
-  const savedWidgets = useLive(s => s.widgets?.widgets);
-  const [visible, setVisible] = useState(() => readPreviewPreference(PREVIEW_VISIBLE) === 'true');
-  const [id, setId] = useState(() => readPreviewPreference(PREVIEW_VARIANT) || 'default');
-  const [variants, setVariants] = useState<ChatVariant[] | null>(null);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    if (!visible) return;
-    let active = true, eventVersion = 0, requestVersion = 0;
-    const refresh = () => {
-      const eventAtStart = eventVersion, request = ++requestVersion;
-      get<ChatVariant[]>(VARIANTS_ROUTE).then(list => {
-        if (!Array.isArray(list)) throw new Error('Respuesta no válida');
-        if (active && request === requestVersion && eventAtStart === eventVersion) { setVariants(list); setError(''); }
-      }).catch(e => {
-        if (active && request === requestVersion && eventAtStart === eventVersion) setError(`No se pudieron cargar las variantes: ${e instanceof Error ? e.message : 'error desconocido'}`);
-      });
-    };
-    // A later saved widgets event wins over an older GET; config.widgets can be a draft.
-    const off = live.on('widgets', state => {
-      const list = state.widgets?.chatVariants;
-      if (!Array.isArray(list)) return;
-      eventVersion++; setVariants(list); setError('');
-    });
-    const offOpen = live.onOpen(refresh);
-    refresh();
-    return () => { active = false; off(); offOpen(); };
-  }, [visible, attempt]);
-
-  useEffect(() => {
-    if (visible && variants && id !== 'default' && !variants.some(v => v.id === id)) {
-      setId('default'); writePreviewPreference(PREVIEW_VARIANT, 'default');
-      setNotice('La variante ya no existe. Se muestra el chat predeterminado.');
-    }
-  }, [visible, variants, id]);
-
-  const toggle = (next: boolean) => {
-    // A list from an earlier visit cannot confirm whether a variant still exists.
-    setVariants(null); setError(''); setVisible(next); writePreviewPreference(PREVIEW_VISIBLE, String(next));
-  };
-  const choose = (next: string) => {
-    setId(next); setNotice(''); writePreviewPreference(PREVIEW_VARIANT, next);
-  };
-  const selected = variants?.find(v => v.id === id);
-  const horizontal = (id === 'default' ? savedWidgets?.chat?.layout : selected?.layout) === 'horizontal';
-  const src = id === 'default' ? '/widget/chat?demo' : `/widget/chat?variant=${enc(id)}&demo`;
-  return <div className="dir-widget-preview">
-    <label className="check" htmlFor="dir-chat-preview"><input id="dir-chat-preview" type="checkbox" checked={visible} onChange={e => toggle(e.target.checked)} /> Vista previa del widget de chat</label>
-    {visible && <div className="dir-widget-preview__content">
-      {variants && variants.length > 0 && <label htmlFor="dir-chat-variant">Variante de chat<select id="dir-chat-variant" value={id} onChange={e => choose(e.target.value)}>
-        <option value="default">Predeterminada</option>{variants.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-      </select></label>}
-      {!variants && !error && <p className="hint" role="status">Cargando variantes…</p>}
-      {error && <p className="hint" role="alert">{error} <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => { setError(''); setAttempt(n => n + 1); }}>Reintentar</button></p>}
-      {notice && <p className="hint" role="status">{notice}</p>}
-      <figure className={cx('eg-stage', 'dir-widget-stage', horizontal && 'is-horizontal')}>
-        <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista previa</span><span className="eg-stage__spacer" /><span>Datos de ejemplo</span></figcaption>
-        <ScaledFrame src={src} w={horizontal ? 1832 : 600} h={horizontal ? 160 : 900} title="Vista previa del widget de chat" />
-      </figure>
-    </div>}
-  </div>;
 }
 
 export function Chat() {
@@ -126,7 +54,6 @@ export function Chat() {
         <input className="grow" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} placeholder="Escribe en tu chat…" style={{ minWidth: 200 }} />
         <button className="eg-btn eg-btn--primary" onClick={send}>Enviar</button>
       </div>
-      <ChatPreview />
     </article>
   </>;
 }
