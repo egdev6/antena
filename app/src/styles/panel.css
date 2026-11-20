@@ -1024,7 +1024,6 @@ main:has(> .lv-savebar.is-open),.lv-slide:has(> .lv-savebar.is-open) .lv-sbody{p
 .dir-widget-preview{min-width:0;padding-top:var(--space-3);border-top:1px solid var(--color-border-default)}
 .dir-widget-preview__content{display:grid;gap:var(--space-2);min-width:0;margin-top:var(--space-2)}
 .dir-widget-preview__content label,.dir-widget-preview__content p{margin:0}
-.dir-widget-preview__content select{width:100%;max-width:100%;min-width:0}
 .dir-widget-stage{width:min(100%,360px);min-width:0}.dir-widget-stage.is-horizontal{width:100%}
 .dir-extras{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;gap:var(--space-4);margin-top:var(--space-4)}
 .dir-extras .goals .goal{gap:var(--space-2)}.dir-extras .goal-title{margin:0}.dir-extras .goal-top{margin-bottom:var(--space-1)}
