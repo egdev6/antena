@@ -16,6 +16,7 @@ Each row is pinned by `test/event-mapping.test.mjs`.
 | `channel.bits.use` (1) | `cheer` | `user_name`, `bits`, `message.text`, `power_up.type` | Only `power_up` / `custom_power_up`: Power-ups spend bits without a `channel.cheer`. Type `cheer` is ignored (already alerted by `channel.cheer`). |
 | `channel.raid` (1) | `raid` | `from_broadcaster_user_name`, `viewers` | |
 | `channel.channel_points_custom_reward_redemption.add` (1) | `redemption` | `user_name`, `reward.title`, `reward.cost`, `user_input` | |
+| `channel.chat.notification` (1) | `streak` | `chatter_user_name`, `chatter_user_id`, `watch_streak.streak_count`, `watch_streak.channel_points_awarded`, `message.text` | Only `notice_type: watch_streak`; other notices use their own subscriptions and do not alert here. |
 
 Redelivered notifications keep the same message id (`tw:<message_id>`) and the bus drops the
 second copy.
@@ -31,6 +32,7 @@ second copy.
 | `membershipGiftingEvent` | `giftmember` | `giftMembershipsCount`, `giftMembershipsLevelName` | Channel memberships only. |
 | `giftMembershipReceivedEvent` | — | | One per receiver of a gift: the gifting event already alerts once. |
 | `giftEvent` | `jewels` | `authorChannelId`, `giftDetails.jewelsAmount`, `giftName`, `giftUrl`, `altText`, `comboCount` | One alert per message id after the combo is quiet; owner's gifts are ignored. |
+| `YouTube textMessageEvent` | `streak` | platform, private author ID, display name, locally calculated streak | First message in a session, when the configured consecutive-session minimum is met. |
 
 Jewels gifts, including a non-combo (`comboCount` 0), wait for one chat polling interval
 plus five quiet seconds; every update of the same id restarts the wait. This allows the next
@@ -65,6 +67,38 @@ those records existed is unknown. Manual sessions track presence in memory; a re
 one when no chat statistics exist. A burst is capped at five queued or paused alerts: later first
 messages still count as presence but are not replayed. The system alert appears in history and
 timeline but does not count as a support event or request thanks.
+
+## Watch streaks
+
+`streak` («Racha») is enabled by default in **Alertas**, with editable text, voice, actions,
+variations, icon and standard preview/simulation. Its common variables are `{user}`,
+`{platform}` and `{count}`; official Twitch notices also supply `{message}` and
+`{channelPointsAwarded}`. It appears in history and the timeline as a system alert, without
+support metrics or thanks. The streamer's own messages and blocked users never alert.
+
+Twitch uses only its official `watch_streak` chat notification, never a locally calculated
+Twitch streak. It requests `user:read:chat` when connecting; if an existing token lacks this
+scope, the connection and other EventSub subscriptions still work, and **Conexiones › Twitch**
+asks you to press «Volver a conectar» and authorize the new permission. A Twitch welcome is
+based on the separate chat message; the official streak notice is independent, so both can
+appear for the same person when Twitch sends both.
+
+YouTube calculates the streak once, on the same first-message detection as welcome. Starting
+with the current session, it counts immediately preceding **sessions archived by antena that
+have YouTube chat statistics**, ordered by start time (id breaks ties); an eligible session
+where this author did not write ends the streak. Archives with no YouTube chat statistics
+are skipped, not treated as gaps. These are not necessarily every YouTube stream: statistics
+are captured only in automatic sessions, and retention or missing older data limits history.
+If a listed archive cannot be read, no streak is inferred from the incomplete index. Identity IDs
+stay private. `youtube.streakAlert` defaults to true and `youtube.streakMinSessions` to 3
+(including the current session, minimum 1), editable in **Conexiones › YouTube**. The main
+**Alertas › Racha** switch disables streak alerts on both platforms.
+
+For YouTube, an eligible enabled streak replaces welcome on that first message; below the
+minimum or with either streak switch off, welcome behaves normally. Both share welcome's
+five-pending-alert burst cap. The first message is consumed even if the alert is suppressed;
+it is not replayed later in the session. In manual sessions this first-message presence is
+in memory and may repeat after restart, as with welcome.
 
 ## Public YouTube subscriber alerts (polling)
 

@@ -66,6 +66,17 @@ test('S1 Twitch subscribes to channel.bits.use v1 with the existing bits:read sc
   assert.deepEqual(calls.find(c => c[0] === 'channel.bits.use'), ['channel.bits.use', '1', { broadcaster_user_id: '9' }]);
 });
 
+test('S6/S7 Twitch watch_streak mapping and documentation ignore other chat notices', async () => {
+  const event = { notice_type: 'watch_streak', chatter_user_id: 'private', chatter_user_name: 'Ana', message: { text: 'hola' }, watch_streak: { streak_count: 4, channel_points_awarded: 300 } };
+  assert.deepEqual(tw('channel.chat.notification', event), { type: 'streak', vars: { user: 'Ana', platform: 'twitch', count: 4, channelPointsAwarded: 300, message: 'hola' } });
+  for (const notice_type of ['sub', 'resub', 'sub_gift', 'raid', 'announcement']) assert.equal(tw('channel.chat.notification', { ...event, notice_type }), null);
+  const doc = await readFile(new URL('../docs/eventos.md', import.meta.url), 'utf8');
+  assert.match(doc, /\| `channel\.chat\.notification` \(1\) \| `streak` \|/);
+  assert.match(doc, /\| `YouTube textMessageEvent` \| `streak` \|/);
+  assert.equal(ALERT_TYPES.streak?.system, true);
+  assert.equal(buildAlert('streak', { user: 'Ana', platform: 'youtube', count: 3 }, { alerts: {} }).sub, '3 directos seguidos');
+});
+
 test('S2 Twitch unknown types never alert', () => {
   for (const type of ['channel.update', 'channel.chat.message', 'channel.unknown']) assert.equal(tw(type, { user_name: 'Ana' }), null, type);
 });
@@ -156,4 +167,13 @@ test('S2 a redelivered EventSub message keeps its id and the bus drops the secon
   assert.deepEqual(events.map(e => e.externalId), ['tw:msg-1', 'tw:msg-1']);
   const bus = new Bus();
   assert.deepEqual(events.map(e => bus.isDuplicate(e.externalId)), [false, true]);
+});
+
+test('S6 every non-watch_streak chat notice type stays silent', () => {
+  for (const notice_type of ['community_sub_gift', 'gift_paid_upgrade', 'prime_paid_upgrade', 'unraid', 'pay_it_forward', 'bits_badge_tier', 'charity_donation', 'shared_chat_sub', 'shared_chat_resub', ''])
+    assert.equal(tw('channel.chat.notification', { notice_type, chatter_user_name: 'A' }), null, notice_type);
+});
+
+test('S6 a watch_streak notice without a numeric streak_count does not alert', () => {
+  assert.equal(tw('channel.chat.notification', { notice_type: 'watch_streak', chatter_user_name: 'A' }), null);
 });

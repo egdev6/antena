@@ -27,7 +27,7 @@ Stream alerts, chat and widgets for your **broadcast program (Meld or OBS)** —
 
 antena runs entirely on your PC and gives your stream a full alert and interaction layer:
 
-- **Alerts** from Twitch (followers, subs, resubs, gifted subs, bits and Power-ups, raids, rewards) and YouTube (new subscribers, Super Chats, Super Stickers, members, milestones and gifted memberships), plus a small editable welcome for each person's first chat message. Event → alert table: [docs/eventos.md](docs/eventos.md).
+- **Alerts** from Twitch (followers, subs, resubs, gifted subs, bits and Power-ups, raids, rewards) and YouTube (new subscribers, Super Chats, Super Stickers, members, milestones and gifted memberships), plus an editable first-message welcome and watch-streak alerts (official Twitch; local YouTube). Event → alert table: [docs/eventos.md](docs/eventos.md).
 - **Three designs per alert:** the EGDEV 3D card; your own video or image (webm with transparency) with the message on top, placed wherever you want; or **video + card**: your video or image as a full-screen background with the 3D card on top, with an entry delay and position offset. All with your own CSS.
 - **Variations:** another version of the alert depending on the amount, the tier, the user, the message or a probability.
 - **Voice (TTS)** for messages, **filtering** of words, links and users, and **pause** with queue.
@@ -216,6 +216,10 @@ In every alert, variation or command, **Actions on fire** runs right when the al
 | Say out loud | Reads a text in the overlay |
 
 Scenes and layers are referenced by name, so you can prepare them even with the broadcast program closed.
+
+### Watch streaks
+
+Twitch streaks use official notifications and require reconnecting Twitch to grant `user:read:chat`. YouTube streaks count the current session and consecutive preceding antena archives with YouTube chat statistics (not every YouTube stream); a session without that person breaks the run. In **Conexiones › YouTube**, the local alert is on by default with a minimum of 3 sessions. On a qualifying first message it replaces welcome; otherwise welcome remains. Switch the alert itself off in **Alertas › Racha**. See [the event table](docs/eventos.md#watch-streaks) for limits and Twitch coexistence.
 
 ### Variations
 

@@ -27,7 +27,7 @@ Alertas, chat y widgets de directo para tu **programa de emisión (Meld u OBS)**
 
 antena se queda entera en tu PC y le da a tu directo una capa completa de alertas e interacción:
 
-- **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits y Power-ups, raids, recompensas) y YouTube (suscriptores nuevos, Super Chats, Super Stickers, miembros, hitos y membresías regaladas), más una bienvenida pequeña y editable al primer mensaje de cada persona. Tabla evento → alerta: [docs/eventos.md](docs/eventos.md).
+- **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits y Power-ups, raids, recompensas) y YouTube (suscriptores nuevos, Super Chats, Super Stickers, miembros, hitos y membresías regaladas), más una bienvenida editable al primer mensaje y alertas de racha (oficial de Twitch; local de YouTube). Tabla evento → alerta: [docs/eventos.md](docs/eventos.md).
 - **Tres diseños por alerta:** la tarjeta 3D EGDEV; tu vídeo o imagen (webm con transparencia) con el mensaje encima, colocado donde quieras; o **vídeo + tarjeta**: tu vídeo o imagen de fondo a pantalla completa y encima la tarjeta 3D, con retraso de entrada y ajuste de posición. Todos con CSS propio.
 - **Variaciones:** otra versión de la alerta según la cantidad, el tier, el usuario, el mensaje o una probabilidad.
 - **Voz (TTS)** de los mensajes, **filtro** de palabras, enlaces y usuarios, y **pausa** con cola.
@@ -216,6 +216,10 @@ En cada alerta, variación o comando, **Acciones al salir** se ejecuta justo cua
 | Decir en voz alta | Lee un texto en el overlay |
 
 Las escenas y capas se indican por nombre, así que puedes prepararlas aunque el programa de emisión esté cerrado.
+
+### Rachas de directos
+
+Las rachas de Twitch usan la notificación oficial y requieren volver a conectar Twitch para conceder `user:read:chat`. Las de YouTube cuentan el directo actual y los archivados consecutivos de antena con estadísticas del chat de YouTube (no todos los directos de YouTube); uno sin esa persona rompe la racha. En **Conexiones › YouTube** están activadas de serie con mínimo de 3 directos. Si el primer mensaje alcanza el mínimo, la racha sustituye a la bienvenida; si no, la bienvenida sigue igual. La alerta completa se apaga en **Alertas › Racha**. Consulta [la tabla de eventos](docs/eventos.md#watch-streaks) para ver los límites y la coexistencia en Twitch.
 
 ### Variaciones
 

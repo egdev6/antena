@@ -11,6 +11,7 @@ export const SCOPES = [
   'channel:read:subscriptions',
   'bits:read',
   'channel:read:redemptions',
+  'user:read:chat',
   'user:write:chat',
   'moderator:manage:announcements',
   'channel:manage:broadcast',
@@ -22,7 +23,7 @@ export class Twitch extends EventEmitter {
     this.store = store;
     this.log = log;
     this.ws = null;
-    this.status = { state: 'desconectado', user: null, subscriptions: [], errors: [], device: null };
+    this.status = { state: 'desconectado', user: null, subscriptions: [], errors: [], device: null, streakWarning: null };
     this.keepaliveTimer = null;
     this.keepaliveMs = 40_000;
     this.stopped = true;
@@ -229,7 +230,9 @@ export class Twitch extends EventEmitter {
       const v = await this.validate();
       if (this._terminal || this.stopped || epoch !== this._epoch) return;
       this.userId = v.user_id;
-      this.setStatus({ user: v.login, userId: v.user_id, scopes: v.scopes || [], state: 'conectando', errors: [] });
+      const scopes = Array.isArray(v.scopes) ? v.scopes : [];
+      this.setStatus({ user: v.login, userId: v.user_id, scopes, state: 'conectando', errors: [],
+        streakWarning: scopes.includes('user:read:chat') ? null : 'Reconecta Twitch para activar las rachas: abre Twitch y pulsa «Volver a conectar» para autorizar user:read:chat.' });
       this.connect(EVENTSUB_WS);
     } catch (err) { if (!this._terminal && !this.stopped && epoch === this._epoch) this.fail(err); }
   }
@@ -251,7 +254,7 @@ export class Twitch extends EventEmitter {
     }
     this.ws = null; this.pending = null;
     if (forget) await this.store.setSecret('twitch', undefined);
-    this.setStatus({ state: 'desconectado', user: forget ? null : this.status.user, subscriptions: [], device: null });
+    this.setStatus({ state: 'desconectado', user: forget ? null : this.status.user, subscriptions: [], device: null, streakWarning: null });
   }
 
   // Corte terminal solo de EventSub (08b.2b.1): caché idempotente, gana a start/connect/welcome/onclose.
@@ -365,7 +368,10 @@ export class Twitch extends EventEmitter {
   }
 
   emitEvent(messageId, subType, event) {
-    const n = normalizeTwitch(subType, event);
+    // El id privado solo se usa aquí para excluir al titular; nunca entra en las variables públicas.
+    const ownNotice = subType === 'channel.chat.notification' && event?.chatter_user_id
+      && (event.chatter_user_id === this.userId || event.chatter_user_id === event.broadcaster_user_id);
+    const n = ownNotice ? null : normalizeTwitch(subType, event);
     try { this.rawLog?.record('twitch', subType, !!n, event); } catch {}
     if (n) this.emit('event', { externalId: 'tw:' + messageId, ...n,
       ...(subType === 'channel.follow' && event?.user_id ? { followerId: event.user_id } : {}),
@@ -385,6 +391,8 @@ export class Twitch extends EventEmitter {
       ['channel.raid', '1', { to_broadcaster_user_id: me }],
       ['channel.channel_points_custom_reward_redemption.add', '1', { broadcaster_user_id: me }],
     ];
+    if (this.status.scopes?.includes('user:read:chat'))
+      subs.push(['channel.chat.notification', '1', { broadcaster_user_id: me, user_id: me }]);
     const ok = [];
     const errors = [];
     for (const [type, version, condition] of subs) {

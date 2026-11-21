@@ -103,13 +103,14 @@ export function Conexiones({ parts }: { parts: string[] }) {
         {passwordPending && <p className="hint">La contraseña de OBS cambiará al guardar.</p>}
       </article>
       <CardGroup title="Plataformas" count={2} note="De donde llegan las alertas y el chat" wide>
-        <Card tour="conexiones-twitch" className="lv-conn" href="#/conexiones/twitch" label="Abrir Twitch" open={open === 'twitch'} warn={tw.state === 'error' || !!tw.errors?.length}
+        <Card tour="conexiones-twitch" className="lv-conn" href="#/conexiones/twitch" label="Abrir Twitch" open={open === 'twitch'} warn={tw.state === 'error' || !!tw.errors?.length || !!tw.streakWarning}
           title={<span className="lv-conn-h"><span className="lv-logo"><PfIcon platform="twitch" /></span><span><b>Twitch</b><small>Alertas, chat y marcas</small></span></span>}
           foot={<><span className="lv-cnote">{tw.device ? 'Esperando el código…' : twOk ? 'Se reconecta solo' : 'Necesita el Client ID'}</span><span className="sp" />
             {tw.user ? <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={guard(() => post('/api/twitch/restart'), 'Reconectando con Twitch…')}>Reconectar</button>
               : <a className="eg-btn eg-btn--secondary eg-btn--sm" href="#/conexiones/twitch">Conectar</a>}</>}>
           <Dot tone={tone(tw.state)}>{cap(tw.state)}</Dot>
           <dl className="lv-kv"><dt>Cuenta</dt><dd>{tw.user || '—'}</dd><dt>Chat</dt><dd>{st.chat?.channel ? `#${st.chat.channel} · ${st.chat.state}` : '—'}</dd><dt>Eventos</dt><dd>{tw.subscriptions?.length ? `${tw.subscriptions.length} suscripciones de EventSub` : '—'}</dd></dl>
+          {tw.streakWarning && <p className="lv-cnote is-warn">{tw.streakWarning}</p>}
           {tw.errors?.length ? <p className="lv-cnote is-warn">{tw.errors[0]}</p> : null}
         </Card>
         <Card tour="conexiones-youtube" className="lv-conn" href="#/conexiones/youtube" label="Abrir YouTube" open={open === 'youtube'} warn={yt.state === 'error' || (ytOk && !ytWrite)}
@@ -171,6 +172,7 @@ function ConexionSlide({ which }: { which: 'twitch' | 'youtube' }) {
         {tw.device && <div className="device"><p>Abre <a href={tw.device.url} target="_blank" rel="noopener">{String(tw.device.url).replace(/^https?:\/\//, '')}</a> e introduce el código:</p><code className="code">{tw.device.code}</code></div>}
         {tw.user && <p className="who">Cuenta: <b>{tw.user}</b>{st.chat?.channel ? <> · chat de <b>{st.chat.channel}</b> ({st.chat.state})</> : null}</p>}
         {!!tw.subscriptions?.length && <ul className="chips">{tw.subscriptions.map((x: string) => <li key={x}>{x.replace('channel.', '')}</li>)}</ul>}
+        {tw.streakWarning && <p className="lv-cnote is-warn">{tw.streakWarning}</p>}
         {!!tw.errors?.length && <ul className="errors">{tw.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}</ul>}
         <div className="row">
           <button className="eg-btn eg-btn--primary" onClick={guard(async () => { await saveAll(); await post('/api/twitch/connect'); })}>{tw.user ? 'Volver a conectar' : 'Conectar'}</button>
@@ -188,6 +190,9 @@ function ConexionSlide({ which }: { which: 'twitch' | 'youtube' }) {
         <label>Segundos entre consultas de suscriptores <input type="number" min={0} step={1} value={c.youtube.subscriberPollSeconds ?? 120} onChange={e => live.patchConfig({ youtube: { subscriberPollSeconds: Math.max(0, Math.floor(Number(e.target.value) || 0)) } })} /></label>
         <Switch checked={c.youtube.subscriberCountAlert !== false} onChange={v => live.patchConfig({ youtube: { subscriberCountAlert: v } })}>Avisar de suscriptores sin nombre («+N suscriptores»)</Switch>
         <p className="hint">Requiere conectar tu cuenta. Solo las suscripciones públicas tienen nombre; la alerta sin nombre usa totales exactos por debajo de 1000. La alerta llega con el retraso del intervalo y la API puede limitar los resultados. Usa cuota diaria compartida con el chat. Mínimo 60 s; 0 desactiva el sondeo.</p>
+        <Switch checked={c.youtube.streakAlert !== false} onChange={v => live.patchConfig({ youtube: { streakAlert: v } })}>Avisar de rachas de chat en YouTube</Switch>
+        <label>Directos seguidos mínimos (incluido el actual) <input type="number" min={1} step={1} value={c.youtube.streakMinSessions ?? 3} onChange={e => live.patchConfig({ youtube: { streakMinSessions: Math.max(1, Math.floor(Number(e.target.value) || 1)) } })} /></label>
+        <p className="hint">Cuenta los directos archivados por antena con estadísticas de chat de YouTube, no todos los de YouTube. Si hay racha, sustituye la bienvenida. La alerta se activa y edita en Alertas › Racha.</p>
         {st.followers?.youtube?.status === 'quota' && <p className="hint">Sondeo de suscriptores detenido por cuota agotada hasta volver a escuchar el chat. {st.followers.youtube.error}</p>}
         <label>Enlace del directo <small>(si lo dejas vacío, lo busca en tu canal)</small><LazyInput spellCheck={false} placeholder="https://www.youtube.com/live/…" value={c.youtube.video} onCommit={yset('video')} /></label>
         {yt.title && <p className="who">Directo: <b>{yt.title}</b> · {yt.polls || 0} lecturas</p>}

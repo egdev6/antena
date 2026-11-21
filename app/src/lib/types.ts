@@ -233,6 +233,8 @@ export interface YoutubeConfig {
   pollSeconds?: number;
   subscriberPollSeconds?: number;
   subscriberCountAlert?: boolean;
+  streakAlert?: boolean;
+  streakMinSessions?: number;
   clientId?: string;
   clientSecret?: string;
   [k: string]: unknown;
@@ -271,6 +273,7 @@ export interface TwitchStatus {
   channel?: string;
   device?: { url: string; code: string } | null;
   subscriptions?: string[];
+  streakWarning?: string | null;
   errors?: string[];
   [k: string]: unknown;
 }
