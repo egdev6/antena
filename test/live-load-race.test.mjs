@@ -227,6 +227,43 @@ test('un snapshot en vuelo que resuelve tarde no revierte un cambio optimista de
     'la edición optimista local no se revierte con el snapshot en vuelo');
 });
 
+test('una pestaña del prompter elegida durante la carga no se revierte con la respuesta vieja de /api/prompter (#237)', async t => {
+  globalThis.EventSource = FakeEventSource;
+  const { live } = await bundleLive();
+  t.after(() => { delete globalThis.EventSource; delete globalThis.__apiImpl; delete globalThis.__fakeEs; });
+  const prompters = [];
+  globalThis.__apiImpl = (_m, p) => {
+    if (p === '/api/prompter') return new Promise(r => prompters.push(r));
+    if (p === '/api/chat?limit=200') return Promise.resolve([]);
+    if (p === '/api/timeline' || p === '/api/interview-control') return Promise.resolve({});
+    return Promise.resolve({ config: {}, widgets: {} });
+  };
+  live.connect('test');
+
+  // without a local change the response is applied
+  const p0 = live.load();
+  while (!prompters.length) await new Promise(r => setImmediate(r));
+  prompters[0]({ tab: 'preguntas' });
+  await p0;
+  assert.equal(live.prompter.tab, 'preguntas');
+
+  // the user picks a tab (as Prompter.tsx does) while /api/prompter is in flight
+  const p1 = live.load();
+  while (prompters.length < 2) await new Promise(r => setImmediate(r));
+  live.prompter = { ...live.prompter, tab: 'entrevista' }; live.emit();
+  prompters[1]({ tab: 'cronologia' });
+  await p1;
+  assert.equal(live.prompter.tab, 'entrevista', 'the late, older response does not bring the previous tab back');
+
+  // a newer SSE 'prompter' event during the load also wins over the late response
+  const p2 = live.load();
+  while (prompters.length < 3) await new Promise(r => setImmediate(r));
+  globalThis.__fakeEs.emit('prompter', { tab: 'preguntas' });
+  prompters[2]({ tab: 'entrevista' });
+  await p2;
+  assert.equal(live.prompter.tab, 'preguntas');
+});
+
 // #116 (cargas locales del chat, prompter y dock): una carga vieja que resuelve primero
 // se aplica aunque la más nueva todavía no haya terminado — y aunque después falle.
 test('chat local: la carga vieja que resuelve primero se aplica aunque la nueva luego falle', async t => {
