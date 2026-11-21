@@ -12,7 +12,7 @@ import { createApp } from '../src/server.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MCP = path.join(HERE, '..', 'src', 'mcp.mjs');
 const VALID = JSON.parse(await readFile(path.join(HERE, 'fixtures', 'interviews', 'valid.json'), 'utf8'));
-const NAMES = ['listar_entrevistas', 'ver_entrevista', 'crear_entrevista', 'importar_entrevista', 'editar_entrevista', 'borrar_entrevista', 'elegir_entrevista'];
+const NAMES = ['listar_entrevistas', 'ver_entrevista', 'crear_entrevista', 'importar_entrevista', 'editar_entrevista', 'borrar_entrevista', 'elegir_entrevista', 'parar_entrevista'];
 
 function mcpClient(url) {
   const child = spawn(process.execPath, [MCP], { env: { ...process.env, ANTENA_URL: url, ANTENA_NO_EMBED: '1' } });
@@ -45,12 +45,12 @@ async function start(t) {
   return { mcp, base };
 }
 
-test('las siete herramientas existen; las de lectura son solo lectura y las destructivas piden confirmar', async t => {
+test('las herramientas existen; las de lectura son solo lectura y las destructivas piden confirmar', async t => {
   const { mcp } = await start(t);
   const tools = Object.fromEntries((await mcp.list()).map(x => [x.name, x]));
   for (const n of NAMES) assert.ok(tools[n], n);
   for (const n of ['listar_entrevistas', 'ver_entrevista']) assert.equal(tools[n].annotations?.readOnlyHint, true, n);
-  for (const n of ['borrar_entrevista', 'editar_entrevista']) {
+  for (const n of ['borrar_entrevista', 'editar_entrevista', 'parar_entrevista']) {
     assert.equal(tools[n].annotations?.destructiveHint, true, n);
     assert.ok(tools[n].inputSchema.required.includes('confirmar'), n);
   }
@@ -69,6 +69,21 @@ test('importar, listar, ver y elegir entrevista por MCP', async t => {
   const chosen = await mcp.call('elegir_entrevista', { id: 'ana-garcia-ia', item: 'q1' });
   assert.equal(chosen.activeId, 'ana-garcia-ia');
   assert.equal(chosen.activeItemId, 'q1');
+});
+
+test('MCP: parar exige confirmación, conserva el paquete y es idempotente', async t => {
+  const { mcp } = await start(t);
+  await mcp.call('importar_entrevista', { paquete: VALID });
+  await mcp.call('elegir_entrevista', { id: 'ana-garcia-ia', item: 'q1' });
+  const before = await mcp.call('listar_entrevistas');
+  await assert.rejects(mcp.call('parar_entrevista'), /confirmar: true/);
+  assert.deepEqual(await mcp.call('listar_entrevistas'), before);
+  assert.deepEqual((await mcp.call('ver_entrevista', { id: 'ana-garcia-ia' })).interview, VALID);
+  const stopped = await mcp.call('parar_entrevista', { confirmar: true });
+  assert.deepEqual(stopped, { ...before, activeId: '', activeItemId: '' });
+  assert.equal((await mcp.call('entrevista_estado')).active, false);
+  assert.deepEqual((await mcp.call('ver_entrevista', { id: 'ana-garcia-ia' })).interview, VALID);
+  assert.deepEqual(await mcp.call('parar_entrevista', { confirmar: true }), stopped);
 });
 
 test('MCP: un paquete inválido da error claro y no cambia lo guardado; un ítem no aprobado no se activa', async t => {
