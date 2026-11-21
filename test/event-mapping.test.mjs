@@ -146,3 +146,12 @@ test('S2 a redelivered EventSub message keeps its id and the bus drops the secon
   const bus = new Bus();
   assert.deepEqual(events.map(e => bus.isDuplicate(e.externalId)), [false, true]);
 });
+
+test('S6 every non-watch_streak chat notice type stays silent', () => {
+  for (const notice_type of ['community_sub_gift', 'gift_paid_upgrade', 'prime_paid_upgrade', 'unraid', 'pay_it_forward', 'bits_badge_tier', 'charity_donation', 'shared_chat_sub', 'shared_chat_resub', ''])
+    assert.equal(tw('channel.chat.notification', { notice_type, chatter_user_name: 'A' }), null, notice_type);
+});
+
+test('S6 a watch_streak notice without a numeric streak_count does not alert', () => {
+  assert.equal(tw('channel.chat.notification', { notice_type: 'watch_streak', chatter_user_name: 'A' }), null);
+});

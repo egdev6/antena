@@ -313,7 +313,7 @@ export function normalizeTwitch(subType, e = {}) {
       return { type: 'redemption', vars: { user: e.user_name, reward: e.reward?.title, cost: e.reward?.cost, input: e.user_input } };
     case 'channel.chat.notification':
       // Las demás notificaciones llegan por sus suscripciones dedicadas: no duplicarlas.
-      if (e.notice_type !== 'watch_streak') return null;
+      if (e.notice_type !== 'watch_streak' || !Number.isFinite(e.watch_streak?.streak_count)) return null;
       return { type: 'streak', vars: { user: e.chatter_is_anonymous ? 'Anónimo' : e.chatter_user_name, platform: 'twitch',
         count: e.watch_streak?.streak_count, channelPointsAwarded: e.watch_streak?.channel_points_awarded, message: e.message?.text } };
     default:
