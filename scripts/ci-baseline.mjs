@@ -42,15 +42,18 @@ export function checkCiBaseline(report, tap) {
     if (report?.tests?.counts?.[key] !== value) errors.push(`JSON/TAP discrepan en ${key}`);
   }
   // Incluye directivas anidadas: el parser del baseline solo enumera la raíz.
-  const records = String(tap ?? '').split(/\r?\n/).flatMap(line => {
+  const lines = String(tap ?? '').split(/\r?\n/);
+  const records = lines.flatMap((line, index) => {
     const match = /^\s*(ok|not ok) \d+ - (.*)$/.exec(line);
     if (!match) return [];
     const directive = /(?<!\\)#\s*(SKIP|TODO)\b\s*(.*)$/i.exec(match[2]);
     return [{ ok: match[1] === 'ok', name: directive ? match[2].slice(0, directive.index).trim() : match[2],
-      directive: directive?.[1].toUpperCase(), reason: directive?.[2].trim() ?? '' }];
+      directive: directive?.[1].toUpperCase(), reason: directive?.[2].trim() ?? '', index }];
   });
+  const failures = [];
   for (const record of records) {
     if (!record.ok || record.directive === 'TODO') errors.push(`fallo o TODO en TAP: ${record.name}`);
+    if (!record.ok) failures.push({ name: record.name, ...failureDetails(lines, record.index) });
   }
   for (const name of REQUIRED_BROWSER_TESTS) {
     const matches = records.filter(record => record.name === name);
@@ -73,7 +76,38 @@ export function checkCiBaseline(report, tap) {
     if (!allowed) errors.push(`skip no permitido: ${record.name}`);
   }
   if (skips.length !== parsed.counts.skipped) errors.push('no se pudieron enumerar todos los skips');
-  return { ok: errors.length === 0, errors, skips };
+  return { ok: errors.length === 0, errors, skips, failures };
+}
+
+// The YAML diagnostic block after a «not ok» line says where and why the test failed; CI only had
+// the name. Keep it bounded so a huge stack or payload cannot flood the log.
+const MAX_ERROR_LINES = 8;
+const MAX_ERROR_CHARS = 1200;
+// Node writes a one-line error the way util.inspect does: 'single', "double" when the text has a
+// single quote, or `backticks` when it has both. Strip the quotes; keep anything else as written.
+function unquote(value) {
+  if (/^".*"$/.test(value)) { try { return JSON.parse(value); } catch { /* keep it raw */ } }
+  const m = /^(['`])(.*)\1$/.exec(value);
+  return m ? m[2] : value;
+}
+function failureDetails(lines, index) {
+  const out = { location: '', error: '' };
+  const open = /^(\s*)---\s*$/.exec(lines[index + 1] ?? '');
+  if (!open) return out;
+  const indent = open[1];
+  for (let i = index + 2; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '...' || /^\s*(ok|not ok) \d+ - /.test(line)) break;
+    const key = new RegExp(`^${indent}(location|error):\\s*(.*)$`).exec(line);
+    if (!key) continue;
+    if (key[1] === 'location') { out.location = unquote(key[2]).slice(0, 300); continue; }
+    if (!/^\|/.test(key[2])) { out.error = unquote(key[2]); continue; }
+    const body = [];
+    for (let j = i + 1; j < lines.length && lines[j].startsWith(indent + '  ') && body.length < MAX_ERROR_LINES; j++) body.push(lines[j].slice(indent.length + 2));
+    out.error = body.join('\n');
+  }
+  if (out.error.length > MAX_ERROR_CHARS) out.error = out.error.slice(0, MAX_ERROR_CHARS - 1) + '…';
+  return out;
 }
 
 export function main(args = process.argv.slice(2)) {
