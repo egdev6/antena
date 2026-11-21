@@ -19,6 +19,7 @@ const PACK = {
 };
 const q = JSON.stringify;
 const item = id => `document.querySelector('[data-interview-item="${id}"]')`;
+const outline = id => `document.querySelector('[data-interview-outline-item="${id}"]')`;
 const field = (id, key) => `${item(id)}.querySelector('[data-field="${key}"]')`;
 const button = text => `[...document.querySelectorAll('main button')].find(b => b.textContent.trim() === ${q(text)})`;
 
@@ -110,9 +111,12 @@ test('S5: whole-interview draft, exact field error, retry and private notes', { 
   await set(c, field('q1', 'source-date'), '2026-03-14');
   await click(c, field('q1', 'approved'));
   await dom(c, `window.confirm = () => true; true`);
+  await click(c, outline('q4'));
   await click(c, field('q4', 'delete'));
+  await click(c, `document.querySelector('[data-interview-round="inicio"] [data-round-menu] summary')`);
   await click(c, button('+ Añadir pregunta'));
-  await set(c, `[...document.querySelectorAll('[data-interview-item]')].at(-1).querySelector('[data-field="question"]')`, 'Pregunta añadida');
+  await set(c, `document.querySelector('[data-interview-item] [data-field="question"]')`, 'Pregunta añadida');
+  await click(c, outline('q1'));
   assert.deepEqual((await f.call('GET', '/api/interviews/preparada')).interview, before, 'nothing is saved on input');
   await click(c, `document.querySelector('.lv-savebar button:last-child')`);
   await waitDom(c, `document.querySelector('[data-interview-error]')?.textContent.includes('rounds[0].items[0].source.url')`, { timeoutMs: 12000 });
@@ -139,19 +143,22 @@ test('S6: choose and upload local media and edit YouTube and post fields in the 
   const uploaded = await fetch(`${f.base}/api/media/upload?name=existente.png`, { method: 'POST', body: 'image fixture' });
   assert.equal(uploaded.status, 200);
   const c = await f.open('#/entrevista/preparada');
-  await waitDom(c, `!!${item('q4')}`, { timeoutMs: 12000 });
+  await waitDom(c, `!!${outline('q4')}`, { timeoutMs: 12000 });
   const before = (await f.call('GET', '/api/interviews/preparada')).interview;
   await set(c, field('q1', 'media-type'), 'image');
   await waitDom(c, `!!${field('q1', 'media-file')}?.querySelector('option[value="existente.png"]')`, { timeoutMs: 12000 });
   assert.equal(await dom(c, `${field('q1', 'media-type')}.value`), 'image');
   assert.deepEqual(await dom(c, `Array.from(${field('q1', 'media-file')}.options, option => option.value)`), ['', 'existente.png'], 'the existing image is selectable');
   await set(c, field('q1', 'media-file'), 'existente.png');
+  await click(c, outline('q2'));
   await set(c, field('q2', 'media-type'), 'video');
   await dom(c, `(() => { const el = ${field('q2', 'media-upload')}, dt = new DataTransfer(); dt.items.add(new File(['video fixture'], 'subido.mp4', { type: 'video/mp4' })); el.files = dt.files; el.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
   await waitDom(c, `${field('q2', 'media-file')}?.value === 'subido.mp4'`, { timeoutMs: 12000 });
+  await click(c, outline('q3'));
   await set(c, field('q3', 'media-type'), 'youtube');
   await set(c, field('q3', 'youtube-url'), 'https://youtu.be/dQw4w9WgXcQ');
   await set(c, field('q3', 'youtube-start'), '12');
+  await click(c, outline('q4'));
   await set(c, field('q4', 'media-type'), 'post');
   await set(c, field('q4', 'post-author'), '@ana');
   await set(c, field('q4', 'post-text'), 'Un post de prueba');
