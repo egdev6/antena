@@ -57,6 +57,7 @@ export interface AlertConditions {
   tier?: string;
   users?: string;
   messageContains?: string;
+  returning?: '' | 'true' | 'false';
   chance?: number;
   [k: string]: unknown;
 }

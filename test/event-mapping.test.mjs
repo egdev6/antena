@@ -2,6 +2,7 @@
 // the official EventSub reference and YouTube liveChatMessages docs. Synthetic names only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { normalizeTwitch, normalizeYouTube, buildAlert, ALERT_TYPES } from '../src/alerts.mjs';
 import { Twitch } from '../src/twitch.mjs';
 import { Bus } from '../src/bus.mjs';
@@ -102,6 +103,14 @@ test('S1/S5 YouTube types without an alert design stay ignored (giftEvent, polls
   for (const type of ['giftEvent', 'pollDetails', 'textMessageEvent', 'tombstone', 'userBannedEvent', 'chatEndedEvent', 'sponsorOnlyModeStartedEvent', 'messageDeletedEvent']) {
     assert.equal(yt(type), null, type);
   }
+});
+
+test('S1/S2/S7 welcome chat mapping is documented and renders both default variants', async () => {
+  const doc = await readFile(new URL('../docs/eventos.md', import.meta.url), 'utf8');
+  assert.match(doc, /\| `Twitch chat` \/ `YouTube textMessageEvent` \| `welcome` \|/);
+  assert.equal(ALERT_TYPES.welcome?.system, true);
+  assert.equal(buildAlert('welcome', { user: 'Ana', returning: false }, { alerts: {} }).text, 'Primera vez de Ana hoy');
+  assert.equal(buildAlert('welcome', { user: 'Ana', returning: true }, { alerts: {} }).text, '¡Ana, qué bueno verte de nuevo!');
 });
 
 // ---------- alert fields and deduplication ----------

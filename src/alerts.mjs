@@ -20,6 +20,7 @@ export const ALERT_TYPES = {
   viewers:     { platform: 'twitch',  icon: 'eye',     label: 'Récord de espectadores', system: true },
   ytviewers:   { platform: 'youtube', icon: 'eye',     label: 'Récord de espectadores', system: true },
   ytsubcount:  { platform: 'youtube', icon: 'heart',   label: 'Suscriptores sin nombre', system: true },
+  welcome:     { platform: 'egdev',   icon: 'smile',   label: 'Bienvenida', system: true },
 };
 
 /** ¿Es una alerta del propio directo (récords…) y no de una persona? */
@@ -100,10 +101,13 @@ export const DEFAULT_ALERTS = {
   viewers:     { ...base, title: 'Nuevo récord',        text: '{amount} espectadores', sub: 'a la vez en Twitch · antes {previous}' },
   ytviewers:   { ...base, title: 'Nuevo récord',        text: '{amount} espectadores', sub: 'a la vez en YouTube · antes {previous}' },
   ytsubcount:  { ...base, title: 'Suscriptores sin nombre', text: '+{amount} suscriptores', sub: 'nuevos en el canal' },
+  welcome:     { ...base, title: 'Bienvenida', text: 'Primera vez de {user} hoy', sub: '¡Gracias por estar aquí!', durationMs: 3500, sound: 'none', css: '.alert { --card-width: 540px; --name-size: 44px; --sub-size: 20px; --tile-size: 72px; --icon-size: 36px; }' },
 };
 
 // cada alerta con sus propias listas (nunca compartidas)
 for (const a of Object.values(DEFAULT_ALERTS)) { a.variations = []; a.actions = []; }
+DEFAULT_ALERTS.welcome.variations = [{ id: 'returning', name: 'Vuelve', enabled: true,
+  conditions: { returning: 'true' }, overrides: { text: '¡{user}, qué bueno verte de nuevo!' } }];
 
 export const DEFAULT_COMMAND = {
   ...base,
@@ -128,6 +132,7 @@ export const SAMPLES = {
   viewers:     { amount: 48, previous: 41, platform: 'twitch' },
   ytviewers:   { amount: 23, previous: 19, platform: 'youtube' },
   ytsubcount:  { amount: 3 },
+  welcome:     { user: 'Ana', returning: false, platform: 'twitch' },
   command:     { user: 'devconcafe', args: 'hola a todos', command: '!hola' },
 };
 
@@ -156,12 +161,15 @@ const list = s => String(s || '').split(/[,\n]/).map(x => x.trim().toLowerCase()
 const num = v => (v === '' || v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));
 
 /** ¿Cumplen los datos del evento las condiciones de una variación? */
-export function matchesConditions(cond = {}, vars = {}, rnd = Math.random) {
+export function matchesConditions(cond = {}, vars = {}, rnd = Math.random, type = null) {
   const c = { ...DEFAULT_CONDITIONS, ...cond };
   const amount = num(vars.amount);
   if (num(c.minAmount) !== null && (amount === null || amount < num(c.minAmount))) return false;
   if (num(c.maxAmount) !== null && (amount === null || amount > num(c.maxAmount))) return false;
   if (num(c.tier) !== null && Number(vars.tier) !== num(c.tier)) return false;
+  if (type === 'welcome' && (c.returning === 'true' || c.returning === 'false')) {
+    if (typeof vars.returning !== 'boolean' || String(vars.returning) !== c.returning) return false;
+  }
   const users = list(c.users);
   if (users.length && !users.includes(String(vars.user || '').toLowerCase())) return false;
   const words = list(c.messageContains);
@@ -175,8 +183,8 @@ export function matchesConditions(cond = {}, vars = {}, rnd = Math.random) {
 }
 
 /** Primera variación activa cuyas condiciones se cumplen (el orden es la prioridad). */
-export function pickVariation(variations = [], vars = {}, rnd) {
-  return variations.find(v => v.enabled !== false && matchesConditions(v.conditions, vars, rnd)) || null;
+export function pickVariation(variations = [], vars = {}, rnd, type = null) {
+  return variations.find(v => v.enabled !== false && matchesConditions(v.conditions, vars, rnd, type)) || null;
 }
 
 /** Config efectiva de una alerta: valores por defecto + los tuyos + (si toca) la variación. */
@@ -200,7 +208,7 @@ export function buildAlert(type, vars, config, { test = false, variationId = nul
   const amount = Number(vars.amount ?? 0);
   if (!test && baseCfg.minAmount && vars.amount !== undefined && amount < baseCfg.minAmount) return null;
   const variations = baseCfg.variations || [];
-  const variation = variationId ? variations.find(v => v.id === variationId) : (test ? null : pickVariation(variations, vars, rnd));
+  const variation = variationId ? variations.find(v => v.id === variationId) : (test ? null : pickVariation(variations, vars, rnd, type));
   const cfg = alertConfig(type, config, variation);
   return finalize({ type, meta, cfg, vars, config, test, variation });
 }

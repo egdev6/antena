@@ -55,6 +55,8 @@ function condSummary(c: any = {}) {
   if (c.tier) p.push(`tier ${c.tier}`);
   if (c.users) p.push(`usuarios: ${c.users}`);
   if (c.messageContains) p.push(`mensaje con: ${c.messageContains}`);
+  if (c.returning === 'true') p.push('ya vino antes');
+  if (c.returning === 'false') p.push('primera visita');
   if (Number(c.chance) < 100) p.push(`${c.chance} % de las veces`);
   return p.join(' · ') || 'siempre';
 }
@@ -398,6 +400,7 @@ export function Editor({ target }: { target: Target }) {
             {amountType && <><label>Cantidad mínima <input type="number" value={c.minAmount ?? ''} placeholder="sin mínimo" onChange={e => ed.setCond('minAmount', e.target.value)} /></label>
               <label>Cantidad máxima <input type="number" value={c.maxAmount ?? ''} placeholder="sin máximo" onChange={e => ed.setCond('maxAmount', e.target.value)} /></label></>}
             {TIER_TYPES.includes(type) && <SegField label="Tier" value={String(c.tier ?? '')} options={TIER_OPTIONS} onChange={v => ed.setCond('tier', v)} />}
+            {type === 'welcome' && <SegField label="Visita" value={String(c.returning ?? '')} options={[[ '', 'Cualquiera' ], [ 'false', 'Primera vez' ], [ 'true', 'Vuelve' ]]} onChange={v => ed.setCond('returning', v)} />}
             <label>Solo para estos usuarios <input value={c.users ?? ''} placeholder="nombre1, nombre2" onChange={e => ed.setCond('users', e.target.value)} /></label>
             <label>Si el mensaje contiene <input value={c.messageContains ?? ''} placeholder="palabra, otra" onChange={e => ed.setCond('messageContains', e.target.value)} /></label>
             <label>Probabilidad <span className="val">{c.chance} %</span><input type="range" min={1} max={100} value={c.chance} style={{ ['--v' as any]: c.chance + '%' }} onChange={e => ed.setCond('chance', Number(e.target.value))} /></label>
@@ -525,7 +528,7 @@ export function Editor({ target }: { target: Target }) {
           </>)}
 
           {kind === 'alert' && pane('vars', <>
-            <ListPanel title="Variaciones" note="Solo guardan lo que cambia (otro vídeo, sonido o texto) según la cantidad, el tier, el usuario o el mensaje. Gana la primera que encaja."
+            <ListPanel title="Variaciones" note="Solo guardan lo que cambia (otro vídeo, sonido o texto) según la cantidad, el tier, el usuario, el mensaje o la visita. Gana la primera que encaja."
               tools={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm push" disabled={isSaving()} onClick={guard(async () => {
                 if (!confirmLeave()) return;
                 const d = await post<{ variation: AlertVariation }>(`/api/alerts/${type}/variations`, { name: `Variación ${(a.variations?.length || 0) + 1}`, conditions: AMOUNT_TYPES.includes(type) ? { minAmount: 100 } : {} });

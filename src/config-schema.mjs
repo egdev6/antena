@@ -124,6 +124,8 @@ const variacionItem = {
 };
 // Las alertas conocidas: hojas de alerta más sus variaciones (que a su vez llevan hojas y acciones).
 const alertaItem = { ...hojasAlerta, variations: list(variacionItem) };
+// «returning» solo tiene significado en Bienvenida: otras alertas conservan sus claves libres.
+const bienvenidaItem = { ...hojasAlerta, variations: list({ ...variacionItem, conditions: { ...condiciones, returning: en(['', 'true', 'false']) } }) };
 const comandoItem = {
   id: str, trigger: str, outputMode: en(['alert', 'chat']), chatReply: str,
   permission: en(PERMISOS), cooldownSec: num({ int: true, min: 0 }), userCooldownSec: num({ int: true, min: 0 }),
@@ -204,7 +206,7 @@ export const CONFIG_SCHEMA = {
   panel: { onboardingDone: bool },   // bienvenida del panel vista (relanzable desde General)
   access: { lan: bool, key: str },
   sessions: { retention: num({ int: true, min: 0, max: 1000 }) },
-  alerts: Object.fromEntries(Object.keys(DEFAULT_ALERTS).map(k => [k, alertaItem])),   // #118: known alerts; new keys are accepted with a warning
+  alerts: Object.fromEntries(Object.keys(DEFAULT_ALERTS).map(k => [k, k === 'welcome' ? bienvenidaItem : alertaItem])),   // #118: known alerts; new keys are accepted with a warning
   commands: list(COMANDO_ITEM),
   timers: list(TIMER_ITEM),
   interactive: {

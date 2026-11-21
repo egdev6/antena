@@ -64,8 +64,8 @@ const S = {
   arr: (d, items = {}) => ({ type: 'array', description: d, items }),
   enum: (d, values) => ({ type: 'string', enum: values, description: d }),
 };
-const TYPES = ['follow', 'sub', 'resub', 'giftsub', 'cheer', 'raid', 'redemption', 'superchat', 'supersticker', 'member', 'milestone', 'giftmember', 'viewers', 'ytviewers'];
-const tipo = S.enum('Tipo de alerta. Twitch: follow, sub, resub, giftsub, cheer (bits), raid, redemption (recompensas). YouTube: superchat, supersticker, member, milestone, giftmember. Récord de espectadores a la vez: viewers (Twitch) y ytviewers (YouTube), variables {amount} y {previous}.', TYPES);
+const TYPES = ['follow', 'sub', 'resub', 'giftsub', 'cheer', 'raid', 'redemption', 'superchat', 'supersticker', 'member', 'milestone', 'giftmember', 'viewers', 'ytviewers', 'welcome'];
+const tipo = S.enum('Tipo de alerta. Twitch: follow, sub, resub, giftsub, cheer (bits), raid, redemption (recompensas). YouTube: superchat, supersticker, member, milestone, giftmember. Récord de espectadores a la vez: viewers (Twitch) y ytviewers (YouTube), variables {amount} y {previous}. Bienvenida: welcome, variables {user}, {returning} y {platform}.', TYPES);
 const ALERT_HELP = `Campos de una alerta (todos opcionales):
 - enabled (bool), title/text/sub (plantillas con {user} {amount} {message} {months} {tier} {reward} {input} {amountText} {level}), durationMs, minAmount
 - layout: "card" (tarjeta EGDEV) | "media" (vídeo o imagen con el texto encima) | "mixed" (vídeo o imagen de fondo a pantalla completa y encima la tarjeta EGDEV; textDelayMs = retraso de la tarjeta, cardX/cardY = ajuste en px); media (archivo de media/), mediaSize %, mediaVolume %
@@ -77,7 +77,7 @@ const ALERT_HELP = `Campos de una alerta (todos opcionales):
   scene {scene, returnAfterSec} · layer {scene, layer, seconds} (mostrar unos segundos) · hideLayer {scene, layer} · toggleLayer {scene, layer} · effect {scene, layer, effect}
   command {command: meld.recordClip…} · streamEvent {event: CONFETTIPOP_TRIGGER…, amount} · chat {text, destination} (escribe en tu chat: destination twitch|youtube|both, sin él Twitch; resultado por plataforma, y el texto que no cabe —500 Twitch, 200 YouTube— no se envía ahí) · say {text} (voz)
   Escenas y capas se indican por nombre o id del programa de emisión.`;
-const CONDITIONS = S.obj('Condiciones (todas opcionales): minAmount, maxAmount, tier (1-3), users (lista separada por comas), messageContains (palabras separadas por comas), chance (0-100 %).');
+const CONDITIONS = S.obj('Condiciones (todas opcionales): minAmount, maxAmount, tier (1-3), users (lista separada por comas), messageContains (palabras separadas por comas), chance (0-100 %), returning ("true" o "false" para welcome).');
 
 // ---------- herramientas ----------
 const T = [];
