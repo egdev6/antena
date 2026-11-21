@@ -24,6 +24,7 @@ const rows = [
   ['borrar_tierlist', { id: 't 1' }, 'DELETE', '/api/tierlists/t%201', {}],
   ['borrar_guion', { id: 'g 1' }, 'DELETE', '/api/teleprompter/scripts/g%201', {}],
   ['borrar_entrevista', { id: 'e 1' }, 'DELETE', '/api/interviews/e%201', {}],
+  ['parar_entrevista', {}, 'POST', '/api/interviews/stop', {}],
   ['borrar_archivo', { nombre: 'a.png' }, 'POST', '/api/media/delete', { name: 'a.png' }],
   ['borrar_objetivo', { id: 'o 1' }, 'DELETE', '/api/goals/o%201', {}],
   ['borrar_barra', { id: 'o 1', barra: 'b 1' }, 'DELETE', '/api/goals/o%201/bars/b%201', {}],

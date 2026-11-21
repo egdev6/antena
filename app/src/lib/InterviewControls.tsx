@@ -7,11 +7,12 @@ import { live, useLive } from './live';
 import { guard } from './ui';
 
 const act = (path: string, body?: unknown) => guard(() => post('/api/interview-control/' + path, body));
+export const stopInterview = () => post('/api/interviews/stop');
 export const useInterview = () => useLive(() => live.interview);
 
 type Classes = { root?: string; btn: string; primary: string; muted: string; row: string; note: string; title: string };
 
-export function InterviewPad({ cls, notes = true, label = 'Entrevista', compact = false, enabled = true }: { cls: Classes; notes?: boolean; label?: string; compact?: boolean; enabled?: boolean }) {
+export function InterviewPad({ cls, notes = true, label = 'Entrevista', compact = false, enabled = true, variant }: { cls: Classes; notes?: boolean; label?: string; compact?: boolean; enabled?: boolean; variant?: 'dock' }) {
   const iv = useInterview();
   if (compact) {
     // Only drive the interview open in this detail, never a different active interview.
@@ -26,7 +27,7 @@ export function InterviewPad({ cls, notes = true, label = 'Entrevista', compact 
       <button type="button" className={cls.btn} data-interview-act="hide" disabled={!current} onClick={act('hide')}>Ocultar widget</button>
       {active && <details className="interview-live-details"><summary>En directo <span data-interview-progress>{progress.index} / {progress.total}</span></summary>
         <div className="interview-live-popover">
-          <p data-interview-title>{iv!.title} · {iv!.guest}</p>
+          <p data-interview-name>{iv!.title} · {iv!.guest}</p>
           <p data-interview-current>{current ? current.question : 'Nada en pantalla'}</p>
           {notes && current?.notes ? <p data-interview-notes>Notas: {current.notes}</p> : null}
           {next ? <p data-interview-next>Siguiente: {next.question}</p> : null}
@@ -41,16 +42,36 @@ export function InterviewPad({ cls, notes = true, label = 'Entrevista', compact 
     </section>;
   }
   if (!iv) return null;
-  if (!iv.active) return <section className={cls.root} aria-label={label}><p className={cls.muted}>Sin entrevista activa. Elige una en Widgets › Entrevista o con «elegir_entrevista».</p></section>;
+  const dock = variant === 'dock';
+  if (!iv.active) return <section className={cls.root} aria-label={label}>
+    {dock && <div className="d-card-h">Entrevista</div>}
+    <p className={cls.muted}>{dock ? 'Sin entrevista activa. Actívala desde Entrevista en el panel.' : 'Sin entrevista activa. Elige una en Widgets › Entrevista o con «elegir_entrevista».'}</p>
+  </section>;
   const { current, next, progress } = iv;
   const hasMedia = !!current?.media;
+  const gotoSelect = <select className={dock ? undefined : cls.btn} aria-label="Ir al ítem" data-interview-goto value={current?.id || ''}
+    onChange={e => { if (e.target.value) void act('goto', { itemId: e.target.value })(); }}>
+    <option value="">Ir a…</option>
+    {iv.items.map((x, i) => <option key={x.id} value={x.id}>{i + 1}. {x.question.slice(0, 70)}</option>)}
+  </select>;
   return <section className={cls.root} aria-label={label}>
-    <p className={cls.muted} data-interview-title>{iv.title} · {iv.guest}</p>
-    <p className={cls.title} data-interview-progress>{progress.index} / {progress.total}</p>
-    <p data-interview-current>{current ? current.question : 'Nada en pantalla'}</p>
-    {notes && current?.notes ? <p className={cls.note} data-interview-notes>Notas: {current.notes}</p> : null}
-    {next ? <p className={cls.muted} data-interview-next>Siguiente: {next.question}</p> : null}
-    {notes && next?.notes ? <p className={cls.note} data-interview-next-notes>Notas siguiente: {next.notes}</p> : null}
+    {dock ? <>
+      <div className="d-card-h"><span className="d-interview-heading"><span data-interview-name>{iv.title}</span><small data-interview-guest>{iv.guest}</small></span>
+        <span className="d-meta" data-interview-progress>{progress.index} / {progress.total}</span></div>
+      <h3 className={cls.title} data-interview-section>En pantalla</h3>
+      <div className="d-item"><p className="d-q" data-interview-current>{current ? current.question : 'Nada en pantalla'}</p>
+        {notes && current?.notes ? <p className={cls.note} data-interview-notes>Notas privadas: {current.notes}</p> : null}</div>
+      <h3 className={cls.title} data-interview-section>Siguiente</h3>
+      <div className="d-item">{next ? <p className="d-q" data-interview-next>{next.question}</p> : <p className={cls.muted}>No quedan preguntas aprobadas.</p>}
+        {notes && next?.notes ? <p className={cls.note} data-interview-next-notes>Notas privadas: {next.notes}</p> : null}</div>
+    </> : <>
+      <p className={cls.muted} data-interview-name>{iv.title} · {iv.guest}</p>
+      <p className={cls.title} data-interview-progress>{progress.index} / {progress.total}</p>
+      <p data-interview-current>{current ? current.question : 'Nada en pantalla'}</p>
+      {notes && current?.notes ? <p className={cls.note} data-interview-notes>Notas: {current.notes}</p> : null}
+      {next ? <p className={cls.muted} data-interview-next>Siguiente: {next.question}</p> : null}
+      {notes && next?.notes ? <p className={cls.note} data-interview-next-notes>Notas siguiente: {next.notes}</p> : null}
+    </>}
     <div className={cls.row}>
       <button type="button" className={cls.btn} data-interview-act="previous" disabled={progress.index <= 1} onClick={act('previous')}>Anterior</button>
       <button type="button" className={cls.primary} data-interview-act="next" disabled={progress.index >= progress.total} onClick={act('next')}>Siguiente</button>
@@ -60,10 +81,7 @@ export function InterviewPad({ cls, notes = true, label = 'Entrevista', compact 
         onClick={act('media', { visible: iv.mediaHidden })}>{iv.mediaHidden ? 'Mostrar media' : 'Ocultar media'}</button>
       <button type="button" className={cls.btn} data-interview-act="hide" disabled={!current} onClick={act('hide')}>Ocultar widget</button>
     </div>
-    <select className={cls.btn} aria-label="Ir al ítem" data-interview-goto value={current?.id || ''}
-      onChange={e => { if (e.target.value) void act('goto', { itemId: e.target.value })(); }}>
-      <option value="">Ir a…</option>
-      {iv.items.map((x, i) => <option key={x.id} value={x.id}>{i + 1}. {x.question.slice(0, 70)}</option>)}
-    </select>
+    {dock ? <label className="d-pick">{gotoSelect}</label> : gotoSelect}
+    {dock && <button type="button" className={cls.btn} data-interview-act="stop" onClick={guard(stopInterview)}>Parar entrevista</button>}
   </section>;
 }

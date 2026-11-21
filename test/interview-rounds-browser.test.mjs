@@ -142,7 +142,8 @@ test('S7/S8: select the detail interview and drive only its approved items in th
   await click(c, `${head}.querySelector('[data-interview-select]')`);
   await waitDom(c, `!!${head}.querySelector('[data-interview-act="next"]') && !${head}.querySelector('[data-interview-act="next"]').disabled`, { timeoutMs: 12000 });
   assert.equal((await f.call('GET', '/api/interview-control')).interviewId, 'rondas');
-  assert.equal(await dom(c, `${head}.querySelector('[data-interview-select]').disabled`), true, 'do not reset an already active interview');
+  assert.equal(await dom(c, `${head}.querySelector('[data-interview-select]').textContent.trim()`), 'Parar entrevista', 'active interviews can be stopped instead of reselected');
+  assert.equal(await dom(c, `${head}.querySelector('[data-interview-select]').disabled`), false);
   await click(c, `${head}.querySelector('[data-interview-act="next"]')`);
   await waitDom(widget, `document.querySelector('#text')?.textContent === 'Primera pregunta' && document.querySelector('#root').classList.contains('on')`, { timeoutMs: 12000 });
   await waitDom(c, `${head}.querySelector('[data-interview-progress]')?.textContent === '1 / 2'`, { timeoutMs: 12000 });

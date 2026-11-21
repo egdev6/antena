@@ -24,6 +24,7 @@ export function registerInterviewRoutes({ route, interviews }) {
   // Import is strict: the pack must carry `version` and is stored as it came (ids are filled in if missing).
   route('POST', '/api/interviews/import', async body => interviews.import(body));
   route('POST', '/api/interviews/select', async (body = {}) => interviews.select(String(body?.id ?? ''), body?.itemId));
+  route('POST', '/api/interviews/stop', async () => interviews.stop());
   route('GET', '/api/interviews/:id', async ({ id }) => ({ interview: interviews.get(decodeId(id)) }));
   route('PUT', '/api/interviews/:id', async ({ id }, body) => interviews.update(decodeId(id), body));
   route('DELETE', '/api/interviews/:id', async ({ id }) => interviews.remove(decodeId(id)));

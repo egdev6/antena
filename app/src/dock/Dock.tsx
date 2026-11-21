@@ -373,7 +373,7 @@ function ShortcutsModule() {
 }
 
 function InterviewModule() {
-  return <InterviewPad cls={{ root: 'd-interview', btn: 'd-btn sm', primary: 'd-btn sm pri grow', muted: 'd-muted', row: 'd-row', note: 'd-muted', title: 'd-sub' }} />;
+  return <InterviewPad variant="dock" cls={{ root: 'd-card d-interview', btn: 'd-btn sm', primary: 'd-btn sm pri grow', muted: 'd-muted', row: 'd-row', note: 'd-muted', title: 'd-sub' }} />;
 }
 
 type ModuleContext = { stream: ReturnType<typeof useStreamControl>; meters: Record<string, Meter>; isObs: boolean };

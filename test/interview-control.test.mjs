@@ -93,6 +93,53 @@ test('without an active interview every action warns (409 + message) and changes
   assert.equal(view.active, false); assert.equal(view.current, null);
 });
 
+test('stop clears the active interview and widget without deleting data, and is idempotent', async t => {
+  const { api, base } = await start(t);
+  const panel = await listen(base, 'panel', 'interviewControl');
+  const widget = await listen(base, 'widget', 'interview');
+  t.after(() => { panel.close(); widget.close(); });
+  await active(api, 'a');
+  assert.ok(await widget.last(e => e.item?.id === 'a'));
+  assert.ok(await panel.last(e => e.current?.id === 'a'));
+  await api('POST', '/api/interview-control/media', { visible: false });
+  const before = (await api('GET', '/api/interviews')).body;
+  const saved = (await api('GET', '/api/interviews/directo')).body;
+  const timeline = await marks(api);
+
+  const rejected = await api('POST', '/api/interviews/select', { id: '' });
+  assert.equal(rejected.status, 404);
+  assert.equal(rejected.body.error, 'No existe la entrevista «»');
+  assert.deepEqual((await api('GET', '/api/interviews')).body, before);
+  assert.deepEqual((await api('GET', '/api/interviews/directo')).body, saved);
+  assert.deepEqual(await marks(api), timeline);
+
+  const wCount = widget.events.length, pCount = panel.events.length;
+  const stopped = await api('POST', '/api/interviews/stop');
+  assert.equal(stopped.status, 200);
+  assert.deepEqual(stopped.body, { ...before, activeId: '', activeItemId: '' });
+  assert.deepEqual((await api('GET', '/api/interviews')).body, stopped.body);
+  assert.deepEqual((await api('GET', '/api/interviews/directo')).body, saved);
+  assert.deepEqual(await marks(api), timeline);
+  const state = (await api('GET', '/api/interview-control')).body;
+  assert.equal(state.active, false); assert.equal(state.current, null); assert.equal(state.mediaHidden, false);
+  assert.ok(await widget.last(e => widget.events.indexOf(e) >= wCount && e.item === null), 'widget receives the stopped state');
+  assert.ok(await panel.last(e => panel.events.indexOf(e) >= pCount && e.active === false), 'panel receives the stopped state');
+  assert.doesNotMatch(widget.raw(), NOTES);
+  assert.deepEqual(await api('POST', '/api/interviews/stop'), stopped);
+  assert.deepEqual((await api('GET', '/api/interviews/directo')).body, saved);
+  assert.deepEqual(await marks(api), timeline);
+  const empty = await api('POST', '/api/interviews/select', { id: '' });
+  assert.equal(empty.status, 404); assert.equal(empty.body.error, 'No existe la entrevista «»');
+  assert.deepEqual((await api('GET', '/api/interviews')).body, stopped.body);
+
+  // Re-select starts at the beginning, and stopping an active interview with no item is also safe.
+  assert.equal((await api('POST', '/api/interviews/select', { id: 'directo' })).status, 200);
+  assert.equal((await api('POST', '/api/interview-control/next')).body.current.id, 'a');
+  assert.equal((await api('POST', '/api/interview-control/hide')).status, 200);
+  assert.equal((await api('POST', '/api/interviews/stop')).status, 200);
+  assert.deepEqual((await api('GET', '/api/interviews/directo')).body, saved);
+});
+
 test('next / previous walk the approved items in round order and skip unapproved ones', async t => {
   const { api } = await start(t);
   await active(api);

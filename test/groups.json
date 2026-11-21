@@ -175,6 +175,7 @@
     "test/interview-dock-catalog-browser.test.mjs",
     "test/interview-editor-browser.test.mjs",
     "test/interview-rounds-browser.test.mjs",
+    "test/interview-stop-layout-browser.test.mjs",
     "test/interview-widget-browser.test.mjs",
     "test/live-selectors.test.mjs",
     "test/manual-discard-browser.test.mjs",

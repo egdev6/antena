@@ -430,6 +430,14 @@ export class Interviews {
     return this.snapshot();
   }
 
+  /** Stops the live interview without removing its stored data. */
+  async stop() {
+    const s = this.#section();
+    if (s.activeId || s.activeItemId) await this.#commit({ ...s, activeId: '', activeItemId: '' });
+    this.lastShown = null;
+    return this.snapshot();
+  }
+
   /** Makes an interview the active one; with itemId, also points at one item, which has to be approved. */
   async select(idRaw, itemIdRaw) {
     const s = this.#section();

@@ -65,7 +65,9 @@ test('interview joins the interactive tabs when enabled; default tabs and contro
   await ctx.call('PUT', '/api/config', { dock });
   await waitDom(c, `!!document.querySelector('#d-i-entrevista')`, { timeoutMs: 4000 });
   assert.deepEqual(await dom(c, tabLabels), ['Preguntas', 'Tier list', 'Sorteo', 'Entrevista']);
-  assert.equal(await dom(c, `!!document.querySelector('.d-card[aria-label="Entrevista"]')`), false, 'no separate card surrounds the interview');
+  await waitDom(c, `!!document.querySelector('#d-ip-entrevista .d-card[aria-label="Entrevista"]')`, { timeoutMs: 9000 });
+  assert.equal(await dom(c, `document.querySelectorAll('#d-ip-entrevista .d-card[aria-label="Entrevista"]').length`), 1, 'the card is inside the interactive tab');
+  assert.equal(await dom(c, `document.querySelectorAll('.d-card[aria-label="Entrevista"]').length`), 1, 'no separate interview module is rendered outside the tab');
   await clickWhen(c, `document.querySelector('#d-i-entrevista')`);
   await waitDom(c, `!document.querySelector('#d-ip-entrevista').hidden && /Sin entrevista activa/.test(document.querySelector('#d-ip-entrevista').textContent)`, { timeoutMs: 9000 });
   assert.equal(await dom(c, `document.querySelectorAll('#d-ip-entrevista [data-interview-act]').length`), 0);

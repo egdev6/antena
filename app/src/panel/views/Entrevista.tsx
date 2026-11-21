@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { del, enc, get, post, put, withKey } from '../../lib/api';
 import { isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
 import { Box, Dot, Kpis, ListPanel, NameCell, PageHead, SaveBar, Slide } from '../../lib/layout';
-import { InterviewPad, useInterview } from '../../lib/InterviewControls';
+import { InterviewPad, stopInterview, useInterview } from '../../lib/InterviewControls';
 import { live, useLive } from '../../lib/live';
 import { ManualDraft } from '../../lib/manual-draft';
 import { BrowserSource, confirmDelete, guard, Panel, Stage, WidgetLayout } from '../../lib/ui';
@@ -359,10 +359,12 @@ function InterviewEditor({ id, refresh }: { id: string; refresh: () => Promise<v
       : round.id === destination ? { ...round, items: [...round.items, item] } : round) };
   });
   const select = guard(async () => {
-    if (selectLock.current || isSaving() || interview?.interviewId === id) return;
+    if (selectLock.current || isSaving() || live.interview?.interviewId !== interview?.interviewId) return;
     selectLock.current = true; setSelecting(true);
-    try { await post('/api/interviews/select', { id }); }
-    finally { selectLock.current = false; if (mounted.current) setSelecting(false); }
+    try {
+      if (interview?.interviewId === id) await stopInterview();
+      else await post('/api/interviews/select', { id });
+    } finally { selectLock.current = false; if (mounted.current) setSelecting(false); }
   });
   const remove = guard(async () => {
     if (isSaving() || deleting || !confirmDelete(saved.title, 'esta entrevista')) return;
@@ -376,7 +378,7 @@ function InterviewEditor({ id, refresh }: { id: string; refresh: () => Promise<v
   return <Slide crumb={<><a href="#/entrevista">Entrevista</a> › {cur.title}</>} title={cur.title} back="#/entrevista" wide
     head={<div className="interview-detail-head">
       <div className="lv-shead-actions interview-detail-actions">
-        <button type="button" data-interview-select className="eg-btn eg-btn--secondary eg-btn--sm" disabled={selecting || isSaving() || interview?.interviewId === id} onClick={select}>{interview?.interviewId === id ? '✓ Usar en directo · activa' : 'Usar en directo'}</button>
+        <button type="button" data-interview-select className="eg-btn eg-btn--secondary eg-btn--sm" disabled={selecting || isSaving()} onClick={select}>{interview?.interviewId === id ? 'Parar entrevista' : 'Usar en directo'}</button>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving() || deleting} onClick={remove}>Borrar entrevista…</button>
       </div>
       <InterviewPad compact enabled={interview?.interviewId === id} label="Controles del directo" cls={{ root: 'interview-head-controls', btn: 'eg-btn eg-btn--ghost eg-btn--sm', primary: 'eg-btn eg-btn--primary eg-btn--sm', muted: 'hint', row: 'row tight', note: 'hint', title: 'hint' }} />

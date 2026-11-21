@@ -161,16 +161,16 @@ shows the field path and keeps the draft. Images and videos can be uploaded or c
 files; YouTube and posts have their own fields.
 
 **Importar pack JSON** reads a pack and imports it immediately; validation errors include the field path
-and leave stored interviews unchanged. The detail header can make the interview active and control
-previous, next, media visibility and hiding the widget. Live actions use the saved interview, not
-unsaved edits. **Capa** contains the browser-source URL, demo preview and widget help. The old
+and leave stored interviews unchanged. The detail header can make the interview active, stop it
+without deleting it, and control previous, next, media visibility and hiding the widget. Live actions
+use the saved interview, not unsaved edits. **Capa** contains the browser-source URL, demo preview and widget help. The old
 `#/widgets/interview` address still opens the interview page.
 
 ## Widget
 
 `/widget/interview` (browser source, 1920×1080) shows the active item (`activeId` + `activeItemId`, set with
 `POST /api/interviews/select`). The server pushes it over SSE (event `interview`, `{ "item": … }`) on connect and
-after every change (select, edit, delete, import); the payload carries the question, media and source only:
+after every change (select, stop, edit, delete, import); the payload carries the question, media and source only:
 **never `notes` or `aprobado`**. No active item, or an item that is no longer approved, leaves the widget empty.
 
 - The question sits on a card at the bottom; long text shrinks (`fit()` loop) until it fits. A text-only item
@@ -197,10 +197,12 @@ after every change (select, edit, delete, import); the payload carries the quest
 | `POST /api/interviews/import` | Imports a complete pack (the body is the pack, `version` required). |
 | `PUT /api/interviews/:id` | Replaces the `title`, `guest` and/or `rounds` sent; the whole result is validated. |
 | `DELETE /api/interviews/:id` | Deletes it (clears the active one if it was). |
-| `POST /api/interviews/select` | `{ id, itemId? }`: makes it active; `itemId` must be an approved item. |
+| `POST /api/interviews/select` | `{ id, itemId? }`: makes it active; `itemId` must be an approved item. An empty or unknown id returns 404. |
+| `POST /api/interviews/stop` | Clears `activeId` and `activeItemId`, leaving the interview and its data intact. Returns the interview snapshot; safe to repeat when none is active. |
 
 MCP tools: `listar_entrevistas`, `ver_entrevista`, `crear_entrevista`, `importar_entrevista`,
-`editar_entrevista` and `borrar_entrevista` (both ask for `confirmar: true`), `elegir_entrevista`.
+`editar_entrevista`, `borrar_entrevista`, `elegir_entrevista` and `parar_entrevista`.
+Editing, deleting and stopping require `confirmar: true`.
 
 ## Driving the interview live
 
@@ -208,7 +210,7 @@ Once an interview is active (`POST /api/interviews/select`), the presenter steps
 Next and previous follow round order and **skip items that are not approved**. After hiding the widget, next and
 previous continue from the last item shown (choosing the interview again starts it over). Every item shown
 adds a mark to the stream timeline (question text and item id). Without an active interview each
-action answers with a 4xx warning and changes nothing.
+control action answers with a 4xx warning and changes nothing; stopping is idempotent.
 
 | Action | API | MCP tool | Shortcut / Stream Deck |
 | --- | --- | --- | --- |
@@ -218,10 +220,12 @@ action answers with a 4xx warning and changes nothing.
 | Go to an item | `POST /api/interview-control/goto` `{ itemId }` | `entrevista_ir` | `entrevista-ir` (`/sd/entrevista-ir/<itemId>`) |
 | Show or hide the media | `POST /api/interview-control/media` `{ visible }` | `entrevista_media` | `entrevista-mostrar-media`, `entrevista-ocultar-media` |
 | Hide the widget | `POST /api/interview-control/hide` | `entrevista_ocultar` | `entrevista-ocultar` |
+| Stop the interview without deleting it | `POST /api/interviews/stop` | `parar_entrevista` (`confirmar: true`) | — |
 
-The same controls are in the dock module **Entrevista** (off by default; enable it in the dock
+The live item controls are in the dock module **Entrevista** (off by default; enable it in the dock
 editor, group *Interactivos*), in the detail header under Widgets › Entrevista, and in the prompter tab
-**Entrevista**.
+**Entrevista**. The dock and detail header also offer **Parar entrevista**; unlike hiding the widget,
+it deactivates the interview while keeping it available to select again.
 
 The presenter state (`GET /api/interview-control`) includes the progress (`index` / `total`), the
 current and next item **with their private notes**. It only reaches the panel, dock and prompter;
