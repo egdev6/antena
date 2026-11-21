@@ -47,6 +47,54 @@ test('CI falla si navegador se omite, desaparece, falla o queda TODO', () => {
   }
 });
 
+test('CI informa de la ubicación y el error de cada fallo para poder diagnosticarlo', () => {
+  const fx = fixture();
+  const diag = ['  ---', '  duration_ms: 1500', "  location: '/repo/test/interview-control-browser.test.mjs:27:1'", "  failureType: 'testCodeFailure'",
+    '  error: |-', "    timeout CDP: document.querySelector('[data-interview-progress]')?.textContent === '3 / 3'", '    diagnóstico: {"last":{"kind":"timeout"}}',
+    "  code: 'ERR_TEST_FAILURE'", '  stack: |-', '    at waitDom (file:///repo/test/helpers/react-browser.mjs:10:5)', '  ...'];
+  fx.tap = fx.tap.replace(`ok 1 - ${browserNames[0]}`, [`not ok 1 - ${browserNames[0]}`, ...diag].join('\n'));
+  const result = checkCiBaseline(fx.report, fx.tap);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.failures, [{
+    name: browserNames[0],
+    location: '/repo/test/interview-control-browser.test.mjs:27:1',
+    error: "timeout CDP: document.querySelector('[data-interview-progress]')?.textContent === '3 / 3'\ndiagnóstico: {\"last\":{\"kind\":\"timeout\"}}",
+  }]);
+  assert.deepEqual(checkCiBaseline(fixture().report, fixture().tap).failures, [], 'a green baseline reports no failures');
+  const long = fixture();
+  long.tap = long.tap.replace(`ok 1 - ${browserNames[0]}`, [`not ok 1 - ${browserNames[0]}`, '  ---', '  error: |-', ...Array.from({ length: 40 }, (_, i) => `    línea ${i} ${'x'.repeat(80)}`), '  ...'].join('\n'));
+  const [failure] = checkCiBaseline(long.report, long.tap).failures;
+  assert.ok(failure.error.length <= 1200, 'the error is bounded');
+  assert.equal(failure.location, '');
+  // Node writes a one-line error inspect-style; with a single quote inside it uses double quotes
+  const quoted = fixture();
+  quoted.tap = quoted.tap.replace(`ok 1 - ${browserNames[0]}`, [`not ok 1 - ${browserNames[0]}`, '  ---', "  location: '/repo/t.test.mjs:2:1'", `  error: "timeout CDP: document.querySelector('x')?.textContent === '3 / 3'"`, '  ...'].join('\n'));
+  assert.equal(checkCiBaseline(quoted.report, quoted.tap).failures[0].error, "timeout CDP: document.querySelector('x')?.textContent === '3 / 3'");
+});
+
+test('failures parses the one-line error formats Node actually writes (inspect-style quotes)', () => {
+  const cases = [["'boom single'", 'boom single'], [`"it's broken"`, "it's broken"], ["`it's \"x\" ''`", `it's "x" ''`]];
+  for (const [raw, expected] of cases) {
+    const fx = fixture();
+    fx.tap = fx.tap.replace(`ok 1 - ${browserNames[0]}`, [`not ok 1 - ${browserNames[0]}`, '  ---', "  location: '/r/t.mjs:3:1'", `  error: ${raw}`, "  code: 'ERR_TEST_FAILURE'", '  ...'].join('\n'));
+    assert.deepEqual(checkCiBaseline(fx.report, fx.tap).failures, [{ name: browserNames[0], location: '/r/t.mjs:3:1', error: expected }], raw);
+  }
+});
+
+test('failures reads nested subtest blocks and CRLF without changing ok/errors', () => {
+  const fx = fixture(['    not ok 1 - hija', '      ---', "      location: '/r/t.mjs:9:3'", '      error: |-', '        a', '        ', '        b', '      ...']);
+  const crlf = checkCiBaseline(fx.report, fx.tap.replace(/\n/g, '\r\n'));
+  assert.equal(crlf.ok, false);
+  assert.deepEqual(crlf.failures, [{ name: 'hija', location: '/r/t.mjs:9:3', error: 'a\n\nb' }]);
+});
+
+test('failures: a block without its terminator does not take the next test error', () => {
+  const fx = fixture();
+  fx.tap = fx.tap.replace(`ok 1 - ${browserNames[0]}`, [`not ok 1 - ${browserNames[0]}`, '  ---', "  location: '/r/a.mjs:1:1'"].join('\n'))
+    .replace(`ok 2 - ${browserNames[1]}`, [`not ok 2 - ${browserNames[1]}`, '  ---', "  error: 'later'", '  ...'].join('\n'));
+  assert.deepEqual(checkCiBaseline(fx.report, fx.tap).failures.map(f => f.error), ['', 'later']);
+});
+
 test('CI rechaza informe ausente, inválido, no OK, runner fallido y TAP truncado', () => {
   const fx = fixture();
   for (const report of [null, {}, { ...fx.report, schema: 'other' },

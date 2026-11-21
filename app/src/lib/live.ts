@@ -178,6 +178,9 @@ class Live {
     // esta carga (ediciones optimistas o un evento 'config' más nuevo), el snapshot llegó
     // a ser viejo y no debe pisarla.
     const cfgAtStart = this.cfgTouch;
+    // Prompter tab at the start of this load: a tab picked locally or a 'prompter' event while
+    // the load is in flight replaces this object and is newer than the GET below (#237).
+    const prompterAtStart = this.prompter;
     const widgetsAtStart = this.widgetsTouch;
     const touchedAtStart = { ...this.touched };
     const statusAtStart = { ...this.statusTouched };
@@ -222,7 +225,7 @@ class Live {
     try {
       const pr = await api<PrompterState>('GET', '/api/prompter');
       if (gen < this.appliedGen) return;
-      this.prompter = pr;
+      if (this.prompter === prompterAtStart) this.prompter = pr;
     } catch { /* la vista funciona sin prompter */ }
     // The interview is optional: a stalled request must not delay the main view or its SSE connection.
     this.emit();
