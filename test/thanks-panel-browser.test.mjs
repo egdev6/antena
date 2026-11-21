@@ -46,6 +46,9 @@ test('S3: individual and confirmed bulk actions are immediate and target only di
   let pending = await f.call('GET', '/api/followers?pending=true');
   assert.deepEqual(pending.entries.map(e => e.name), ['Old', 'Twitch Shared']);
   assert.equal(pending.anonymous.length, 1);
+  // The list can already show the new records (an SSE-triggered reload) while the individual action
+  // is still finishing its own reload and keeps the buttons disabled: a click then does nothing.
+  await waitDom(c, `document.querySelector('[data-thanks-bulk]')?.disabled === false`, { timeoutMs: 8000 });
   await evaluateChrome(c, `document.querySelector('[data-thanks-bulk]').click(); true`);
   await waitDom(c, `!${entry('Twitch Shared')} && !!${entry('Old')}`, { timeoutMs: 8000 });
   pending = await f.call('GET', '/api/followers?pending=true');
