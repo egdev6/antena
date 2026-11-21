@@ -291,3 +291,24 @@ test('selection loads fresh variant settings after an external update', { timeou
   await f.ok('PUT', `${route}/${v.id}`, { fontSize: 47 });
   await waitDom(c, `${field('Tamaño de letra')}?.value === '47'`, { timeoutMs: 10000 });
 });
+
+test('a horizontal layout warns about custom CSS that overrides its sizing, without blocking the save', { timeout: 90000 }, async t => {
+  const f = await fixture(t);
+  const c = await f.open();
+  const notice = `document.querySelector('main [data-chat-css-warning]')`;
+  await setValue(c, 'CSS personalizado', '.root { width: 430px; height: 571px }\n.msg { flex: none; color: lime }');
+  assert.equal(await dom(c, `!!${notice}`), false, 'a vertical layout shows no warning');
+  await setValue(c, 'Disposición', 'horizontal');
+  await waitDom(c, `!!${notice}`, { timeoutMs: 8000 });
+  const text = await dom(c, `${notice}.textContent`);
+  assert.match(text, /puede romper la disposición horizontal/);
+  for (const rule of ['.root { width }', '.root { height }', '.msg { flex }']) assert.ok(text.includes(rule), rule);
+  assert.ok(!text.includes('color'), 'card styling is not reported');
+  // the warning never blocks: saving keeps the CSS exactly as written
+  await save(c);
+  const saved = (await f.ok('GET', '/api/widgets')).widgets.chat;
+  assert.equal(saved.layout, 'horizontal');
+  assert.equal(saved.css, '.root { width: 430px; height: 571px }\n.msg { flex: none; color: lime }');
+  await setValue(c, 'CSS personalizado', '.msg { color: lime }');
+  await waitDom(c, `!${notice}`, { timeoutMs: 8000 });
+});

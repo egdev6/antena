@@ -5,6 +5,7 @@
     "test/bus-clock.test.mjs",
     "test/channel-totals.test.mjs",
     "test/chat-anims.test.mjs",
+    "test/chat-css-warnings.test.mjs",
     "test/chat-merge.test.mjs",
     "test/chat-widget-config.test.mjs",
     "test/chrome-dom.test.mjs",

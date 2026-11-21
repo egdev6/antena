@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { del, enc, get, post, put } from '../../lib/api';
 import { isDirty, isSaving, registerDraft, useDraftVersion } from '../../lib/draft';
 import { SaveBar, Slide } from '../../lib/layout';
+import { horizontalCssWarnings } from '../../lib/chat-css';
 import { live, useLive } from '../../lib/live';
 import { ManualDraft } from '../../lib/manual-draft';
 import { patchWidgets } from '../../lib/patch';
@@ -19,6 +20,8 @@ function ChatFields({ value, set, anims }: { value: WidgetSection; set: (field: 
   const platforms = Array.isArray(value.platforms) ? value.platforms as string[] : [];
   const select = (field: string, label: string, options: Options) => <label>{label}<select value={String(value[field] ?? '')} onChange={e => set(field, e.target.value)}>{options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>;
   const number = (field: string, label: string, min: number, max?: number) => <label>{label}<input type="number" min={min} max={max} value={String(value[field] ?? '')} onChange={e => set(field, Number(e.target.value))} /></label>;
+  // Advisory only: custom CSS still wins, but these rules undo the horizontal row sizing.
+  const cssWarnings = value.layout === 'horizontal' ? horizontalCssWarnings(value.css) : [];
   return <>
     <div className="row2">
       {number('maxMessages', 'Mensajes en pantalla', 1, 50)}
@@ -36,6 +39,9 @@ function ChatFields({ value, set, anims }: { value: WidgetSection; set: (field: 
     </div>
     <label>CSS personalizado<textarea className="code" spellCheck={false} value={String(value.css ?? '')} onKeyDown={codeTab} placeholder=".msg { border-left-color: #fff; }" onChange={e => set('css', e.target.value)} /></label>
     <p className="css-help">Clases: <code>.msg</code> <code>.msg.mod</code> <code>.who</code> <code>.text</code> <code>.pf</code></p>
+    {cssWarnings.length > 0 && <div className="eg-notice eg-notice--warning eg-notice--sm" role="status" data-chat-css-warning>
+      <span className="eg-notice__text">Este CSS puede romper la disposición horizontal: el widget ajusta solo el tamaño de la fila, de las tarjetas y de la letra, y estas reglas lo pisan: {cssWarnings.map((w, i) => <span key={w}>{i > 0 && ', '}<code>{w}</code></span>)}. Quítalas si el chat no se ve.</span>
+    </div>}
   </>;
 }
 
