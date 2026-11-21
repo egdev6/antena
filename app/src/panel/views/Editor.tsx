@@ -17,7 +17,7 @@ export type Target = { kind: 'alert'; type: string } | { kind: 'variation'; type
 
 const ANIM_IN: [string, string][] = [['pop', 'Rebote'], ['fade', 'Fundido'], ['slide', 'Desde abajo'], ['zoom', 'Zoom'], ['none', 'Ninguna']];
 const ANIM_OUT: [string, string][] = [['fade', 'Fundido'], ['slide', 'Hacia arriba'], ['zoom', 'Encoger'], ['none', 'Ninguna']];
-const AMOUNT_TYPES = ['cheer', 'raid', 'giftsub', 'superchat', 'supersticker', 'giftmember'];
+const AMOUNT_TYPES = ['cheer', 'raid', 'giftsub', 'superchat', 'supersticker', 'giftmember', 'jewels'];
 const TIER_TYPES = ['sub', 'resub', 'giftsub'];
 const TIER_OPTIONS: [string, string][] = [['', 'Cualquiera'], ['1', 'Tier 1'], ['2', 'Tier 2'], ['3', 'Tier 3']];
 export const ACTIONS: Record<string, string> = ACTION_LABELS;
