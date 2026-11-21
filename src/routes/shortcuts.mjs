@@ -145,6 +145,7 @@ export function registerShortcutRoutes({ route, store, engine, session, interact
       'entrevista-mostrar-media': async () => interviews.setMedia(true),
       'entrevista-ocultar-media': async () => interviews.setMedia(false),
       'entrevista-ocultar': async () => interviews.hide(),
+      'entrevista-parar': async () => interviews.stop(),
     }),
     'agradecido': async () => { const ev = session.data.events.find(e => !e.thanked); if (!ev) return { ok: true, pending: 0 }; session.setThanked(ev.id, true); return { id: ev.id, user: ev.user, pending: session.pendingThanks() }; },
   };

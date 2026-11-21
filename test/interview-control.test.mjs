@@ -240,6 +240,20 @@ test('each shown question adds one timeline mark with its text and item id; medi
   assert.doesNotMatch(JSON.stringify(items), NOTES, 'notes never reach the timeline');
 });
 
+test('Stream Deck «entrevista-parar» stops the live interview without deleting it, repeatably, and is listed', async t => {
+  const { api } = await start(t);
+  await active(api);
+  assert.equal((await api('POST', '/sd/entrevista-siguiente')).body.current.id, 'a');
+  const stopped = await api('POST', '/sd/entrevista-parar');
+  assert.equal(stopped.status, 200);
+  const control = (await api('GET', '/api/interview-control')).body;
+  assert.ok(!control.interviewId, 'no active interview after stopping');
+  assert.equal((await api('GET', '/api/interviews/directo')).status, 200, 'the interview is kept');
+  assert.equal((await api('POST', '/sd/entrevista-parar')).status, 200, 'stopping again is harmless');
+  assert.equal((await api('POST', '/sd/entrevista-siguiente')).status, 409, 'live controls see no active interview');
+  assert.ok((await api('GET', '/api/shortcuts')).body.builtins.includes('entrevista-parar'));
+});
+
 test('Stream Deck shortcuts run the same actions (go-to takes the item id) and are listed', async t => {
   const { api, base } = await start(t);
   await active(api);

@@ -16,7 +16,7 @@ export const SD_HELP: Record<string, string> = {
   'siguiente-pregunta': 'Sacar la siguiente pregunta', 'ocultar-pregunta': 'Quitar la pregunta de pantalla', 'cerrar-votacion': 'Cerrar la votación de la tier list',
   'abrir-sorteo': 'Abrir el sorteo', 'cerrar-sorteo': 'Cerrar la inscripción', sortear: 'Sortear',
   'entrevista-siguiente': 'Entrevista: siguiente pregunta', 'entrevista-anterior': 'Entrevista: pregunta anterior', 'entrevista-ir': 'Entrevista: ir a un ítem (id)',
-  'entrevista-mostrar-media': 'Entrevista: mostrar la media', 'entrevista-ocultar-media': 'Entrevista: ocultar la media', 'entrevista-ocultar': 'Entrevista: ocultar el widget',
+  'entrevista-mostrar-media': 'Entrevista: mostrar la media', 'entrevista-ocultar-media': 'Entrevista: ocultar la media', 'entrevista-ocultar': 'Entrevista: ocultar el widget', 'entrevista-parar': 'Entrevista: parar sin borrarla',
   agradecido: 'Marcar como agradecido el más antiguo pendiente',
 };
 // S10: el prompter ofrece dos pestañas; las retiradas se muestran si un atajo guardado aún las usa.
