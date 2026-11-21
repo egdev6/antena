@@ -28,6 +28,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en el programa de emisión.
 - **Suscriptores de YouTube (#134):** alerta `ytsub` para suscripciones públicas detectadas durante la escucha, con intervalo configurable y parada por cuota.
 - **Bienvenida (#289):** alerta pequeña y editable en el primer mensaje por persona y plataforma, con variación para quien ya habló en directos archivados. Activada de serie, sin mensajes propios ni usuarios bloqueados; el máximo de cinco alertas pendientes evita inundar la cola.
+- **Racha (#290):** alerta editable con notificación oficial de Twitch y cálculo local de YouTube sobre los archivos de antena que tienen estadísticas de chat. En YouTube se anuncia en vez de la bienvenida si alcanza el mínimo configurable (3 por defecto); se puede apagar. Twitch pide reconectar para conceder `user:read:chat` sin interrumpir las demás suscripciones cuando falta el permiso.
 - **Chat y moderación local:** Twitch y YouTube unificados, envío a una o a las dos
   plataformas con resultado por plataforma, filtro local y reflejo de la moderación de Twitch.
 - **Comandos y timers multicanal:** comandos con permisos y esperas, y mensajes programados

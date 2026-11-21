@@ -102,6 +102,7 @@
     "test/sse-progress-grace.test.mjs",
     "test/sse-verifier-regressions.test.mjs",
     "test/store.test.mjs",
+    "test/streak-alert.test.mjs",
     "test/stream-client-pagehide.test.mjs",
     "test/stream-client-stalled-reconnect.test.mjs",
     "test/stream-client-timers.test.mjs",

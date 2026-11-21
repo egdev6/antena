@@ -185,6 +185,7 @@ export const CONFIG_SCHEMA = {
     pollSeconds: num({ int: true, min: 5, max: 60 }),   // la UI ya acota 5–60
     subscriberPollSeconds: num({ int: true, min: 0 }),  // 0 disables; positive values clamp to 60 s
     subscriberCountAlert: bool,
+    streakAlert: bool, streakMinSessions: num({ int: true, min: 1 }),
     clientId: str, clientSecret: str, apiKeySet: bool, clientSecretSet: bool,
   },
   chat: { twitchChannel: str, sendTo: en(['twitch', 'youtube', 'both']) },

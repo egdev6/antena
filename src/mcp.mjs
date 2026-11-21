@@ -64,10 +64,10 @@ const S = {
   arr: (d, items = {}) => ({ type: 'array', description: d, items }),
   enum: (d, values) => ({ type: 'string', enum: values, description: d }),
 };
-const TYPES = ['follow', 'sub', 'resub', 'giftsub', 'cheer', 'raid', 'redemption', 'superchat', 'supersticker', 'member', 'milestone', 'giftmember', 'viewers', 'ytviewers', 'welcome'];
-const tipo = S.enum('Tipo de alerta. Twitch: follow, sub, resub, giftsub, cheer (bits), raid, redemption (recompensas). YouTube: superchat, supersticker, member, milestone, giftmember. Récord de espectadores a la vez: viewers (Twitch) y ytviewers (YouTube), variables {amount} y {previous}. Bienvenida: welcome, variables {user}, {returning} y {platform}.', TYPES);
+const TYPES = ['follow', 'sub', 'resub', 'giftsub', 'cheer', 'raid', 'redemption', 'superchat', 'supersticker', 'member', 'milestone', 'giftmember', 'viewers', 'ytviewers', 'welcome', 'streak'];
+const tipo = S.enum('Tipo de alerta. Twitch: follow, sub, resub, giftsub, cheer (bits), raid, redemption (recompensas). YouTube: superchat, supersticker, member, milestone, giftmember. Récord de espectadores a la vez: viewers (Twitch) y ytviewers (YouTube), variables {amount} y {previous}. Bienvenida: welcome, variables {user}, {returning} y {platform}. Racha: streak, variables {user}, {platform}, {count}; en Twitch también {message} y {channelPointsAwarded}.', TYPES);
 const ALERT_HELP = `Campos de una alerta (todos opcionales):
-- enabled (bool), title/text/sub (plantillas con {user} {amount} {message} {months} {tier} {reward} {input} {amountText} {level}), durationMs, minAmount
+- enabled (bool), title/text/sub (plantillas con {user} {amount} {message} {months} {tier} {reward} {input} {amountText} {level} {platform} {count} {channelPointsAwarded}), durationMs, minAmount
 - layout: "card" (tarjeta EGDEV) | "media" (vídeo o imagen con el texto encima) | "mixed" (vídeo o imagen de fondo a pantalla completa y encima la tarjeta EGDEV; textDelayMs = retraso de la tarjeta, cardX/cardY = ajuste en px); media (archivo de media/), mediaSize %, mediaVolume %
 - sound ("default" | "none" | archivo de audio), soundVolume %, durationMode ("fixed" | "media" = lo que dure el vídeo), textDelayMs
 - textX/textY/textWidth (% dentro del recurso), textAlign (left|center|right), fontSize px, textColor, accentColor, animIn (pop|fade|slide|zoom|none), animOut (fade|slide|zoom|none)

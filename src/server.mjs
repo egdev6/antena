@@ -510,7 +510,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   program.on('session', s => bus.send('meld', s, ['panel']));
   // S2/S12: el panel ve qué acción de chat falló (total o parcialmente) y en qué plataforma; los éxitos no se reenvían.
   engine.on('chatResult', r => { if (!r.ok) bus.send('chatResult', r, ['panel']); });
-  const { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, endSession } = setupAutoSession({
+  const { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics, endSession } = setupAutoSession({
     store, program, session, youtube, viewers, chat, twitch, engine, log,
   });
   // #73: al empezar el directo se conecta sola la lectura del chat de YouTube, también si
@@ -1218,7 +1218,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, program, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, interviews, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics };
+  const app = { server, store, bus, twitch, youtube, chat, meld, program, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, interviews, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics };
   return app;
 }
 

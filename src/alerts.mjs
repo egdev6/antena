@@ -21,6 +21,7 @@ export const ALERT_TYPES = {
   ytviewers:   { platform: 'youtube', icon: 'eye',     label: 'Récord de espectadores', system: true },
   ytsubcount:  { platform: 'youtube', icon: 'heart',   label: 'Suscriptores sin nombre', system: true },
   welcome:     { platform: 'egdev',   icon: 'smile',   label: 'Bienvenida', system: true },
+  streak:      { platform: 'egdev',   icon: 'fire',    label: 'Racha', system: true },
 };
 
 /** ¿Es una alerta del propio directo (récords…) y no de una persona? */
@@ -102,6 +103,7 @@ export const DEFAULT_ALERTS = {
   ytviewers:   { ...base, title: 'Nuevo récord',        text: '{amount} espectadores', sub: 'a la vez en YouTube · antes {previous}' },
   ytsubcount:  { ...base, title: 'Suscriptores sin nombre', text: '+{amount} suscriptores', sub: 'nuevos en el canal' },
   welcome:     { ...base, title: 'Bienvenida', text: 'Primera vez de {user} hoy', sub: '¡Gracias por estar aquí!', durationMs: 3500, sound: 'none', css: '.alert { --card-width: 540px; --name-size: 44px; --sub-size: 20px; --tile-size: 72px; --icon-size: 36px; }' },
+  streak:      { ...base, title: 'Racha', text: '{user}', sub: '{count} directos seguidos' },
 };
 
 // cada alerta con sus propias listas (nunca compartidas)
@@ -133,6 +135,7 @@ export const SAMPLES = {
   ytviewers:   { amount: 23, previous: 19, platform: 'youtube' },
   ytsubcount:  { amount: 3 },
   welcome:     { user: 'Ana', returning: false, platform: 'twitch' },
+  streak:      { user: 'Ana', platform: 'youtube', count: 3, channelPointsAwarded: 0, message: '' },
   command:     { user: 'devconcafe', args: 'hola a todos', command: '!hola' },
 };
 
@@ -308,6 +311,11 @@ export function normalizeTwitch(subType, e = {}) {
       return { type: 'cheer', vars: { user: e.user_name, amount: e.bits, message: stripCheermotes(e.message?.text || ''), powerUp: e.power_up?.type || e.type } };
     case 'channel.channel_points_custom_reward_redemption.add':
       return { type: 'redemption', vars: { user: e.user_name, reward: e.reward?.title, cost: e.reward?.cost, input: e.user_input } };
+    case 'channel.chat.notification':
+      // Las demás notificaciones llegan por sus suscripciones dedicadas: no duplicarlas.
+      if (e.notice_type !== 'watch_streak') return null;
+      return { type: 'streak', vars: { user: e.chatter_is_anonymous ? 'Anónimo' : e.chatter_user_name, platform: 'twitch',
+        count: e.watch_streak?.streak_count, channelPointsAwarded: e.watch_streak?.channel_points_awarded, message: e.message?.text } };
     default:
       return null;
   }

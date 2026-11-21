@@ -145,6 +145,8 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     trackChatMetrics(() => session.recordChat(m.platform, { at: observation.at, authorId: m.authorId,
       videoId: observation.videoId, liveChatId: observation.liveChatId }, observation.target, () => !!store.config.program.autoSession));
   });
+  // Waits for the chat work already started (metrics, welcome lookups) without closing intake.
+  const settleChatMetrics = () => Promise.allSettled([...chatMetricsWork]).then(() => {});
   const drainChatMetrics = () => {
     if (chatMetricsDrain) return chatMetricsDrain;
     chatMetricsClosed = true;
@@ -219,5 +221,5 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     }
   });
 
-  return { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, endSession };
+  return { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics, endSession };
 }

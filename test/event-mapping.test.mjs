@@ -66,6 +66,17 @@ test('S1 Twitch subscribes to channel.bits.use v1 with the existing bits:read sc
   assert.deepEqual(calls.find(c => c[0] === 'channel.bits.use'), ['channel.bits.use', '1', { broadcaster_user_id: '9' }]);
 });
 
+test('S6/S7 Twitch watch_streak mapping and documentation ignore other chat notices', async () => {
+  const event = { notice_type: 'watch_streak', chatter_user_id: 'private', chatter_user_name: 'Ana', message: { text: 'hola' }, watch_streak: { streak_count: 4, channel_points_awarded: 300 } };
+  assert.deepEqual(tw('channel.chat.notification', event), { type: 'streak', vars: { user: 'Ana', platform: 'twitch', count: 4, channelPointsAwarded: 300, message: 'hola' } });
+  for (const notice_type of ['sub', 'resub', 'sub_gift', 'raid', 'announcement']) assert.equal(tw('channel.chat.notification', { ...event, notice_type }), null);
+  const doc = await readFile(new URL('../docs/eventos.md', import.meta.url), 'utf8');
+  assert.match(doc, /\| `channel\.chat\.notification` \(1\) \| `streak` \|/);
+  assert.match(doc, /\| `YouTube textMessageEvent` \| `streak` \|/);
+  assert.equal(ALERT_TYPES.streak?.system, true);
+  assert.equal(buildAlert('streak', { user: 'Ana', platform: 'youtube', count: 3 }, { alerts: {} }).sub, '3 directos seguidos');
+});
+
 test('S2 Twitch unknown types never alert', () => {
   for (const type of ['channel.update', 'channel.chat.message', 'channel.unknown']) assert.equal(tw(type, { user_name: 'Ana' }), null, type);
 });

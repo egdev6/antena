@@ -28,7 +28,7 @@ const isVid = (f?: string) => /\.(webm|mp4|mov|m4v)$/i.test(f || '');
 const GROUPS: [string, string, string][] = [
   ['twitch', 'Twitch', 'Seguidores, subs, bits, raids, recompensas y récord'],
   ['youtube', 'YouTube', 'Suscriptores, Super Chats, stickers, miembros y récord'],
-  ['egdev', 'Ambas plataformas', 'Bienvenida al chat'],
+  ['egdev', 'Ambas plataformas', 'Bienvenida y rachas'],
 ];
 
 /** Huella corta de lo que cambia la miniatura: si cambia, el marco se recarga con lo guardado. */
@@ -109,7 +109,7 @@ export function Alertas({ parts }: { parts: string[] }) {
       ...(x.a.ttsEnabled ? [{ t: 'Voz', on: true }] : []),
       ...((x.a.actions || []).length ? [{ t: 'Acciones', on: true }] : []),
       ...(x.vars.length ? [{ t: x.vars.length === 1 ? '1 variación' : `${x.vars.length} variaciones`, on: true }] : []),
-      ...(x.meta.system ? [{ t: ['ytsubcount', 'welcome'].includes(x.type) ? 'Sistema' : 'Récord' }] : []),
+      ...(x.meta.system ? [{ t: ['ytsubcount', 'welcome', 'streak'].includes(x.type) ? 'Sistema' : 'Récord' }] : []),
     ];
     // Server-confirmed alert/CSS/theme, never the optimistic editor draft. Track
     // only this saved media dependency so unrelated uploads do not reload 14 frames.
