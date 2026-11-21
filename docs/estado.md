@@ -24,8 +24,9 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
 - **Seguidores sin conexión (#128):** registro local de Twitch y de suscripciones públicas de YouTube con recuento anónimo; requiere cuenta de YouTube conectada y no dispara alertas recuperadas.
 - **Agradecimientos (#129):** `/widget/thanks` (900×200) rota un nombre pendiente sin conexión cada vez y puede mostrar al final el recuento anónimo de YouTube. Configura plataformas, ventana y máximo desde Widgets; las fechas desconocidas se incluyen y sin archivo previo no hay corte «desde el último directo». El panel marca al momento cada entrada o, con confirmación, exactamente la selección visible. La capa solo recibe nombres, plataformas y recuento anónimo.
 - **Alertas de Twitch y YouTube:** tipos normalizados (follow, sub, resub, giftsub,
-  cheer, raid, redemption; ytsub, superchat, supersticker, member, milestone, giftmember) con
+  cheer, raid, redemption; ytsub, superchat, supersticker, member, milestone, giftmember, jewels) con
   tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en el programa de emisión.
+  Los regalos Jewels se agrupan por combo; cuentan como eventos, no como euros de Super Chat.
 - **Suscriptores de YouTube (#134):** alerta `ytsub` para suscripciones públicas detectadas durante la escucha, con intervalo configurable y parada por cuota.
 - **Bienvenida (#289):** alerta pequeña y editable en el primer mensaje por persona y plataforma, con variación para quien ya habló en directos archivados. Activada de serie, sin mensajes propios ni usuarios bloqueados; el máximo de cinco alertas pendientes evita inundar la cola.
 - **Racha (#290):** alerta editable con notificación oficial de Twitch y cálculo local de YouTube sobre los archivos de antena que tienen estadísticas de chat. En YouTube se anuncia en vez de la bienvenida si alcanza el mínimo configurable (3 por defecto); se puede apagar. Twitch pide reconectar para conceder `user:read:chat` sin interrumpir las demás suscripciones cuando falta el permiso.
@@ -277,7 +278,7 @@ Pendiente de ejecutar con hardware y cuentas propias. Una línea por familia:
 - [ ] Apariencia: en Meld, un cambio de tema llega al overlay y a las capas sin recargarlas
       (color, fuente subida, icono por tipo, posición, animación y sonido).
 - [ ] Alertas Twitch: follow, sub, resub, giftsub, cheer, raid y recompensa reales.
-- [ ] Alertas YouTube: superchat, supersticker, miembro, hito y membresías regaladas.
+- [ ] Alertas YouTube: superchat, supersticker, miembro, hito, membresías regaladas y regalos Jewels.
 - [ ] Comandos: permisos, esperas y variables `{user}` y `{args}`.
 - [ ] Timers: destino Twitch/YouTube/ambos, límites de 500/200 y fallo parcial.
 - [ ] Pausa: detiene alertas y envíos, y al reanudar no hay ráfagas.

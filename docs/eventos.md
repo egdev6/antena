@@ -31,8 +31,21 @@ second copy.
 | `memberMilestoneChatEvent` | `milestone` | `memberMonth`, `memberLevelName`, `userComment` | Channel memberships only. |
 | `membershipGiftingEvent` | `giftmember` | `giftMembershipsCount`, `giftMembershipsLevelName` | Channel memberships only. |
 | `giftMembershipReceivedEvent` | — | | One per receiver of a gift: the gifting event already alerts once. |
-| `giftEvent` | — | | Jewels gifts need their own alert design (#138). |
+| `giftEvent` | `jewels` | `authorChannelId`, `giftDetails.jewelsAmount`, `giftName`, `giftUrl`, `altText`, `comboCount` | One alert per message id after the combo is quiet; owner's gifts are ignored. |
 | `YouTube textMessageEvent` | `streak` | platform, private author ID, display name, locally calculated streak | First message in a session, when the configured consecutive-session minimum is met. |
+
+Jewels gifts, including a non-combo (`comboCount` 0), wait for one chat polling interval
+plus five quiet seconds; every update of the same id restarts the wait. This allows the next
+poll to bring a combo update. The first poll is silent, including later updates of ids seen
+in that baseline. The final count is `max(comboCount, 1)`; we assume the API's
+`jewelsAmount` ("the amount of Jewels redeemed for the gift") is per gift, so `{amount}`
+is `jewelsAmount × max(comboCount, 1)`. IDs already announced are remembered for the life
+of the process, rather than using the bus's ten-minute duplicate window, so the total sent
+is final: a combo update that arrives after its alert is ignored. A gift without a numeric
+`jewelsAmount` is not treated as a gift. A pending gift
+is discarded and logged on application shutdown before its quiet window ends. Gifts count
+as events and appear in the timeline and credits; they do not contribute to the euro-based
+Super Chat metric and have no separate Jewels aggregate.
 
 **There is no subscription event in the YouTube live chat.** New channel subscribers are
 detected separately by polling, not by a `newSubscriberEvent` chat message.

@@ -215,7 +215,7 @@ async function readClassified(io, file) {
 const CREDIT_GROUPS = [
   ['Raids', ['raid']], ['Suscripciones', ['sub', 'resub', 'giftsub']], ['Bits', ['cheer']],
   ['Super Chats', ['superchat', 'supersticker']], ['Miembros', ['member', 'milestone', 'giftmember']],
-  ['Recompensas', ['redemption']], ['Nuevos seguidores', ['follow', 'ytsub']],
+  ['Regalos de YouTube', ['jewels']], ['Recompensas', ['redemption']], ['Nuevos seguidores', ['follow', 'ytsub']],
 ];
 
 export class Session extends EventEmitter {
