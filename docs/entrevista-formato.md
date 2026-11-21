@@ -220,7 +220,7 @@ control action answers with a 4xx warning and changes nothing; stopping is idemp
 | Go to an item | `POST /api/interview-control/goto` `{ itemId }` | `entrevista_ir` | `entrevista-ir` (`/sd/entrevista-ir/<itemId>`) |
 | Show or hide the media | `POST /api/interview-control/media` `{ visible }` | `entrevista_media` | `entrevista-mostrar-media`, `entrevista-ocultar-media` |
 | Hide the widget | `POST /api/interview-control/hide` | `entrevista_ocultar` | `entrevista-ocultar` |
-| Stop the interview without deleting it | `POST /api/interviews/stop` | `parar_entrevista` (`confirmar: true`) | — |
+| Stop the interview without deleting it | `POST /api/interviews/stop` | `parar_entrevista` (`confirmar: true`) | `entrevista-parar` |
 
 The live item controls are in the dock module **Entrevista** (off by default; enable it in the dock
 editor, group *Interactivos*), in the detail header under Widgets › Entrevista, and in the prompter tab
