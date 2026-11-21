@@ -678,6 +678,30 @@ test('B1: MCP editar_widget rechaza layout inválido sin guardar ni emitir', { t
   assert.equal(JSON.parse(valid.content[0].text).widgets.chat.layout, 'horizontal');
 });
 
+test('MCP editar_variante_chat cambia solo lo enviado de una variante y rechaza sin guardar ni emitir', { timeout: 20000 }, async t => {
+  const f = await fixture(t), rpc = await mcpClient(t, f.base);
+  const created = (await f.ok('POST', ROUTE, { name: 'Ejemplo' })).variant;
+  const ok = await rpc('editar_variante_chat', { id: 'ejemplo', cambios: { layout: 'horizontal', css: '.msg { color: lime; }' } });
+  assert.equal(ok.isError, undefined, ok.content?.[0]?.text);
+  const stored = (await f.ok('GET', ROUTE)).find(v => v.id === 'ejemplo');
+  assert.deepEqual(stored, { ...created, layout: 'horizontal', css: '.msg { color: lime; }' }, 'only the sent fields change');
+  assert.equal(JSON.parse(ok.content[0].text).variant.css, '.msg { color: lime; }');
+  const quiet = await watchRejections(t, f);
+  const before = await f.snapshot();
+  for (const [args, re] of [
+    [{ id: 'no-existe', cambios: { css: 'x' } }, /No existe la variante/],
+    [{ id: 'default', cambios: { css: 'x' } }, /predeterminada/],
+    [{ id: 'ejemplo', cambios: { layout: 'diagonal' } }, /layout/],
+    [{ id: 'ejemplo', cambios: { id: 'otro' } }, /id/],
+  ]) {
+    const rejected = await rpc('editar_variante_chat', args);
+    assert.equal(rejected.isError, true, JSON.stringify(args));
+    assert.match(rejected.content[0].text, re, JSON.stringify(args));
+    await f.unchanged(before);
+  }
+  await quiet();
+});
+
 test('B2: POST rechaza valores explícitos que contradicen la copia predeterminada', async t => {
   const f = await fixture(t);
   const quiet = await watchRejections(t, f);
