@@ -2,6 +2,7 @@
 // Los objetivos, lo único que creas tú, viven dentro de su tarjeta: tabla → objetivo (3.er nivel).
 import { enc, get, post, put, del } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
+import { useInterview } from '../../lib/InterviewControls';
 import { goalMetricLabel } from '../../lib/goal';
 import { patchWidgets } from '../../lib/patch';
 import { BrowserSource, codeTab, confirmDelete, copy, EmptyState, guard, LazyInput, Panel, PfIcon, Stage, Switch, WidgetLayout } from '../../lib/ui';
@@ -159,6 +160,7 @@ export function Widgets({ parts }: { parts: string[] }) {
   const goals: GoalConfig[] = useLive(s => s.config.widgets?.goals || []);
   const w = useLive(s => (s.config.widgets || {}) as any);
   const I = useLive(s => s.interactive);
+  const interview = useInterview();
   const tp = useLive(s => s.teleprompter);
   const open = parts[1];
   const css = (x?: string) => (x ? [{ t: 'CSS propio', on: true }] : []);
@@ -176,7 +178,7 @@ export function Widgets({ parts }: { parts: string[] }) {
     <PageHead crumb={`Configurar · ${Object.keys(INFO).length + 5} widgets`} title="Widgets"
       desc="Cada uno es una fuente de navegador para el programa de emisión (sus URL también están en Fuentes del programa de emisión). Cuando la app trae un widget nuevo, aparece aquí como una tarjeta más." />
     <div className="lv-groups">
-      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={7} note="Se ajustan aquí y se dejan puestas en el programa de emisión" wide>
+      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={6} note="Se ajustan aquí y se dejan puestas en el programa de emisión" wide>
         {fixed('chat', <div className="lv-wchat"><i style={{ width: '62%' }} /><i style={{ width: '80%' }} /><i style={{ width: '48%' }} /><i style={{ width: '72%' }} /><i style={{ width: '56%' }} /></div>,
           [...((w.chat?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.chat?.css)])}
         <Card href="#/widgets/objetivos" label="Abrir Objetivos" open={open === 'objetivos'} title="Objetivos" aside={<span className="lv-cmeta">1 capa por objetivo</span>}
@@ -190,11 +192,10 @@ export function Widgets({ parts }: { parts: string[] }) {
           [...((w.viewers?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...(w.viewers?.showTotal === false ? [] : [{ t: 'con total' }]), ...css(w.viewers?.css)])}
         {fixed('thanks', <div className="lv-wcred"><b>GRACIAS</b><i /><i /></div>,
           [...((w.thanks?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.thanks?.css)])}
-        {fixed('interview', <div className="lv-wq"><small>Entrevista</small>¿Qué harías distinto?</div>, [{ t: 'Pregunta + media' }, { t: 'YouTube' }, { t: 'Post' }])}
         {fixed('credits', <div className="lv-wcred"><b>GRACIAS</b><i /><i /><i /><i /></div>, [{ t: w.credits?.title || 'Créditos del directo' }, ...css(w.credits?.css)],
           <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>)}
       </CardGroup>
-      <CardGroup title="Se manejan en directo" count={4} note="Pulsa una tarjeta para abrir su página" wide>
+      <CardGroup title="Se manejan en directo" count={5} note="Pulsa una tarjeta para abrir su página" wide>
         <Card href="#/preguntas" label="Ir a Preguntas" title="Preguntas" aside={<Dot tone={pend ? 'ok' : 'off'}>{pend ? `${pend} en cola` : 'Cola vacía'}</Dot>}
           thumb={<div className="lv-wq"><small>Pregunta del chat</small>{I?.questions?.current?.text || '¿Cómo testeáis los hooks?'}</div>}
           foot={<>{url('/widget/question')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: String(I?.config?.questions?.command || '!pregunta') }]} /></Card>
@@ -204,6 +205,9 @@ export function Widgets({ parts }: { parts: string[] }) {
         <Card href="#/sorteo" label="Ir a Sorteo" title="Sorteo" aside={<Dot tone={I?.giveaway?.open ? 'ok' : 'off'}>{I?.giveaway?.open ? `Abierto · ${I.giveaway.count}` : 'Cerrado'}</Dot>}
           thumb={<div className="lv-wcred"><b>SORTEO</b><i /><i /></div>}
           foot={<>{url('/widget/giveaway')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: String(I?.config?.giveaway?.command || '!sorteo') }]} /></Card>
+        <Card href="#/entrevista" label="Ir a Entrevista" title="Entrevista" aside={<Dot tone={interview?.current ? 'live' : interview?.active ? 'ok' : 'off'}>{!interview?.active ? 'Sin entrevista activa' : `${interview.current ? 'En pantalla' : 'Lista'} · ${interview.progress.index} / ${interview.progress.total}`}</Dot>}
+          thumb={<div className="lv-wq"><small>Entrevista</small>¿Qué harías distinto?</div>}
+          foot={<>{url('/widget/interview')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: 'Pregunta + media' }, { t: 'YouTube' }, { t: 'Post' }]} /></Card>
         <Card href="#/teleprompter" label="Ir a Teleprompter" title="Teleprompter" aside={<span className="lv-tag">Solo lo ves tú</span>}
           thumb={<div className="lv-wchat plain"><i style={{ width: '90%' }} /><i style={{ width: '84%', background: 'rgba(255,255,255,.3)' }} /><i style={{ width: '70%' }} /></div>}
           foot={<>{url('/widget/teleprompter')}<span className="sp" /><span className="lv-cmeta">Ir a la página →</span></>}><Tags items={[{ t: (tp?.scripts || []).length === 1 ? '1 guion' : `${(tp?.scripts || []).length} guiones` }, ...(tp?.playback?.playing ? [{ t: 'Leyendo', on: true }] : [])]} /></Card>

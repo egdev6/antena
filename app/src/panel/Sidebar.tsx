@@ -38,7 +38,7 @@ export function Sidebar({ current }: { current: string }) {
   const live = (t: string, label?: string) => <span className="nav-n is-live" aria-label={label}>{t}</span>;
   const warns = alertWarnings(s).length;
   const widgetTail = I.vote && I.giveaway?.open ? live('2 activos', 'votación en curso y sorteo abierto')
-    : I.vote ? live('votando', 'votación en curso') : I.giveaway?.open ? live('sorteo', 'sorteo abierto') : num(10);
+    : I.vote ? live('votando', 'votación en curso') : I.giveaway?.open ? live('sorteo', 'sorteo abierto') : num(11);
   const groups: [string, string, Item[]][] = [
     ['directo', 'En directo', [
       { href: '#/directo', label: 'Directo', tail: s.status?.meld?.streaming ? live('●', 'en directo') : null },
@@ -72,7 +72,7 @@ export function Sidebar({ current }: { current: string }) {
   ];
   // Interactive pages are reached from Widgets; nested pages keep the same active entry.
   const page = current.split('/')[1];
-  const activePage = ['preguntas', 'tierlist', 'sorteo', 'teleprompter'].includes(page) ? 'widgets' : page;
+  const activePage = ['preguntas', 'tierlist', 'sorteo', 'entrevista', 'teleprompter'].includes(page) ? 'widgets' : page;
   const active = (href: string) => href.split('/')[1] === activePage;
   return <aside className="side">
     <a className="brand" href="#/directo" aria-label="antena, inicio">

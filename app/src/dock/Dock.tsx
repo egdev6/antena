@@ -9,7 +9,7 @@ import { ConnPill, cx, guard, Icon, mmss, PfIcon, toast, Toaster } from '../lib/
 import { DockQuestions } from './DockQuestions';
 import { DockTierlist } from './DockTierlist';
 import { DockGiveaway } from './DockGiveaway';
-import { InterviewPad } from '../lib/InterviewControls';
+import { InterviewPad, useInterview } from '../lib/InterviewControls';
 import type { DockConfig, DockModuleId, DockZone, MeldTrack, TeleprompterState, TimelineItem, ViewerPlatform, ViewerSettings } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
@@ -373,10 +373,7 @@ function ShortcutsModule() {
 }
 
 function InterviewModule() {
-  return <section className="d-card" aria-label="Entrevista">
-    <div className="d-card-h">Entrevista</div>
-    <InterviewPad cls={{ root: 'd-interview', btn: 'd-btn sm', primary: 'd-btn sm pri grow', muted: 'd-muted', row: 'd-row', note: 'd-muted', title: 'd-sub' }} />
-  </section>;
+  return <InterviewPad cls={{ root: 'd-interview', btn: 'd-btn sm', primary: 'd-btn sm pri grow', muted: 'd-muted', row: 'd-row', note: 'd-muted', title: 'd-sub' }} />;
 }
 
 type ModuleContext = { stream: ReturnType<typeof useStreamControl>; meters: Record<string, Meter>; isObs: boolean };
@@ -398,12 +395,14 @@ const INTERACTIVE = {
   questions: { id: 'preguntas', label: 'Preguntas' },
   tierlist: { id: 'tier', label: 'Tier list' },
   giveaway: { id: 'sorteo', label: 'Sorteo' },
+  interview: { id: 'entrevista', label: 'Entrevista' },
 } as const;
 type InteractiveModule = keyof typeof INTERACTIVE;
 const isInteractive = (id: DockModuleId): id is InteractiveModule => Object.hasOwn(INTERACTIVE, id);
 
 function Interactivos({ ids, context }: { ids: InteractiveModule[]; context: ModuleContext }) {
   const I = useLive(s => s.interactive);
+  const interview = useInterview();
   const [tab, setTab] = useState(() => storageGet(INTERACTIVE_TAB) || 'preguntas');
   const tabs = ids.map(module => ({ module, ...INTERACTIVE[module] }));
   const selected = tabs.some(item => item.id === tab) ? tab : tabs[0]?.id;
@@ -425,6 +424,7 @@ function Interactivos({ ids, context }: { ids: InteractiveModule[]; context: Mod
         }}>{label}{id === 'preguntas' && <span className="d-badge">{I?.questions?.pending || 0}</span>}
         {id === 'tier' && I?.vote && <span className="d-dot vote" role="img" aria-label="Votación abierta" />}
         {id === 'sorteo' && <span className="d-badge">{I?.giveaway?.count || 0}</span>}
+        {id === 'entrevista' && interview?.active && <span className="d-badge" aria-label={`Progreso: ${interview.progress.index} de ${interview.progress.total}`}>{interview.progress.index}/{interview.progress.total}</span>}
       </button>)}
     </nav>
     {tabs.map(({ module, id }) => <div key={id} className="d-body" role="tabpanel" id={`d-ip-${id}`} aria-labelledby={`d-i-${id}`} hidden={selected !== id}>

@@ -84,8 +84,10 @@ test('dock, panel and prompter drive the interview; widget follows; notes only i
     await waitDom(c, `document.querySelector('[data-interview-current]')?.textContent === 'Nada en pantalla'`, { timeoutMs: 9000 });
     assert.equal(widget(), null);
 
-    // panel: Widgets › Entrevista runs the same actions
+    // The old panel address opens the interview page; its Capa tab keeps the live controls.
     await c.send('Page.navigate', { url: `${base}/#/widgets/interview` });
+    await waitDom(c, `document.querySelector('main h1')?.textContent.trim() === 'Entrevista'`, { timeoutMs: 20000 });
+    await clickWhen(c, `[...document.querySelectorAll('main [role="tab"]')].find(x => x.textContent.trim() === 'Capa')`);
     await waitDom(c, `!!document.querySelector('main [data-interview-act="next"]')`, { timeoutMs: 20000 });
     // the dock hid the widget on the first item: next continues after it, not from the start
     await act('next');
