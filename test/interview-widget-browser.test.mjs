@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeAll, closeChrome, findChrome, openChromePage, skipIfNoBrowserOrUi, waitDom } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, skipIfNoBrowserOrUi, waitDom, clickWhen } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 const LONG_Q = ('Cuando miras atrás, a esos primeros meses sin audiencia, sin dinero y con muchísimas dudas sobre si merecía la pena seguir, ¿qué decisión concreta lo cambió todo? ').repeat(3).slice(0, 500).trim();
@@ -275,7 +275,7 @@ test('hidden without an approved active item; selecting through the API updates 
   } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
-test('Widgets › Entrevista shows the demo preview and the card is in the catalog', { timeout: 120000 }, async t => {
+test('Entrevista › Capa shows the demo preview and the card is in the catalog', { timeout: 120000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t); if (!bin) return;
   const ctx = await start(t); if (!ctx) return;
   const { base, close } = ctx;
@@ -283,12 +283,14 @@ test('Widgets › Entrevista shows the demo preview and the card is in the catal
   try {
     chrome = await openChromePage(bin, `${base}/#/widgets/interview`);
     const c = chrome.cdp;
+    await waitDom(c, `document.querySelector('main h1')?.textContent.trim() === 'Entrevista'`, { timeoutMs: 15000 });
+    await clickWhen(c, `[...document.querySelectorAll('main [role="tab"]')].find(x => x.textContent.trim() === 'Capa')`);
     const src = `document.querySelector('main .preview-col .eg-stage iframe')?.getAttribute('src') || ''`;
     await waitDom(c, `(${src}) === '/widget/interview?demo'`, { timeoutMs: 15000 });
     assert.match(await run(c, `document.querySelector('main .preview-col .eg-stage__bar').textContent`), /Datos de ejemplo/);
     assert.match(await run(c, `document.querySelector('main .browser-source')?.textContent || ''`), /\/widget\/interview/);
     assert.match(await run(c, `document.querySelector('main').textContent`), /1920×1080/);
     await c.send('Page.navigate', { url: `${base}/#/widgets` });
-    await waitDom(c, `[...document.querySelectorAll('main a[href="#/widgets/interview"]')].length > 0`, { timeoutMs: 15000 });
+    await waitDom(c, `[...document.querySelectorAll('main a[href="#/entrevista"]')].length > 0`, { timeoutMs: 15000 });
   } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });

@@ -18,6 +18,7 @@ function View({ parts }: { parts: string[] }) {
     case 'chat': return <V.Chat />;
     case 'preguntas': return <V.Preguntas parts={parts} />;
     case 'tierlist': return <V.TierList parts={parts} />;
+    case 'entrevista': return <V.Entrevista parts={parts} />;
     case 'sorteo': return <V.Sorteo parts={parts} />;
     case 'teleprompter': return <V.Teleprompter parts={parts} />;
     case 'alertas': return <V.Alertas parts={parts} />;

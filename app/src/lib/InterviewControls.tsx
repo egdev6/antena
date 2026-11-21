@@ -1,4 +1,4 @@
-// Live interview controls (#278), shared by the dock module, Widgets › Entrevista and the prompter tab.
+// Live interview controls (#278), shared by the dock, the interview page and the prompter tab.
 // Every button calls the same /api/interview-control actions as the shortcuts and the MCP tools; the
 // widget on screen follows through its own SSE event. Private notes come from the presenter view
 // (`interviewControl`, panel clients only) and are never part of the widget payload.
@@ -14,7 +14,7 @@ type Classes = { root?: string; btn: string; primary: string; muted: string; row
 export function InterviewPad({ cls, notes = true, label = 'Entrevista' }: { cls: Classes; notes?: boolean; label?: string }) {
   const iv = useInterview();
   if (!iv) return null;
-  if (!iv.active) return <section className={cls.root} aria-label={label}><p className={cls.muted}>Sin entrevista activa. Elige una con «elegir_entrevista» o en la API (POST /api/interviews/select).</p></section>;
+  if (!iv.active) return <section className={cls.root} aria-label={label}><p className={cls.muted}>Sin entrevista activa. Elige una en Widgets › Entrevista o con «elegir_entrevista».</p></section>;
   const { current, next, progress } = iv;
   const hasMedia = !!current?.media;
   return <section className={cls.root} aria-label={label}>

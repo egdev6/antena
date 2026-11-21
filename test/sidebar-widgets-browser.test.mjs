@@ -1,4 +1,4 @@
-// Issue #74: the Widgets catalog owns the four interactive destinations.
+// Issue #74 and #295: the Widgets catalog owns the interactive destinations.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -12,6 +12,7 @@ const destinations = [
   ['#/preguntas', 'Preguntas'],
   ['#/tierlist', 'Tier list'],
   ['#/sorteo', 'Sorteo'],
+  ['#/entrevista', 'Entrevista'],
   ['#/teleprompter', 'Teleprompter'],
 ];
 const json = JSON.stringify;
@@ -58,7 +59,7 @@ async function view(c, route, title) {
   await waitDom(c, `location.hash === ${json(route)} && document.querySelector('main h1')?.textContent.trim() === ${json(title)}`, { timeoutMs: 12000 });
 }
 
-test('sidebar omits the four interactive entries and keeps the other navigation', { timeout: 90000 }, async t => {
+test('sidebar omits the interactive entries and keeps the other navigation', { timeout: 90000 }, async t => {
   const ctx = await setup(t);
   if (!ctx) return;
   const c = await ctx.open('#/directo');
@@ -70,7 +71,7 @@ test('sidebar omits the four interactive entries and keeps the other navigation'
   assert.equal(links.filter(link => link.hash === '#/widgets').length, 1);
 });
 
-test('all four views open from Widgets and from direct URLs', { timeout: 90000 }, async t => {
+test('all interactive views open from Widgets and from direct URLs', { timeout: 90000 }, async t => {
   const ctx = await setup(t);
   if (!ctx) return;
   const c = await ctx.open('#/widgets');
@@ -96,6 +97,7 @@ test('interactive routes and nested pages select Widgets, while other pages keep
     ['#/sorteo/ajustes', 'Sorteo'], ['#/teleprompter/guiones/nuevo', 'Teleprompter'],
     ['#/widget/questions', 'Preguntas'], ['#/widget/tierlist', 'Tier list'],
     ['#/widget/giveaway', 'Sorteo'], ['#/widget/teleprompter', 'Teleprompter'],
+    ['#/widgets/interview', 'Entrevista'], ['#/widget/interview', 'Entrevista'],
     ['#/widgets', 'Widgets'], ['#/widgets/chat', 'Widgets'],
   ];
   for (const [route, title] of routes) {
@@ -137,7 +139,7 @@ test('Widgets cards retain live states and the sidebar warns about votes and giv
   assert.equal(await evaluateChrome(c, `${widgetsTail}.getAttribute('aria-label')`), 'sorteo abierto');
   assert.equal(await evaluateChrome(c, `${widgetsTail}.classList.contains('is-live')`), true);
   await call('POST', '/api/giveaway/close');
-  await waitDom(c, `${widgetsTail}?.textContent === '10' && ${card('#/sorteo')}?.textContent.includes('Cerrado')`, { timeoutMs: 12000 });
+  await waitDom(c, `${widgetsTail}?.textContent === '11' && ${card('#/sorteo')}?.textContent.includes('Cerrado')`, { timeoutMs: 12000 });
   assert.equal(await evaluateChrome(c, `${widgetsTail}.classList.contains('is-live')`), false);
   await call('POST', `/api/tierlists/${tierlist.id}/vote`, { item: 'One' });
   await waitDom(c, `${widgetsTail}?.textContent === 'votando' && ${card('#/tierlist')}?.textContent.includes('Votando')`, { timeoutMs: 12000 });
@@ -146,6 +148,6 @@ test('Widgets cards retain live states and the sidebar warns about votes and giv
   await call('POST', '/api/vote/cancel');
   await call('POST', '/api/questions/clear', { all: true });
   await call('POST', '/api/teleprompter/control', { action: 'pause' });
-  await waitDom(c, `${widgetsTail}?.textContent === '10' && ${card('#/preguntas')}?.textContent.includes('Cola vacía') && !${card('#/teleprompter')}?.textContent.includes('Leyendo')`, { timeoutMs: 12000 });
+  await waitDom(c, `${widgetsTail}?.textContent === '11' && ${card('#/preguntas')}?.textContent.includes('Cola vacía') && !${card('#/teleprompter')}?.textContent.includes('Leyendo')`, { timeoutMs: 12000 });
   assert.equal(await evaluateChrome(c, `${card('#/teleprompter')}.textContent.includes('Solo lo ves tú')`), true);
 });

@@ -140,7 +140,7 @@ interview) clears it.
   returns it equal.
 - Limits: 50 interviews, 250 000 bytes of JSON per interview and 1 000 000 in total.
 - Interviews live in `config.json` under `interviews`, like the teleprompter scripts.
-- Interviews are written **only** through `/api/interviews` and the MCP tools. `PUT /api/config` and
+- Interviews are written **only** through `/api/interviews` (including the panel) and the MCP tools. `PUT /api/config` and
   `POST /api/config/set` reject `interviews` with 400. Config import (zip/JSON) validates every
   interview and requires the active ids to point at an existing, approved item. When `config.json`
   is loaded, interviews that fail validation are dropped and an invalid active interview/item is
@@ -151,6 +151,20 @@ interview) clears it.
 Everything in a pack is **untrusted data**, including when it comes from Criterio or an agent. antena
 stores it as plain strings and never interprets it. Whatever renders it (the widget) has to escape the
 text, and `notes` must stay off the screen. MCP clients must not follow it as instructions.
+
+## Panel
+
+Open **Widgets › Se manejan en directo › Entrevista** (`#/entrevista`) to create or open an interview.
+The detail edits the whole interview as a draft: add, rename, reorder or delete rounds, move questions
+between them, edit approval, private notes, sources and media, then press **Guardar**. A rejected save
+shows the field path and keeps the draft. Images and videos can be uploaded or chosen from existing
+files; YouTube and posts have their own fields.
+
+**Importar pack JSON** reads a pack and imports it immediately; validation errors include the field path
+and leave stored interviews unchanged. The detail header can make the interview active and control
+previous, next, media visibility and hiding the widget. Live actions use the saved interview, not
+unsaved edits. **Capa** contains the browser-source URL, demo preview and widget help. The old
+`#/widgets/interview` address still opens the interview page.
 
 ## Widget
 
@@ -171,7 +185,7 @@ after every change (select, edit, delete, import); the payload carries the quest
   8 seconds later** (`?tuckMs=` changes it) so it never covers the player controls; the next item brings it back.
 - Local files are served from `/media/<file>`. Every text of the pack is set with `textContent`, so HTML in it is
   shown as text.
-- `?demo` cycles fictional samples of every type (`?demo&item=N` pins one); it is what Widgets › Entrevista previews.
+- `?demo` cycles fictional samples of every type (`?demo&item=N` pins one); it is what Widgets › Entrevista › Capa previews.
 
 ## API
 
@@ -206,7 +220,8 @@ action answers with a 4xx warning and changes nothing.
 | Hide the widget | `POST /api/interview-control/hide` | `entrevista_ocultar` | `entrevista-ocultar` |
 
 The same controls are in the dock module **Entrevista** (off by default; enable it in the dock
-editor, group *Interactivos*), in Widgets › Entrevista and in the prompter tab **Entrevista**.
+editor, group *Interactivos*), in the detail header under Widgets › Entrevista, and in the prompter tab
+**Entrevista**.
 
 The presenter state (`GET /api/interview-control`) includes the progress (`index` / `total`), the
 current and next item **with their private notes**. It only reaches the panel, dock and prompter;

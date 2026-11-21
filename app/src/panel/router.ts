@@ -10,6 +10,7 @@ const REDIRECTS: [RegExp, string][] = [
   [/^widget\/tierlist$/, 'tierlist'],
   [/^widget\/giveaway$/, 'sorteo'],
   [/^widget\/teleprompter$/, 'teleprompter'],
+  [/^(widget|widgets)\/interview$/, 'entrevista'],
   [/^widget\/(chat|latest|credits)$/, 'widgets/$1'],
   [/^widget\/goals$/, 'widgets/objetivos'],
   [/^widgets\/goal-(.+)$/, 'widgets/objetivos/$1'],

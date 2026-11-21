@@ -807,6 +807,11 @@ main>.lv-sfoot:not(.lv-savebar){margin:16px -24px -60px}
 /* the open bar never covers the last content */
 main:has(> .lv-savebar.is-open),.lv-slide:has(> .lv-savebar.is-open) .lv-sbody{padding-bottom:calc(var(--savebar-h,56px) + 24px)}
 .lv-shead-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
+/* Interview controls stay compact even when a question or private note is very long. */
+.interview-head-controls{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;max-width:100%}
+.interview-head-controls p{margin:0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.interview-head-controls select{width:auto;max-width:220px;margin:0}
+[data-interview-editor]{display:grid;gap:14px}
 .lv-dirty{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
 .lv-dirty.is-on{color:var(--color-status-warning)}
 .lv-dirty.is-on::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--color-status-warning)}
