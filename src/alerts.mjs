@@ -15,6 +15,7 @@ export const ALERT_TYPES = {
   member:      { platform: 'youtube', icon: 'badge',   label: 'Nuevo miembro' },
   milestone:   { platform: 'youtube', icon: 'badge',   label: 'Hito de miembro' },
   giftmember:  { platform: 'youtube', icon: 'gift',    label: 'Membresías regaladas' },
+  jewels:      { platform: 'youtube', icon: 'gift',    label: 'Regalo de YouTube' },
   // Récord de espectadores a la vez (src/viewers.mjs). `system`: no los manda nadie del chat, así que
   // no cuentan como eventos (métricas, objetivos, últimos, ticker, créditos) ni piden «gracias».
   viewers:     { platform: 'twitch',  icon: 'eye',     label: 'Récord de espectadores', system: true },
@@ -98,6 +99,7 @@ export const DEFAULT_ALERTS = {
   member:      { ...base, title: 'Nuevo miembro',       text: '{user}', sub: 'se une como {level}' },
   milestone:   { ...base, title: 'Miembro',             text: '{user}', sub: '{months} meses · {message}' },
   giftmember:  { ...base, title: 'Membresías regaladas',text: '{user}', sub: 'regala {amount} membresías' },
+  jewels:      { ...base, title: 'Regalo de YouTube',   text: '{user}', sub: '{giftName} ×{count} · {amount} Jewels', ttsTemplate: '{user} regala {giftName} ×{count} por {amount} Jewels' },
   viewers:     { ...base, title: 'Nuevo récord',        text: '{amount} espectadores', sub: 'a la vez en Twitch · antes {previous}' },
   ytviewers:   { ...base, title: 'Nuevo récord',        text: '{amount} espectadores', sub: 'a la vez en YouTube · antes {previous}' },
   ytsubcount:  { ...base, title: 'Suscriptores sin nombre', text: '+{amount} suscriptores', sub: 'nuevos en el canal' },
@@ -129,6 +131,7 @@ export const SAMPLES = {
   member:      { user: 'Javi Dev', level: 'Miembro EGDEV' },
   milestone:   { user: 'Laura Test', months: 6, message: 'medio año construyendo criterio' },
   giftmember:  { user: 'Pablo M.', amount: 3, level: 'Miembro EGDEV' },
+  jewels:      { user: 'Ana', giftName: 'Rosa', giftUrl: 'https://example.test/rosa.png', altText: 'Una rosa', jewelsAmount: 25, comboCount: 3, count: 3, amount: 75 },
   viewers:     { amount: 48, previous: 41, platform: 'twitch' },
   ytviewers:   { amount: 23, previous: 19, platform: 'youtube' },
   ytsubcount:  { amount: 3 },
@@ -341,6 +344,15 @@ export function normalizeYouTube(item = {}) {
     case 'membershipGiftingEvent': {
       const d = s.membershipGiftingDetails || {};
       return { type: 'giftmember', vars: { user, amount: d.giftMembershipsCount, level: d.giftMembershipsLevelName } };
+    }
+    case 'giftEvent': {
+      const d = s.giftDetails;
+      if (!d || typeof d !== 'object' || !Number.isFinite(Number(d.jewelsAmount)) || d.jewelsAmount === '') return null;
+      const count = Math.max(Number(d.comboCount) || 0, 1);
+      // La API describe jewelsAmount como el coste del regalo: suponemos que es por unidad.
+      const amount = Number(d.jewelsAmount) * count;
+      return { type: 'jewels', senderId: s.authorChannelId, vars: { user, giftName: d.giftName, giftUrl: d.giftUrl,
+        altText: d.altText, jewelsAmount: d.jewelsAmount, comboCount: d.comboCount, count, amount } };
     }
     default:
       return null;

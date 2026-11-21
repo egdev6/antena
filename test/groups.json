@@ -134,6 +134,7 @@
     "test/ws-stream-response.test.mjs",
     "test/ws-stream-slow-pending.test.mjs",
     "test/youtube-autoconnect.test.mjs",
+    "test/youtube-jewels.test.mjs",
     "test/youtube-quota-retry.test.mjs",
     "test/youtube-subscriber-alert.test.mjs",
     "test/youtube-subscriber-hardening.test.mjs"

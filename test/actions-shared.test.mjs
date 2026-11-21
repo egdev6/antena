@@ -39,8 +39,8 @@ test('catálogo de acciones único: overlays, atajos, esquema, panel y MCP conse
   assert.match(overlays, /PERMISOS[^\n=]*=\s*OVERLAY_ACTION_LABELS/);
 });
 
-test('MCP conserva exactamente los tipos de alerta publicados antes', () => {
-  const expected = ['follow', 'sub', 'resub', 'giftsub', 'cheer', 'raid', 'redemption', 'superchat', 'supersticker', 'member', 'milestone', 'giftmember', 'viewers', 'ytviewers', 'welcome'];
+test('MCP conserva los tipos publicados y añade explícitamente las alertas Jewels y bienvenida', () => {
+  const expected = ['follow', 'sub', 'resub', 'giftsub', 'cheer', 'raid', 'redemption', 'superchat', 'supersticker', 'member', 'milestone', 'giftmember', 'jewels', 'viewers', 'ytviewers', 'welcome'];
   for (const name of ['ver_alerta', 'editar_alerta', 'restaurar_alerta', 'crear_variacion', 'editar_variacion', 'borrar_variacion', 'ordenar_variaciones', 'probar_alerta', 'simular_evento']) {
     assert.deepEqual(TOOLS.find(t => t.name === name).inputSchema.properties.tipo.enum, expected, name);
   }

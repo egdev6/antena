@@ -10,6 +10,9 @@ const AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/youtube.force-ssl';
 
+// Se añade a un intervalo de sondeo completo para poder observar la siguiente actualización.
+const JEWELS_QUIET_MS = 5000;
+
 export function parseVideoId(input = '') {
   const s = String(input).trim();
   if (/^[\w-]{11}$/.test(s)) return s;
@@ -31,6 +34,9 @@ export class YouTube extends EventEmitter {
     this.status = { state: 'parado', videoId: null, liveChatId: null, title: null, errors: [], polls: 0, account: store.secrets?.youtube?.channel || null };
     this.pending = new Map(); // state → { verifier, redirect }
     this.rawLog = null; // RawEventLog opcional (src/raw-events.mjs)
+    this.jewelsPending = new Map(); // id externo → último evento y temporizador
+    this.jewelsSeen = new Set();     // IDs ya anunciados o presentes en la primera lectura
+    this.jewelsPollsInFlight = 0;
   }
 
   get token() { return this.store.secrets.youtube; }
@@ -144,6 +150,9 @@ export class YouTube extends EventEmitter {
     this.pollClosed = true;
     this.running = false;
     clearTimeout(this.timer);
+    if (this.jewelsPending.size) this.log('[youtube] Regalos pendientes descartados al cerrar antes del fin del combo.');
+    for (const entry of this.jewelsPending.values()) clearTimeout(entry.timer);
+    this.jewelsPending.clear();
     const pending = [...this.pollWork];
     // Defer status emission until the cached promise exists for reentrant listeners.
     this.pollClosePromise = Promise.resolve().then(async () => {
@@ -224,6 +233,30 @@ export class YouTube extends EventEmitter {
 
   poll() { return this.trackPollWork(() => this.pollOnce()); }
 
+  // Cada ID solo llega al motor una vez: sus actualizaciones se agrupan antes del deduplicado del bus.
+  queueJewels(event, wait) {
+    const id = event.externalId;
+    if (this.pollClosed || this.jewelsSeen.has(id)) return;
+    const previous = this.jewelsPending.get(id);
+    if (previous) clearTimeout(previous.timer);
+    const entry = { event, timer: null };
+    const fire = () => {
+      if (this.jewelsPending.get(id) !== entry) return;
+      // No declarar terminado un combo mientras una lectura que puede actualizarlo sigue en vuelo.
+      if (this.jewelsPollsInFlight) {
+        entry.timer = setTimeout(fire, JEWELS_QUIET_MS);
+        entry.timer.unref?.();
+        return;
+      }
+      this.jewelsPending.delete(id);
+      this.jewelsSeen.add(id);
+      this.emit('event', entry.event);
+    };
+    entry.timer = setTimeout(fire, wait + JEWELS_QUIET_MS);
+    entry.timer.unref?.();
+    this.jewelsPending.set(id, entry);
+  }
+
   // Errores definitivos: detienen el sondeo. Cuota y permisos son temporales: se reintentan.
   static FATAL = ['liveChatEnded', 'liveChatNotFound', 'liveChatDisabled'];
 
@@ -248,6 +281,7 @@ export class YouTube extends EventEmitter {
     const chatEpoch = this.chatEpoch?.();
     const videoId = this.status.videoId, liveChatId = this.status.liveChatId;
     let wait = Math.max(5, Number(this.cfg.pollSeconds) || 8) * 1000;
+    this.jewelsPollsInFlight++;
     try {
       const d = await this.api('/liveChat/messages', {
         liveChatId,
@@ -262,12 +296,22 @@ export class YouTube extends EventEmitter {
       // en bruto (handled=false) para poder diagnosticar qué envía YouTube.
       for (const item of d.items || []) {
         let handled = false;
+        const jewelId = item?.snippet?.type === 'giftEvent' && item.id ? 'yt:' + item.id : null;
+        // Si un combo ya estaba en la lectura inicial, tampoco se anuncian sus actualizaciones.
+        if (!this.primed && jewelId && !this.jewelsPending.has(jewelId)) this.jewelsSeen.add(jewelId);
         if (this.primed) {
           const n = normalizeYouTube(item);
-          if (n) this.emit('event', { externalId: 'yt:' + item.id, ...n });
+          if (n?.type === 'jewels') {
+            const owner = item.authorDetails?.isChatOwner || (n.senderId && n.senderId === this.cfg.channelId);
+            if (jewelId && owner) {
+              const pending = this.jewelsPending.get(jewelId);
+              if (pending) clearTimeout(pending.timer);
+              this.jewelsPending.delete(jewelId); this.jewelsSeen.add(jewelId);
+            } else if (jewelId) this.queueJewels({ externalId: jewelId, ...n }, wait);
+            handled = !!jewelId && !owner;
+          } else if (n) { this.emit('event', { externalId: 'yt:' + item.id, ...n }); handled = true; }
           const c = youtubeChatMessage(item);
-          if (c) this.emit('chat', c, { ...chatEpoch, videoId, liveChatId });
-          handled = !!(n || c);
+          if (c) { this.emit('chat', c, { ...chatEpoch, videoId, liveChatId }); handled = true; }
         }
         try { this.rawLog?.record('youtube', item?.snippet?.type, handled, item); } catch {}
       }
@@ -288,7 +332,7 @@ export class YouTube extends EventEmitter {
         this.log('[youtube]', err.message);
         wait = 20_000;
       }
-    }
+    } finally { this.jewelsPollsInFlight--; }
     if (this.running) this.timer = setTimeout(() => this.poll(), wait);
   }
 
