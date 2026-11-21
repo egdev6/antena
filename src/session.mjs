@@ -254,6 +254,7 @@ export class Session extends EventEmitter {
     this.identityStartedAt = process.hrtime.bigint(); // monotónico, independiente del reloj de pared
     this.viewerRestarts = new Set(); // solo memoria: primer sondeo tras cargar un directo abierto
     this.chatAuthors = new WeakMap(); // índices de deduplicación; el array validado es la copia durable
+    this.firstChatAuthors = new WeakMap(); // presencia por sesión, también cuando las métricas automáticas están apagadas
   }
   static fresh(title = '') {
     return { id: `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`, title, startedAt: new Date().toISOString(), events: [], notes: [], goalOffsets: {} };
@@ -644,6 +645,25 @@ export class Session extends EventEmitter {
     const run = this.transitionChain.then(async () => {
       const captured = typeof target === 'string' ? { id: target } : await target;
       if (this._ownsChat(platform, observation, captured, enabled) && this._markChatListener(platform)) this.save();
+    });
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
+  // La presencia usa la misma cola y barrera de identidad que los recuentos: no cruza un corte.
+  // El índice temporal se siembra de chatStats para no repetir tras reiniciar una sesión automática.
+  firstChat(platform, observation, target, enabled = () => true) {
+    const run = this.transitionChain.then(async () => {
+      const captured = typeof target === 'string' ? { id: target } : await target;
+      if (!enabled() || this.data.endedAt || captured?.id !== this.data.id || !CHAT_PLATFORMS.includes(platform)
+        || typeof observation.authorId !== 'string' || !observation.authorId) return null;
+      if (this.data.meldAutoSession && !this._ownsChat(platform, observation, captured, enabled)) return null;
+      let byPlatform = this.firstChatAuthors.get(this.data);
+      if (!byPlatform) { byPlatform = new Map(); this.firstChatAuthors.set(this.data, byPlatform); }
+      let ids = byPlatform.get(platform);
+      if (!ids) { ids = new Set(this.data.chatStats?.[platform]?.authorIds || []); byPlatform.set(platform, ids); }
+      if (ids.has(observation.authorId)) return null;
+      ids.add(observation.authorId);
+      return { id: this.data.id, startedAt: this.data.startedAt };
     });
     this.transitionChain = run.then(() => {}, () => {});
     return run;

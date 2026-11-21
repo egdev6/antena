@@ -127,6 +127,14 @@ test('S5 YouTube types without an alert design stay ignored (polls, chat, system
   }
 });
 
+test('S1/S2/S7 welcome chat mapping is documented and renders both default variants', async () => {
+  const doc = await readFile(new URL('../docs/eventos.md', import.meta.url), 'utf8');
+  assert.match(doc, /\| `Twitch chat` \/ `YouTube textMessageEvent` \| `welcome` \|/);
+  assert.equal(ALERT_TYPES.welcome?.system, true);
+  assert.equal(buildAlert('welcome', { user: 'Ana', returning: false }, { alerts: {} }).text, 'Primera vez de Ana hoy');
+  assert.equal(buildAlert('welcome', { user: 'Ana', returning: true }, { alerts: {} }).text, '¡Ana, qué bueno verte de nuevo!');
+});
+
 // ---------- alert fields and deduplication ----------
 
 test('S2 every mapped type is a known alert of its platform and renders with its sample vars', () => {

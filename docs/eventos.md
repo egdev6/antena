@@ -48,6 +48,24 @@ Super Chat metric and have no separate Jewels aggregate.
 **There is no subscription event in the YouTube live chat.** New channel subscribers are
 detected separately by polling, not by a `newSubscriberEvent` chat message.
 
+## Welcome on first chat
+
+| Chat source | Alert | Fields used | Notes |
+| --- | --- | --- | --- |
+| `Twitch chat` / `YouTube textMessageEvent` | `welcome` | platform, private author ID, display name | Once per session and platform/author; a prior archived chat gives the returning variation. |
+
+`welcome` is on by default for a small community and can be disabled in **Alertas › Bienvenida**.
+It uses a small, silent card; its built-in «Vuelve» variation and all other alert fields, voice,
+actions and variations are editable. A `returning` condition selects first-time or returning
+chatters. The first message counts even when it is a command or is hidden in a chat widget.
+Owner and blocked-user messages never alert. Antena has no bot registry; add known bots to
+**Filtros › Usuarios bloqueados**. Missing author IDs cannot be identified and do not alert.
+The history uses archived `chatStats` (available for automatic sessions), so earlier chat before
+those records existed is unknown. Manual sessions track presence in memory; a restart can repeat
+one when no chat statistics exist. A burst is capped at five queued or paused alerts: later first
+messages still count as presence but are not replayed. The system alert appears in history and
+timeline but does not count as a support event or request thanks.
+
 ## Public YouTube subscriber alerts (polling)
 
 While YouTube chat is listening, `subscriptions.list` reads public subscribers from the

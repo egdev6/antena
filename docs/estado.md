@@ -28,6 +28,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en el programa de emisión.
   Los regalos Jewels se agrupan por combo; cuentan como eventos, no como euros de Super Chat.
 - **Suscriptores de YouTube (#134):** alerta `ytsub` para suscripciones públicas detectadas durante la escucha, con intervalo configurable y parada por cuota.
+- **Bienvenida (#289):** alerta pequeña y editable en el primer mensaje por persona y plataforma, con variación para quien ya habló en directos archivados. Activada de serie, sin mensajes propios ni usuarios bloqueados; el máximo de cinco alertas pendientes evita inundar la cola.
 - **Chat y moderación local:** Twitch y YouTube unificados, envío a una o a las dos
   plataformas con resultado por plataforma, filtro local y reflejo de la moderación de Twitch.
 - **Comandos y timers multicanal:** comandos con permisos y esperas, y mensajes programados

@@ -123,6 +123,7 @@
     "test/twitch-eventsub-retry.test.mjs",
     "test/viewers-api.test.mjs",
     "test/viewers.test.mjs",
+    "test/welcome-alert.test.mjs",
     "test/ws-stream-client-close-backlog.test.mjs",
     "test/ws-stream-client-close.test.mjs",
     "test/ws-stream-l9.test.mjs",

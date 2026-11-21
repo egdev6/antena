@@ -1,5 +1,6 @@
 // Automatic session transitions and their shutdown drains, wired in listener order by createApp.
 import { httpError } from './http-util.mjs';
+import { welcomeChat } from './welcome.mjs';
 
 export function setupAutoSession({ store, program, session, youtube, viewers, chat, twitch, engine, log }) {
   // Capturar antes de invocar startNew: sus listeners síncronos pueden iniciar el cierre.
@@ -133,11 +134,19 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
   chat.on('status', () => { if (ownTwitchListening()) recordListener('twitch', {}, chatTarget()); });
   youtube.on('chatListening', observation => recordListener('youtube', observation, observation.target));
   engine.on('chatMetric', (m, observation) => {
-    if (chatMetricsClosed || !store.config.program.autoSession || !autoLive || observation.source !== m.platform || !observation.target || m.owner) return;
+    if (chatMetricsClosed || observation.source !== m.platform || !observation.target || m.owner) return;
     if (m.platform === 'twitch' && (!twitch.userId || m.roomId !== twitch.userId || m.authorId === twitch.userId)) return;
+    if (typeof m.authorId === 'string' && m.authorId) {
+      const enabled = () => !chatMetricsClosed && (!store.config.program.autoSession || !session.data.meldAutoSession || autoLive)
+        && (m.platform !== 'youtube' || (observation.videoId === youtube.status.videoId && observation.liveChatId === youtube.status.liveChatId));
+      trackChatMetrics(() => welcomeChat({ session, engine, msg: m, observation, enabled, log }));
+    }
+    if (!store.config.program.autoSession || !autoLive) return;
     trackChatMetrics(() => session.recordChat(m.platform, { at: observation.at, authorId: m.authorId,
       videoId: observation.videoId, liveChatId: observation.liveChatId }, observation.target, () => !!store.config.program.autoSession));
   });
+  // Waits for the chat work already started (metrics, welcome lookups) without closing intake.
+  const settleChatMetrics = () => Promise.allSettled([...chatMetricsWork]).then(() => {});
   const drainChatMetrics = () => {
     if (chatMetricsDrain) return chatMetricsDrain;
     chatMetricsClosed = true;
@@ -212,5 +221,5 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     }
   });
 
-  return { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, endSession };
+  return { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics, endSession };
 }

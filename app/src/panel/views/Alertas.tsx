@@ -28,6 +28,7 @@ const isVid = (f?: string) => /\.(webm|mp4|mov|m4v)$/i.test(f || '');
 const GROUPS: [string, string, string][] = [
   ['twitch', 'Twitch', 'Seguidores, subs, bits, raids, recompensas y récord'],
   ['youtube', 'YouTube', 'Suscriptores, Super Chats, stickers, miembros, regalos y récord'],
+  ['egdev', 'Ambas plataformas', 'Bienvenida al chat'],
 ];
 
 /** Huella corta de lo que cambia la miniatura: si cambia, el marco se recarga con lo guardado. */
@@ -108,7 +109,7 @@ export function Alertas({ parts }: { parts: string[] }) {
       ...(x.a.ttsEnabled ? [{ t: 'Voz', on: true }] : []),
       ...((x.a.actions || []).length ? [{ t: 'Acciones', on: true }] : []),
       ...(x.vars.length ? [{ t: x.vars.length === 1 ? '1 variación' : `${x.vars.length} variaciones`, on: true }] : []),
-      ...(x.meta.system ? [{ t: x.type === 'ytsubcount' ? 'Sistema' : 'Récord' }] : []),
+      ...(x.meta.system ? [{ t: ['ytsubcount', 'welcome'].includes(x.type) ? 'Sistema' : 'Récord' }] : []),
     ];
     // Server-confirmed alert/CSS/theme, never the optimistic editor draft. Track
     // only this saved media dependency so unrelated uploads do not reload 14 frames.
@@ -118,7 +119,7 @@ export function Alertas({ parts }: { parts: string[] }) {
     return <Card key={x.type} href={href} label={`Abrir ${x.meta.label}`} open={open === x.type} off={!on} warn={x.issues.length > 0}
       onEnter={() => setHover(x.type)} onLeave={() => setHover(h => (h === x.type ? null : h))}
       thumb={<AlertThumb type={x.type} label={x.meta.label} issue={x.issues[0]} version={version} video={layout !== 'card' && isVid(x.a.media)} mixed={layout === 'mixed'} playing={hover === x.type} origin={origin} />}
-      title={x.meta.label} aside={<span className="lv-mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><PfIcon platform={x.meta.platform} />{x.meta.platform === 'youtube' ? 'YouTube' : 'Twitch'}</span>}
+      title={x.meta.label} aside={<span className="lv-mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{x.meta.platform !== 'egdev' && <PfIcon platform={x.meta.platform} />}{x.meta.platform === 'youtube' ? 'YouTube' : x.meta.platform === 'twitch' ? 'Twitch' : 'Ambas'}</span>}
       foot={<><span className="lv-cmeta">{DESIGN[layout]}</span><span className="sp" /><CardSwitch checked={on} onChange={v => toggle(x.type, v)} label={`Activar ${x.meta.label}`} /></>}>
       {x.issues.length ? <Dot tone="warn">{x.issues.length === 1 ? 'Falta un archivo' : `Faltan ${x.issues.length} archivos`}</Dot> : <Dot tone={on ? 'ok' : 'off'}>{on ? 'Activa' : 'Apagada'}</Dot>}
       {tags.length ? <Tags items={tags} /> : null}
