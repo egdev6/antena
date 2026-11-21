@@ -47,7 +47,8 @@ test('dock, panel and prompter drive the interview; widget follows; notes only i
     const c = chrome.cdp;
     const dom = expr => evaluateChrome(c, expr, { timeoutMs: 12000 });
     await waitDom(c, `!!document.querySelector('[aria-label="Entrevista"]')`, { timeoutMs: 20000 });
-    assert.match(await dom(`document.querySelector('.d-interview').textContent`), /Sin entrevista activa/);
+    // the tab can exist before the module body renders: wait for the body itself
+    await waitDom(c, `/Sin entrevista activa/.test(document.querySelector('.d-interview')?.textContent || '')`, { timeoutMs: 20000 });
     assert.equal(await dom(`document.querySelectorAll('.d-interview [data-interview-act]').length`), 0);
 
     assert.equal((await call('POST', '/api/interviews/import', PACK)).status, 200);
