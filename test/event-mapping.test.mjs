@@ -2,6 +2,7 @@
 // the official EventSub reference and YouTube liveChatMessages docs. Synthetic names only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { normalizeTwitch, normalizeYouTube, buildAlert, ALERT_TYPES } from '../src/alerts.mjs';
 import { Twitch } from '../src/twitch.mjs';
 import { Bus } from '../src/bus.mjs';
@@ -98,8 +99,30 @@ test('S2 YouTube membershipGiftingEvent → giftmember; each giftMembershipRecei
   assert.equal(yt('giftMembershipReceivedEvent', { giftMembershipReceivedDetails: { memberLevelName: 'Pro', gifterChannelId: 'UC1', associatedMembershipGiftingMessageId: 'm0' } }), null);
 });
 
-test('S1/S5 YouTube types without an alert design stay ignored (giftEvent, polls, chat, system)', () => {
-  for (const type of ['giftEvent', 'pollDetails', 'textMessageEvent', 'tombstone', 'userBannedEvent', 'chatEndedEvent', 'sponsorOnlyModeStartedEvent', 'messageDeletedEvent']) {
+test('S1/S5 YouTube giftEvent maps documented single and combo gifts, including the sender', () => {
+  for (const [comboCount, count, amount] of [[0, 1, 25], [3, 3, 75]]) {
+    const giftDetails = { jewelsAmount: 25, giftName: 'Rosa', giftUrl: 'https://example.test/rosa.png',
+      giftDuration: { seconds: '3', nanos: 0 }, hasVisualEffect: true, comboCount, altText: 'Una rosa', language: 'es' };
+    assert.deepEqual(yt('giftEvent', { authorChannelId: 'UC-sender', giftDetails }), {
+      type: 'jewels', senderId: 'UC-sender',
+      vars: { user: 'Ana', giftName: 'Rosa', giftUrl: 'https://example.test/rosa.png', altText: 'Una rosa', jewelsAmount: 25, comboCount, count, amount },
+    });
+  }
+  assert.equal(yt('giftEvent'), null, 'missing giftDetails is not a gift');
+});
+
+test('S5 a giftEvent without a numeric jewelsAmount is not a gift (no NaN alert)', () => {
+  assert.equal(yt('giftEvent', { giftDetails: { giftName: 'Rosa', comboCount: 2 } }), null);
+  assert.equal(yt('giftEvent', { giftDetails: { jewelsAmount: 'x', giftName: 'Rosa' } }), null);
+});
+
+test('S5/S7 the YouTube giftEvent documentation row is pinned', async () => {
+  const docs = await readFile(new URL('../docs/eventos.md', import.meta.url), 'utf8');
+  assert.match(docs, /\| `giftEvent` \| `jewels` \|[^\n]*giftDetails[^\n]*\|/);
+});
+
+test('S5 YouTube types without an alert design stay ignored (polls, chat, system)', () => {
+  for (const type of ['pollDetails', 'textMessageEvent', 'tombstone', 'userBannedEvent', 'chatEndedEvent', 'sponsorOnlyModeStartedEvent', 'messageDeletedEvent']) {
     assert.equal(yt(type), null, type);
   }
 });
@@ -108,7 +131,7 @@ test('S1/S5 YouTube types without an alert design stay ignored (giftEvent, polls
 
 test('S2 every mapped type is a known alert of its platform and renders with its sample vars', () => {
   const mapped = { follow: 'twitch', sub: 'twitch', resub: 'twitch', giftsub: 'twitch', cheer: 'twitch', raid: 'twitch', redemption: 'twitch',
-    superchat: 'youtube', supersticker: 'youtube', member: 'youtube', milestone: 'youtube', giftmember: 'youtube' };
+    superchat: 'youtube', supersticker: 'youtube', member: 'youtube', milestone: 'youtube', giftmember: 'youtube', jewels: 'youtube' };
   for (const [type, platform] of Object.entries(mapped)) {
     assert.equal(ALERT_TYPES[type]?.platform, platform, type);
     const a = buildAlert(type, { user: 'Ana', amount: 5, months: 3, reward: 'R', level: 'Pro', message: 'm', sticker: 's' }, { alerts: {} });
