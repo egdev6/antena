@@ -293,6 +293,7 @@
     "test/release-0.15.0-claims.test.mjs",
     "test/release-0.16.0-claims.test.mjs",
     "test/release-0.17.0-claims.test.mjs",
+    "test/release-0.18.0-claims.test.mjs",
     "test/release-notes-claims.test.mjs",
     "test/release-security.test.mjs",
     "test/release-workflow.test.mjs",

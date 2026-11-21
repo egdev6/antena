@@ -16,13 +16,6 @@ const instalacion = section('Instalación y actualización');
 const agradecimientos = section('Agradecimientos');
 const line = (text, needle) => text.split('\n').find(l => l.includes(needle)) ?? '';
 
-test('S1: versions are synchronized to 0.17.0', () => {
-  assert.equal(JSON.parse(read('../package.json')).version, '0.17.0');
-  assert.equal(JSON.parse(read('../src-tauri/tauri.conf.json')).version, '0.17.0');
-  assert.match(read('../src-tauri/Cargo.toml'), /^version = "0\.17\.0"$/m);
-  assert.match(read('../src-tauri/Cargo.lock'), /name = "antena"\nversion = "0\.17\.0"/);
-});
-
 test('S1: the headline names the dock, the subscriber alert and security', () => {
   assert.match(notes, /^## antena 0\.17\.0 — Dock a tu medida, «\+N suscriptores» y más seguridad$/m);
 });
