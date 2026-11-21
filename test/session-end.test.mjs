@@ -97,14 +97,16 @@ test('S5: origen ajeno y emisión confirmada se rechazan sin cambiar sesión ni 
   f.app.twitch.userId = 'streamer-1';
   f.app.meld.setStatus({ state: 'conectado', streaming: true }); await f.app.session.transitionChain;
   const chat = user => f.app.chat.emit('message', { id: `tw:${user}`, platform: 'twitch', user, text: 'hola', authorId: user, roomId: 'streamer-1' });
-  chat('antes'); await f.app.session.transitionChain;
+  // chat work (metrics, welcome lookup) is asynchronous: settle it before taking snapshots
+  const settle = async () => { await f.app.session.transitionChain; await f.app.settleChatMetrics(); };
+  chat('antes'); await settle();
   const before = await f.get('/api/session/summary?format=json');
   const origin = await f.request('POST', '/api/session/end', 'https://foreign.example');
   assert.deepEqual(origin, { status: 403, body: { error: 'Origen no permitido para acciones que cambian el directo.' } });
   const rejected = await f.request('POST', '/api/session/end');
   assert.equal(rejected.status, 409); assert.match(rejected.body.error, /programa de emisión.*emitiendo/i);
   assert.deepEqual(await f.get('/api/session/summary?format=json'), before);
-  chat('después'); await f.app.session.transitionChain;
+  chat('después'); await settle();
   const after = await f.get('/api/session/summary?format=json');
   assert.equal(after.endedAt, undefined); assert.equal(after.chatMetrics.twitch.messages, 2);
 });
@@ -113,7 +115,9 @@ test('S5/S6: cierre desconectado detiene métricas y no reabre con status parado
   const f = await fixture(t); f.app.twitch.userId = 'streamer-1';
   f.app.meld.setStatus({ state: 'conectado', streaming: true }); await f.app.session.transitionChain;
   const chat = user => f.app.chat.emit('message', { id: `tw:${user}`, platform: 'twitch', user, text: 'hola', authorId: user, roomId: 'streamer-1' });
-  chat('antes'); await f.app.session.transitionChain;
+  // chat work (metrics, welcome lookup) is asynchronous: settle it before taking snapshots
+  const settle = async () => { await f.app.session.transitionChain; await f.app.settleChatMetrics(); };
+  chat('antes'); await settle();
   const started = await f.get('/api/session');
   f.app.meld.setStatus({ state: 'reintentando' });
   const ended = await f.request('POST', '/api/session/end');
@@ -122,7 +126,7 @@ test('S5/S6: cierre desconectado detiene métricas y no reabre con status parado
   f.app.meld.setStatus({ state: 'conectado', streaming: false });
   chat('tarde');
   f.app.viewers.emit('seriesObservation', 'twitch', { at: at(Date.now()), value: 99, streamId: 'stream-1', intervalSec: 60 }, f.app.viewers.identityEpoch('twitch'));
-  await f.app.session.transitionChain;
+  await settle();
   assert.deepEqual(await f.get('/api/session/summary?format=json'), before);
   f.app.meld.setStatus({ streaming: true }); await f.app.session.transitionChain;
   const next = await f.get('/api/session');
