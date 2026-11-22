@@ -108,6 +108,10 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
       delete raw.discord.webhookUrlSet;
     }
     // Valida primero lo que llegó: una migración no puede ocultar una sección o alias inválidos.
+    if (raw?.scheduleCalendar && typeof raw.scheduleCalendar === 'object' && Object.hasOwn(raw.scheduleCalendar, 'tokenSet')) {
+      if (raw.scheduleCalendar.tokenSet !== !!store.secrets.scheduleCalendar?.token) throw httpError(400, 'scheduleCalendar.tokenSet: es de solo lectura');
+      delete raw.scheduleCalendar.tokenSet;
+    }
     const [rawError] = validatePatch(raw); if (rawError) throw httpError(400, rawError.message);
     const input = migrateConfig(raw).config;
     const [error] = validatePatch(input); if (error) throw httpError(400, error.message);
@@ -121,6 +125,8 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
       if (next.discord?.[key] && !validDiscordEmoji(next.discord[key])) throw httpError(400, `discord.${key}: se esperaba un emoji de Discord como <:nombre:id>`);
     if (next.discord?.enabled && !store.secrets.discord?.webhookUrl)
       throw httpError(400, 'discord.enabled: guarda primero un webhook de Discord');
+    if (next.scheduleCalendar?.enabled && (!store.secrets.scheduleCalendar?.token || store.dirty.secrets || store.pending.secrets > 0))
+      throw httpError(400, 'scheduleCalendar.enabled: guarda primero una credencial');
     next.port = before.port; preserveLocal(before, next);
     const chat = deepMerge(structuredClone(DEFAULT_CONFIG.widgets.chat), before.widgets?.chat || {});
     const [variantError] = validateImportedChatVariants(before.widgets?.chatVariants, next.widgets?.chatVariants, chat);

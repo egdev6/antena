@@ -129,6 +129,10 @@ Panel: http://127.0.0.1:4500/ · prompter: `/prompter` · dock: `/dock`. Without
 
 ## Usage guide
 
+### Scheduled streams
+
+**Conexiones › Programación** can use a local external stream calendar at stream start (off by default). Save a read-only credential, test it, then enable the switch. A matching event supplies the YouTube video without search and can set Twitch title/category once; on failure antena falls back to normal discovery. Credentials remain local and are excluded from exports. The loopback-only API contract and details are in [docs/scheduled-stream-calendar.md](docs/scheduled-stream-calendar.md).
+
 ### Configuration backup
 
 In **Settings › General › Copia**, export a ZIP containing the versioned configuration and media (sounds, videos, images and fonts), or choose a ZIP or an older JSON export to preview changes before applying. The preview lists added and replaced media; local files absent from the archive are never deleted. The panel reports files skipped during export. Tokens, passwords, access keys and other credentials are excluded; current local connections are preserved on import, so reconnect accounts when moving to another PC.

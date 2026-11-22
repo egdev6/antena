@@ -22,6 +22,7 @@ import { INTERVIEWS_MAX_BYTES, INTERVIEWS_MAX_ITEMS } from './interviews.mjs';
 import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES } from './custom-overlays.mjs';
 import { THEME_RULES, THEME_RANGES, themeFieldError, themeIconError, keepValidIcons } from './theme.mjs';
 import { DOCK_LAYOUTS } from './dock-layout.mjs';
+import { validScheduleCalendarUrl, SCHEDULE_CALENDAR_URL_ERROR } from './schedule-calendar.mjs';
 // #130: animaciones de los mensajes del chat en pantalla, las mismas para entrar y para salir;
 // fuente única compartida con el widget y el panel.
 import { CHAT_ANIMS } from '../public/widgets/chat-anims.js';
@@ -181,6 +182,7 @@ export const CONFIG_SCHEMA = {
   paused: bool,
   twitch: { clientId: str },
   discord: { enabled: { ...bool, rejectNull: true }, webhookUrl: str, webhookUrlSet: bool, emojiTwitch: str, emojiYoutube: str },
+  scheduleCalendar: { enabled: { ...bool, rejectNull: true }, url: { kind: 'scheduleurl' }, token: str, tokenSet: bool },
   youtube: {
     apiKey: str, channelId: str, video: str,
     pollSeconds: num({ int: true, min: 5, max: 60 }),   // la UI ya acota 5–60
@@ -302,6 +304,10 @@ export const CONFIG_SCHEMA = {
 const TIPO = { num: 'un número', str: 'un texto', bool: 'true o false', enum: 'uno de los valores permitidos', arrStr: 'una lista de textos' };
 
 function checkNode(node, value, path, errors) {
+  if (node?.kind === 'scheduleurl' && value !== undefined) {
+    if (!validScheduleCalendarUrl(value)) errors.push({ path, message: SCHEDULE_CALENDAR_URL_ERROR });
+    return;
+  }
   if (node === PROGRAM_SCHEMA) {
     if (value !== undefined) checkObject(node, value, path, errors);
     return;
@@ -503,7 +509,7 @@ export function validateImportedChatVariants(previous, next, defaultChat) {
 /** Tramos de ruta que llegarían al prototipo de los objetos: nunca se leen ni se escriben. */
 export const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 /** Hojas con un valor simple: por debajo no hay nada que guardar (lo convertiría en objeto). */
-const HOJAS = new Set(['num', 'str', 'bool', 'enum', 'arrStr', 'theme', 'wsurl']);
+const HOJAS = new Set(['num', 'str', 'bool', 'enum', 'arrStr', 'theme', 'wsurl', 'scheduleurl']);
 
 /** Valida el valor de una ruta con puntos («overlay.queueMax», «widgets.goals.0.target»).
  *  Las rutas sin esquema (claves nuevas) se aceptan, pero nunca las que tocan el prototipo,

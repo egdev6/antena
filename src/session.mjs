@@ -156,7 +156,7 @@ export function chatMetrics(data, now = Date.now(), includeSeries = true) {
 
 /** La raíz persistida conserva identidades privadas; las respuestas solo llevan agregados. */
 export function publicSession(data) {
-  const { chatStats, chatListeners, _pushExportOwed, ...out } = data;
+  const { chatStats, chatListeners, _pushExportOwed, _scheduleCalendarChecked, _scheduleCalendarVideoId, ...out } = data;
   return chatStats === undefined ? out : { ...out, chatMetrics: chatMetrics(data) };
 }
 
@@ -516,6 +516,30 @@ export class Session extends EventEmitter {
   // La foto de reconexión se toma en la cola, después de identidades ya aceptadas.
   captureIdentity() {
     const run = this.transitionChain.then(() => this._identityOf(this.data));
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
+  // The durable claim shares the identity queue, so a restart cannot repeat a live-start PATCH.
+  claimScheduleCalendar(expectedId) {
+    const run = this.transitionChain.then(async () => {
+      if (this.data.id !== expectedId || this.data.endedAt) return null;
+      if (this.data._scheduleCalendarChecked) return { claimed: false, videoId: this.data._scheduleCalendarVideoId || null };
+      this.data._scheduleCalendarChecked = true;
+      await this.flush();
+      return { claimed: true, startedAt: this.data.startedAt };
+    });
+    this.transitionChain = run.then(() => {}, () => {});
+    return run;
+  }
+  recordScheduledEvent(expectedId, event) {
+    const run = this.transitionChain.then(async () => {
+      if (this.data.id !== expectedId || this.data.endedAt) return false;
+      this.data.scheduledEvent = { id: event.eventId, title: event.title, scheduledStart: event.scheduledStart };
+      this.data._scheduleCalendarVideoId = event.youtube?.broadcastId || null;
+      this.emit('change', { scheduledEvent: true });
+      await this.flush();
+      return true;
+    });
     this.transitionChain = run.then(() => {}, () => {});
     return run;
   }

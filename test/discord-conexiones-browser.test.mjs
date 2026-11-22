@@ -81,7 +81,7 @@ test('Conexiones groups Discord under a «Webhooks» tab, apart from the account
   const f = await fixture(t, []); if (!f) return;
   const tabs = `JSON.stringify([...document.querySelectorAll('main [role="tab"]')].map(b => b.textContent.trim()))`;
   await f.wait(`!!document.querySelector('#discord')`);
-  assert.deepEqual(JSON.parse(await f.dom(tabs)), ['Cuentas', 'Webhooks']);
+  assert.deepEqual(JSON.parse(await f.dom(tabs)), ['Cuentas', 'Webhooks', 'Programación']);
   assert.equal(await f.dom(`!!document.querySelector('#programa-emision')`), false, 'accounts are not on the Webhooks tab');
   await clickWhen(f.page.cdp, `[...document.querySelectorAll('main [role="tab"]')].find(b => b.textContent.trim() === 'Cuentas')`);
   await f.wait(`!!document.querySelector('#programa-emision') && !document.querySelector('#discord')`);

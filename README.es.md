@@ -129,6 +129,10 @@ Panel: http://127.0.0.1:4500/ · prompter: `/prompter` · dock: `/dock`. Sin `ap
 
 ## Guía de uso
 
+### Directos programados
+
+En **Conexiones › Programación** puedes usar un calendario externo local al empezar el directo (desactivado por defecto). Guarda una credencial de lectura, prueba la conexión y activa el interruptor. Si hay un evento, usa su vídeo de YouTube sin búsqueda y puede aplicar título y categoría de Twitch una vez; si falla, vuelve al descubrimiento habitual. La credencial queda en local y no se exporta. Contrato local y detalles en [docs/scheduled-stream-calendar.md](docs/scheduled-stream-calendar.md).
+
 ### Copia de la configuración
 
 En **Ajustes › General › Copia** puedes exportar un ZIP con la configuración versionada y los medios (sonidos, vídeos, imágenes y fuentes), o elegir un ZIP o un JSON anterior para revisar los cambios antes de aplicarlos. La vista previa lista los medios añadidos y reemplazados; los archivos locales que no estén en la copia nunca se borran. El panel avisa de los archivos omitidos al exportar. Se excluyen tokens, contraseñas, claves de acceso y otras credenciales; al importar se conservan las conexiones locales, así que en otro PC hay que volver a conectar las cuentas.

@@ -2,7 +2,8 @@
 import { httpError } from './http-util.mjs';
 import { welcomeChat } from './welcome.mjs';
 
-export function setupAutoSession({ store, program, session, youtube, viewers, chat, twitch, engine, log }) {
+export function setupAutoSession({ store, program, session, youtube, viewers, chat, twitch, engine, log,
+  onRollover: onScheduleRollover = () => {}, onBeginDrain = () => {} }) {
   // Capturar antes de invocar startNew: sus listeners síncronos pueden iniciar el cierre.
   const autoSessionWork = new Set();
   let autoSessionClosed = false;
@@ -13,6 +14,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     if (autoSessionClosed) return;
     autoSessionClosed = true;
     autoSessionCaptured = [...autoSessionWork];
+    onBeginDrain();
   };
   const drainAutoSession = () => {
     if (autoSessionDrain) return autoSessionDrain;
@@ -64,7 +66,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
       if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; autoLive = false; }
     });
     if (listening) trackAutoSession(() => work.then(started => {
-      if (!started || session.data.id !== started.id || !store.config.program.autoSession || !autoLive) return;
+      if (!started || session.data.id !== started.id || !store.config.program.autoSession || !autoLive || youtube.scheduleIdentityPending?.()) return;
       return youtube.confirmListeningIdentity().then(() => {
         if (youtube.status.polls > 0 && youtube.status.videoId === videoId && youtube.status.liveChatId === liveChatId)
           recordListener('youtube', { videoId, liveChatId }, started.id);
@@ -90,6 +92,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
       work.then(() => { if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; } }, () => {
         if (pendingAutoStart === work) { pendingAutoStart = null; pendingAutoStartFrom = null; autoLive = false; }
       });
+      onScheduleRollover();
     };
     work = trackAutoSession(() => session.recordPlatform(platform, data, after, {
       reconnect, expectedId, requestedAt: observation.requestedAt, discovery, onRollover, enabled: () => !!store.config.program.autoSession,
@@ -97,7 +100,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     return work;
   };
   // Cada resultado lleva la sesión capturada antes de iniciar su petición.
-  youtube.on('status', (st, observation, discovery) => { if (st.state === 'escuchando') recordIdentity('youtube', st, observation, discovery); });
+  youtube.on('status', (st, observation, discovery) => { if (st.state === 'escuchando' && !youtube.scheduleIdentityPending?.()) recordIdentity('youtube', st, observation, discovery); });
   viewers.on('streamIdentity', (identity, observation) => {
     const admission = recordIdentity('twitch', identity, observation);
     if (observation) observation.viewerAdmission = admission;
@@ -221,5 +224,7 @@ export function setupAutoSession({ store, program, session, youtube, viewers, ch
     }
   });
 
-  return { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics, endSession };
+  // Scheduled lookups share the existing ownership set and cached drain promise.
+  const trackScheduleStart = operation => autoSessionClosed ? undefined : trackAutoSession(operation);
+  return { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics, endSession, trackScheduleStart };
 }

@@ -198,19 +198,19 @@ export class Twitch extends EventEmitter {
     return res.json();
   }
 
-  helix(method, pathname, body) {
-    try { return this._authTask(() => this._helix(method, pathname, body)); }
+  helix(method, pathname, body, options) {
+    try { return this._authTask(() => this._helix(method, pathname, body, options)); }
     catch (err) { return Promise.reject(err); }
   }
 
-  async _helix(method, pathname, body) {
+  async _helix(method, pathname, body, { retryUnauthorized = true } = {}) {
     const doit = () => fetch(HELIX + pathname, {
       method,
       headers: { 'Client-Id': this.clientId, Authorization: `Bearer ${this.token.access}`, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     });
     let res = await doit();
-    if (res.status === 401) { await this.refresh(); res = await doit(); }
+    if (res.status === 401 && retryUnauthorized) { await this.refresh(); res = await doit(); }
     const data = await res.json().catch(() => ({}));
     return { ok: res.ok, status: res.status, data };
   }

@@ -47,7 +47,10 @@ function validDocument(doc) {
   if (!fields(doc, ['schema', 'version', 'generatedAt', 'session', 'metrics'])
     || doc.schema !== 'antena.session-metrics' || doc.version !== 1 || !iso(doc.generatedAt)) return false;
   const session = doc.session;
-  if (!fields(session, ['id', 'startedAt', 'endedAt', 'platforms']) || !safeId(session.id)
+  const sessionFields = ['id', 'startedAt', 'endedAt', 'platforms'];
+  if (Object.hasOwn(session || {}, 'scheduledEventId')) sessionFields.push('scheduledEventId');
+  if (!fields(session, sessionFields) || !safeId(session.id)
+    || (Object.hasOwn(session, 'scheduledEventId') && (typeof session.scheduledEventId !== 'string' || !session.scheduledEventId))
     || !iso(session.startedAt) || !iso(session.endedAt) || session.endedAt < session.startedAt
     || !Array.isArray(session.platforms) || session.platforms.length !== 2
     || !Array.isArray(doc.metrics) || doc.metrics.length !== 10) return false;

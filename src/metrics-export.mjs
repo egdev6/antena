@@ -39,5 +39,6 @@ export function exportSession(data, now = Date.now()) {
     add('chat_messages', listening ? chat.messages : null, 'count', chatCoverage, p.chat);
     add('chat_messages_per_minute', listening ? chat.messagesPerMinute : null, 'per_minute', chatCoverage, p.chat);
   }
-  return { session: { id: data.id, startedAt, endedAt, platforms }, metrics };
+  return { session: { id: data.id, startedAt, endedAt, platforms,
+    ...(data.scheduledEvent?.id != null ? { scheduledEventId: data.scheduledEvent.id } : {}) }, metrics };
 }
