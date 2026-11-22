@@ -20,6 +20,13 @@ const delayResult = (work, ms = 2000) => {
   ]).finally(() => clearTimeout(timer));
 };
 
+// «2 h 10 min» or «45 min»; never negative.
+function duration(from, to) {
+  const minutes = Number.isFinite(from) && Number.isFinite(to) ? Math.max(0, Math.round((to - from) / 60000)) : 0;
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  return h ? `${h} h ${m} min` : `${m} min`;
+}
+
 export function createDiscord({ store, dir, twitch, youtube, fetch: send = globalThis.fetch, retryDelayMs = 1000, timeoutMs = 5000, onChange = () => {} }) {
   const file = path.join(dir, 'discord-announcements.json');
   const entries = new Map(), metadata = new Map(), timers = new Map(), controllers = new Set();
@@ -137,17 +144,26 @@ export function createDiscord({ store, dir, twitch, youtube, fetch: send = globa
       }
     }
     const links = [];
-    if (entry.login && !entry.inactive?.twitch) links.push(`[Twitch](https://twitch.tv/${entry.login})`);
-    if (entry.videoId && !entry.inactive?.youtube) links.push(`[YouTube](https://youtu.be/${entry.videoId})`);
+    const twitchUrl = entry.login && !entry.inactive?.twitch ? `https://twitch.tv/${entry.login}` : null;
+    const youtubeUrl = entry.videoId && !entry.inactive?.youtube ? `https://youtu.be/${entry.videoId}` : null;
+    if (twitchUrl) links.push(`[Twitch](${twitchUrl})`);
+    if (youtubeUrl) links.push(`[YouTube](${youtubeUrl})`);
+    const ended = !!data.endedAt;
+    const started = Date.parse(data.startedAt);
     const embed = { title: String(entry.streamTitle || data.title || 'Directo').slice(0, 256),
-      fields: [{ name: 'Estado', value: data.endedAt ? 'Terminado' : 'En directo' }, ...(links.length ? [{ name: 'Plataformas', value: links.join('\n') }] : [])],
+      // Red while live, Discord grey once it ended; the title opens the stream (YouTube first).
+      color: ended ? 0x80848E : 0xFF0036,
+      ...(youtubeUrl || twitchUrl ? { url: youtubeUrl || twitchUrl } : {}),
+      ...(entry.login ? { author: { name: `${entry.login} ${ended ? 'estuvo' : 'está'} en directo` } } : {}),
+      fields: [{ name: 'Estado', value: ended ? `Terminado · duró ${duration(started, Date.parse(data.endedAt))}` : 'En directo' }, ...(links.length ? [{ name: 'Plataformas', value: links.join('\n') }] : [])],
       ...(entry.description && !entry.inactive?.youtube ? { description: entry.description } : {}),
-      ...(entry.videoId && !entry.inactive?.youtube ? { thumbnail: { url: `https://i.ytimg.com/vi/${entry.videoId}/hqdefault.jpg` } } : {}) };
+      ...(entry.videoId && !entry.inactive?.youtube ? { image: { url: `https://i.ytimg.com/vi/${entry.videoId}/hqdefault.jpg` } } : {}),
+      ...(Number.isFinite(started) ? { timestamp: new Date(started).toISOString() } : {}) };
     return { embeds: [embed], allowed_mentions: { parse: [] } };
   }
   function observe(data, { start = false, presence } = {}) {
     if (closed || blocked || !enabled() || !SAFE_ID.test(data?.id || '')) return;
-    const snapshot = structuredClone({ id: data.id, title: data.title, endedAt: data.endedAt, platforms: data.platforms });
+    const snapshot = structuredClone({ id: data.id, title: data.title, startedAt: data.startedAt, endedAt: data.endedAt, platforms: data.platforms });
     void queue(async () => {
       if (!enabled()) return;
       let entry = entries.get(snapshot.id);

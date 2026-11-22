@@ -168,6 +168,30 @@ test('S2/S5: one live embed, platform join edits it, end edits it without VOD', 
   assert.equal(f.requests.filter(r => r.method === 'POST').length, 1);
 });
 
+test('S2 design: live embed is red with a linked title, large image, author and start time; ended is grey with the duration', async t => {
+  const f = await fixture(t); await f.enable(); await f.start();
+  await until(() => f.requests.length >= 1, 'initial post');
+  const live = embed(f.requests[0]);
+  assert.equal(live.color, 0xFF0036, 'red bar while live');
+  assert.equal(live.url, 'https://twitch.tv/synthetic_channel', 'the title opens the stream (Twitch until YouTube joins)');
+  assert.equal(live.author?.name, 'synthetic_channel está en directo');
+  assert.ok(!Number.isNaN(Date.parse(live.timestamp)), 'start time as an ISO timestamp');
+  await f.youtube();
+  await until(() => f.requests.some(r => r.method === 'PATCH' && JSON.stringify(r.body).includes(VIDEO)), 'YouTube patch');
+  const joined = embed(f.requests.find(r => r.method === 'PATCH' && JSON.stringify(r.body).includes(VIDEO)));
+  assert.equal(joined.url, 'https://youtu.be/AbCdEfGhI12', 'with YouTube the title opens the YouTube stream');
+  assert.equal(joined.image?.url, 'https://i.ytimg.com/vi/AbCdEfGhI12/hqdefault.jpg', 'large image');
+  assert.equal(joined.thumbnail, undefined, 'no small thumbnail');
+  assert.equal(joined.timestamp, live.timestamp, 'the start time does not move');
+  await f.end();
+  await until(() => f.requests.some(r => r.method === 'PATCH' && JSON.stringify(r.body).includes('Terminado')), 'end patch');
+  const ended = embed(f.requests.findLast(r => r.method === 'PATCH'));
+  assert.equal(ended.color, 0x80848E, 'grey bar when ended');
+  assert.equal(ended.author?.name, 'synthetic_channel estuvo en directo');
+  assert.match(ended.fields.find(x => x.name === 'Estado').value, /^Terminado · duró (\d+ h )?\d+ min$/);
+  assert.equal(ended.timestamp, live.timestamp);
+});
+
 test('S2: links follow confirmed platform offline and live observations', async t => {
   const f = await fixture(t); await f.enable(); await f.start();
   await until(async () => (await state(f))?.state === 'publicado', 'post');
