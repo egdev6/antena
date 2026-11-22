@@ -249,7 +249,18 @@ const MUTE = qs.has('mute') || !!STILL;
 const GAP = 700;
 
 const queue = [];
-let current = null;
+let current = null, exiting = false, pendingTheme = null;
+// La tarjeta (también su animación de salida) conserva el tema con que empezó.
+// Si llegan varios cambios, el siguiente elemento usa el más reciente.
+function receiveTheme(theme) {
+  if (current || exiting) pendingTheme = theme;
+  else { pendingTheme = null; applyTheme(theme); }
+}
+function flushTheme() {
+  if (!current && !exiting && pendingTheme) {
+    const theme = pendingTheme; pendingTheme = null; applyTheme(theme);
+  }
+}
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // resalta números y cantidades (5 subs, 500 bits, 5,00 €), no los que van pegados a letras (V2)
@@ -454,8 +465,8 @@ function hide() {
   node.classList.remove('on'); node.classList.add('out');
   if (bg) { bg.classList.remove('on'); bg.classList.add('out'); }
   if (video) fadeOut(video, outMs);
-  current = null;
-  setTimeout(() => { node.remove(); bg?.remove(); setTimeout(next, GAP); }, outMs);
+  current = null; exiting = true;
+  setTimeout(() => { node.remove(); bg?.remove(); exiting = false; flushTheme(); setTimeout(next, GAP); }, outMs);
 }
 
 function fadeOut(v, ms) {
@@ -464,7 +475,7 @@ function fadeOut(v, ms) {
   requestAnimationFrame(step);
 }
 
-function next() { if (!current && queue.length) show(queue.shift()); }
+function next() { if (!current && !exiting && queue.length) { flushTheme(); show(queue.shift()); } }
 
 // ---------- sonido ----------
 let ctx;
@@ -545,7 +556,7 @@ if (PREVIEW && !STILL) window.antenaPreviewReady = new Promise(resolve => { es.o
 es.addEventListener('alert', e => {
   document.getElementById('hint')?.remove();
   const a = JSON.parse(e.data);
-  if (PREVIEW) { queue.length = 0; if (current) { clearTimeout(current.timer); current.node.remove(); current.bg?.remove(); current = null; } }
+  if (PREVIEW) { queue.length = 0; if (current) { clearTimeout(current.timer); current.node.remove(); current.bg?.remove(); current = null; flushTheme(); } }
   // #66: una alerta agrupada en el motor actualiza la que ya está en cola; nunca se encola dos veces
   if (a.merged) {
     const i = queue.findIndex(x => x.id === a.id);
@@ -564,7 +575,7 @@ es.addEventListener('control', e => {
   }
   if (action === 'clear') { queue.length = 0; hide(); if ('speechSynthesis' in window) speechSynthesis.cancel(); }
 });
-es.addEventListener('theme', e => { const t = JSON.parse(e.data); if (t.draft && !qs.has('themeDraft')) return; applyTheme(t); });
+es.addEventListener('theme', e => { const t = JSON.parse(e.data); if (t.draft && !qs.has('themeDraft')) return; receiveTheme(t); });
 es.addEventListener('say', e => { if (!PREVIEW) speak(JSON.parse(e.data)); });
 </script>
 </body>

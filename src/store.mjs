@@ -18,12 +18,15 @@ import { DEFAULT_INTERACTIVE_CONFIG } from './interactive.mjs';
 import { DEFAULT_TELEPROMPTER } from './teleprompter.mjs';
 import { DEFAULT_THEME } from './theme.mjs';
 import { DEFAULT_DOCK } from './dock-layout.mjs';
+import { publicThemes } from './theme-looks.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const DATA = process.env.ANTENA_DATA || path.join(ROOT, 'data');
 
 export const DEFAULT_CONFIG = {
   configVersion: CURRENT_CONFIG_VERSION,
+  themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] },
+  customOverlayCss: {},              // reservado por tema; aún no se aplica a los overlays
   port: 4500,
   paused: false,
   twitch: { clientId: '' },
@@ -163,7 +166,9 @@ export class Store extends EventEmitter {
   async load() {
     // Migrar los datos originales antes de fusionar defaults: así un default nuevo no
     // pisa el valor antiguo. Una versión futura nunca se migra ni se rebaja al cargar.
-    const migration = migrateConfig(await readJson(this.cfgFile, {}));
+    // Un fichero inexistente o corrupto no se reemplaza ni tiene copia previa.
+    const raw = await readJson(this.cfgFile, null);
+    const migration = raw === null ? { config: {}, changed: false, future: false } : migrateConfig(raw);
     if (migration.future) console.warn(`config.json: configVersion ${migration.config.configVersion} es más reciente; no se migra`);
     this.config = deepMerge(structuredClone(DEFAULT_CONFIG), migration.config);
     // Nunca importar una contraseña de config.json a las vistas o a guardados posteriores.
@@ -282,6 +287,7 @@ export class Store extends EventEmitter {
     // defensa en profundidad (validatePath ya lo rechaza): nunca se escribe en el prototipo
     if (keys.some(k => PROTO_KEYS.has(k))) throw new Error(`Ruta no válida: ${dotted}`);
     if (keys[0] === 'configVersion') throw Object.assign(new Error('configVersion lo gestiona antena; no se puede cambiar'), { status: 400 });
+    if (keys[0] === 'themes') throw Object.assign(new Error('themes: se gestionan con /api/themes'), { status: 400 });
     if (['meld', 'obs'].includes(keys[0])) {
       if (keys.length === 2 && keys[1] === 'url') value = this.#retainProgramUrl(keys[0], value);
       else if (keys.length === 1 && value && typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, 'url')) {
@@ -373,6 +379,7 @@ export class Store extends EventEmitter {
   /** Config apta para el panel: oculta secretos y credenciales en las URL de programa. */
   publicConfig() {
     const c = structuredClone(this.config);
+    c.themes = { activeId: c.themes.activeId, saved: publicThemes(c.themes) };
     c.discord = { ...c.discord, webhookUrl: this.secrets.discord?.webhookUrl ? '••••' : '', webhookUrlSet: !!this.secrets.discord?.webhookUrl };
     c.scheduleCalendar = { ...c.scheduleCalendar, token: this.secrets.scheduleCalendar?.token ? '••••' : '', tokenSet: !!this.secrets.scheduleCalendar?.token };
     c.obs = { ...c.obs, url: cleanUrl(c.obs?.url), passwordSet: !!this.secrets.obs?.password };

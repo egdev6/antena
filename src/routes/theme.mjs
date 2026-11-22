@@ -57,6 +57,12 @@ export function registerThemeRoutes({ route, store, listMedia, onChange, onDraft
     if (!p) throw httpError(404, `No existe el punto de partida «${id}». Hay: ${Object.keys(PRESETS).join(', ')}`);
     return save(cleanTheme(p.theme, { ...DEFAULT_THEME, icons: {} }));
   });
+  // Un borrador pertenece al tema editado: nunca debe reaparecer tras activar otro.
+  const clearDraft = () => {
+    if (!draft) return;
+    draft = null;
+    onDraft({ ...publicTheme(current()), draft: true });
+  };
   // para /theme.css?draft=1 y el estado inicial del SSE de las vistas previas
-  return { getDraft: () => draft };
+  return { getDraft: () => draft, clearDraft };
 }

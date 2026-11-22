@@ -85,6 +85,8 @@ export const ALERT_FIELDS = {
 };
 
 const base = { enabled: true, durationMs: 6500, minAmount: 0, ...LOOK_DEFAULTS, ...EXTRA_DEFAULTS, variations: [] };
+// Los mensajes programados sin campos de alerta usan exactamente esta base.
+export const DEFAULT_CUSTOM_ALERT = { ...base, title: '', text: '', sub: '' };
 
 export const DEFAULT_ALERTS = {
   follow:      { ...base, title: 'Nuevo seguidor',      text: '{user}', sub: 'gracias por seguir el canal', durationMs: 5500 },
@@ -226,7 +228,7 @@ export function buildCommandAlert(cmd, vars, config, { test = false } = {}) {
 
 /** Alerta libre (desde el MCP o el panel) con los campos que se quieran. */
 export function buildCustomAlert(fields, vars, config) {
-  const cfg = { ...base, title: '', text: '', sub: '', ...fields };
+  const cfg = { ...DEFAULT_CUSTOM_ALERT, ...fields };
   return finalize({ type: 'custom', meta: { platform: fields.platform || 'egdev', icon: fields.icon || 'spark' }, cfg, vars: vars || {}, config, test: false, variation: null });
 }
 

@@ -19,7 +19,8 @@ import { DEFAULT_ALERTS, DEFAULT_COMMAND } from './alerts.mjs';
 import { PLATFORM_METRICS } from './goals.mjs';
 import { TELEPROMPTER_SCRIPTS_MAX_BYTES } from './teleprompter.mjs';
 import { INTERVIEWS_MAX_BYTES, INTERVIEWS_MAX_ITEMS } from './interviews.mjs';
-import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES } from './custom-overlays.mjs';
+import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES, CUSTOM_OVERLAY_ID } from './custom-overlays.mjs';
+import { LOOK_SECTIONS } from './theme-looks.mjs';
 import { THEME_RULES, THEME_RANGES, themeFieldError, themeIconError, keepValidIcons } from './theme.mjs';
 import { DOCK_LAYOUTS } from './dock-layout.mjs';
 import { validScheduleCalendarUrl, SCHEDULE_CALENDAR_URL_ERROR } from './schedule-calendar.mjs';
@@ -300,10 +301,63 @@ export const CONFIG_SCHEMA = {
   },
 };
 
+// Las vistas guardadas usan exactamente el esquema de las secciones en activo.
+CONFIG_SCHEMA.customOverlayCss = { kind: 'overlayCssMap' };
+CONFIG_SCHEMA.themes = { kind: 'savedThemes', keepInvalid: true };
+
+/** Valida una instantánea completa, sin aceptar secciones globales ni campos ausentes. */
+export function validateLook(look) {
+  if (!look || typeof look !== 'object' || Array.isArray(look)) return [{ path: 'look', message: 'look: se esperaba un objeto' }];
+  const errors = [];
+  for (const key of Object.keys(look)) if (!LOOK_SECTIONS.includes(key)) errors.push({ path: key, message: `${key}: sección ajena al tema` });
+  for (const key of LOOK_SECTIONS) {
+    const value = look[key], array = key === 'commands' || key === 'timers';
+    if (array ? !Array.isArray(value) : (!value || typeof value !== 'object' || Array.isArray(value)))
+      errors.push({ path: key, message: `${key}: se esperaba ${array ? 'una lista' : 'un objeto'}` });
+  }
+  if (errors.length) return errors;
+  return validatePatch(Object.fromEntries(LOOK_SECTIONS.map(key => [key, look[key]])));
+}
+
+function validateSavedThemes(value, prefix, errors) {
+  const fail = (path, message) => errors.push({ path, message: `${path}: ${message}` });
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fail(prefix, 'se esperaba un objeto');
+  if (typeof value.activeId !== 'string') fail(`${prefix}.activeId`, 'se esperaba un id');
+  if (!Array.isArray(value.saved) || value.saved.length < 1 || value.saved.length > 10)
+    return fail(`${prefix}.saved`, 'se esperaba entre 1 y 10 temas');
+  const ids = new Set(), names = new Set();
+  for (const [i, item] of value.saved.entries()) {
+    const p = `${prefix}.saved.${i}`;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) { fail(p, 'se esperaba un tema'); continue; }
+    if (typeof item.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.id) || item.id.length > 40 || ids.has(item.id)) fail(`${p}.id`, 'id no válido o repetido');
+    else ids.add(item.id);
+    if (typeof item.name !== 'string' || !item.name.trim() || item.name !== item.name.trim() || item.name.length > 40 || names.has(item.name.toLowerCase())) fail(`${p}.name`, 'nombre no válido o repetido');
+    else names.add(item.name.toLowerCase());
+    if (item.id === value.activeId) {
+      if (Object.hasOwn(item, 'look')) fail(`${p}.look`, 'el tema activo vive en la configuración');
+    } else {
+      for (const error of validateLook(item.look)) {
+        const suffix = error.path === 'look' ? '' : `.${error.path}`;
+        errors.push({ path: `${p}.look${suffix}`, message: `${p}.look${suffix}: ${error.message}` });
+      }
+    }
+  }
+  if (!ids.has(value.activeId)) fail(`${prefix}.activeId`, 'no existe el tema activo');
+}
+
 // ---------- validación ----------
 const TIPO = { num: 'un número', str: 'un texto', bool: 'true o false', enum: 'uno de los valores permitidos', arrStr: 'una lista de textos' };
 
 function checkNode(node, value, path, errors) {
+  if (node?.kind === 'savedThemes' && value !== undefined) { validateSavedThemes(value, path, errors); return; }
+  if (node?.kind === 'overlayCssMap' && value !== undefined) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) errors.push({ path, message: `${path}: se esperaba un mapa de CSS` });
+    else for (const [id, css] of Object.entries(value)) {
+      if (!CUSTOM_OVERLAY_ID.test(id) || PROTO_KEYS.has(id) || typeof css !== 'string')
+        errors.push({ path: `${path}.${id}`, message: `${path}.${id}: se esperaba un id de overlay y CSS de texto` });
+    }
+    return;
+  }
   if (node?.kind === 'scheduleurl' && value !== undefined) {
     if (!validScheduleCalendarUrl(value)) errors.push({ path, message: SCHEDULE_CALENDAR_URL_ERROR });
     return;
@@ -518,6 +572,11 @@ export function validatePath(dotted, value) {
   if (String(dotted).startsWith('widgets.thanks.') && value === null)
     return [{ path: dotted, message: `${dotted}: no admite null` }];
   const keys = String(dotted || '').split('.').filter(Boolean);
+  if (keys[0] === 'customOverlayCss' && keys.length > 1) {
+    if (keys.length !== 2 || !CUSTOM_OVERLAY_ID.test(keys[1]) || PROTO_KEYS.has(keys[1]) || (value !== undefined && typeof value !== 'string'))
+      return [{ path: dotted, message: `${dotted}: se esperaba un id de overlay y CSS de texto` }];
+    return [];
+  }
   const proto = keys.find(k => PROTO_KEYS.has(k));
   if (proto) return [{ path: dotted, message: `${dotted}: ruta no válida («${proto}»)` }];
   let node = CONFIG_SCHEMA, prefix = '';
@@ -591,6 +650,10 @@ export function sanitizeConfig(config, defaults) {
       }
       const errors = [];
       checkNode(node, v, path, errors);
+      if (node.kind === 'savedThemes' && errors.length) {
+        warnings.push({ path, message: `${path}: temas guardados inválidos; se conservan sin cambios` });
+        continue;
+      }
       if (errors.length && v !== undefined) {
         // Discriminadores (kind de acción y de paso): el valor inválido se conserva con aviso;
         // sustituirlo daría un efecto en vivo no pedido (el motor sí falla con kind desconocido).

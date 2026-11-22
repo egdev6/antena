@@ -54,7 +54,7 @@ async function appFixture(t) {
 
 test('las migraciones ordenadas son puras e idempotentes y conservan la conversión de objetivos', async () => {
   const { MIGRATIONS } = await import('../src/config-migrations.mjs');
-  assert.deepEqual(MIGRATIONS.map(step => step.to), [1, 2]);
+  assert.deepEqual(MIGRATIONS.map(step => step.to), [1, 2, 3]);
   const goalInput = { widgets: { goals: [legacyGoal] }, other: { keep: true } };
   const beforeGoal = structuredClone(goalInput);
   const first = MIGRATIONS[0].up(goalInput);
@@ -74,11 +74,11 @@ test('un archivo antiguo con objetivos se migra una vez y conserva la copia exac
   const f = await storeFixture(t, { widgets: { goals: [legacyGoal] } });
   const events = []; f.store.on('persistence', state => events.push(state.pending.config));
   await f.store.load();
-  assert.equal(f.store.config.configVersion, 2);
+  assert.equal(f.store.config.configVersion, 3);
   assert.deepEqual(f.store.config.widgets.goals, [convertedGoal]);
   assert.deepEqual(events, [1, 0]);
   const disk = JSON.parse(await readFile(f.file, 'utf8'));
-  assert.equal(disk.configVersion, 2); assert.deepEqual(disk.widgets.goals, [convertedGoal]);
+  assert.equal(disk.configVersion, 3); assert.deepEqual(disk.widgets.goals, [convertedGoal]);
   const backups = await backupNames(f.dir); assert.equal(backups.length, 1);
   assert.equal(await readFile(path.join(f.dir, backups[0]), 'utf8'), f.bytes);
   if (process.platform !== 'win32') assert.equal((await stat(path.join(f.dir, backups[0]))).mode & 0o777, 0o640);
@@ -94,7 +94,7 @@ test('un archivo versión 1 mueve ambos ajustes a program y mantiene las demás 
   assert.deepEqual(f.store.config.program, { kind: 'obs', autoSession: false, recordOnStart: true });
   assert.deepEqual(f.store.config.meld, { enabled: false, url: 'ws://localhost:1234' });
   const disk = JSON.parse(await readFile(f.file, 'utf8'));
-  assert.equal(disk.configVersion, 2); assert.deepEqual(disk.program, f.store.config.program);
+  assert.equal(disk.configVersion, 3); assert.deepEqual(disk.program, f.store.config.program);
   assert.deepEqual(disk.meld, f.store.config.meld);
   const backups = await backupNames(f.dir); assert.equal(backups.length, 1);
   assert.equal(await readFile(path.join(f.dir, backups[0]), 'utf8'), f.bytes);
@@ -103,14 +103,14 @@ test('un archivo versión 1 mueve ambos ajustes a program y mantiene las demás 
 });
 
 test('una configuración sin cambios no se reescribe ni respalda; el siguiente guardado añade la versión', async t => {
-  const f = await storeFixture(t, { overlay: { volume: 0.7 } });
+  const f = await storeFixture(t, { configVersion: 3, themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] }, overlay: { volume: 0.7 } });
   await f.store.load();
-  assert.equal(f.store.config.configVersion, 2);
+  assert.equal(f.store.config.configVersion, 3);
   assert.equal(f.store.config.program.autoSession, true); assert.equal(f.store.config.program.recordOnStart, false);
   assert.equal(await readFile(f.file, 'utf8'), f.bytes); assert.deepEqual(await backupNames(f.dir), []);
   await f.store.setPath('paused', true);
   const disk = JSON.parse(await readFile(f.file, 'utf8'));
-  assert.equal(disk.configVersion, 2); assert.equal(disk.paused, true); assert.deepEqual(await backupNames(f.dir), []);
+  assert.equal(disk.configVersion, 3); assert.equal(disk.paused, true); assert.deepEqual(await backupNames(f.dir), []);
 });
 
 test('configVersion solo admite enteros no negativos y rechaza null sin guardar', async t => {
@@ -249,7 +249,7 @@ test('un export antiguo se previsualiza e importa con la misma migración y una 
   assert.equal(imported.status, 200);
   assert.equal(await readFile(path.join(f.dataDir, imported.body.backup), 'utf8'), before.bytes);
   const config = (await f.call('GET', '/api/config')).body;
-  assert.equal(config.configVersion, 2); assert.equal(config.program.autoSession, false); assert.equal(config.program.recordOnStart, true);
+  assert.equal(config.configVersion, 3); assert.equal(config.program.autoSession, false); assert.equal(config.program.recordOnStart, true);
   assert.deepEqual(config.widgets.goals, [convertedGoal]);
   assert.equal(Object.hasOwn(config.meld, 'autoSession'), false); assert.equal(Object.hasOwn(config.meld, 'recordOnStart'), false);
 });
