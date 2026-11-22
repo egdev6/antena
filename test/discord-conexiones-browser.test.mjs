@@ -57,7 +57,7 @@ async function fixture(t, responses = []) {
     assert.equal(res.status, 200); return res.json();
   };
   await api('PUT', '/api/config', { panel: { onboardingDone: true } });
-  page = await openChromePage(bin, `${base}/#/conexiones`);
+  page = await openChromePage(bin, `${base}/#/conexiones/webhooks`);
   const dom = expr => evaluateChrome(page.cdp, expr, { timeoutMs: 8000 });
   const wait = expr => waitDom(page.cdp, expr, { timeoutMs: 6000 });
   await wait(`!!document.querySelector('#discord')`);
@@ -76,6 +76,20 @@ async function fixture(t, responses = []) {
   };
   return { page, dom, wait, api, saveWebhook, goLive, requests };
 }
+
+test('Conexiones groups Discord under a «Webhooks» tab, apart from the accounts', { timeout: 60000 }, async t => {
+  const f = await fixture(t, []); if (!f) return;
+  const tabs = `JSON.stringify([...document.querySelectorAll('main [role="tab"]')].map(b => b.textContent.trim()))`;
+  await f.wait(`!!document.querySelector('#discord')`);
+  assert.deepEqual(JSON.parse(await f.dom(tabs)), ['Cuentas', 'Webhooks']);
+  assert.equal(await f.dom(`!!document.querySelector('#programa-emision')`), false, 'accounts are not on the Webhooks tab');
+  await clickWhen(f.page.cdp, `[...document.querySelectorAll('main [role="tab"]')].find(b => b.textContent.trim() === 'Cuentas')`);
+  await f.wait(`!!document.querySelector('#programa-emision') && !document.querySelector('#discord')`);
+  assert.match(await f.dom('location.hash'), /^#\/conexiones\/cuentas$/);
+  await clickWhen(f.page.cdp, `[...document.querySelectorAll('main [role="tab"]')].find(b => b.textContent.trim() === 'Webhooks')`);
+  await f.wait(`!!document.querySelector('#discord') && !document.querySelector('#programa-emision')`);
+  assert.match(await f.dom('location.hash'), /^#\/conexiones\/webhooks$/);
+});
 
 test('Discord card masks the saved webhook, enables the switch and reports sample success and failure', { timeout: 60000 }, async t => {
   const f = await fixture(t, [200, 401]); if (!f) return;
