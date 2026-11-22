@@ -222,6 +222,23 @@ test('platform icons: only Discord custom-emoji codes are accepted, everywhere c
   assert.equal((await f.ok('PUT', '/api/config', { discord: { emojiTwitch: '' } })).config.discord.emojiTwitch, '', 'empty clears it');
 });
 
+test('the stream announcement pings @everyone; edits keep it and «Probar» never pings', async t => {
+  const f = await fixture(t); await f.enable(); await f.start();
+  await until(() => f.requests.length >= 1, 'initial post');
+  const post = f.requests[0].body;
+  assert.equal(post.content, '@everyone');
+  assert.deepEqual(post.allowed_mentions, { parse: ['everyone'] }, 'only @everyone is allowed, no roles or users');
+  await f.end();
+  await until(() => f.requests.some(r => r.method === 'PATCH' && JSON.stringify(r.body).includes('Terminado')), 'end patch');
+  assert.equal(f.requests.filter(r => r.method === 'POST').length, 1, 'one ping, at the start');
+  const sample = await fixture(t);
+  await sample.ok('PUT', '/api/config', { discord: { webhookUrl: WEBHOOK } });
+  await sample.ok('POST', '/api/discord/test');
+  const probe = sample.requests.at(-1).body;
+  assert.equal(probe.content, undefined, '«Probar» has no mention');
+  assert.deepEqual(probe.allowed_mentions, { parse: [] });
+});
+
 test('S2: links follow confirmed platform offline and live observations', async t => {
   const f = await fixture(t); await f.enable(); await f.start();
   await until(async () => (await state(f))?.state === 'publicado', 'post');

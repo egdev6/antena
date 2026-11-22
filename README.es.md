@@ -589,7 +589,7 @@ El envío sigue una semántica de **al menos una vez**, no exactamente una: una 
 
 ### Discord
 
-En **Conexiones › Discord**, guarda un webhook de Discord, pulsa **Probar** y después activa el aviso (apagado de serie). antena publica un embed del directo y lo edita al sumarse plataformas y al terminar la sesión, sin enlaces de VOD. Cada enlace lleva el icono de su plataforma: los emojis de tu servidor si pegas sus códigos (`<:nombre:id>`, se obtienen enviando `\:nombre:` en Discord) en **Iconos de plataforma**, o 🟪/🟥 si no. Si queda **sin confirmar**, comprueba Discord antes de elegir **Volver a publicar**: podría duplicar el aviso. Si se borra el mensaje no se vuelve a publicar automáticamente. El webhook es un secreto local y no se incluye en las copias de configuración. Consulta [conexión y recuperación de Discord](docs/discord.md).
+En **Conexiones › Discord**, guarda un webhook de Discord, pulsa **Probar** y después activa el aviso (apagado de serie). antena publica un embed del directo mencionando a `@everyone` (las ediciones no vuelven a notificar y **Probar** no menciona) y lo edita al sumarse plataformas y al terminar la sesión, sin enlaces de VOD. Cada enlace lleva el icono de su plataforma: los emojis de tu servidor si pegas sus códigos (`<:nombre:id>`, se obtienen enviando `\:nombre:` en Discord) en **Iconos de plataforma**, o 🟪/🟥 si no. Si queda **sin confirmar**, comprueba Discord antes de elegir **Volver a publicar**: podría duplicar el aviso. Si se borra el mensaje no se vuelve a publicar automáticamente. El webhook es un secreto local y no se incluye en las copias de configuración. Consulta [conexión y recuperación de Discord](docs/discord.md).
 
 ### Twitch
 

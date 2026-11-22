@@ -166,7 +166,9 @@ export function createDiscord({ store, dir, twitch, youtube, fetch: send = globa
       ...(entry.description && !entry.inactive?.youtube ? { description: entry.description } : {}),
       ...(entry.videoId && !entry.inactive?.youtube ? { image: { url: `https://i.ytimg.com/vi/${entry.videoId}/hqdefault.jpg` } } : {}),
       ...(Number.isFinite(started) ? { timestamp: new Date(started).toISOString() } : {}) };
-    return { embeds: [embed], allowed_mentions: { parse: [] } };
+    // The mention must be message content (inside an embed it does not notify). Discord only notifies on
+    // the create; edits keep the same content without pinging again. Only @everyone is allowed.
+    return { content: '@everyone', embeds: [embed], allowed_mentions: { parse: ['everyone'] } };
   }
   function observe(data, { start = false, presence } = {}) {
     if (closed || blocked || !enabled() || !SAFE_ID.test(data?.id || '')) return;
