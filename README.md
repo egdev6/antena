@@ -589,7 +589,7 @@ Delivery uses **at-least-once**, not exactly-once, semantics: a crash after a PO
 
 ### Discord
 
-In **Connections › Discord**, save a Discord webhook, click **Probar**, then enable the announcement switch (off by default). Antena posts one live embed and edits it as platforms join and when the session ends; it does not add VOD links. If creation is **sin confirmar**, check Discord before explicitly choosing **Volver a publicar**, which may create a duplicate. A deleted message is not reposted automatically. The webhook is a local secret and is excluded from configuration exports. See [Discord connections and recovery](docs/discord.md).
+In **Connections › Discord**, save a Discord webhook, click **Probar**, then enable the announcement switch (off by default). Antena posts one live embed and edits it as platforms join and when the session ends; it does not add VOD links. Each link carries its platform icon: your server's emojis if you paste their codes (`<:name:id>`, obtained by sending `\:name:` in Discord) under **Iconos de plataforma**, otherwise 🟪/🟥. If creation is **sin confirmar**, check Discord before explicitly choosing **Volver a publicar**, which may create a duplicate. A deleted message is not reposted automatically. The webhook is a local secret and is excluded from configuration exports. See [Discord connections and recovery](docs/discord.md).
 
 ### Twitch
 

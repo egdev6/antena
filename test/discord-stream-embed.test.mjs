@@ -192,6 +192,36 @@ test('S2 design: live embed is red with a linked title, large image, author and 
   assert.equal(ended.timestamp, live.timestamp);
 });
 
+test('platform icons: coloured squares by default, the server emojis when configured', async t => {
+  const f = await fixture(t); await f.enable(); await f.start();
+  await until(() => f.requests.length >= 1, 'initial post');
+  const platforms = req => embed(req).fields.find(x => x.name === 'Plataformas').value;
+  assert.equal(platforms(f.requests[0]), '🟪 [Twitch](https://twitch.tv/synthetic_channel)');
+  await f.ok('PUT', '/api/config', { discord: { emojiTwitch: '<:twitch:123456789012345678>', emojiYoutube: '<a:yt_live:876543210987654321>' } });
+  await f.youtube();
+  await until(() => f.requests.some(r => r.method === 'PATCH' && JSON.stringify(r.body).includes(VIDEO)), 'YouTube patch');
+  const joined = f.requests.findLast(r => r.method === 'PATCH');
+  assert.equal(platforms(joined), '<:twitch:123456789012345678> [Twitch](https://twitch.tv/synthetic_channel)\n<a:yt_live:876543210987654321> [YouTube](https://youtu.be/AbCdEfGhI12)');
+});
+
+test('platform icons: only Discord custom-emoji codes are accepted, everywhere config is written', async t => {
+  const f = await fixture(t);
+  for (const bad of ['twitch', ':twitch:', '<:twitch:12>', '<:tw itch:123456789012345678>', '<:twitch:123456789012345678> extra', '@everyone', '[x](https://evil.test)']) {
+    assert.equal((await f.call('PUT', '/api/config', { discord: { emojiTwitch: bad } })).status, 400, `PUT ${bad}`);
+    assert.equal((await f.call('POST', '/api/config/set', { path: 'discord.emojiYoutube', value: bad })).status, 400, `set ${bad}`);
+  }
+  const json = await f.ok('GET', '/api/config/export?format=json');
+  assert.equal((await f.call('POST', '/api/config/import/preview', json)).status, 200, 'a plain export still imports');
+  const tampered = structuredClone(json); tampered.config.discord = { ...tampered.config.discord, emojiTwitch: '@everyone' };
+  assert.equal((await f.call('POST', '/api/config/import/preview', tampered)).status, 400, 'import rejects it too');
+  await f.ok('PUT', '/api/config', { discord: { emojiTwitch: '<:twitch:123456789012345678>' } });
+  assert.equal((await f.ok('POST', '/api/config/set', { path: 'discord.emojiYoutube', value: '<:youtube:223456789012345678>' })).ok ?? true, true);
+  const config = await f.ok('GET', '/api/config');
+  assert.equal(config.discord.emojiTwitch, '<:twitch:123456789012345678>');
+  assert.equal(config.discord.emojiYoutube, '<:youtube:223456789012345678>');
+  assert.equal((await f.ok('PUT', '/api/config', { discord: { emojiTwitch: '' } })).config.discord.emojiTwitch, '', 'empty clears it');
+});
+
 test('S2: links follow confirmed platform offline and live observations', async t => {
   const f = await fixture(t); await f.enable(); await f.start();
   await until(async () => (await state(f))?.state === 'publicado', 'post');

@@ -186,6 +186,19 @@ function DiscordConnection() {
         catch (error) { setResult('No se pudo enviar la prueba a Discord.'); throw error; }
       })}>Probar</button>
     </div>
+    <fieldset className="discord-emojis">
+      <legend>Iconos de plataforma (opcional)</legend>
+      <p className="hint">Usa emojis de tu servidor junto a cada enlace. En Discord escribe <code>\:nombre:</code> y envíalo: pega aquí lo que responde, como <code>&lt;:twitch:123…&gt;</code>. Sin emoji se usa 🟪 o 🟥. El webhook debe publicar en el mismo servidor.</p>
+      <div className="row2">
+        <label>Emoji de Twitch<input data-discord-emoji="twitch" defaultValue={config?.emojiTwitch || ''} key={'tw' + (config?.emojiTwitch || '')} spellCheck={false} placeholder="<:twitch:123456789012345678>" /></label>
+        <label>Emoji de YouTube<input data-discord-emoji="youtube" defaultValue={config?.emojiYoutube || ''} key={'yt' + (config?.emojiYoutube || '')} spellCheck={false} placeholder="<:youtube:123456789012345678>" /></label>
+      </div>
+      <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" data-discord-emoji-save disabled={busy} onClick={() => action(async () => {
+        const read = (p: string) => (document.querySelector<HTMLInputElement>(`[data-discord-emoji="${p}"]`)?.value || '').trim();
+        await update({ emojiTwitch: read('twitch'), emojiYoutube: read('youtube') });
+        setResult('Iconos guardados.');
+      })}>Guardar iconos</button>
+    </fieldset>
     <Switch checked={!!config?.enabled} disabled={busy || !config?.webhookUrlSet}
       onChange={enabled => { void action(() => update({ enabled })); }}>Avisar en Discord al empezar el directo</Switch>
     {result && <p role="status" className="hint">{result}</p>}

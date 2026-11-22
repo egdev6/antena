@@ -1,5 +1,6 @@
 // Transferencia portable v1: JSON compatible y ZIP con medios. Las copias locales son privadas.
 import { readFile, readdir, lstat, mkdir, mkdtemp, open, rename, rm, unlink } from 'node:fs/promises';
+import { validDiscordEmoji } from '../discord.mjs';
 import { createReadStream } from 'node:fs';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -116,6 +117,8 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
     }
     const before = structuredClone(store.config);
     const next = deepMerge(structuredClone(DEFAULT_CONFIG), input);
+    for (const key of ['emojiTwitch', 'emojiYoutube'])
+      if (next.discord?.[key] && !validDiscordEmoji(next.discord[key])) throw httpError(400, `discord.${key}: se esperaba un emoji de Discord como <:nombre:id>`);
     if (next.discord?.enabled && !store.secrets.discord?.webhookUrl)
       throw httpError(400, 'discord.enabled: guarda primero un webhook de Discord');
     next.port = before.port; preserveLocal(before, next);

@@ -262,7 +262,7 @@ export interface Config {
   tts: TtsConfig;
   filters: FiltersConfig;
   twitch: TwitchConfig;
-  discord?: { enabled?: boolean; webhookUrl?: string; webhookUrlSet?: boolean };
+  discord?: { enabled?: boolean; webhookUrl?: string; webhookUrlSet?: boolean; emojiTwitch?: string; emojiYoutube?: string };
   youtube: YoutubeConfig;
   [key: string]: unknown;
 }
