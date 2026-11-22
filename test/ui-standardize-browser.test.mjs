@@ -377,7 +377,7 @@ test('pestañas y selectores usan el estilo subrayado del editor, nunca el segme
   const { bin, base, close } = ctx;
   let chrome;
   try {
-    chrome = await openChromePage(bin, `${base}/#/apariencia`);
+    chrome = await openChromePage(bin, `${base}/#/apariencia/color`);
     const group = `document.querySelector('[role=radiogroup]:not(.send-to)')`;
     await waitDom(chrome.cdp, `!!${group}`, { timeoutMs: 12000 });
     // el selector de valor conserva su semántica de radio, con el aspecto de pestañas
@@ -407,10 +407,12 @@ test('Apariencia: secciones en pestañas de página y la vista previa fija', { t
   try {
     chrome = await openChromePage(bin, `${base}/#/apariencia`);
     const L = 'Partes de la página';
-    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 5`, { timeoutMs: 15000 });
-    eq(await dom(chrome, tabTexts(L)), 'Color|Tipografía|Iconos|Forma y posición|Sonido');
+    await waitDom(chrome.cdp, `${tabsOf(L)}.length === 6`, { timeoutMs: 15000 });
+    eq(await dom(chrome, tabTexts(L)), 'Temas|Color|Tipografía|Iconos|Forma y posición|Sonido');
+    eq(await dom(chrome, selectedTab(L)), 'Temas');
+    await dom(chrome, `${tabsOf(L)}.find(x => x.textContent.trim() === 'Color').click()`);
+    await waitDom(chrome.cdp, `!!document.querySelector('.ap-color input.mono')`);
     eq(await dom(chrome, selectedTab(L)), 'Color');
-    eq(await dom(chrome, `!!document.querySelector('.ap-color input.mono')`), true);
 
     await dom(chrome, `${tabsOf(L)}.find(x => x.textContent.trim() === 'Sonido').click()`);
     await waitDom(chrome.cdp, `${selectedTab(L)} === 'Sonido' && location.hash === '#/apariencia/sonido'`, { timeoutMs: 9000 });

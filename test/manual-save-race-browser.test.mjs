@@ -463,19 +463,17 @@ test('S2 saveAll rollback: failed config restores unsent Editor intent; newer B 
   assert.equal((await requests(c, '/api/config')).length, 2);
 }));
 
-test('S2 Apariencia: immediate preset/import/reset actions are blocked during saving', opts, t => withPanel(t, sources[1], async ({ c, s, call }) => {
+test('S2 Apariencia: immediate import/reset actions are blocked during saving', opts, t => withPanel(t, sources[1], async ({ c, s, call }) => {
   await startA(c, s);
   await setField(c, s.field, s.b);
   const controls = await evaluateChrome(c, `({
-    preset: document.querySelector('#ap-preset').disabled,
     import: [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Importar').disabled,
-    reset: [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Restaurar EGDEV').disabled,
+    reset: [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Restaurar aspecto de serie').disabled,
   })`);
-  assert.deepEqual(controls, { preset: true, import: true, reset: true });
+  assert.deepEqual(controls, { import: true, reset: true });
   await evaluateChrome(c, `window.__destructivePrompts = 0; window.confirm = window.prompt = () => { window.__destructivePrompts++; return true; };
-    document.querySelector('#ap-preset').value = 'cian'; document.querySelector('#ap-preset').dispatchEvent(new Event('change', { bubbles: true }));
     [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Importar').click();
-    [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Restaurar EGDEV').click(); true`);
+    [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Restaurar aspecto de serie').click(); true`);
   assert.equal(await evaluateChrome(c, 'window.__destructivePrompts'), 0);
   await finish(c);
   assert.equal(await fieldValue(c, s.field), String(s.b));

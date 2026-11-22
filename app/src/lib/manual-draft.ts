@@ -1,13 +1,14 @@
 // One manual source: prepared intent is separate from edits made after the click.
 // Adapters supply domain snapshots/merging; this buffer never schedules an autosave.
-import { draftChanged, saveSources, type DraftSource, type PreparedSave } from './draft';
+import { draftChanged, saveSources, themeIdentity, type DraftSource, type PreparedSave } from './draft';
 import type { AppState } from './types';
 
 type Options<P extends object, B> = {
   empty: () => P;
   merge: (older: P, newer: P) => P;
   take: () => B;
-  persist: (patch: P) => Promise<B>;
+  persist: (patch: P, themeId?: string) => Promise<B>;
+  themed?: boolean | ((patch: P) => boolean);
   publish: (saved: B, newer: P) => void;
   restore: (saved: B, discarded: P) => void;
   keys?: (patch: P) => string[];
@@ -19,9 +20,12 @@ export class ManualDraft<P extends object, B> implements DraftSource {
   private intent: P | undefined;
   private baseline: { value: B } | undefined;
   private active = true;
+  private theme: ReturnType<typeof themeIdentity> | undefined;
 
   constructor(private options: Options<P, B>) { this.pending = options.empty(); }
   dirty = () => !!this.intent || Object.keys(this.pending).length > 0;
+  stale = () => !!this.theme && this.theme.revision !== themeIdentity().revision;
+  themeId = () => this.theme?.id;
   changes = () => this.intent ? this.options.merge(this.intent, this.pending) : this.pending;
   keys = () => this.options.keys?.(this.changes()) ?? Object.keys(this.changes());
   protect = (state: AppState) => this.active && this.dirty() && this.options.protect
@@ -30,6 +34,8 @@ export class ManualDraft<P extends object, B> implements DraftSource {
   // Must precede the optimistic mutation, so the first baseline is the saved value.
   push(patch: P) {
     if (!this.baseline) this.baseline = { value: structuredClone(this.options.take()) };
+    const themed = typeof this.options.themed === 'function' ? this.options.themed(patch) : this.options.themed;
+    if (themed && !this.theme) this.theme = themeIdentity();
     this.pending = this.options.merge(this.pending, patch);
     draftChanged();
   }
@@ -50,9 +56,10 @@ export class ManualDraft<P extends object, B> implements DraftSource {
       run: async () => {
         started = true;
         try {
-          const saved = await this.options.persist(sent);
+          const saved = await this.options.persist(sent, this.theme?.id);
           this.intent = undefined;
           this.baseline = Object.keys(this.pending).length ? { value: structuredClone(saved) } : undefined;
+          if (!this.baseline) this.theme = undefined;
           if (this.active) this.options.publish(saved, this.pending);
         } catch (error) {
           restoreIntent();
@@ -68,6 +75,7 @@ export class ManualDraft<P extends object, B> implements DraftSource {
     const discarded = this.pending;
     this.pending = this.options.empty();
     this.baseline = undefined;
+    this.theme = undefined;
     if (saved && this.active) this.options.restore(saved.value, discarded);
     draftChanged();
   };

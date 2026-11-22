@@ -25,7 +25,7 @@ async function bundleLive(withPatchers = false) {
   const ts = await (await import('node:fs/promises')).readFile(path.join(ROOT, 'app/src/lib/live.ts'), 'utf8');
   const stub = 'export const useSyncExternalStore = () => () => {};\nexport const useEffect = () => {};\nexport const useMemo = () => {};\nexport const useRef = () => {};\n' +
     'export const warnUnknownClientEvent = () => false;\n' +
-    'export const api = (m, p, b) => globalThis.__apiImpl(m, p, b);\n' +
+    'export const api = (m, p, b, o) => globalThis.__apiImpl(m, p, b, o);\n' +
     'export const withKey = (u) => u; export const toast = () => {};';
   const bundled = await esbuild.build({
     stdin: { contents: withPatchers ? `export * from './live'; export * from './patch'; export * from './draft';` : ts,
@@ -108,6 +108,30 @@ test('flushAll propaga errores y conserva el borrador sin reintento automático'
   t.mock.timers.tick(30000);
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(requests, ['/api/config'], 'sin bucle de reintentos tras el fallo explícito');
+});
+
+test('themed drafts retain their original id, remain stale after switching back and can be discarded', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { live, patchWidgets, saveAll, discardAll, isDirty, isStale, observeActiveTheme, onStaleDiscard } = await bundleLive(true);
+  const requests = []; let refreshed = 0;
+  globalThis.__apiImpl = (method, url, body, options) => { requests.push({ method, url, body, options }); return Promise.resolve({ widgets: body }); };
+  onStaleDiscard(() => { refreshed++; });
+  t.after(() => { discardAll(); delete globalThis.__apiImpl; });
+  live.state = { config: { widgets: { chat: { fontSize: 26 } } }, interactive: { config: {} } };
+  observeActiveTheme('normal');
+  patchWidgets({ chat: { fontSize: 36 } });
+  await saveAll();
+  assert.equal(requests[0].options.themeId, 'normal', 'the HTTP save is bound to the edited theme');
+  patchWidgets({ chat: { fontSize: 40 } });
+  observeActiveTheme('otro');
+  assert.equal(isDirty(), true); assert.equal(isStale(), true);
+  assert.equal(live.state.config.widgets.chat.fontSize, 40, 'draft stays visible');
+  await assert.rejects(saveAll(), /El tema activo cambió mientras editabas; tus cambios no se guardaron/);
+  assert.equal(requests.length, 1, 'stale save sends no request');
+  observeActiveTheme('normal');
+  assert.equal(isStale(), true, 'switching back cannot make an old draft valid');
+  discardAll();
+  assert.equal(isDirty(), false); assert.equal(isStale(), false); assert.equal(refreshed, 1);
 });
 
 test('cargas solapadas que resuelven en orden inverso no pierden el chat en curso', async t => {

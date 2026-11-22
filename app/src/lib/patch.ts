@@ -11,7 +11,7 @@ type Patch = Record<string, unknown>;
 type Snapshot<B extends object> = {
   take: () => B;
   restore: (saved: B) => void;
-  persist?: (sent: Patch) => Promise<B>;
+  persist?: (sent: Patch, themeId?: string) => Promise<B>;
   protect: (state: AppState, intent: Patch) => AppState;
 };
 export function patcher<B extends object>(method: string, url: string, snap: Snapshot<B>, ms = 400) {
@@ -19,9 +19,9 @@ export function patcher<B extends object>(method: string, url: string, snap: Sna
   let failures = 0;
   let chain: Promise<unknown> = Promise.resolve();
   const buffer = new ManualDraft<Patch, B>({
-    empty: () => ({}), merge: deepMerge, take: snap.take,
-    persist: async sent => {
-      const response = snap.persist ? await snap.persist(sent) : await api<B>(method, url, sent);
+    empty: () => ({}), merge: deepMerge, take: snap.take, themed: true,
+    persist: async (sent, themeId) => {
+      const response = snap.persist ? await snap.persist(sent, themeId) : await api<B>(method, url, sent, { themeId });
       failures = 0;
       return response;
     },
@@ -37,7 +37,7 @@ export function patcher<B extends object>(method: string, url: string, snap: Sna
       if (buffer.dirty() && !holding()) timer = setTimeout(flushQuietly, ms);
     } catch (error) {
       if (!failures++) toast(error instanceof Error ? error.message : 'No se pudo guardar', true);
-      if (!holding()) timer = setTimeout(flushQuietly, Math.min(30000, 2000 * 2 ** (failures - 1)));
+      if (!holding() && !buffer.stale()) timer = setTimeout(flushQuietly, Math.min(30000, 2000 * 2 ** (failures - 1)));
     }
   };
   const flush = () => { chain = chain.then(sendAutomatic, sendAutomatic); return chain; };
@@ -49,7 +49,7 @@ export function patcher<B extends object>(method: string, url: string, snap: Sna
   };
   const discard = () => { clearTimeout(timer); buffer.discard(); };
   const source: DraftSource = {
-    dirty: buffer.dirty, keys: buffer.keys, protect: buffer.protect,
+    dirty: buffer.dirty, stale: buffer.stale, keys: buffer.keys, protect: buffer.protect,
     prepareSave: () => { clearTimeout(timer); return buffer.prepareSave(); }, discard,
   };
   registerDraft(url, source);
@@ -59,7 +59,7 @@ export function patcher<B extends object>(method: string, url: string, snap: Sna
 const W = patcher('PUT', '/api/widgets', {
   take: () => live.state!.config.widgets,
   restore: saved => live.update(s => ({ config: { ...s.config, widgets: saved } })),
-  persist: async sent => (await api<{ widgets: WidgetsConfig }>('PUT', '/api/widgets', sent)).widgets,
+  persist: async (sent, themeId) => (await api<{ widgets: WidgetsConfig }>('PUT', '/api/widgets', sent, { themeId })).widgets,
   protect: (state, intent) => ({ ...state, config: { ...state.config, widgets: deepMerge(state.config.widgets, intent) } }),
 });
 export function patchWidgets(patch: Patch) {

@@ -4,7 +4,7 @@
 // 4) POST /api/probe con tamaño máximo y esquema mínimo. 5) CSP básica en el HTML de la app.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, stat, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -21,7 +21,7 @@ async function fixture(t) {
   await writeFile(path.join(dataDir, 'config.json'), JSON.stringify({ port: 0 }), { flag: 'wx' });
   const { createApp } = await import('../src/server.mjs');
   const app = await createApp({ dataDir, mediaDir, log: () => {} });
-  t.after(async () => { await app.closeHttp(); });
+  t.after(async () => { try { await app.closeHttp(); } finally { await rm(root, { recursive: true, force: true }); } });
   await new Promise((resolve, reject) => {
     app.server.once('error', reject);
     app.server.listen(0, '127.0.0.1', resolve);
@@ -91,7 +91,7 @@ test('deepMerge del servidor ignora __proto__, constructor y prototype', async (
   assert.equal(Object.prototype.z, undefined);
 });
 
-test('deepMerge de la app React (live.ts) ignora __proto__, constructor y prototype', async () => {
+test('deepMerge de la app React (live.ts) ignora __proto__, constructor y prototype', async t => {
   const esbuild = await import('esbuild');
   const ts = await readFile(path.join(ROOT, 'app/src/lib/live.ts'), 'utf8');
   const js = await esbuild.transform(ts, { loader: 'ts', format: 'esm' }).then(r => r.code);
@@ -100,12 +100,14 @@ test('deepMerge de la app React (live.ts) ignora __proto__, constructor y protot
     .replace(/import\s*\{[^}]*\}\s*from\s*['"]react['"];?/, 'const useSyncExternalStore = () => () => {};')
     .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/api['"];?/, 'const api = async () => ({}); const withKey = (u) => u;')
     .replace(/import\s*\{[^}]*\}\s*from\s*['"][^'"]*events\.mjs['"];?/, 'const warnUnknownClientEvent = () => false;')
+    .replace(/import\s*\{[^}]*\}\s*from\s*['"][^'"]*theme-looks\.mjs['"];?/, 'const LOOK_SECTIONS = [];')
     .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/chat-merge\.mjs['"];?/, 'const mergeChat = () => [];')
-    .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/draft['"];?/, 'const protectDrafts = state => state; const holding = () => false; const registerDraft = () => () => {};')
+    .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/draft['"];?/, 'const protectDrafts = state => state; const holding = () => false; const isStale = () => false; const observeActiveTheme = () => false; const onStaleDiscard = () => {}; const registerDraft = () => () => {};')
     .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/manual-draft['"];?/, 'class ManualDraft { constructor(options) { this.pending = options.empty(); } }')
     .replace(/import\s*\{[^}]*\}\s*from\s*['"][^'"]*stream-client\.js['"];?/, 'class AntenaStream {}');
-  assert.ok(!/from ['"](react|\.\/api|\.\/draft|\.\/manual-draft|\.\/chat-merge\.mjs|[^'"]*events\.mjs|[^'"]*stream-client\.js)['"]/.test(stub), 'se eliminan los imports');
+  assert.ok(!/from ['"](react|\.\/api|\.\/draft|\.\/manual-draft|\.\/chat-merge\.mjs|[^'"]*events\.mjs|[^'"]*theme-looks\.mjs|[^'"]*stream-client\.js)['"]/.test(stub), 'se eliminan los imports');
   const dir = await mkdtemp(path.join(tmpdir(), 'antena-stub-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'live.mjs');
   await writeFile(file, stub);
   const { deepMerge } = await import(pathToFileURL(file).href);   // en Windows, import() exige file://

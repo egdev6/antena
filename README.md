@@ -43,7 +43,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Browser sources for the broadcast program:** every alert, widget, panel and custom overlay is a browser source with its size, ready to copy.
 - **Prompter for the Elgato Prompter** (1024×600): the app opens it full screen on that display.
 - **Viewers record alert** per platform (Twitch and YouTube), with anti-spam brakes.
-- **Appearance:** the active theme controls everything on screen (alerts, widgets and credits): colors, fonts, icons, shape, position, animation and sound. Saved themes can be managed through the API or MCP; the panel selector is still to come.
+- **Appearance:** the active theme controls everything on screen (alerts, widgets and credits): colors, fonts, icons, shape, position, animation and sound. Manage and preview saved themes in Appearance, and switch them from the sidebar, dock, API or MCP.
 - **Customizable Stream Deck shortcuts:** each one chains steps (bookmark, pause, scene, layer, chat, prompter tab…) and has its own `/sd/custom/<id>` endpoint.
 - **Dock:** the whole live show minus the video preview — scenes, broadcast program audio tracks, alerts, questions, vote, giveaway, teleprompter, and credits — with customizable modules and layouts. By default it uses columns from 768 px wide and tabs below that.
 
@@ -135,7 +135,7 @@ Panel: http://127.0.0.1:4500/ · prompter: `/prompter` · dock: `/dock`. Without
 
 ### Saved themes
 
-Manage up to 10 full saved themes through `/api/themes` or MCP; edits apply to the active theme, and switching leaves connections, sessions and custom-overlay code untouched. Alerts already showing or queued keep the per-alert settings they were built with; alerts built after the switch use the new theme. Existing installs migrate to **Normal** with their effective appearance frozen. The panel selector and per-overlay theme CSS are not available yet. See [docs/themes.md](docs/themes.md).
+Manage up to 10 full saved themes in **Appearance › Temas**, `/api/themes` or MCP. Selecting previews the real alert, goal and chat renderers without activating; create a complete copy or start from each platform's colors. The sidebar and dock switch immediately. Edits apply to the active theme; switching leaves connections, sessions and custom-overlay code untouched. Alerts already showing or queued keep the per-alert settings they were built with. Existing installs migrate to **Normal** with their effective appearance frozen. Per-overlay theme CSS is not available yet. See [docs/themes.md](docs/themes.md).
 
 ### Configuration backup
 
@@ -401,7 +401,7 @@ What it carries:
 
 ### Appearance
 
-In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. These controls edit the active saved theme; the existing installation starts in «Normal» with its appearance preserved. While you change it, only the panel preview shows it (a draft in `/api/theme/draft` that only `?themeDraft` previews load); pressing **Save** sends it to every layer open in the broadcast program at once, without reloading them. If saving fails, the draft stays and the panel warns; a starting point, an import or «Restore EGDEV» are applied and saved right away and drop the draft.
+In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. These controls edit the active saved theme; the existing installation starts in «Normal» with its appearance preserved. While you change it, only the panel preview shows it (a draft in `/api/theme/draft` that only `?themeDraft` previews load); pressing **Save** sends it to every layer open in the broadcast program at once, without reloading them. If saving fails, the draft stays and the panel warns; an import or «Restore default appearance» is applied and saved right away and drops the draft.
 
 - **Color:** accent, soft accent, card background (gradient, solid or glass, with its opacity), texts, border (accent or its own), glow intensity and, if you want, the color of each platform.
 - **Typography:** title and body fonts (the brand's, the system's or your own in woff2/woff/ttf/otf uploaded in General and files), alert text size, uppercase and black outline.
@@ -409,7 +409,7 @@ In **Settings › Appearance** you change the theme of **everything that goes on
 - **Shape and effects:** corners, alert width and scale, 3D tilt, reflection, decorations and time bar.
 - **Position and motion:** alert height and side, fine adjustment and enter/exit animation (3D spin, slide, fade, bounce or none). A `?pos=` in the overlay URL still wins.
 - **Sound:** the default alert sound (the EGDEV tone, none or one of yours) and its volume.
-- **Starting points** (EGDEV, Cyan, Emerald, Amber, Each platform's color, Sober, Glass), **export** and **import** the theme as JSON and **Restore EGDEV**.
+- **Temas:** preview, create, duplicate, rename, activate and delete saved themes. **Export**, **import** and **restore default appearance** apply to the active theme.
 
 The theme is served at `/theme.css`, in the `egdev-theme` layer, above the default styles: each alert's or widget's own CSS still wins. It is validated the same way on every write path (`PUT /api/theme`, `PUT /api/config`, `POST /api/config/set` and the loading of `config.json`): an invalid value is rejected with 400 and `/theme.css` never emits anything unvalidated; ranges (glow, size, position…) are rejected with the same schema message everywhere except on **import**, which clamps so that previously exported themes still load. Via MCP: `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema`. The prompter and the teleprompter do not change: they are for you, not for the stream.
 

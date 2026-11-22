@@ -89,12 +89,14 @@ test('manual navigation: Apariencia tabs preserve accent, draft and history with
   await assertThemeDraft(c, '#/apariencia/tipografia', '#ap-font');
   // The base deep link resolves to the default tab in the same page.
   await transition(c, `location.hash = '#/apariencia'`);
-  await assertThemeDraft(c, '#/apariencia', '#ap-color');
+  await assertThemeDraft(c, '#/apariencia', '.themes-page');
+  await transition(c, `location.hash = '#/apariencia/color'`);
+  await assertThemeDraft(c, '#/apariencia/color', '#ap-color');
   assert.equal(await evaluateChrome(c, `${accent}.value`), '#112233');
 
   // A real exit asks; cancelling must restore both address and rendered page.
   await transition(c, `location.hash = '#/alertas'`);
-  await waitDom(c, `location.hash === '#/apariencia' && !!(${accent}) && ${dirty}`);
+  await waitDom(c, `location.hash === '#/apariencia/color' && !!(${accent}) && ${dirty}`);
   assert.equal(await evaluateChrome(c, 'window.__nav.confirms.length'), 1);
   assert.equal(await evaluateChrome(c, `${accent}.value`), '#112233');
   assert.equal((await fetch(`http://127.0.0.1:${ctx.app.server.address().port}/api/theme`).then(r => r.json())).theme.accent, original);

@@ -206,11 +206,11 @@ tool('renombrar_tema', 'Cambia el nombre de un tema guardado.', { id: S.str('Id 
 tool('borrar_tema', 'Borra un tema inactivo; el activo no se puede borrar.', { id: S.str('Id del tema') }, ({ id }) => del(`/api/themes/${enc(id)}`), ['id']);
 
 // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
-tool('ver_tema', 'Tema de pantalla actual (colores, fuentes, iconos, forma, posición, animación y sonido), el de serie, los puntos de partida, las fuentes y los iconos disponibles.', {}, () => get('/api/theme'));
+tool('ver_tema', 'Aspecto del tema activo, aspecto de serie por plataforma, fuentes e iconos disponibles.', {}, () => get('/api/theme'));
 tool('cambiar_tema', 'Cambia el tema de todo lo que sale en pantalla (solo los campos que pases). Color: accent, accentSoft, text, textSoft, muted, surface, surfaceOpacity (0–100), surfaceStyle (gradient|solid|glass), border (vacío = del acento), borderWidth, glow (0–200 %), platformAccent + twitchColor/youtubeColor. Tipografía: fontDisplay, fontBody (id de fuente o media:archivo.woff2), textScale (%), uppercase, outline. Iconos: iconStroke (thin|normal|bold), iconColor, tileShape (square|round|none), platformBadge (text|logo|none), icons { tipo: icono|logo|none|emoji:🎉|media:archivo.png } (null vuelve al de serie). Forma: round (%), alertWidth (px), alertScale (%), tilt, reflection, decorations, timerBar. Posición: position (top|center|bottom), align (left|center|right), offsetX, offsetY. Movimiento: animation (3d|slide|fade|pop|none). Sonido: sound (default|none|archivo), soundVolume (%).',
   { cambios: S.obj('{"accent":"#00D1FF","animation":"slide","icons":{"follow":"emoji:💜"}}') }, ({ cambios }) => put('/api/theme', cambios), ['cambios']);
-tool('tema_de_partida', 'Aplica un punto de partida del tema (sustituye el actual): egdev, cian, esmeralda, ambar, plataforma, sobrio, cristal.', { id: S.str('Punto de partida') }, ({ id }) => post('/api/theme/preset', { id }), ['id']);
-tool('restaurar_tema', 'Vuelve al tema de serie de EGDEV.', {}, () => post('/api/theme/reset'));
+tool('tema_de_partida', 'Compatibilidad: aplica «Color de cada plataforma» al tema activo. El único id disponible es plataforma.', { id: S.str('Id: plataforma') }, ({ id }) => post('/api/theme/preset', { id }), ['id']);
+tool('restaurar_tema', 'Restaura el aspecto de serie (Color de cada plataforma) del tema activo.', {}, () => post('/api/theme/reset'));
 tool('importar_tema', 'Sustituye el tema entero por uno exportado (JSON del tema); lo que falte vuelve al de serie.', { tema: S.obj('El objeto del tema') }, ({ tema }) => post('/api/theme/import', { theme: tema }), ['tema']);
 // teleprompter (solo lo ves tú: /widget/teleprompter)
 tool('estado_teleprompter', 'Guion activo, bloques, posición, velocidad y ajustes del teleprompter, y la lista de guiones.', {}, () => get('/api/teleprompter'));

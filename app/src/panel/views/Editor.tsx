@@ -158,16 +158,16 @@ function useEditor(t: Target) {
     };
     return new ManualDraft<Record<string, unknown>, AlertConfig | AlertVariation | CommandConfig | TimerConfig>({
       empty: () => ({}), merge: (older, newer) => ({ ...older, ...newer }),
-      take: () => findTarget(live.state, t),
+      take: () => findTarget(live.state, t), themed: true,
       keys: patch => Object.keys(patch).map(fieldTab),
-      persist: async patch => {
-        if (t.kind === 'alert') return (await put<{ config: AlertConfig }>(`/api/alerts/${t.type}`, patch)).config;
+      persist: async (patch, themeId) => {
+        if (t.kind === 'alert') return (await put<{ config: AlertConfig }>(`/api/alerts/${t.type}`, patch, { themeId })).config;
         if (t.kind === 'variation') {
           const { name, enabled, conditions, ...overrides } = patch;
-          return (await put<{ variation: AlertVariation }>(`/api/alerts/${t.type}/variations/${enc(t.id)}`, { name, enabled, conditions, overrides: Object.keys(overrides).length ? overrides : undefined })).variation;
+          return (await put<{ variation: AlertVariation }>(`/api/alerts/${t.type}/variations/${enc(t.id)}`, { name, enabled, conditions, overrides: Object.keys(overrides).length ? overrides : undefined }, { themeId })).variation;
         }
-        if (t.kind === 'command') return (await put<{ command: CommandConfig }>(`/api/commands/${enc(t.id)}`, patch)).command;
-        const result = await put<{ timer: TimerConfig; warnings?: { message: string }[] }>(`/api/timers/${enc(t.id)}`, patch);
+        if (t.kind === 'command') return (await put<{ command: CommandConfig }>(`/api/commands/${enc(t.id)}`, patch, { themeId })).command;
+        const result = await put<{ timer: TimerConfig; warnings?: { message: string }[] }>(`/api/timers/${enc(t.id)}`, patch, { themeId });
         if (active.current) live.update(s => ({ timers: (s.timers || []).map(x => x.id === t.id ? { ...x, ...result.timer, runtime: { ...x.runtime, warnings: result.warnings || [] } } : x) }));
         return result.timer;
       },
@@ -199,7 +199,7 @@ function useEditor(t: Target) {
   };
   useEffect(() => {
     const unregister = registerDraft('editor:' + JSON.stringify(t), {
-      dirty: buffer.dirty, keys: buffer.keys, protect: buffer.protect,
+      dirty: buffer.dirty, stale: buffer.stale, keys: buffer.keys, protect: buffer.protect,
       prepareSave: () => { clearTimeout(timer.current); return buffer.prepareSave(); }, discard,
     });
     return () => { active.current = false; clearTimeout(timer.current); unregister(); buffer.dispose(); };

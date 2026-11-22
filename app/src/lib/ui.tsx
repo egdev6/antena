@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { LOGOS } from '../../../public/platform-icons.js';
 import { IC, type IconData } from './icons';
+import { themeIdentity } from './draft';
 
 // ---------- avisos ----------
 let toastMsg = { text: '', err: false, n: 0 };
@@ -129,16 +130,17 @@ export function useDebounced<T>(fn: (v: T) => void, ms = 400) {
 }
 
 /** Input de texto con estado local que avisa con retardo (no se pisa mientras escribes). */
-export function LazyInput({ value, onCommit, ms = 450, as = 'input', ...rest }: { value: any; onCommit: (v: string) => void; ms?: number; as?: 'input' | 'textarea'; [k: string]: any }) {
+export function LazyInput({ value, onCommit, ms = 450, as = 'input', themeScoped = false, ...rest }: { value: any; onCommit: (v: string, themeId?: string) => void; ms?: number; as?: 'input' | 'textarea'; themeScoped?: boolean; [k: string]: any }) {
   const [v, setV] = useState(value ?? '');
   const focused = useRef(false);
+  const owner = useRef<string | undefined>(undefined);
   useEffect(() => { if (!focused.current) setV(value ?? ''); }, [value]);
-  const commit = useDebounced<string>(onCommit, ms);
+  const commit = useDebounced<{ value: string; themeId?: string }>(edit => { owner.current = undefined; onCommit(edit.value, edit.themeId); }, ms);
   const props = {
     ...rest, value: v,
     onFocus: () => { focused.current = true; },
     onBlur: () => { focused.current = false; },
-    onChange: (e: any) => { setV(e.target.value); commit(e.target.value); },
+    onChange: (e: any) => { if (themeScoped && !owner.current) owner.current = themeIdentity().id; setV(e.target.value); commit({ value: e.target.value, themeId: owner.current }); },
   };
   return as === 'textarea' ? <textarea {...props} /> : <input {...props} />;
 }

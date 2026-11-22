@@ -99,6 +99,7 @@ test('v2 migration backs up bytes and freezes effective defaults in all element 
   const bytes = JSON.stringify(v2, null, 1), file = path.join(root, 'config.json');
   await writeFile(file, bytes);
   const expected = deepMerge(structuredClone(DEFAULT_CONFIG), v2);
+  expected.theme.platformAccent = false; expected.theme.platformBadge = 'text'; // effective v2 defaults
   // The built-in welcome variation also receives its resolved v3 conditions.
   expected.alerts.welcome.variations[0].conditions = { ...DEFAULT_CONDITIONS, returning: 'true' };
   const store = await new Store(root).load();

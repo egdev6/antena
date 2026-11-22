@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cx, EmptyState, guard, Icon } from './ui';
 import { IC } from './icons';
-import { dirtyKeys, discardAll, isDirty, isSaving, saveAll, useDraftVersion } from './draft';
+import { dirtyKeys, discardAll, isDirty, isSaving, isStale, saveAll, STALE_THEME_MESSAGE, useDraftVersion } from './draft';
 import { go } from '../panel/router';
 
 // ---------- cabecera de página ----------
@@ -115,13 +115,14 @@ export function SaveBar({ saveLabel = 'Guardar' }: { saveLabel?: string }) {
   useDraftVersion();
   const dirty = isDirty();
   const saving = isSaving();
+  const stale = isStale();
   const n = dirtyKeys().length;
   const open = dirty || saving;
   return <footer className={cx('lv-sfoot lv-savebar', open && 'is-open')} inert={!open}>
     <span className="sp" />
-    <span className={cx('lv-dirty', dirty && 'is-on')} role="status">{saving ? 'Guardando…' : dirty ? (n > 1 ? `${n} cambios sin guardar` : 'Cambios sin guardar') : 'Todo guardado'}</span>
+    <span className={cx('lv-dirty', dirty && 'is-on')} role="status">{saving ? 'Guardando…' : stale ? STALE_THEME_MESSAGE : dirty ? (n > 1 ? `${n} cambios sin guardar` : 'Cambios sin guardar') : 'Todo guardado'}</span>
     <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={saving || !dirty} onClick={() => discardAll()}>Descartar</button>
-    <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={saving || !dirty} onClick={guard(saveAll, 'Guardado')}>{saveLabel}</button>
+    <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={saving || !dirty || stale} title={stale ? STALE_THEME_MESSAGE : undefined} onClick={guard(saveAll, 'Guardado')}>{saveLabel}</button>
   </footer>;
 }
 /** Sección dentro del cuerpo de un slide o de una pestaña. */

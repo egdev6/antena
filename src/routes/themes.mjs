@@ -1,8 +1,9 @@
 // Temas guardados: la configuración en activo sigue en sus secciones originales.
-import { DEFAULT_CONFIG, deepMerge } from '../store.mjs';
-import { PRESETS } from '../theme.mjs';
+import { DEFAULT_CONFIG } from '../store.mjs';
+import { DEFAULT_THEME, publicTheme, themeCss } from '../theme.mjs';
+import { buildAlert, SAMPLES } from '../alerts.mjs';
 import { extractLook, applyLook, publicThemes } from '../theme-looks.mjs';
-import { validateLook, validatePatch } from '../config-schema.mjs';
+import { CONFIG_SCHEMA, validateLook, validatePatch } from '../config-schema.mjs';
 import { httpError } from '../http-util.mjs';
 
 const MAX_THEMES = 10;
@@ -39,6 +40,8 @@ export function registerThemesRoutes({ route, store, onActivated = () => {} }) {
     if (!item) throw httpError(404, `No existe el tema «${decoded}»`);
     return item;
   };
+  const lookOf = item => item.id === store.config.themes.activeId ? extractLook(store.config) : item.look;
+  const pick = (value, keys) => Object.fromEntries(keys.filter(k => Object.hasOwn(value || {}, k)).map(k => [k, value[k]]));
   const validate = themes => {
     const [error] = validatePatch({ themes });
     if (error) throw httpError(400, error.message);
@@ -57,14 +60,35 @@ export function registerThemesRoutes({ route, store, onActivated = () => {} }) {
   };
 
   route('GET', '/api/themes', async () => ({ themes: list() }));
+  // Solo datos de muestra; no entregar acciones, comandos, CSS arbitrario ni secciones operativas.
+  route('GET', '/api/themes/:id/look', async ({ id }) => {
+    const item = find(id);
+    const source = lookOf(item);
+    return { look: {
+      theme: pick(source.theme, Object.keys(DEFAULT_THEME)),
+      alert: pick(source.alerts?.follow, ['title', 'text', 'sub', 'layout', 'textColor', 'accentColor', 'fontSize']),
+      goal: pick(source.widgets?.goals?.[0], ['title', 'showMetric', 'visible']),
+      chat: pick(source.widgets?.chat, ['fontSize', 'layout', 'showPlatform', 'reverse']),
+    } };
+  });
+  // Preview-only projection: real renderer inputs, never the operational actions or global config.
+  route('GET', '/api/themes/:id/preview', async ({ id }) => {
+    const look = lookOf(find(id));
+    const built = buildAlert('follow', { ...SAMPLES.follow }, look, { test: true });
+    const { actions: _actions, tts: _tts, ...alert } = built;
+    const goals = (look.widgets?.goals || []).map(goal => ({
+      ...pick(goal, ['id', 'title', 'label', 'visible', 'showMetric', 'showLabel', 'showTitle', 'css']),
+      bars: (goal.bars || []).map(bar => pick(bar, ['id', 'platform', 'metric', 'target', 'visible'])),
+    }));
+    return { theme: publicTheme(pick(look.theme, Object.keys(DEFAULT_THEME))), css: themeCss(look.theme), alert,
+      widgets: { chat: pick(look.widgets?.chat, Object.keys(CONFIG_SCHEMA.widgets.chat)) }, goals };
+  });
   route('POST', '/api/themes/duplicate', async ({ from, name } = {}) => {
     const source = find(from);
-    return add(name, source.id === store.config.themes.activeId ? extractLook(store.config) : source.look);
+    return add(name, lookOf(source));
   });
   route('POST', '/api/themes/from-default', async ({ name } = {}) => {
-    const defaults = structuredClone(DEFAULT_CONFIG);
-    defaults.theme = deepMerge(defaults.theme, PRESETS.plataforma.theme);
-    return add(name, extractLook(defaults));
+    return add(name, extractLook(structuredClone(DEFAULT_CONFIG)));
   });
   route('PUT', '/api/themes/:id', async ({ id }, body = {}) => {
     const item = find(id), name = nameOf(body.name), themes = store.config.themes;
@@ -82,7 +106,7 @@ export function registerThemesRoutes({ route, store, onActivated = () => {} }) {
     await store.patchConfig({ themes: next });
     return { themes: list() };
   });
-  route('POST', '/api/themes/:id/activate', async ({ id }) => {
+  const activate = async ({ id }) => {
     const item = find(id);
     if (item.id === store.config.themes.activeId) return { theme: list().find(t => t.id === item.id) };
     const before = structuredClone(store.config), current = extractLook(before);
@@ -97,5 +121,9 @@ export function registerThemesRoutes({ route, store, onActivated = () => {} }) {
     await store.replaceConfigWithBackup(next, before, { themes: true, theme: true, alerts: true, overlay: true,
       widgets: true, interactive: true, commands: true, timers: true, customOverlays: true }, onActivated);
     return { theme: list().find(t => t.id === item.id) };
-  });
+  };
+  route('POST', '/api/themes/:id/activate', activate);
+  // Stream Deck uses the same activation transaction and errors as the panel and MCP.
+  route('GET', '/sd/tema/:id', activate);
+  route('POST', '/sd/tema/:id', activate);
 }

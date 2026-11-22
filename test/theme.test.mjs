@@ -80,8 +80,8 @@ test('API del tema: cambiar, punto de partida, importar, restaurar, /theme.css y
     const css = await fetch(base + '/theme.css').then(x => { assert.equal(x.headers.get('cache-control'), 'no-store'); return x.text(); });
     assert.match(css, /--red:#18E08B/);
     await assert.rejects(call('PUT', '/api/theme', { accent: 'verde' }), /#RRGGBB/);
-    assert.equal((await call('POST', '/api/theme/preset', { id: 'cian' })).theme.accent, '#00D1FF');
-    assert.equal((await call('POST', '/api/theme/preset', { id: 'cian' })).theme.position, 'center');   // sustituye, no mezcla
+    assert.equal((await call('POST', '/api/theme/preset', { id: 'plataforma' })).theme.platformAccent, true);
+    assert.equal((await call('POST', '/api/theme/preset', { id: 'plataforma' })).theme.position, 'center');   // sustituye, no mezcla
     assert.equal((await call('POST', '/api/theme/import', { theme: { accent: '#123456' } })).theme.glow, 100);
     assert.equal((await call('POST', '/api/theme/reset')).theme.accent, '#FF0036');
     assert.equal(app.store.config.theme.accent, '#FF0036');

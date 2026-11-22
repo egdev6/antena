@@ -28,6 +28,7 @@ test('alertas: la miniatura es el overlay real y sigue a Apariencia y a la confi
     const sample = await fetch(`${base}/api/alerts/follow/sample`).then(r => r.json());
     assert.equal(sample.alert.type, 'follow');
     assert.ok(sample.theme.version, 'trae el tema público');
+    assert.equal(sample.theme.platformAccent, true, 'una instalación nueva usa colores de plataforma');
     assert.equal((await fetch(`${base}/api/alerts/nada/sample`)).status, 404);
 
     app.store.config.panel = { onboardingDone: true };
@@ -49,9 +50,15 @@ test('alertas: la miniatura es el overlay real y sigue a Apariencia y a la confi
 
     // Apariencia: otro color de acento llega a todas las miniaturas
     const src1 = await evaluateChrome(c, `${frame('raid')}.src`);
-    await api('PUT', '/api/theme', { accent: '#00D1FF' });
+    // La alerta es de Twitch: con el nuevo default usa el acento de Twitch.
+    await api('PUT', '/api/theme', { twitchColor: '#00D1FF' });
     await waitDom(c, `${frame('raid')}?.src !== ${JSON.stringify(src1)}`, { timeoutMs: 9000 });
     await waitDom(c, inFrame('raid', `getComputedStyle(d.querySelector('.alert')).getPropertyValue('--accent').trim().toUpperCase() === '#00D1FF'`), { timeoutMs: 12000 });
+    // También conserva el acento general cuando se desactiva el color por plataforma.
+    const src2 = await evaluateChrome(c, `${frame('raid')}.src`);
+    await api('PUT', '/api/theme', { platformAccent: false, accent: '#18E08B' });
+    await waitDom(c, `${frame('raid')}?.src !== ${JSON.stringify(src2)}`, { timeoutMs: 9000 });
+    await waitDom(c, inFrame('raid', `getComputedStyle(d.querySelector('.alert')).getPropertyValue('--accent').trim().toUpperCase() === '#18E08B'`), { timeoutMs: 12000 });
   } finally {
     await closeAll(() => chrome && closeChrome(chrome), () => { app.timers.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
