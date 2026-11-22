@@ -1,6 +1,6 @@
 # Avisos de directos en Discord
 
-En **Conexiones › Discord**, pega la URL HTTPS de un webhook de `discord.com` o `discordapp.com`, pulsa **Guardar webhook** y después **Probar**. La prueba publica un embed identificado como «Prueba de antena». Activa «Avisar en Discord al empezar el directo» únicamente después de guardar el webhook; está desactivado de serie.
+En **Conexiones › Webhooks › Discord**, pega la URL HTTPS de un webhook de `discord.com` o `discordapp.com`, pulsa **Guardar webhook** y después **Probar**. La prueba publica un embed identificado como «Prueba de antena». Activa «Avisar en Discord al empezar el directo» únicamente después de guardar el webhook; está desactivado de serie.
 
 El webhook es una credencial: antena lo guarda en `secrets.json` dentro de la carpeta local de datos. La interfaz solo muestra una máscara; ni las respuestas públicas ni las copias JSON o ZIP contienen la URL. Una importación no sustituye la credencial local. Trata ese archivo como privado y sustituye el webhook en Discord si se ha compartido.
 

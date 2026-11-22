@@ -3,7 +3,7 @@ import { get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { cx, fmtTime, guard, LazyInput, SegField, Switch, toast } from '../../lib/ui';
 import { isSaving, saveAll, useDraftVersion, useManualSave } from '../../lib/draft';
-import { Card, CardGroup, CardSwitch, Dot, PageHead, SaveBar, Slide } from '../../lib/layout';
+import { Card, CardGroup, CardSwitch, Dot, PageHead, SaveBar, Slide, usePageTab } from '../../lib/layout';
 import { Icon, PfIcon } from '../../lib/ui';
 import { IC, type IconData } from '../../lib/icons';
 import type { Config } from '../../lib/types';
@@ -71,6 +71,8 @@ export function Conexiones({ parts }: { parts: string[] }) {
   const access = useLive(s => s.access || { lan: false, urls: [] });
   const tw = st.twitch || {}, yt = st.youtube || {}, md = st.meld || {};
   const open = parts[1];
+  // «Cuentas» holds the platforms, the broadcast program and access; «Webhooks» the outgoing notices.
+  const [tab, setTab] = usePageTab(parts, 'conexiones', ['cuentas', 'webhooks']);
   const twOk = stateClass(tw.state) === 'ok', ytOk = stateClass(yt.state) === 'ok', mdOk = md.state === 'conectado';
   const nOk = [twOk, ytOk, mdOk, !!access.lan].filter(Boolean).length;
   const ytWrite = !!yt.account && !!yt.liveChatId;
@@ -83,8 +85,9 @@ export function Conexiones({ parts }: { parts: string[] }) {
   const obsActionsEnabled = selectedActive && !live.programSource.dirty();
   const scene = scenes.find((x: any) => x.current);
   return <>
-    <PageHead tour="conexiones-head" crumb={`Ajustes · ${nOk} de 4 conectadas`} title="Conexiones" desc="Conecta tus cuentas una vez; la sesión se guarda en tu PC. Pulsa una tarjeta para ver sus ajustes." />
-    <div className="lv-groups">
+    <PageHead tour="conexiones-head" crumb={`Ajustes · ${nOk} de 4 conectadas`} title="Conexiones" desc="Conecta tus cuentas una vez; la sesión se guarda en tu PC. Pulsa una tarjeta para ver sus ajustes."
+      tabs={[{ id: 'cuentas', label: 'Cuentas' }, { id: 'webhooks', label: 'Webhooks' }]} tab={tab} onTab={setTab} />
+    {tab === 'webhooks' ? <div className="lv-groups"><DiscordConnection /></div> : <div className="lv-groups">
       <article className="panel" id="programa-emision">
         <header><h2>Programa de emisión</h2><span className="lv-tag">Experimental</span></header>
         <SegField label="Programa de emisión" value={kind} options={[[ 'meld', 'Meld' ], [ 'obs', 'OBS' ]]}
@@ -102,7 +105,6 @@ export function Conexiones({ parts }: { parts: string[] }) {
         </>}
         {passwordPending && <p className="hint">La contraseña de OBS cambiará al guardar.</p>}
       </article>
-      <DiscordConnection />
       <CardGroup title="Plataformas" count={2} note="De donde llegan las alertas y el chat" wide>
         <Card tour="conexiones-twitch" className="lv-conn" href="#/conexiones/twitch" label="Abrir Twitch" open={open === 'twitch'} warn={tw.state === 'error' || !!tw.errors?.length || !!tw.streakWarning}
           title={<span className="lv-conn-h"><span className="lv-logo"><PfIcon platform="twitch" /></span><span><b>Twitch</b><small>Alertas, chat y marcas</small></span></span>}
@@ -148,7 +150,7 @@ export function Conexiones({ parts }: { parts: string[] }) {
           <dl className="lv-kv"><dt>Enlace</dt><dd>{access.lan ? (access.urls?.[0] || 'Sin red local') : 'Solo desde este PC'}</dd></dl>
         </Card>
       </CardGroup>
-    </div>
+    </div>}
     {open === 'twitch' || open === 'youtube' ? <ConexionSlide key={open} which={open} /> : <SaveBar />}
   </>;
 }
