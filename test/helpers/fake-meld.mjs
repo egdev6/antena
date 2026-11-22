@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 export function fakeMeld(items, options = {}) {
   const trackObservers = options.trackObservers !== false;
   const state = {
+    streaming: false,
     calls: [],                 // invocaciones de control (los observadores van aparte)
     observerCalls: [],         // ['register'|'unregister', contexto, idPista]
     observers: new Map(),      // idPista → contexto (solo las registradas)
@@ -67,7 +68,7 @@ export function fakeMeld(items, options = {}) {
         if (op === 8) { sock.end(); return; }
         const m = JSON.parse(payload.toString());
         if (m.type === 3) sendWs({ type: 10, id: m.id, data: { meld: { methods, signals, properties: [
-          [1, 'session', ['sessionChanged', 5], state.session], [2, 'isStreaming', ['isStreamingChanged', 6], false], [3, 'version', [], 2],
+          [1, 'session', ['sessionChanged', 5], state.session], [2, 'isStreaming', ['isStreamingChanged', 6], state.streaming], [3, 'version', [], 2],
         ] } } });
         if (m.type === 6) {
           const [context, trackId] = m.args;
@@ -93,6 +94,11 @@ export function fakeMeld(items, options = {}) {
   return {
     server, state,
     goLive: () => {},
+    /** Publish a streaming property update through the same WebChannel as Meld. */
+    setStreaming(value) {
+      state.streaming = !!value;
+      send({ type: 2, data: [{ object: 'meld', signals: { 6: [] }, properties: { 2: state.streaming } }] });
+    },
     /** Simula las escenas horizontales y verticales que Meld informa al aire. */
     setCurrentScenes(ids) {
       for (const [id, item] of Object.entries(state.session.items)) if (item.type === 'scene') item.current = ids.includes(id);

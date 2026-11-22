@@ -11,6 +11,7 @@ export function httpError(status, message) { return Object.assign(new Error(mess
 
 // Las mismas reglas sirven a la configuración pública y a la transferencia portable.
 export const credential = (key, prefix) => (prefix === 'access' && key === 'key') ||
+  (prefix === 'discord' && key === 'webhookUrl') ||
   /token|secret|password|passwd|apikey|privatekey|credential|^passphrase$|^authorization$/i.test(key.replace(/[_-]/g, '')) ||
   (['twitch', 'youtube'].includes(prefix) && ['access', 'refresh'].includes(key));
 export const credentialParam = key => ['key', 'pass', 'pwd', 'auth'].includes(key.toLowerCase()) || credential(key, '');

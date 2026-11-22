@@ -103,7 +103,8 @@ test('exportar descarga un ZIP con JSON versionado y medios sin credenciales', a
   await f.c.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: f.downloads });
   await clickWhen(f.c, control('Exportar configuración'));
   let files = [];
-  for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.some(n => n.endsWith('.zip'))) break; await new Promise(r => setTimeout(r, 50)); }
+  // Chrome writes to a temporary .crdownload and renames it: wait until only the finished ZIP is left.
+  for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.some(n => n.endsWith('.zip')) && !files.some(n => n.endsWith('.crdownload'))) break; await new Promise(r => setTimeout(r, 50)); }
   assert.equal(files.length, 1); assert.match(files[0], /^antena-config-\d{4}-\d{2}-\d{2}\.zip$/);
   assert.deepEqual(await f.dom('window.__exportRequests'), [['/api/config/export?skipped=1&sessions=1', 'GET']]);
   assert.equal(await f.dom('window.__exportHref'), '/api/config/export?sessions=1');
@@ -150,7 +151,7 @@ test('exportar avisa de los medios omitidos y conserva la descarga ZIP', async t
   await clickWhen(f.c, control('Exportar configuración'));
   await f.wait(`[...document.querySelectorAll('[role="status"]')].some(e => e.textContent.includes('saludo ñ..png'))`);
   let files = [];
-  for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.some(n => n.endsWith('.zip'))) break; await new Promise(r => setTimeout(r, 50)); }
+  for (let i = 0; i < 100; i++) { files = await readdir(f.downloads); if (files.some(n => n.endsWith('.zip')) && !files.some(n => n.endsWith('.crdownload'))) break; await new Promise(r => setTimeout(r, 50)); }
   assert.equal(files.length, 1); assert.match(files[0], /^antena-config-\d{4}-\d{2}-\d{2}\.zip$/);
   const zip = await openZip(path.join(f.downloads, files[0]));
   try { assert.deepEqual(zip.entries.map(e => e.name), ['config.json']); } finally { await zip.close(); }

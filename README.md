@@ -587,6 +587,10 @@ Automatic sessions that end while push is enabled, and older eligible archives d
 
 Delivery uses **at-least-once**, not exactly-once, semantics: a crash after a POST but before its result is durably recorded can cause another POST. The receiver **must be idempotent**. A permanent response can also be repeated if a crash occurs before its record can be saved. Delivery is not guaranteed after the retry limit, a permanent failure, loss of queue data, or external removal of an unsent session. Last success and error are in-memory; pending survives restart. `GET /api/status`, `GET /api/state` (`status.push`) and MCP `estado` show the last success, sanitized last error and pending count.
 
+### Discord
+
+In **Connections › Discord**, save a Discord webhook, click **Probar**, then enable the announcement switch (off by default). Antena posts one live embed and edits it as platforms join and when the session ends; it does not add VOD links. If creation is **sin confirmar**, check Discord before explicitly choosing **Volver a publicar**, which may create a duplicate. A deleted message is not reposted automatically. The webhook is a local secret and is excluded from configuration exports. See [Discord connections and recovery](docs/discord.md).
+
 ### Twitch
 
 1. Create an app at https://dev.twitch.tv/console/apps/create:

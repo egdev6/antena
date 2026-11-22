@@ -180,6 +180,7 @@ export const CONFIG_SCHEMA = {
   obs: OBS_SCHEMA,
   paused: bool,
   twitch: { clientId: str },
+  discord: { enabled: { ...bool, rejectNull: true }, webhookUrl: str, webhookUrlSet: bool },
   youtube: {
     apiKey: str, channelId: str, video: str,
     pollSeconds: num({ int: true, min: 5, max: 60 }),   // la UI ya acota 5–60

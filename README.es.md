@@ -587,6 +587,10 @@ Las sesiones automáticas que terminan con el envío activado y los archivos ant
 
 El envío sigue una semántica de **al menos una vez**, no exactamente una: una caída después del POST y antes de guardar su resultado puede provocar otro POST. El receptor **debe ser idempotente**. Un fallo permanente también se puede repetir si la app cae antes de guardar su registro. La entrega no está garantizada tras agotar los reintentos, un fallo permanente, la pérdida de la cola o la eliminación externa de una sesión sin enviar. El último éxito y error viven en memoria; los pendientes sobreviven al reinicio. `GET /api/status`, `GET /api/state` (`status.push`) y MCP `estado` muestran el último éxito, el último error saneado y los pendientes.
 
+### Discord
+
+En **Conexiones › Discord**, guarda un webhook de Discord, pulsa **Probar** y después activa el aviso (apagado de serie). antena publica un embed del directo y lo edita al sumarse plataformas y al terminar la sesión, sin enlaces de VOD. Si queda **sin confirmar**, comprueba Discord antes de elegir **Volver a publicar**: podría duplicar el aviso. Si se borra el mensaje no se vuelve a publicar automáticamente. El webhook es un secreto local y no se incluye en las copias de configuración. Consulta [conexión y recuperación de Discord](docs/discord.md).
+
 ### Twitch
 
 1. Crea una app en https://dev.twitch.tv/console/apps/create:

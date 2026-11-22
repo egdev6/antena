@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { get, post } from '../../lib/api';
+import { get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { cx, fmtTime, guard, LazyInput, SegField, Switch, toast } from '../../lib/ui';
 import { isSaving, saveAll, useDraftVersion, useManualSave } from '../../lib/draft';
@@ -102,6 +102,7 @@ export function Conexiones({ parts }: { parts: string[] }) {
         </>}
         {passwordPending && <p className="hint">La contraseña de OBS cambiará al guardar.</p>}
       </article>
+      <DiscordConnection />
       <CardGroup title="Plataformas" count={2} note="De donde llegan las alertas y el chat" wide>
         <Card tour="conexiones-twitch" className="lv-conn" href="#/conexiones/twitch" label="Abrir Twitch" open={open === 'twitch'} warn={tw.state === 'error' || !!tw.errors?.length || !!tw.streakWarning}
           title={<span className="lv-conn-h"><span className="lv-logo"><PfIcon platform="twitch" /></span><span><b>Twitch</b><small>Alertas, chat y marcas</small></span></span>}
@@ -150,6 +151,50 @@ export function Conexiones({ parts }: { parts: string[] }) {
     </div>
     {open === 'twitch' || open === 'youtube' ? <ConexionSlide key={open} which={open} /> : <SaveBar />}
   </>;
+}
+function DiscordConnection() {
+  const config = useLive(s => s.config.discord);
+  const status = useLive(s => s.status.discord);
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState('');
+  const update = async (patch: Record<string, unknown>) => {
+    const saved = await put<{ config: Config }>('/api/config', { discord: patch });
+    live.update(s => ({ config: { ...s.config, discord: saved.config.discord } }));
+  };
+  const action = (fn: () => Promise<void>) => guard(async () => {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  })();
+  return <article className="panel" id="discord">
+    <header><h2>Discord</h2></header>
+    <p className="hint">Publica un aviso del directo y lo actualiza al terminar. El webhook es privado.</p>
+    <label>URL del webhook de Discord<input ref={input} type="password" autoComplete="new-password" spellCheck={false}
+      placeholder={config?.webhookUrlSet ? '••••••••' : 'https://discord.com/api/webhooks/…'} /></label>
+    {config?.webhookUrlSet && <p className="hint">Webhook guardado</p>}
+    <div className="row">
+      <button type="button" className="eg-btn eg-btn--secondary" disabled={busy} onClick={() => action(async () => {
+        const value = input.current?.value || '';
+        if (!value) throw new Error('Introduce la URL del webhook.');
+        await update({ webhookUrl: value });
+        if (input.current) input.current.value = '';
+        setResult('Webhook guardado.');
+      })}>Guardar webhook</button>
+      <button type="button" className="eg-btn eg-btn--ghost" disabled={busy || !config?.webhookUrlSet} onClick={() => action(async () => {
+        setResult('Enviando prueba…');
+        try { await post('/api/discord/test'); setResult('Prueba enviada a Discord.'); }
+        catch (error) { setResult('No se pudo enviar la prueba a Discord.'); throw error; }
+      })}>Probar</button>
+    </div>
+    <Switch checked={!!config?.enabled} disabled={busy || !config?.webhookUrlSet}
+      onChange={enabled => { void action(() => update({ enabled })); }}>Avisar en Discord al empezar el directo</Switch>
+    {result && <p role="status" className="hint">{result}</p>}
+    <p className="hint" aria-live="polite">Estado del aviso: {status?.state || 'sin avisos'}</p>
+    {status?.state === 'sin confirmar' && <button type="button" className="eg-btn eg-btn--secondary" disabled={busy || !status.sessionId}
+      onClick={() => { if (confirm('¿Volver a publicar? El aviso anterior podría haberse publicado ya.')) void action(async () => {
+        await post('/api/discord/republish', { sessionId: status.sessionId, confirm: true });
+      }); }}>Volver a publicar</button>}
+  </article>;
 }
 function ConexionSlide({ which }: { which: 'twitch' | 'youtube' }) {
   useManualSave();
