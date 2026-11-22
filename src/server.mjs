@@ -26,7 +26,7 @@ import { registerShortcutRoutes, PROMPTER_LEGACY_TABS } from './routes/shortcuts
 import { registerSessionRoutes, TIMELINE_MAX } from './routes/sessions.mjs';
 import { registerMetricsRoutes } from './routes/metrics.mjs';
 import { createPushExport } from './push-export.mjs';
-import { createDiscord, validDiscordWebhook } from './discord.mjs';
+import { createDiscord, validDiscordWebhook, validDiscordEmoji } from './discord.mjs';
 import { registerMediaRoutes, MAX_UPLOAD } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
@@ -708,6 +708,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (Object.hasOwn(patch, 'webhookUrlSet') && patch.webhookUrlSet !== !!current)
       throw httpError(400, 'discord.webhookUrlSet: es de solo lectura');
     delete patch.webhookUrlSet;
+    for (const key of ['emojiTwitch', 'emojiYoutube'])
+      if (Object.hasOwn(patch, key) && patch[key] !== '' && !validDiscordEmoji(patch[key]))
+        throw httpError(400, `discord.${key}: se esperaba un emoji de Discord como <:nombre:id>`);
     let hasWebhook = Object.hasOwn(patch, 'webhookUrl'), value = patch.webhookUrl;
     delete patch.webhookUrl;
     if (hasWebhook && typeof value === 'string' && value.startsWith('••••')) hasWebhook = false;
@@ -784,7 +787,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const clearObs = keys.length === 1 && keys[0] === 'obs' && value == null;
     if (clearObs) value = undefined; // null y ausencia borran la sección por igual
     // #106: el valor se valida contra el esquema en su ruta; las rutas nuevas se aceptan.
-    if (keys[0] === 'discord' && (keys.length === 1 || (keys.length === 2 && ['webhookUrl', 'enabled', 'webhookUrlSet'].includes(keys[1])))) {
+    if (keys[0] === 'discord' && (keys.length === 1 || (keys.length === 2 && ['webhookUrl', 'enabled', 'webhookUrlSet', 'emojiTwitch', 'emojiYoutube'].includes(keys[1])))) {
       if (keys[1] === 'webhookUrlSet') throw httpError(400, 'discord.webhookUrlSet: es de solo lectura');
       const section = keys.length === 1 ? (value == null ? { enabled: false, webhookUrl: '' } : value) : { [keys[1]]: value };
       const change = prepareDiscord(section);

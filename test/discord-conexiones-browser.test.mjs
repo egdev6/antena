@@ -100,6 +100,23 @@ test('Discord card masks the saved webhook, enables the switch and reports sampl
   assert.equal((await f.api('GET', '/api/config')).discord.enabled, true);
 });
 
+test('Discord card saves the platform emoji codes and rejects an invalid one without changing them', { timeout: 60000 }, async t => {
+  const f = await fixture(t, []); if (!f) return;
+  const field = p => `document.querySelector('#discord [data-discord-emoji="${p}"]')`;
+  const type = (p, v) => f.dom(`(() => { const el = ${field(p)}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(v)}); el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await f.wait(`!!${field('twitch')} && !!${field('youtube')}`);
+  await type('twitch', '<:twitch:123456789012345678>'); await type('youtube', '<:youtube:223456789012345678>');
+  await clickWhen(f.page.cdp, `document.querySelector('#discord [data-discord-emoji-save]')`);
+  await f.wait(`document.querySelector('#discord [role=status]')?.textContent.includes('Iconos guardados')`);
+  let config = (await f.api('GET', '/api/config')).discord;
+  assert.equal(config.emojiTwitch, '<:twitch:123456789012345678>'); assert.equal(config.emojiYoutube, '<:youtube:223456789012345678>');
+  await type('twitch', '@everyone');
+  await clickWhen(f.page.cdp, `document.querySelector('#discord [data-discord-emoji-save]')`);
+  await new Promise(r => setTimeout(r, 400));
+  config = (await f.api('GET', '/api/config')).discord;
+  assert.equal(config.emojiTwitch, '<:twitch:123456789012345678>', 'an invalid code does not replace the saved one');
+});
+
 test('unconfirmed publication offers explicit confirmation before manual recovery', { timeout: 60000 }, async t => {
   const f = await fixture(t, ['disconnect', 200]); if (!f) return;
   await f.saveWebhook();

@@ -9,6 +9,9 @@ const MAX_ATTEMPTS = 5;
 const VALID_URL = /^https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+$/;
 const SAFE_ID = /^[\w-]+$/;
 const MESSAGE_ID = /^\d+$/;
+// A Discord custom emoji code as Discord writes it (\:name: in the client): <:name:id> or <a:name:id>.
+export const validDiscordEmoji = value => typeof value === 'string' && /^<a?:[A-Za-z0-9_]{2,32}:\d{17,20}>$/.test(value);
+const PLATFORM_ICON = { twitch: '\u{1F7EA}', youtube: '\u{1F7E5}' }; // purple and red squares
 export const validDiscordWebhook = value => typeof value === 'string' && VALID_URL.test(value);
 const fingerprint = url => createHash('sha256').update(url).digest('hex');
 const excerpt = value => typeof value === 'string' ? value.trim().split(/\r?\n/).slice(0, 3).join('\n').slice(0, 300).trim() : '';
@@ -146,8 +149,12 @@ export function createDiscord({ store, dir, twitch, youtube, fetch: send = globa
     const links = [];
     const twitchUrl = entry.login && !entry.inactive?.twitch ? `https://twitch.tv/${entry.login}` : null;
     const youtubeUrl = entry.videoId && !entry.inactive?.youtube ? `https://youtu.be/${entry.videoId}` : null;
-    if (twitchUrl) links.push(`[Twitch](${twitchUrl})`);
-    if (youtubeUrl) links.push(`[YouTube](${youtubeUrl})`);
+    const icon = platform => {
+      const custom = store.config.discord?.[platform === 'twitch' ? 'emojiTwitch' : 'emojiYoutube'];
+      return validDiscordEmoji(custom) ? custom : PLATFORM_ICON[platform];
+    };
+    if (twitchUrl) links.push(`${icon('twitch')} [Twitch](${twitchUrl})`);
+    if (youtubeUrl) links.push(`${icon('youtube')} [YouTube](${youtubeUrl})`);
     const ended = !!data.endedAt;
     const started = Date.parse(data.startedAt);
     const embed = { title: String(entry.streamTitle || data.title || 'Directo').slice(0, 256),
