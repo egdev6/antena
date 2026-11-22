@@ -263,6 +263,7 @@ export interface Config {
   filters: FiltersConfig;
   twitch: TwitchConfig;
   discord?: { enabled?: boolean; webhookUrl?: string; webhookUrlSet?: boolean; emojiTwitch?: string; emojiYoutube?: string };
+  scheduleCalendar?: { enabled?: boolean; url?: string; token?: string; tokenSet?: boolean };
   youtube: YoutubeConfig;
   [key: string]: unknown;
 }
@@ -307,6 +308,7 @@ export interface Status {
   sessionArchive?: unknown;
   heldRecovery?: unknown;
   discord?: { state: string; sessionId: string | null };
+  scheduleCalendar?: { state: string };
 }
 
 // ---------- Meld ----------

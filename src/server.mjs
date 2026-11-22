@@ -27,6 +27,7 @@ import { registerSessionRoutes, TIMELINE_MAX } from './routes/sessions.mjs';
 import { registerMetricsRoutes } from './routes/metrics.mjs';
 import { createPushExport } from './push-export.mjs';
 import { createDiscord, validDiscordWebhook, validDiscordEmoji } from './discord.mjs';
+import { createScheduleCalendar, validScheduleCalendarToken } from './schedule-calendar.mjs';
 import { registerMediaRoutes, MAX_UPLOAD } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
@@ -147,8 +148,8 @@ function sdRequestAllowed(req) {
 
 export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist, recordingTimers,
   push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs, configTransferIO, zipUploadLimit, zipExportLimit,
-  discordFetch, discordRetryDelayMs, discordTimeoutMs } = {}) {
-  let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {}, notifyDiscordStatus = () => {};
+  discordFetch, discordRetryDelayMs, discordTimeoutMs, scheduleCalendarTimeoutMs } = {}) {
+  let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {}, notifyDiscordStatus = () => {}, notifyScheduleStatus = () => {};
   // Validate private process settings before loading or changing any application state.
   const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs,
     onChange: () => notifyPushStatus(), onSpace: () => requestPushReconciliation(), onCheckpoint: () => notifyPushCheckpoint() });
@@ -232,6 +233,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const discord = createDiscord({ store, dir: store.dir, twitch, youtube, fetch: discordFetch, retryDelayMs: discordRetryDelayMs,
     timeoutMs: discordTimeoutMs, onChange: () => notifyDiscordStatus() });
   await discord.load();
+  const scheduleCalendar = createScheduleCalendar({ store, timeoutMs: scheduleCalendarTimeoutMs, onChange: () => notifyScheduleStatus() });
   notifyPushCheckpoint = () => {
     for (const id of protectedArchives) if (pushExport.isDurable(id)) protectedArchives.delete(id);
     session._applyRetention().catch(() => {});
@@ -316,10 +318,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     heldRecovery,
     push: pushExport.status(),
     discord: discord.status(session.data.id),
+    scheduleCalendar: scheduleCalendar.status(),
   });
   const pushStatus = () => bus.send('status', status(), ['panel']);
   notifyPushStatus = pushStatus;
   notifyDiscordStatus = pushStatus;
+  notifyScheduleStatus = pushStatus;
   for (const src of [twitch, youtube, chat, program]) src.on('status', pushStatus);
 
   // eventos de plataforma → motor
@@ -483,6 +487,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // the bus coalesces by event type, so a later chat/alert update must not erase it.
   let includeProgramConfig = false;
   let includeDiscordConfig = false;
+  let includeScheduleConfig = false;
   // #39: an open dock follows saved layout/module and shortcut changes without reloading.
   let includeDockConfig = false;
   const pushPanelConfig = () => {
@@ -491,6 +496,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       prompter: store.config.prompter, chat: store.config.chat, alerts: config.alerts,
       ...(includeProgramConfig ? { program: config.program, obs: config.obs } : {}),
       ...(includeDiscordConfig ? { discord: config.discord } : {}),
+      ...(includeScheduleConfig ? { scheduleCalendar: config.scheduleCalendar } : {}),
       ...(includeDockConfig ? { dock: config.dock, shortcuts: config.shortcuts } : {}),
     }, ['panel']);
   };
@@ -519,8 +525,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   program.on('session', s => bus.send('meld', s, ['panel']));
   // S2/S12: el panel ve qué acción de chat falló (total o parcialmente) y en qué plataforma; los éxitos no se reenvían.
   engine.on('chatResult', r => { if (!r.ok) bus.send('chatResult', r, ['panel']); });
-  const { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics, endSession } = setupAutoSession({
+  let startScheduleRollover = () => {}, closeScheduleStart = () => {};
+  const { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics, endSession, trackScheduleStart } = setupAutoSession({
     store, program, session, youtube, viewers, chat, twitch, engine, log,
+    onRollover: () => startScheduleRollover(), onBeginDrain: () => closeScheduleStart(),
   });
   // Reuse the existing Twitch identity poll for Discord-only manual sessions.
   const sessionIdentityEnabled = viewers.identityEnabled;
@@ -592,8 +600,68 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // #73: al empezar el directo se conecta sola la lectura del chat de YouTube, también si
   // antena arranca con el directo ya en marcha (onInit no emite «streaming»).
   const youtubeAuto = new YouTubeAutoConnect(youtube, { log });
-  program.on('streaming', live => { if (live) youtubeAuto.begin(); else youtubeAuto.end().catch(() => {}); });
-  program.on('status', st => { if (st.state === 'conectado' && st.streaming) youtubeAuto.begin(); });
+  // One admitted attempt per session, fenced against end/reconnect/shutdown. The durable
+  // session claim also prevents a second Twitch PATCH after a process restart.
+  let scheduleLive = false, scheduleEpoch = 0, scheduleClosed = false, scheduleIdentityPending = false;
+  youtube.scheduleIdentityPending = () => scheduleIdentityPending;
+  closeScheduleStart = () => { scheduleClosed = true; scheduleEpoch++; scheduleIdentityPending = false; };
+  const beginYouTube = (rollover = false) => {
+    if (!store.config.scheduleCalendar?.enabled) { scheduleLive = true; youtubeAuto.begin(); return; }
+    if (scheduleClosed || (scheduleLive && !rollover)) return;
+    scheduleLive = true; scheduleIdentityPending = true;
+    const epoch = ++scheduleEpoch;
+    const active = () => !scheduleClosed && scheduleLive && epoch === scheduleEpoch && store.config.scheduleCalendar?.enabled === true;
+    const startYouTube = async video => {
+      if (!active()) return;
+      if (video && youtubeAuto.active && youtube.status.videoId !== video) await youtubeAuto.end();
+      if (!active()) return;
+      scheduleIdentityPending = false;
+      youtubeAuto.begin(video || undefined);
+      if (!video && youtube.status.state === 'escuchando') youtube.confirmListeningIdentity().catch(() => {});
+    };
+    trackScheduleStart(() => (async () => {
+      await session.transitionChain;
+      if (!active()) return;
+      const id = session.data.id;
+      const claim = await session.claimScheduleCalendar(id);
+      if (!active() || !claim) return;
+      if (!claim.claimed) { await startYouTube(claim.videoId); return; }
+      const result = await scheduleCalendar.current(Date.parse(claim.startedAt));
+      if (!active() || session.data.id !== id || session.data.endedAt) return;
+      scheduleCalendar.publish(result.state);
+      if (!result.event) { await startYouTube(); return; }
+      if (!await session.recordScheduledEvent(id, result.event) || !active()) return;
+      await startYouTube(result.event.youtube?.broadcastId);
+      const fields = {};
+      if (result.event.twitch?.title !== null && result.event.twitch?.title !== undefined) fields.title = result.event.twitch.title;
+      if (result.event.twitch?.categoryId !== null && result.event.twitch?.categoryId !== undefined) fields.game_id = result.event.twitch.categoryId;
+      if (!Object.keys(fields).length || !active()) return;
+      try {
+        if (!twitch.userId) throw new Error();
+        const response = await twitch.helix('PATCH', `/channels?broadcaster_id=${encodeURIComponent(twitch.userId)}`, fields, { retryUnauthorized: false });
+        if (!response?.ok) throw new Error();
+      } catch {
+        try { log('[programación] No se pudo actualizar Twitch.'); } catch {}
+        if (active()) scheduleCalendar.publish('No se pudo actualizar Twitch');
+      }
+    })().catch(() => {
+      if (!active()) return;
+      scheduleCalendar.publish('calendario no disponible');
+      scheduleIdentityPending = false;
+      youtubeAuto.begin();
+      if (youtube.status.state === 'escuchando') youtube.confirmListeningIdentity().catch(() => {});
+    }));
+  };
+  startScheduleRollover = () => { if (store.config.scheduleCalendar?.enabled) beginYouTube(true); };
+  program.on('streaming', live => {
+    if (live) beginYouTube();
+    else { scheduleLive = false; scheduleEpoch++; scheduleIdentityPending = false; youtubeAuto.end().catch(() => {}); }
+  });
+  program.on('status', st => {
+    if (st.state !== 'conectado' || !st.streaming) return;
+    if (!store.config.scheduleCalendar?.enabled) { scheduleLive = true; youtubeAuto.begin(); }
+    else beginYouTube();
+  });
   // al conectar Twitch se lee su chat (o el canal indicado)
   twitch.on('status', st => {
     const ch = store.config.chat.twitchChannel || st.user;
@@ -722,10 +790,30 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return { patch, hasWebhook, value };
   };
   const saveDiscordSecret = value => store.setSecret('discord', value ? { webhookUrl: value } : undefined);
+  const prepareSchedule = section => {
+    if (!section || typeof section !== 'object' || Array.isArray(section)) throw httpError(400, 'scheduleCalendar: se esperaba un objeto');
+    if (Object.keys(section).some(key => !['enabled', 'url', 'token', 'tokenSet'].includes(key)))
+      throw httpError(400, 'scheduleCalendar: campo desconocido');
+    const patch = { ...section }, current = store.secrets.scheduleCalendar?.token;
+    if (Object.hasOwn(patch, 'tokenSet') && patch.tokenSet !== !!current) throw httpError(400, 'scheduleCalendar.tokenSet: es de solo lectura');
+    delete patch.tokenSet;
+    let hasToken = Object.hasOwn(patch, 'token'), value = patch.token;
+    delete patch.token;
+    if (hasToken && value === '••••') hasToken = false;
+    if (hasToken && value !== '' && value !== undefined && !validScheduleCalendarToken(value))
+      throw httpError(400, 'scheduleCalendar.token: credencial no válida');
+    const enabled = patch.enabled === undefined ? store.config.scheduleCalendar?.enabled : patch.enabled;
+    if (enabled === true && (!current || store.dirty.secrets || store.pending.secrets > 0 || (hasToken && !value)))
+      throw httpError(400, 'scheduleCalendar.enabled: guarda primero una credencial');
+    return { patch, hasToken, value };
+  };
+  const saveScheduleSecret = value => store.setSecret('scheduleCalendar', value ? { token: value } : undefined);
   route('PUT', '/api/config', async body => {
     let patch = { ...body };
     const discordChange = Object.hasOwn(patch, 'discord') ? prepareDiscord(patch.discord) : null;
     if (discordChange) patch.discord = discordChange.patch;
+    const scheduleChange = Object.hasOwn(patch, 'scheduleCalendar') ? prepareSchedule(patch.scheduleCalendar) : null;
+    if (scheduleChange) patch.scheduleCalendar = scheduleChange.patch;
     if (patch.obs && typeof patch.obs === 'object' && !Array.isArray(patch.obs)) patch.obs = { ...patch.obs };
     if (patch.youtube && (patch.youtube.apiKey === undefined || String(patch.youtube.apiKey).startsWith('••••'))) delete patch.youtube?.apiKey;
     // Igual que con apiKey: la máscara que devuelve publicConfig() no puede pisar el secreto real.
@@ -771,6 +859,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }
     if (hasPassword) await setObsPassword(password);
     if (discordChange?.hasWebhook) await saveDiscordSecret(discordChange.value);
+    if (scheduleChange?.hasToken) await saveScheduleSecret(scheduleChange.value);
     // El borrador puede incluir otras secciones. Solo este campo de Meld no exige reconectar;
     // cualquier otra entrada de Meld conserva la semántica histórica, incluso si no cambia.
     afterConfig(onlyRecording ? { ...patch, meld: false } : patch);
@@ -783,6 +872,20 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (keys[0] === 'customOverlays') {
       await customOverlays.setPath(keys.join('.'), value);
       return { path: p, value: store.getPath(p, store.publicConfig()) };
+    }
+    if (keys[0] === 'scheduleCalendar') {
+      if (keys.length > 2 || (keys.length === 2 && !['url', 'enabled', 'token', 'tokenSet'].includes(keys[1])))
+        throw httpError(400, 'scheduleCalendar: campo desconocido');
+      if (keys[1] === 'tokenSet') throw httpError(400, 'scheduleCalendar.tokenSet: es de solo lectura');
+      const section = keys.length === 1 ? (value == null ? { enabled: false, token: '' } : value) : { [keys[1]]: value };
+      const change = prepareSchedule(section);
+      const [scheduleError] = validatePatch({ scheduleCalendar: change.patch });
+      if (scheduleError) throw httpError(400, scheduleError.message);
+      const next = keys.length === 1 ? deepMerge(DEFAULT_CONFIG.scheduleCalendar, change.patch) : deepMerge(store.config.scheduleCalendar, change.patch);
+      await store.setPath('scheduleCalendar', next);
+      if (change.hasToken) await saveScheduleSecret(change.value);
+      afterConfig({ scheduleCalendar: true });
+      return { path: p, value: store.getPath(keys.join('.'), store.publicConfig()) };
     }
     const clearObs = keys.length === 1 && keys[0] === 'obs' && value == null;
     if (clearObs) value = undefined; // null y ausencia borran la sección por igual
@@ -828,6 +931,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return { path: p, value: store.getPath(target, store.publicConfig()) };
   });
 
+  route('POST', '/api/schedule-calendar/test', async () => scheduleCalendar.test());
   route('POST', '/api/discord/test', async () => discord.test());
   route('POST', '/api/discord/republish', async body => discord.republish(body?.sessionId, body?.confirm));
 
@@ -979,6 +1083,16 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (patch.interviews) { bus.send('interview', { item: interviews.activeItem() }, ['widget']); bus.send('interviewControl', interviews.control(), ['panel']); }
     // Publish only after password changes have completed; publicConfig masks the value.
     if (patch.program || patch.obs) { includeProgramConfig = true; pushPanelConfig(); }
+    if (patch.scheduleCalendar || patch.all) {
+      if (!store.config.scheduleCalendar?.enabled && scheduleIdentityPending) {
+        scheduleEpoch++; scheduleIdentityPending = false;
+        if (scheduleLive && !scheduleClosed) {
+          youtubeAuto.begin();
+          if (youtube.status.state === 'escuchando') youtube.confirmListeningIdentity().catch(() => {});
+        }
+      }
+      includeScheduleConfig = true; pushPanelConfig();
+    }
     if (patch.discord || patch.all) {
       includeDiscordConfig = true; pushPanelConfig();
       if (program.status.state === 'conectado' && program.status.streaming) scheduleDiscordStart();

@@ -71,8 +71,8 @@ export function Conexiones({ parts }: { parts: string[] }) {
   const access = useLive(s => s.access || { lan: false, urls: [] });
   const tw = st.twitch || {}, yt = st.youtube || {}, md = st.meld || {};
   const open = parts[1];
-  // «Cuentas» holds the platforms, the broadcast program and access; «Webhooks» the outgoing notices.
-  const [tab, setTab] = usePageTab(parts, 'conexiones', ['cuentas', 'webhooks']);
+  // Separate accounts, outgoing notices and the optional stream calendar.
+  const [tab, setTab] = usePageTab(parts, 'conexiones', ['cuentas', 'webhooks', 'programacion']);
   const twOk = stateClass(tw.state) === 'ok', ytOk = stateClass(yt.state) === 'ok', mdOk = md.state === 'conectado';
   const nOk = [twOk, ytOk, mdOk, !!access.lan].filter(Boolean).length;
   const ytWrite = !!yt.account && !!yt.liveChatId;
@@ -86,8 +86,8 @@ export function Conexiones({ parts }: { parts: string[] }) {
   const scene = scenes.find((x: any) => x.current);
   return <>
     <PageHead tour="conexiones-head" crumb={`Ajustes · ${nOk} de 4 conectadas`} title="Conexiones" desc="Conecta tus cuentas una vez; la sesión se guarda en tu PC. Pulsa una tarjeta para ver sus ajustes."
-      tabs={[{ id: 'cuentas', label: 'Cuentas' }, { id: 'webhooks', label: 'Webhooks' }]} tab={tab} onTab={setTab} />
-    {tab === 'webhooks' ? <div className="lv-groups"><DiscordConnection /></div> : <div className="lv-groups">
+      tabs={[{ id: 'cuentas', label: 'Cuentas' }, { id: 'webhooks', label: 'Webhooks' }, { id: 'programacion', label: 'Programación' }]} tab={tab} onTab={setTab} />
+    {tab === 'programacion' ? <div className="lv-groups"><ScheduleConnection /></div> : tab === 'webhooks' ? <div className="lv-groups"><DiscordConnection /></div> : <div className="lv-groups">
       <article className="panel" id="programa-emision">
         <header><h2>Programa de emisión</h2><span className="lv-tag">Experimental</span></header>
         <SegField label="Programa de emisión" value={kind} options={[[ 'meld', 'Meld' ], [ 'obs', 'OBS' ]]}
@@ -153,6 +153,49 @@ export function Conexiones({ parts }: { parts: string[] }) {
     </div>}
     {open === 'twitch' || open === 'youtube' ? <ConexionSlide key={open} which={open} /> : <SaveBar />}
   </>;
+}
+function ScheduleConnection() {
+  const config = useLive(s => s.config.scheduleCalendar);
+  const status = useLive(s => s.status.scheduleCalendar);
+  const [url, setUrl] = useState(config?.url || 'http://localhost:4400');
+  const token = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false), [result, setResult] = useState('');
+  useEffect(() => { setUrl(config?.url || 'http://localhost:4400'); }, [config?.url]);
+  const update = async (patch: Record<string, unknown>) => {
+    const saved = await put<{ config: Config }>('/api/config', { scheduleCalendar: patch });
+    live.update(s => ({ config: { ...s.config, scheduleCalendar: saved.config.scheduleCalendar } }));
+  };
+  const action = (fn: () => Promise<void>) => guard(async () => {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  })();
+  return <article className="panel" id="schedule-calendar">
+    <header><h2>Programación del directo</h2></header>
+    <p className="hint">Al empezar, consulta el calendario local para usar el vídeo programado y actualizar el título y la categoría de Twitch. Si no está disponible, busca el directo como siempre.</p>
+    <label>URL del calendario<input value={url} onChange={e => setUrl(e.target.value)} spellCheck={false} /></label>
+    <label>Credencial de lectura<input ref={token} type="password" autoComplete="new-password" spellCheck={false}
+      placeholder={config?.tokenSet ? '••••••••' : 'Credencial'} /></label>
+    {config?.tokenSet && <p className="hint">Credencial guardada</p>}
+    <div className="row">
+      <button type="button" className="eg-btn eg-btn--secondary" disabled={busy} onClick={() => action(async () => {
+        const value = token.current?.value || '';
+        await update({ url, ...(value ? { token: value } : {}) });
+        if (token.current) token.current.value = '';
+        setResult('Ajustes guardados.');
+      })}>Guardar</button>
+      <button type="button" className="eg-btn eg-btn--ghost" disabled={busy || !config?.tokenSet} onClick={() => action(async () => {
+        const response = await post<{ state: string; event?: { title: string | null; scheduledStart: string | null } }>('/api/schedule-calendar/test');
+        if (response.event) {
+          const date = response.event.scheduledStart ? new Date(response.event.scheduledStart).toLocaleString() : 'hora sin confirmar';
+          setResult(`Evento: ${response.event.title || 'sin título'} (${date})`);
+        } else setResult(response.state === 'sin evento programado' ? 'Sin evento programado ahora' : response.state);
+      })}>Probar</button>
+    </div>
+    <Switch checked={!!config?.enabled} disabled={busy || !config?.tokenSet}
+      onChange={enabled => { void action(() => update({ enabled })); }}>Usar el evento programado al empezar el directo</Switch>
+    {result && <p role="status" className="hint">{result}</p>}
+    <p className="hint" aria-live="polite">Último estado: {status?.state || 'sin consultar'}</p>
+  </article>;
 }
 function DiscordConnection() {
   const config = useLive(s => s.config.discord);

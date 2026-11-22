@@ -18,16 +18,17 @@ export class YouTubeAutoConnect {
   }
 
   /** YouTube puede leer el chat: API key o cuenta, y canal o vídeo del directo. */
-  ready() {
+  ready(video) {
     const yt = this.youtube, cfg = yt.cfg || {};
-    return !!((cfg.apiKey || yt.token?.access) && (cfg.channelId || cfg.video));
+    return !!((cfg.apiKey || yt.token?.access) && (video || cfg.channelId || cfg.video));
   }
 
-  begin() {
-    if (this.active || this.youtube.pollClosed || !this.ready()) return;
+  begin(video) {
+    if (this.active || this.youtube.pollClosed || !this.ready(video)) return;
     this.active = true;
-    // Ya iniciado a mano: no se reinicia.
-    if (['escuchando', 'buscando directo'].includes(this.youtube.status.state)) return;
+    this.video = video;
+    // Con un evento explícito se usa su vídeo; sin él se conserva la escucha manual.
+    if (['escuchando', 'buscando directo'].includes(this.youtube.status.state) && (!video || this.youtube.status.videoId === video)) return;
     this.attempt = 0;
     this.log('[youtube]', 'Directo en marcha: conectando el chat de YouTube.');
     this.schedule(0);
@@ -45,7 +46,7 @@ export class YouTubeAutoConnect {
     if (!this.active || yt.pollClosed) return;
     this.attempt++;
     yt.lastError = null;
-    try { await yt.start(); } catch (err) { yt.lastError = err; }
+    try { await yt.start(this.video); } catch (err) { yt.lastError = err; }
     if (!this.active || yt.pollClosed || yt.status.state === 'escuchando') return;
     if (!RETRYABLE.has(yt.lastError?.reason)) return;
     if (this.attempt >= this.maxAttempts) {
@@ -74,6 +75,7 @@ export class YouTubeAutoConnect {
 
   close() {
     this.active = false;
+    this.video = undefined;
     clearTimeout(this.timer);
     this.timer = null;
   }

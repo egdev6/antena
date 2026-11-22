@@ -28,6 +28,7 @@ export const DEFAULT_CONFIG = {
   paused: false,
   twitch: { clientId: '' },
   discord: { enabled: false },
+  scheduleCalendar: { enabled: false, url: 'http://localhost:4400' },
   youtube: { apiKey: '', channelId: '', video: '', pollSeconds: 8, subscriberPollSeconds: 120, subscriberCountAlert: true, streakAlert: true, streakMinSessions: 3, clientId: '', clientSecret: '' },  // clientId/Secret: app OAuth «de escritorio» para escribir en el chat
   chat: { twitchChannel: '', sendTo: 'twitch' },   // sendTo: twitch | youtube | both (desde dónde escribes por defecto)        // vacío = tu propio canal al conectar Twitch
   overlay: { volume: 0.6, gapMs: 700, css: '', queueMax: 20 },   // css: común a todas las alertas; queueMax (#66): tope de la cola del overlay, 0 = sin tope
@@ -170,6 +171,10 @@ export class Store extends EventEmitter {
     if (this.config.discord && typeof this.config.discord === 'object') {
       delete this.config.discord.webhookUrl;
       delete this.config.discord.webhookUrlSet;
+    }
+    if (this.config.scheduleCalendar && typeof this.config.scheduleCalendar === 'object') {
+      delete this.config.scheduleCalendar.token;
+      delete this.config.scheduleCalendar.tokenSet;
     }
     // El mismo backup transaccional que usa la importación conserva los bytes y el modo.
     // Solo el cambio de datos, no añadir la versión en memoria, exige escribir al cargar.
@@ -369,6 +374,7 @@ export class Store extends EventEmitter {
   publicConfig() {
     const c = structuredClone(this.config);
     c.discord = { ...c.discord, webhookUrl: this.secrets.discord?.webhookUrl ? '••••' : '', webhookUrlSet: !!this.secrets.discord?.webhookUrl };
+    c.scheduleCalendar = { ...c.scheduleCalendar, token: this.secrets.scheduleCalendar?.token ? '••••' : '', tokenSet: !!this.secrets.scheduleCalendar?.token };
     c.obs = { ...c.obs, url: cleanUrl(c.obs?.url), passwordSet: !!this.secrets.obs?.password };
     delete c.obs.password;
     if (c.meld && typeof c.meld === 'object') c.meld.url = cleanUrl(c.meld.url);
