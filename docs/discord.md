@@ -1,0 +1,11 @@
+# Avisos de directos en Discord
+
+En **Conexiones › Discord**, pega la URL HTTPS de un webhook de `discord.com` o `discordapp.com`, pulsa **Guardar webhook** y después **Probar**. La prueba publica un embed identificado como «Prueba de antena». Activa «Avisar en Discord al empezar el directo» únicamente después de guardar el webhook; está desactivado de serie.
+
+El webhook es una credencial: antena lo guarda en `secrets.json` dentro de la carpeta local de datos. La interfaz solo muestra una máscara; ni las respuestas públicas ni las copias JSON o ZIP contienen la URL. Una importación no sustituye la credencial local. Trata ese archivo como privado y sustituye el webhook en Discord si se ha compartido.
+
+Al confirmar el programa de emisión que está en directo, antena publica un embed para la sesión y guarda el identificador del mensaje por separado de la configuración. Se edita cuando se identifica otra plataforma y al terminar la sesión. Incluye el título, enlaces de Twitch y YouTube conocidos y, cuando está disponible, un extracto de la descripción y la miniatura de YouTube. La consulta adicional `videos.list` de YouTube utiliza la API key o la cuenta configurada y consume cuota. Al terminar conserva los enlaces del directo y marca «Terminado»; no añade enlaces de VOD. La detección de plataformas depende de las conexiones y sondeos de antena.
+
+Los rechazos claros y las ediciones se reintentan con espera creciente y un límite de intentos; se respeta `retry_after` de Discord. Si la respuesta al primer envío se pierde, o un fallo deja incierto si Discord lo aceptó, antena muestra **sin confirmar** y no lo reenvía automáticamente, tampoco tras reiniciar. Comprueba el canal de Discord: **Volver a publicar** pide confirmación y puede crear un duplicado si el primer envío sí llegó. Si Discord informa que el mensaje editado no existe, se muestra **mensaje no encontrado** y no se republica.
+
+Para integraciones locales, `POST /api/discord/test` envía la prueba. `POST /api/discord/republish` exige `{ "sessionId": "…", "confirm": true }` y solo funciona para un aviso sin confirmar. El estado sin credenciales está disponible en `GET /api/status` y en los eventos de estado del panel. Ningún fallo de Discord bloquea la sesión.

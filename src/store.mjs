@@ -27,6 +27,7 @@ export const DEFAULT_CONFIG = {
   port: 4500,
   paused: false,
   twitch: { clientId: '' },
+  discord: { enabled: false },
   youtube: { apiKey: '', channelId: '', video: '', pollSeconds: 8, subscriberPollSeconds: 120, subscriberCountAlert: true, streakAlert: true, streakMinSessions: 3, clientId: '', clientSecret: '' },  // clientId/Secret: app OAuth «de escritorio» para escribir en el chat
   chat: { twitchChannel: '', sendTo: 'twitch' },   // sendTo: twitch | youtube | both (desde dónde escribes por defecto)        // vacío = tu propio canal al conectar Twitch
   overlay: { volume: 0.6, gapMs: 700, css: '', queueMax: 20 },   // css: común a todas las alertas; queueMax (#66): tope de la cola del overlay, 0 = sin tope
@@ -166,6 +167,10 @@ export class Store extends EventEmitter {
     this.config = deepMerge(structuredClone(DEFAULT_CONFIG), migration.config);
     // Nunca importar una contraseña de config.json a las vistas o a guardados posteriores.
     if (this.config.obs && typeof this.config.obs === 'object') delete this.config.obs.password;
+    if (this.config.discord && typeof this.config.discord === 'object') {
+      delete this.config.discord.webhookUrl;
+      delete this.config.discord.webhookUrlSet;
+    }
     // El mismo backup transaccional que usa la importación conserva los bytes y el modo.
     // Solo el cambio de datos, no añadir la versión en memoria, exige escribir al cargar.
     if (migration.changed) await this.replaceConfigWithBackup(this.config, this.config, { all: true });
@@ -363,6 +368,7 @@ export class Store extends EventEmitter {
   /** Config apta para el panel: oculta secretos y credenciales en las URL de programa. */
   publicConfig() {
     const c = structuredClone(this.config);
+    c.discord = { ...c.discord, webhookUrl: this.secrets.discord?.webhookUrl ? '••••' : '', webhookUrlSet: !!this.secrets.discord?.webhookUrl };
     c.obs = { ...c.obs, url: cleanUrl(c.obs?.url), passwordSet: !!this.secrets.obs?.password };
     delete c.obs.password;
     if (c.meld && typeof c.meld === 'object') c.meld.url = cleanUrl(c.meld.url);

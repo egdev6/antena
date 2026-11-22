@@ -100,6 +100,12 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
     const { config: _config, ...metadata } = file;
     portable(metadata, '', true);
     const raw = portable(file.config, '', true);
+    // Derived from the stored secret: like PUT, a value that matches is ignored and a different
+    // one is rejected as read-only; it is never stored.
+    if (raw?.discord && typeof raw.discord === 'object' && Object.hasOwn(raw.discord, 'webhookUrlSet')) {
+      if (raw.discord.webhookUrlSet !== !!store.secrets.discord?.webhookUrl) throw httpError(400, 'discord.webhookUrlSet: es de solo lectura');
+      delete raw.discord.webhookUrlSet;
+    }
     // Valida primero lo que llegó: una migración no puede ocultar una sección o alias inválidos.
     const [rawError] = validatePatch(raw); if (rawError) throw httpError(400, rawError.message);
     const input = migrateConfig(raw).config;
@@ -110,6 +116,8 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
     }
     const before = structuredClone(store.config);
     const next = deepMerge(structuredClone(DEFAULT_CONFIG), input);
+    if (next.discord?.enabled && !store.secrets.discord?.webhookUrl)
+      throw httpError(400, 'discord.enabled: guarda primero un webhook de Discord');
     next.port = before.port; preserveLocal(before, next);
     const chat = deepMerge(structuredClone(DEFAULT_CONFIG.widgets.chat), before.widgets?.chat || {});
     const [variantError] = validateImportedChatVariants(before.widgets?.chatVariants, next.widgets?.chatVariants, chat);

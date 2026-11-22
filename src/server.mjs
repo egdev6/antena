@@ -26,6 +26,7 @@ import { registerShortcutRoutes, PROMPTER_LEGACY_TABS } from './routes/shortcuts
 import { registerSessionRoutes, TIMELINE_MAX } from './routes/sessions.mjs';
 import { registerMetricsRoutes } from './routes/metrics.mjs';
 import { createPushExport } from './push-export.mjs';
+import { createDiscord, validDiscordWebhook } from './discord.mjs';
 import { registerMediaRoutes, MAX_UPLOAD } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
@@ -145,8 +146,9 @@ function sdRequestAllowed(req) {
 }
 
 export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist, recordingTimers,
-  push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs, configTransferIO, zipUploadLimit, zipExportLimit } = {}) {
-  let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {};
+  push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs, configTransferIO, zipUploadLimit, zipExportLimit,
+  discordFetch, discordRetryDelayMs, discordTimeoutMs } = {}) {
+  let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {}, notifyDiscordStatus = () => {};
   // Validate private process settings before loading or changing any application state.
   const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs,
     onChange: () => notifyPushStatus(), onSpace: () => requestPushReconciliation(), onCheckpoint: () => notifyPushCheckpoint() });
@@ -227,6 +229,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     pushExportEnabled: pushExport.status().enabled,
     preserveArchived: id => !retentionReady || (protectedArchives.has(id) && !pushExport.isDurable(id)) }).load();
   await pushExport.load(store.dir);
+  const discord = createDiscord({ store, dir: store.dir, twitch, youtube, fetch: discordFetch, retryDelayMs: discordRetryDelayMs,
+    timeoutMs: discordTimeoutMs, onChange: () => notifyDiscordStatus() });
+  await discord.load();
   notifyPushCheckpoint = () => {
     for (const id of protectedArchives) if (pushExport.isDurable(id)) protectedArchives.delete(id);
     session._applyRetention().catch(() => {});
@@ -310,9 +315,11 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     sessionArchive: session.archiveState(),
     heldRecovery,
     push: pushExport.status(),
+    discord: discord.status(session.data.id),
   });
   const pushStatus = () => bus.send('status', status(), ['panel']);
   notifyPushStatus = pushStatus;
+  notifyDiscordStatus = pushStatus;
   for (const src of [twitch, youtube, chat, program]) src.on('status', pushStatus);
 
   // eventos de plataforma → motor
@@ -475,6 +482,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Once program settings change, include their public snapshot in every config event:
   // the bus coalesces by event type, so a later chat/alert update must not erase it.
   let includeProgramConfig = false;
+  let includeDiscordConfig = false;
   // #39: an open dock follows saved layout/module and shortcut changes without reloading.
   let includeDockConfig = false;
   const pushPanelConfig = () => {
@@ -482,6 +490,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     bus.send('config', {
       prompter: store.config.prompter, chat: store.config.chat, alerts: config.alerts,
       ...(includeProgramConfig ? { program: config.program, obs: config.obs } : {}),
+      ...(includeDiscordConfig ? { discord: config.discord } : {}),
       ...(includeDockConfig ? { dock: config.dock, shortcuts: config.shortcuts } : {}),
     }, ['panel']);
   };
@@ -513,6 +522,73 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const { beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics, endSession } = setupAutoSession({
     store, program, session, youtube, viewers, chat, twitch, engine, log,
   });
+  // Reuse the existing Twitch identity poll for Discord-only manual sessions.
+  const sessionIdentityEnabled = viewers.identityEnabled;
+  viewers.identityEnabled = () => sessionIdentityEnabled() || (
+    !store.config.program.autoSession && store.config.discord?.enabled === true
+    && validDiscordWebhook(store.secrets.discord?.webhookUrl)
+    && program.status.state === 'conectado' && program.status.streaming === true && !session.data.endedAt
+  );
+  // Wait for the session cutover, then give platform discovery a short head start.
+  // This also announces manual sessions without changing their accounting semantics.
+  let discordStartTimer = null, discordStartId = null, discordManual = { id: null, platforms: {} };
+  const discordSnapshot = () => ({ ...session.data, platforms: {
+    ...session.data.platforms, ...(discordManual.id === session.data.id ? discordManual.platforms : {}),
+  } });
+  const scheduleDiscordStart = () => {
+    if (!store.config.discord?.enabled) return;
+    session.transitionChain.then(() => {
+      if (!store.config.discord?.enabled || program.status.state !== 'conectado' || !program.status.streaming || session.data.endedAt) return;
+      const id = session.data.id;
+      clearTimeout(discordStartTimer); discordStartId = id;
+      discordStartTimer = setTimeout(() => {
+        discordStartTimer = null; discordStartId = null;
+        if (session.data.id === id && !session.data.endedAt && program.status.state === 'conectado' && program.status.streaming)
+          discord.observe(discordSnapshot(), { start: true });
+      }, 200);
+      discordStartTimer.unref?.();
+    }).catch(() => {});
+  };
+  const manualDiscordIdentity = (platform, value, observation) => {
+    if (!store.config.discord?.enabled || store.config.program.autoSession || !value || !program.status.streaming || session.data.endedAt) return;
+    const id = session.data.id;
+    Promise.resolve(observation?.target ?? id).then(target => {
+      const targetId = typeof target === 'string' ? target : target?.id;
+      if (targetId !== id || session.data.id !== id || store.config.program.autoSession || !program.status.streaming || session.data.endedAt) return;
+      if (discordManual.id !== id) discordManual = { id, platforms: {} };
+      discordManual.platforms[platform] = value;
+      discord.observe(discordSnapshot());
+    }).catch(() => {});
+  };
+  viewers.on('streamIdentity', (identity, observation) => manualDiscordIdentity('twitch', identity, observation));
+  viewers.on('seriesObservation', (platform, sample, observation) => {
+    if (!store.config.discord?.enabled || !['twitch', 'youtube'].includes(platform) || (sample.reason && sample.reason !== 'offline') || !observation?.target) return;
+    const id = session.data.id, live = !sample.reason;
+    Promise.all([Promise.resolve(observation.target), Promise.resolve(observation.viewerAdmission)]).then(([target, admission]) => {
+      const targetId = typeof target === 'string' ? target : target?.id;
+      if (targetId !== id || session.data.id !== id || session.data.endedAt || !program.status.streaming) return;
+      if (live && platform === 'twitch' && store.config.program.autoSession && admission?.id !== id) return;
+      discord.observe(discordSnapshot(), { presence: { platform, live } });
+    }).catch(() => {});
+  });
+  youtube.on('status', (st, observation) => {
+    if (st.state === 'escuchando' && st.videoId) manualDiscordIdentity('youtube', { videoId: st.videoId, title: st.title }, observation);
+  });
+  session.on('change', change => {
+    if (change?.platform) discord.observe(session.data, { presence: { platform: change.platform, live: true } });
+    if (change?.reset) {
+      if (store.config.discord?.enabled && program.status.streaming) discordStartId = session.data.id;
+      scheduleDiscordStart();
+    }
+  });
+  session.on('finalized', data => {
+    if (discordStartId === data.id) {
+      clearTimeout(discordStartTimer); discordStartTimer = null; discordStartId = null;
+      discord.observe({ ...data, endedAt: undefined }, { start: true });
+    }
+    discord.observe(data);
+  });
+  program.on('status', st => { if (st.state === 'conectado' && st.streaming) scheduleDiscordStart(); });
   // #73: al empezar el directo se conecta sola la lectura del chat de YouTube, también si
   // antena arranca con el directo ya en marcha (onInit no emite «streaming»).
   const youtubeAuto = new YouTubeAutoConnect(youtube, { log });
@@ -624,8 +700,29 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return p ? { path: p, value: store.getPath(configAliasPath(p), store.publicConfig()) } : store.publicConfig();
   });
   const setObsPassword = value => store.setSecret('obs', value ? { password: value } : undefined);
+  // Validate the complete Discord change before touching either file or a persistence counter.
+  const prepareDiscord = section => {
+    if (!section || typeof section !== 'object' || Array.isArray(section)) throw httpError(400, 'discord: se esperaba un objeto');
+    const patch = { ...section };
+    const current = store.secrets.discord?.webhookUrl;
+    if (Object.hasOwn(patch, 'webhookUrlSet') && patch.webhookUrlSet !== !!current)
+      throw httpError(400, 'discord.webhookUrlSet: es de solo lectura');
+    delete patch.webhookUrlSet;
+    let hasWebhook = Object.hasOwn(patch, 'webhookUrl'), value = patch.webhookUrl;
+    delete patch.webhookUrl;
+    if (hasWebhook && typeof value === 'string' && value.startsWith('••••')) hasWebhook = false;
+    if (hasWebhook && value !== '' && value !== undefined && !validDiscordWebhook(value))
+      throw httpError(400, 'discord.webhookUrl: se esperaba una URL de webhook de Discord válida');
+    const nextEnabled = patch.enabled === undefined ? store.config.discord?.enabled : patch.enabled;
+    if (nextEnabled === true && (!current || store.dirty.secrets || store.pending.secrets > 0 || (hasWebhook && !value)))
+      throw httpError(400, 'discord.enabled: guarda primero un webhook de Discord');
+    return { patch, hasWebhook, value };
+  };
+  const saveDiscordSecret = value => store.setSecret('discord', value ? { webhookUrl: value } : undefined);
   route('PUT', '/api/config', async body => {
     let patch = { ...body };
+    const discordChange = Object.hasOwn(patch, 'discord') ? prepareDiscord(patch.discord) : null;
+    if (discordChange) patch.discord = discordChange.patch;
     if (patch.obs && typeof patch.obs === 'object' && !Array.isArray(patch.obs)) patch.obs = { ...patch.obs };
     if (patch.youtube && (patch.youtube.apiKey === undefined || String(patch.youtube.apiKey).startsWith('••••'))) delete patch.youtube?.apiKey;
     // Igual que con apiKey: la máscara que devuelve publicConfig() no puede pisar el secreto real.
@@ -670,6 +767,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       await store.patchConfig(patch);
     }
     if (hasPassword) await setObsPassword(password);
+    if (discordChange?.hasWebhook) await saveDiscordSecret(discordChange.value);
     // El borrador puede incluir otras secciones. Solo este campo de Meld no exige reconectar;
     // cualquier otra entrada de Meld conserva la semántica histórica, incluso si no cambia.
     afterConfig(onlyRecording ? { ...patch, meld: false } : patch);
@@ -686,6 +784,18 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const clearObs = keys.length === 1 && keys[0] === 'obs' && value == null;
     if (clearObs) value = undefined; // null y ausencia borran la sección por igual
     // #106: el valor se valida contra el esquema en su ruta; las rutas nuevas se aceptan.
+    if (keys[0] === 'discord' && (keys.length === 1 || (keys.length === 2 && ['webhookUrl', 'enabled', 'webhookUrlSet'].includes(keys[1])))) {
+      if (keys[1] === 'webhookUrlSet') throw httpError(400, 'discord.webhookUrlSet: es de solo lectura');
+      const section = keys.length === 1 ? (value == null ? { enabled: false, webhookUrl: '' } : value) : { [keys[1]]: value };
+      const change = prepareDiscord(section);
+      const [discordError] = validatePatch({ discord: change.patch });
+      if (discordError) throw httpError(400, discordError.message);
+      const next = keys.length === 1 ? deepMerge(DEFAULT_CONFIG.discord, change.patch) : deepMerge(store.config.discord, change.patch);
+      await store.setPath('discord', next);
+      if (change.hasWebhook) await saveDiscordSecret(change.value);
+      afterConfig({ discord: true });
+      return { path: p, value: store.getPath(keys.join('.'), store.publicConfig()) };
+    }
     const [error] = validatePath(p, value);
     if (error) throw httpError(400, error.message);
     if (keys[0] === 'obs' && keys[1] === 'passwordSet') throw httpError(400, 'obs.passwordSet: es de solo lectura');
@@ -714,6 +824,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     afterConfig({ [p.split('.')[0]]: !onlyRecording, ...(target !== p || programPatch ? { program: true } : {}) });
     return { path: p, value: store.getPath(target, store.publicConfig()) };
   });
+
+  route('POST', '/api/discord/test', async () => discord.test());
+  route('POST', '/api/discord/republish', async body => discord.republish(body?.sessionId, body?.confirm));
 
   // Export v1 excludes credentials; import previews the same strict schema before a local backup.
   const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO, zipUploadLimit, zipExportLimit,
@@ -863,6 +976,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (patch.interviews) { bus.send('interview', { item: interviews.activeItem() }, ['widget']); bus.send('interviewControl', interviews.control(), ['panel']); }
     // Publish only after password changes have completed; publicConfig masks the value.
     if (patch.program || patch.obs) { includeProgramConfig = true; pushPanelConfig(); }
+    if (patch.discord || patch.all) {
+      includeDiscordConfig = true; pushPanelConfig();
+      if (program.status.state === 'conectado' && program.status.streaming) scheduleDiscordStart();
+    }
   }
 
   // ---------- subida de archivos (cuerpo = archivo; nombre en ?name=) ----------
@@ -1190,14 +1307,16 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const isHttpClosing = () => closing;
   const closeHttp = () => {
     if (httpClosePromise) return httpClosePromise;
-    let idle, pushClose;
+    let idle, pushClose, discordClose;
     try {
+      clearTimeout(discordStartTimer);
+      discordClose = discord.close();
       pushClose = pushExport.close(); // finish accepted queue writes, never wait for network retries
       closeAckWindow();          // terminal: la ventana no revive
       stopAdmission();
       idle = whenIdle();         // idle fresca: incluye handlers ACK admitidos en la ventana
     } catch (err) { httpClosePromise = Promise.reject(err); return httpClosePromise; }
-    httpClosePromise = Promise.all([idle, pushClose]).then(() => new Promise((resolve, reject) => {
+    httpClosePromise = Promise.all([idle, pushClose, discordClose]).then(() => new Promise((resolve, reject) => {
       try {
         for (const { timer } of ssePings) clearInterval(timer);
         ssePings.clear();

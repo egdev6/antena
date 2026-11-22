@@ -262,6 +262,7 @@ export interface Config {
   tts: TtsConfig;
   filters: FiltersConfig;
   twitch: TwitchConfig;
+  discord?: { enabled?: boolean; webhookUrl?: string; webhookUrlSet?: boolean };
   youtube: YoutubeConfig;
   [key: string]: unknown;
 }
@@ -305,6 +306,7 @@ export interface Status {
   sessionRecovery?: unknown;
   sessionArchive?: unknown;
   heldRecovery?: unknown;
+  discord?: { state: string; sessionId: string | null };
 }
 
 // ---------- Meld ----------
