@@ -43,7 +43,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Browser sources for the broadcast program:** every alert, widget, panel and custom overlay is a browser source with its size, ready to copy.
 - **Prompter for the Elgato Prompter** (1024×600): the app opens it full screen on that display.
 - **Viewers record alert** per platform (Twitch and YouTube), with anti-spam brakes.
-- **Appearance:** one theme for everything that goes on screen (alerts, widgets and credits): colors, fonts (including yours), icons per alert, shape, position, animation and sound. The default one is the EGDEV theme.
+- **Appearance:** the active theme controls everything on screen (alerts, widgets and credits): colors, fonts, icons, shape, position, animation and sound. Saved themes can be managed through the API or MCP; the panel selector is still to come.
 - **Customizable Stream Deck shortcuts:** each one chains steps (bookmark, pause, scene, layer, chat, prompter tab…) and has its own `/sd/custom/<id>` endpoint.
 - **Dock:** the whole live show minus the video preview — scenes, broadcast program audio tracks, alerts, questions, vote, giveaway, teleprompter, and credits — with customizable modules and layouts. By default it uses columns from 768 px wide and tabs below that.
 
@@ -132,6 +132,10 @@ Panel: http://127.0.0.1:4500/ · prompter: `/prompter` · dock: `/dock`. Without
 ### Scheduled streams
 
 **Conexiones › Programación** can use a local external stream calendar at stream start (off by default). Save a read-only credential, test it, then enable the switch. A matching event supplies the YouTube video without search and can set Twitch title/category once; on failure antena falls back to normal discovery. Credentials remain local and are excluded from exports. The loopback-only API contract and details are in [docs/scheduled-stream-calendar.md](docs/scheduled-stream-calendar.md).
+
+### Saved themes
+
+Manage up to 10 full saved themes through `/api/themes` or MCP; edits apply to the active theme, and switching leaves connections, sessions and custom-overlay code untouched. Alerts already showing or queued keep the per-alert settings they were built with; alerts built after the switch use the new theme. Existing installs migrate to **Normal** with their effective appearance frozen. The panel selector and per-overlay theme CSS are not available yet. See [docs/themes.md](docs/themes.md).
 
 ### Configuration backup
 
@@ -397,7 +401,7 @@ What it carries:
 
 ### Appearance
 
-In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. There is a single theme; the default is the EGDEV one and whatever you change here overrides it. While you change it, only the panel preview shows it (a draft in `/api/theme/draft` that only `?themeDraft` previews load); pressing **Save** sends it to every layer open in the broadcast program at once, without reloading them. If saving fails, the draft stays and the panel warns; a starting point, an import or «Restore EGDEV» are applied and saved right away and drop the draft.
+In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. These controls edit the active saved theme; the existing installation starts in «Normal» with its appearance preserved. While you change it, only the panel preview shows it (a draft in `/api/theme/draft` that only `?themeDraft` previews load); pressing **Save** sends it to every layer open in the broadcast program at once, without reloading them. If saving fails, the draft stays and the panel warns; a starting point, an import or «Restore EGDEV» are applied and saved right away and drop the draft.
 
 - **Color:** accent, soft accent, card background (gradient, solid or glass, with its opacity), texts, border (accent or its own), glow intensity and, if you want, the color of each platform.
 - **Typography:** title and body fonts (the brand's, the system's or your own in woff2/woff/ttf/otf uploaded in General and files), alert text size, uppercase and black outline.

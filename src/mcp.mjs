@@ -198,6 +198,13 @@ tool('configurar_espectadores', 'Ajustes de la alerta de récord de espectadores
 tool('fijar_record_espectadores', 'Cambia a mano el récord guardado de una plataforma (0 = empezar de cero). No lanza alerta.', { plataforma: S.enum('Plataforma', ['twitch', 'youtube']), valor: S.num('Nuevo récord') },
   ({ plataforma, valor }) => put('/api/viewers/records/' + plataforma, { value: valor }), ['plataforma', 'valor']);
 
+// Temas guardados: los cambios de pantalla y el borrado requieren confirmación humana.
+tool('listar_temas', 'Lista los temas guardados e indica cuál está activo.', {}, () => get('/api/themes'));
+tool('activar_tema', 'Activa un tema guardado inmediatamente en las capas del directo.', { id: S.str('Id del tema') }, ({ id }) => post(`/api/themes/${enc(id)}/activate`), ['id']);
+tool('duplicar_tema', 'Crea un tema como copia completa de otro.', { id: S.str('Id del tema de origen'), nombre: S.str('Nombre del nuevo tema') }, ({ id, nombre }) => post('/api/themes/duplicate', { from: id, name: nombre }), ['id', 'nombre']);
+tool('renombrar_tema', 'Cambia el nombre de un tema guardado.', { id: S.str('Id del tema'), nombre: S.str('Nuevo nombre') }, ({ id, nombre }) => put(`/api/themes/${enc(id)}`, { name: nombre }), ['id', 'nombre']);
+tool('borrar_tema', 'Borra un tema inactivo; el activo no se puede borrar.', { id: S.str('Id del tema') }, ({ id }) => del(`/api/themes/${enc(id)}`), ['id']);
+
 // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
 tool('ver_tema', 'Tema de pantalla actual (colores, fuentes, iconos, forma, posición, animación y sonido), el de serie, los puntos de partida, las fuentes y los iconos disponibles.', {}, () => get('/api/theme'));
 tool('cambiar_tema', 'Cambia el tema de todo lo que sale en pantalla (solo los campos que pases). Color: accent, accentSoft, text, textSoft, muted, surface, surfaceOpacity (0–100), surfaceStyle (gradient|solid|glass), border (vacío = del acento), borderWidth, glow (0–200 %), platformAccent + twitchColor/youtubeColor. Tipografía: fontDisplay, fontBody (id de fuente o media:archivo.woff2), textScale (%), uppercase, outline. Iconos: iconStroke (thin|normal|bold), iconColor, tileShape (square|round|none), platformBadge (text|logo|none), icons { tipo: icono|logo|none|emoji:🎉|media:archivo.png } (null vuelve al de serie). Forma: round (%), alertWidth (px), alertScale (%), tilt, reflection, decorations, timerBar. Posición: position (top|center|bottom), align (left|center|right), offsetX, offsetY. Movimiento: animation (3d|slide|fade|pop|none). Sonido: sound (default|none|archivo), soundVolume (%).',
@@ -409,7 +416,7 @@ const CONFIRM_ALWAYS = new Set([
   'acceso_movil', 'escribir_chat', 'anunciar_chat', 'enviar_mensaje_ahora', 'ejecutar_acciones', 'lanzar_atajo', 'importar_archivo',
   'quitar_elemento', 'quitar_participante', 'vaciar_preguntas', 'vaciar_cola', 'reiniciar_sorteo', 'restaurar_alerta',
   'twitch_desconectar', 'youtube_desconectar_cuenta', 'youtube_parar', 'meld_desconectar', 'programa_desconectar',
-  'meld_llamar', 'programa_llamar', 'editar_entrevista', 'parar_entrevista',
+  'meld_llamar', 'programa_llamar', 'editar_entrevista', 'parar_entrevista', 'activar_tema',
 ]);
 const RECORD_STREAM_COMMANDS = new Set([
   'meld.startStreamingAction', 'meld.stopStreamingAction', 'meld.toggleStreamingAction',
@@ -424,7 +431,7 @@ const CONFIRM_SOMETIMES = {
 const READ_ONLY = new Set([
   'estado', 'ver_config', 'exportar_configuracion', 'listar_alertas', 'ver_alerta', 'historial_alertas',
   'listar_comandos', 'listar_mensajes', 'estado_interactivos', 'listar_preguntas', 'estado_sorteo',
-  'estado_espectadores', 'ver_tema', 'estado_teleprompter', 'listar_archivos', 'leer_chat', 'ver_widgets',
+  'estado_espectadores', 'ver_tema', 'listar_temas', 'estado_teleprompter', 'listar_archivos', 'leer_chat', 'ver_widgets',
   'listar_overlays', 'ver_overlay', 'metricas_directo', 'resumen_directo', 'listar_directos',
   'eventos_directo', 'cronologia', 'listar_atajos', 'fuentes_meld', 'meld_estado', 'programa_estado',
   'listar_entrevistas', 'ver_entrevista', 'entrevista_estado',

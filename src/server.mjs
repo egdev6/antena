@@ -37,6 +37,7 @@ import { registerChatVariantsRoutes } from './routes/chat-variants.mjs';
 import { registerMeldRoutes } from './routes/meld.mjs';
 import { registerViewersRoutes } from './routes/viewers.mjs';
 import { registerThemeRoutes } from './routes/theme.mjs';
+import { registerThemesRoutes } from './routes/themes.mjs';
 import { registerConfigTransferRoutes } from './routes/config-transfer.mjs';
 import { registerAlertRoutes } from './routes/alerts.mjs';
 import { registerCommandRoutes } from './routes/commands.mjs';
@@ -490,6 +491,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   let includeScheduleConfig = false;
   // #39: an open dock follows saved layout/module and shortcut changes without reloading.
   let includeDockConfig = false;
+  let includeThemesConfig = false;
   const pushPanelConfig = () => {
     const config = store.publicConfig();
     bus.send('config', {
@@ -498,6 +500,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       ...(includeDiscordConfig ? { discord: config.discord } : {}),
       ...(includeScheduleConfig ? { scheduleCalendar: config.scheduleCalendar } : {}),
       ...(includeDockConfig ? { dock: config.dock, shortcuts: config.shortcuts } : {}),
+      ...(includeThemesConfig ? { themes: config.themes } : {}),
     }, ['panel']);
   };
   store.on('change', patch => {
@@ -509,6 +512,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       bus.send('theme', { ...publicTheme(store.config.theme), alertPreviews: alertPreviews() }, ['panel']);
     }
     if (patch.widgets || patch.all) engine.pushWidgets();
+    if (patch.themes && patch.interactive) pushInteractive();
+    if (patch.themes && patch.timers) bus.send('timers', timers.snapshot(), ['panel']);
     // Overlays editados fuera de sus rutas (PUT /api/config, config/set o el MCP genérico):
     // mismo par de eventos que onChange, para que la vista previa y las capas se recarguen.
     if (patch.customOverlays || patch.all) {
@@ -518,7 +523,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // El Bus sustituye config por tipo: cada envío debe conservar todas sus secciones.
     // Incluye alertas editadas fuera de este panel (MCP, otra ventana, el móvil).
     if (patch.dock || patch.shortcuts) includeDockConfig = true;
-    if (patch.prompter || patch.chat || patch.alerts || patch.dock || patch.shortcuts || patch.all) pushPanelConfig();
+    if (patch.themes) includeThemesConfig = true;
+    if (patch.prompter || patch.chat || patch.alerts || patch.dock || patch.shortcuts || patch.themes || patch.all) pushPanelConfig();
   });
   // la persistencia puede fallar sin emitir 'change' (o estar en vuelo): el panel necesita su propio canal
   store.on('persistence', state => bus.send('persistence', state, ['panel']));
@@ -810,6 +816,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const saveScheduleSecret = value => store.setSecret('scheduleCalendar', value ? { token: value } : undefined);
   route('PUT', '/api/config', async body => {
     let patch = { ...body };
+    if (Object.hasOwn(patch, 'themes')) throw httpError(400, 'themes: se gestionan con /api/themes');
     const discordChange = Object.hasOwn(patch, 'discord') ? prepareDiscord(patch.discord) : null;
     if (discordChange) patch.discord = discordChange.patch;
     const scheduleChange = Object.hasOwn(patch, 'scheduleCalendar') ? prepareSchedule(patch.scheduleCalendar) : null;
@@ -868,6 +875,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   route('POST', '/api/config/set', async ({ path: p, value }) => {
     if (!p) throw httpError(400, 'Falta «path»');
     const keys = configPathKeys(p);
+    if (keys[0] === 'themes') throw httpError(400, 'themes: se gestionan con /api/themes');
     if (keys[0] === 'interviews') throw httpError(400, 'interviews: se gestionan con /api/interviews (o las herramientas MCP), no con la configuración genérica');
     if (keys[0] === 'customOverlays') {
       await customOverlays.setPath(keys.join('.'), value);
@@ -967,6 +975,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
   const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
     onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });
+  registerThemesRoutes({ route, store, onActivated: themeRoutes.clearDraft });
 
 
   // ---------- archivos: módulo propio (patrón de rutas por áreas, #71/#107) ----------

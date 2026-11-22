@@ -17,7 +17,9 @@ async function fixture(t, options = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'antena-transfer-media-'));
   const data = path.join(root, 'data'), media = path.join(root, 'media');
   await mkdir(data); await mkdir(media);
-  await writeFile(path.join(data, 'config.json'), JSON.stringify({ access: { key: canary }, youtube: { apiKey: canary } }));
+  await writeFile(path.join(data, 'config.json'), JSON.stringify({ configVersion: 3,
+    themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] }, customOverlayCss: {},
+    access: { key: canary }, youtube: { apiKey: canary } }));
   await writeFile(path.join(data, 'secrets.json'), JSON.stringify({ obs: { password: canary } }));
   const app = await createApp({ dataDir: data, mediaDir: media, push: {}, log: () => {}, ...options });
   t.after(async () => { app.teleprompter.stop(); app.viewers.stop(); app.timers.stop(); await app.program.quiesceClose(); app.program.dispose(); await app.closeHttp(); await rm(root, { recursive: true, force: true }); });

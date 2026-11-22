@@ -244,8 +244,11 @@ export type DockLayout = 'auto' | 'tabs' | 'columns' | 'split-v' | 'split-h';
 export interface DockZone { id: string; label: string; modules: DockModuleId[] }
 export interface DockConfig { modules: { id: DockModuleId; enabled: boolean }[]; layout: DockLayout; zones: DockZone[] }
 
+export interface SavedThemeSummary { id: string; name: string; active: boolean }
 export interface Config {
   configVersion?: number;
+  themes?: { activeId: string; saved: SavedThemeSummary[] };
+  customOverlayCss?: Record<string, string>;
   alerts: Record<string, AlertConfig>;
   commands: CommandConfig[];
   timers: TimerConfig[];

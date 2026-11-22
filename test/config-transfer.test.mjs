@@ -20,7 +20,8 @@ async function fixture(t, extra = {}) {
   const dataDir = path.join(root, 'data'), mediaDir = path.join(root, 'media');
   await mkdir(dataDir);
   const config = path.join(dataDir, 'config.json'), credentials = path.join(dataDir, 'secrets.json');
-  await writeFile(config, JSON.stringify({ access: { key: 'LOCAL_KEY_EXAMPLE' }, youtube: { apiKey: 'YOUTUBE_KEY_EXAMPLE', clientSecret: 'CLIENT_SECRET_EXAMPLE' }, ...extra }, null, 2));
+  await writeFile(config, JSON.stringify({ configVersion: 3, themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] }, customOverlayCss: {},
+    access: { key: 'LOCAL_KEY_EXAMPLE' }, youtube: { apiKey: 'YOUTUBE_KEY_EXAMPLE', clientSecret: 'CLIENT_SECRET_EXAMPLE' }, ...extra }, null, 2));
   await chmod(config, 0o640);
   await writeFile(credentials, JSON.stringify(seed));
   const app = await createApp({ dataDir, mediaDir, push: {}, log: () => {} });

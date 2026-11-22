@@ -139,7 +139,8 @@ test('invalid OBS configuration on disk is repaired in memory without rewriting 
   const warnings = [], warn = console.warn;
   console.warn = (...a) => warnings.push(a.join(' '));
   t.after(() => { console.warn = warn; });
-  const f = await fixture(t, { program: { kind: 'other' }, obs: { url: 'https://invalid' } });
+  const f = await fixture(t, { configVersion: 3, themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] },
+    program: { kind: 'other' }, obs: { url: 'https://invalid' } });
   const r = await f.call('GET', '/api/config');
   assert.equal(r.body.program.kind, 'meld');
   assert.equal(r.body.obs.url, 'ws://127.0.0.1:4455');
