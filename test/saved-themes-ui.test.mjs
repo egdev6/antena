@@ -54,10 +54,10 @@ async function renderThemes(t) {
       b.onResolve({ filter: /^(\.\.\/\.\.\/lib\/live|\.\/live)$/ }, () => ({ path: 'live', namespace: 'theme-fixture' }));
       b.onResolve({ filter: /^(\.\.\/\.\.\/lib\/api|\.\/api)$/ }, () => ({ path: 'api', namespace: 'theme-fixture' }));
       b.onLoad({ filter: /.*/, namespace: 'theme-fixture' }, args => ({ contents: {
-        hooks: 'export const useEffect = () => {}; export const useState = value => [globalThis.__themeUiState++ === 0 ? globalThis.__themeUi.chosen : value, () => {}];',
+        hooks: 'export const useEffect = () => {}; export const useRef = value => ({ current: value }); export const useState = value => [globalThis.__themeUiState++ === 0 ? globalThis.__themeUi.chosen : value, () => {}];',
         themes: `export { ThemeAvatar, ThemeSwatch } from ${JSON.stringify(path.resolve('app/src/lib/themes.tsx'))}; export const useThemes = () => globalThis.__themeUi; export const activateTheme = () => {};`,
         live: 'export const useLive = select => select({ config: { widgets: {} }, alertPreviews: {} });',
-        api: 'export const get = () => {}; export const post = () => {}; export const put = () => {}; export const del = () => {}; export const upload = () => {};',
+        api: 'export const get = () => {}; export const post = () => {}; export const put = () => {}; export const del = () => {}; export const upload = () => {}; export const withKey = path => path;',
       }[args.path], loader: 'js', resolveDir: process.cwd() }));
     } }],
   });

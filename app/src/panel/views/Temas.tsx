@@ -1,6 +1,6 @@
 // Saved themes master/detail: selection is a read-only preview, not activation.
-import { useEffect, useState } from 'react';
-import { del, post, put, upload } from '../../lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { del, post, put, upload, withKey } from '../../lib/api';
 import { activateTheme, ThemeAvatar, useThemes } from '../../lib/themes';
 import { confirmDelete, cx, guard, Modal, ScaledFrame, toast } from '../../lib/ui';
 import { useLive } from '../../lib/live';
@@ -11,6 +11,14 @@ const DELETE_REASON = 'No se puede borrar el tema activo. Activa otro primero.';
 const LIMIT = 'Máximo 10 temas. Borra un tema inactivo para crear otro.';
 
 type Dialog = { kind: 'new'; origin: string } | { kind: 'rename'; theme: SavedThemeSummary };
+type ThemeImportPreview = { file: File; name: string; suggestedName: string; media: { count: number; size: number; conflicts: string[] }; warnings: string[]; fingerprint: string };
+
+async function transferTheme<T>(path: string, file: File, fingerprint?: string): Promise<T> {
+  const response = await fetch(withKey(path), { method: 'POST', headers: { 'Content-Type': 'application/zip', ...(fingerprint ? { 'X-Config-Fingerprint': fingerprint } : {}) }, body: file });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : `Error ${response.status}`);
+  return data as T;
+}
 
 export function Temas() {
   const { themes, activeId, looks } = useThemes();
@@ -22,6 +30,9 @@ export function Temas() {
   const [avatarImage, setAvatarImage] = useState('');
   const [avatarColor, setAvatarColor] = useState('');
   const [busy, setBusy] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const [importPreview, setImportPreview] = useState<ThemeImportPreview | null>(null);
+  const [importName, setImportName] = useState('');
   const activePreviewVersion = useLive(s => s.alertPreviews?.follow?.version);
   const activeWidgets = useLive(s => s.config.widgets);
   useEffect(() => {
@@ -54,12 +65,34 @@ export function Temas() {
       setDialog(null);
     } finally { setBusy(false); }
   });
+  const previewImport = guard(async (file?: File) => {
+    if (!file || busy) return;
+    setBusy(true);
+    try {
+      const result = await transferTheme<Omit<ThemeImportPreview, 'file'>>('/api/themes/import/preview', file);
+      setImportPreview({ ...result, file }); setImportName(result.suggestedName);
+    } finally { setBusy(false); }
+  });
+  const applyImport = guard(async () => {
+    if (!importPreview || busy) return;
+    setBusy(true);
+    try {
+      const result = await transferTheme<{ theme: SavedThemeSummary }>(`/api/themes/import?name=${encodeURIComponent(importName)}`, importPreview.file, importPreview.fingerprint);
+      setPendingSelection(result.theme.id); setImportPreview(null); toast('Tema importado');
+    } finally { setBusy(false); }
+  });
+  const exportTheme = (item: SavedThemeSummary) => {
+    const link = document.createElement('a'); link.href = withKey(`/api/themes/${encodeURIComponent(item.id)}/export`);
+    link.download = ''; document.body.append(link); link.click(); link.remove();
+  };
   const theme = look?.theme;
   const previewId = selected ? encodeURIComponent(selected.id) : '';
   const previewKey = selected?.active ? JSON.stringify([activePreviewVersion, activeWidgets]) : selected?.id;
   return <div className="themes-page">
     <div className="themes-header"><h2>Temas guardados <span>{themes.length} / {MAX}</span></h2>
-      <button type="button" className="eg-btn eg-btn--primary eg-btn--sm" data-theme-new disabled={themes.length >= MAX} title={themes.length >= MAX ? LIMIT : undefined} onClick={() => startNew(activeId || themes[0]?.id || '')}>+ Nuevo tema</button>
+      <div className="row tight"><button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" data-theme-import disabled={busy || themes.length >= MAX} title={themes.length >= MAX ? LIMIT : undefined} onClick={() => picker.current?.click()}>Importar tema</button>
+        <input ref={picker} type="file" accept=".zip,application/zip" data-theme-import-file aria-label="Archivo ZIP de tema" hidden onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void previewImport(file); }} />
+        <button type="button" className="eg-btn eg-btn--primary eg-btn--sm" data-theme-new disabled={themes.length >= MAX} title={themes.length >= MAX ? LIMIT : undefined} onClick={() => startNew(activeId || themes[0]?.id || '')}>+ Nuevo tema</button></div>
     </div>
     {themes.length >= MAX && <p className="hint" data-theme-limit>{LIMIT}</p>}
     <div className="themes-detail-layout">
@@ -80,6 +113,7 @@ export function Temas() {
           <button type="button" className="eg-btn eg-btn--primary eg-btn--sm" data-theme-activate disabled={selected.active} onClick={guard(() => activateTheme(selected))}>Activar</button>
           <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" data-theme-duplicate disabled={themes.length >= MAX} title={themes.length >= MAX ? LIMIT : undefined} onClick={() => startNew(selected.id)}>Duplicar</button>
           <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" data-theme-edit data-theme-rename onClick={() => startEdit(selected)}>Editar</button>
+          <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" data-theme-export onClick={() => exportTheme(selected)}>Exportar</button>
           <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" data-theme-delete disabled={selected.active} title={selected.active ? DELETE_REASON : undefined} aria-describedby={selected.active ? 'theme-delete-reason' : undefined} onClick={guard(async () => { if (confirmDelete(selected.name, 'este tema')) { await del(`/api/themes/${encodeURIComponent(selected.id)}`); toast('Tema borrado'); } })}>Borrar</button>
         </div>
         {selected.active && <p className="hint" id="theme-delete-reason">{DELETE_REASON}</p>}
@@ -87,6 +121,16 @@ export function Temas() {
       </section>}
     </div>
     <div className="themes-notice"><b>Editas el tema activo: {active?.name || '…'}.</b> Los cambios en Alertas, Widgets, Overlays, Comandos, Mensajes programados y Apariencia se guardan en él. El tema copia toda la configuración de los elementos, incluidos CSS, mínimos y acciones; las conexiones y escenas de emisión no cambian.</div>
+    {importPreview && <Modal title="Importar tema" onClose={() => { if (!busy) setImportPreview(null); }} className="themes-dialog">
+      <form onSubmit={e => { e.preventDefault(); void applyImport(); }}>
+        <p>Se creará un tema nuevo inactivo. El tema actual no cambia.</p>
+        <label>Nombre<input data-theme-import-name value={importName} maxLength={40} required onChange={e => setImportName(e.target.value)} /></label>
+        <p>Archivos de medios: {importPreview.media.count} · {importPreview.media.size} bytes</p>
+        {importPreview.media.conflicts.length > 0 && <p>Se renombrarán los archivos existentes: {importPreview.media.conflicts.join(', ')}</p>}
+        {importPreview.warnings.map(warning => <p className="hint" key={warning}>{warning}</p>)}
+        <div className="row"><button type="submit" data-theme-import-submit className="eg-btn eg-btn--primary eg-btn--sm" disabled={busy || !importName.trim()}>Importar</button><button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={busy} onClick={() => setImportPreview(null)}>Cancelar</button></div>
+      </form>
+    </Modal>}
     {dialog && <Modal title={dialog.kind === 'new' ? 'Nuevo tema' : 'Editar tema'} onClose={() => { if (!busy) setDialog(null); }} className="themes-dialog">
       <form onSubmit={e => { e.preventDefault(); void submit(); }}>
         {dialog.kind === 'new' && <fieldset id="theme-origin" className="themes-origin"><legend>Crear como copia de</legend>

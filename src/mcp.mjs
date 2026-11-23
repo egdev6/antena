@@ -3,7 +3,10 @@
 // Habla con la API local (http://127.0.0.1:4500). Si la app no está arrancada, la arranca dentro de este proceso.
 // Claude Desktop: "antena": { "command": "node", "args": ["C:\\ruta\\a\\antena\\src\\mcp.mjs"] }
 import { createInterface } from 'node:readline';
-import { readFile } from 'node:fs/promises';
+import { readFile, lstat, unlink } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ACTION_KINDS as CUSTOM_OVERLAY_ACTION_KINDS } from './actions.mjs';
@@ -200,6 +203,30 @@ tool('fijar_record_espectadores', 'Cambia a mano el récord guardado de una plat
 
 // Temas guardados: los cambios de pantalla y el borrado requieren confirmación humana.
 tool('listar_temas', 'Lista los temas guardados e indica cuál está activo.', {}, () => get('/api/themes'));
+tool('exportar_tema', 'Exporta un tema guardado y sus medios a un ZIP nuevo en la ruta indicada; nunca sobrescribe un archivo.',
+  { id: S.str('Id del tema'), ruta: S.str('Ruta local del ZIP nuevo') }, async ({ id, ruta }) => {
+    const response = await fetch((await ensureServer()) + `/api/themes/${enc(id)}/export`);
+    if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `Error ${response.status}`); }
+    const output = createWriteStream(ruta, { flags: 'wx', mode: 0o600 }); let opened = false;
+    output.once('open', () => { opened = true; });
+    try { await pipeline(Readable.fromWeb(response.body), output); }
+    catch (error) { if (opened) await unlink(ruta).catch(() => {}); throw error; }
+    return { ruta };
+  }, ['id', 'ruta']);
+tool('importar_tema_guardado', 'Previsualiza un ZIP de tema local; confirmar=true crea un tema inactivo nuevo tras previsualizar.',
+  { ruta: S.str('Ruta local del ZIP'), nombre: S.str('Nombre opcional'), confirmar: S.bool('true para importar; por defecto solo previsualiza') },
+  async ({ ruta, nombre, confirmar }) => {
+    const info = await lstat(ruta).catch(() => null);
+    if (!info?.isFile()) throw new Error('El ZIP debe ser un archivo normal');
+    const sendZip = async (p, fingerprint) => {
+      const response = await fetch((await ensureServer()) + p, { method: 'POST', headers: { 'Content-Type': 'application/zip', ...(fingerprint && { 'X-Config-Fingerprint': fingerprint }) }, body: createReadStream(ruta), duplex: 'half' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `Error ${response.status}`);
+      return data;
+    };
+    const preview = await sendZip('/api/themes/import/preview');
+    return confirmar === true ? sendZip('/api/themes/import' + (nombre === undefined ? '' : `?name=${enc(nombre)}`), preview.fingerprint) : preview;
+  }, ['ruta']);
 tool('activar_tema', 'Activa un tema guardado inmediatamente en las capas del directo.', { id: S.str('Id del tema') }, ({ id }) => post(`/api/themes/${enc(id)}/activate`), ['id']);
 tool('duplicar_tema', 'Crea un tema como copia completa de otro, sin copiar su avatar.', { id: S.str('Id del tema de origen'), nombre: S.str('Nombre del nuevo tema') }, ({ id, nombre }) => post('/api/themes/duplicate', { from: id, name: nombre }), ['id', 'nombre']);
 tool('renombrar_tema', 'Cambia el nombre y opcionalmente el avatar de un tema guardado. Los campos de avatar omitidos se conservan.',

@@ -43,7 +43,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Fuentes para el programa de emisión:** cada alerta, widget, panel y overlay propio es una fuente de navegador con su tamaño, listas para copiar.
 - **Prompter para el Elgato Prompter** (1024×600): la app lo abre a pantalla completa en esa pantalla.
 - **Alerta de récord de espectadores** por plataforma (Twitch y YouTube), con freno anti-spam.
-- **Apariencia:** el tema activo controla todo lo que sale en pantalla (alertas, widgets y créditos): colores, fuentes, iconos, forma, posición, animación y sonido. Gestiona y previsualiza temas guardados en Apariencia y cámbialos desde la barra lateral, el dock, la API o MCP.
+- **Apariencia:** el tema activo controla todo lo que sale en pantalla (alertas, widgets y créditos): colores, fuentes, iconos, forma, posición, animación y sonido. Gestiona y previsualiza temas guardados en Apariencia, comparte un tema con sus medios en ZIP y cámbialos desde la barra lateral, el dock, la API o MCP.
 - **Atajos para Stream Deck** personalizables: cada uno encadena pasos (marca, pausa, escena, capa, chat, pestaña del prompter…) y tiene su dirección `/sd/custom/<id>`.
 - **Dock:** todo el manejo del directo menos la vista previa de vídeo —escenas, pistas de audio del programa de emisión, alertas, preguntas, votación, sorteo, teleprompter y créditos— con módulos y distribuciones personalizables. De serie usa columnas desde 768 px de ancho y pestañas por debajo.
 
@@ -135,7 +135,7 @@ En **Conexiones › Programación** puedes usar un calendario externo local al e
 
 ### Temas guardados
 
-Gestiona hasta 10 temas completos en **Apariencia › Temas**, `/api/themes` o MCP. Selecciona para previsualizar la alerta, el objetivo y el chat reales sin activar; crea una copia completa o parte del color de cada plataforma. La barra lateral y el dock cambian el tema al momento. Los cambios editan el tema activo y no tocan conexiones, sesiones ni código de overlays propios. Las alertas ya visibles o en cola conservan los ajustes con que se construyeron. Las instalaciones existentes pasan a **Normal** con su aspecto conservado. El CSS de overlays por tema aún no está disponible. Detalles en [docs/themes.md](docs/themes.md).
+Gestiona hasta 10 temas completos en **Apariencia › Temas**, `/api/themes` o MCP. Selecciona para previsualizar la alerta, el objetivo y el chat reales sin activar; crea una copia completa o parte del color de cada plataforma. La barra lateral y el dock cambian el tema al momento. Los cambios editan el tema activo y no tocan conexiones, sesiones ni código de overlays propios. Las alertas ya visibles o en cola conservan los ajustes con que se construyeron. Las instalaciones existentes pasan a **Normal** con su aspecto conservado. Comparte un tema individual con sus medios en ZIP; al importar se revisan las colisiones y se crea un tema nuevo inactivo. El CSS por tema viaja con él; el código de los overlays sigue siendo global. Detalles en [docs/themes.md](docs/themes.md).
 
 ### Copia de la configuración
 
@@ -413,7 +413,7 @@ En **Ajustes › Apariencia** se cambia el tema de **todo lo que sale en pantall
 - **Forma y efectos:** esquinas, ancho y escala de la alerta, inclinación 3D, reflejo, decoraciones y barra de tiempo.
 - **Posición y movimiento:** altura y lado de la alerta, ajuste fino y animación de entrada y salida (giro 3D, deslizar, fundido, rebote o ninguna). Un `?pos=` en la URL del overlay sigue mandando.
 - **Sonido:** el sonido «de serie» de las alertas (el tono EGDEV, ninguno o uno tuyo) y su volumen.
-- **Temas:** previsualizar, crear, duplicar, editar, activar y borrar temas guardados. Al crear o editar puedes elegir una imagen o color para el avatar. **Exportar**, **importar** y **restaurar aspecto de serie** afectan al activo.
+- **Temas:** previsualizar, crear, duplicar, editar, activar, borrar y exportar temas guardados, o importar un ZIP como tema nuevo inactivo. Al crear o editar puedes elegir una imagen o color para el avatar. La importación antigua de apariencia y «Restaurar aspecto de serie» siguen afectando al activo.
 
 El tema se sirve en `/theme.css`, en la capa `egdev-theme`, por encima de los estilos de serie: el CSS propio de cada alerta o widget sigue ganando. Se valida igual en todas las vías de escritura (`PUT /api/theme`, `PUT /api/config`, `POST /api/config/set` y la carga de `config.json`): un valor inválido se rechaza con 400 y `/theme.css` no emite nunca nada sin validar; los rangos (brillo, tamaño, posición…) se rechazan con el mismo mensaje del esquema en todas menos al **importar**, que recorta para que sigan entrando los temas antiguos exportados. Por MCP: `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema`. El prompter y el teleprompter no cambian: son para ti, no para el directo.
 
