@@ -817,7 +817,7 @@ for (const [label, where, name, css, expected] of cssCases) test(`theme CSS medi
   assert.equal(after.config.themes.activeId, 'normal');
 });
 
-test('config ZIP import still rejects CSS media entries without changing state', async t => {
+test('config ZIP import still rejects unreferenced CSS media entries without changing state', async t => {
   const f = await fixture(t), exported = await f.call('GET', '/api/config/export?format=json');
   const archive = themeZip([{ name: 'config.json', data: JSON.stringify(exported.body) }, { name: 'media/file.css', data: '.x{}' }]);
   const before = await themeTransferSnapshot(f);

@@ -90,6 +90,7 @@
     "test/routes-shortcuts.test.mjs",
     "test/scheduled-streams.test.mjs",
     "test/saved-themes-mcp.test.mjs",
+    "test/saved-themes-mcp-authoring.test.mjs",
     "test/saved-themes-ui.test.mjs",
     "test/saved-themes.test.mjs",
     "test/saved-themes-freeze.test.mjs",
