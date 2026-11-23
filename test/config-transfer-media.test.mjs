@@ -447,12 +447,17 @@ test('hostile CSS names and ZIP entries are rejected before any config, media or
   }
 });
 
+// Windows may refuse symlinks without privileges; skip only when the OS actually refuses (CI allow-list reason).
+async function trySymlink(t, target, link) {
+  try { await symlink(target, link); return true; }
+  catch (e) { if (['EPERM', 'ENOTSUP'].includes(e.code)) { t.skip(`symlink no soportado en esta plataforma (${e.code})`); return false; } throw e; }
+}
+
 test('referenced CSS export retains media size and regular-file protections', async t => {
-  if (process.platform === 'win32') return t.skip('symlink creation requires privileges on Windows');
   const f = await fixture(t), setup = await f.json('PUT', '/api/config', { overlay: { css: '@import "media/large.css"; @import "media/link.css";' } });
   assert.equal(setup.status, 200, JSON.stringify(setup.body));
   await sparse(path.join(f.media, 'large.css'), 301 * 2 ** 20);
-  const outside = path.join(f.root, 'outside.css'); await writeFile(outside, 'private'); await symlink(outside, path.join(f.media, 'link.css'));
+  const outside = path.join(f.root, 'outside.css'); await writeFile(outside, 'private'); if (!await trySymlink(t, outside, path.join(f.media, 'link.css'))) return;
   const r = await f.download(); assert.equal(r.status, 200);
   assert.deepEqual(skippedHeader(r), ['large.css (supera 300 MB)', 'link.css (No es un archivo normal)']);
   assert.deepEqual((await archiveConfig(f, r.bytes, { allowCss: true })).names, ['config.json']);
@@ -461,10 +466,9 @@ test('referenced CSS export retains media size and regular-file protections', as
 });
 
 test('referenced CSS import refuses a local symlink and preserves its target and state', async t => {
-  if (process.platform === 'win32') return t.skip('symlink creation requires privileges on Windows');
   const f = await fixture(t), config = (await f.json('GET', '/api/config/export?format=json')).body;
   config.config.overlay.css = '@import "media/guard.css";';
-  const outside = path.join(f.root, 'outside.css'); await writeFile(outside, 'private'); await symlink(outside, path.join(f.media, 'guard.css'));
+  const outside = path.join(f.root, 'outside.css'); await writeFile(outside, 'private'); if (!await trySymlink(t, outside, path.join(f.media, 'guard.css'))) return;
   const bytes = rawZip([{ name: 'config.json', data: JSON.stringify(config) }, { name: 'media/guard.css', data: 'incoming' }]);
   const before = await f.snapshot();
   for (const run of [preview, apply]) {
