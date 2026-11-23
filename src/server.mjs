@@ -2,6 +2,8 @@
 // Todo lo que hace el panel pasa por esta API REST, que también usa el servidor MCP (src/mcp.mjs).
 import http from 'node:http';
 import os from 'node:os';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { isDeepStrictEqual } from 'node:util';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { readdir, stat, mkdir, unlink, rename, readFile, writeFile } from 'node:fs/promises';
@@ -10,7 +12,7 @@ import path from 'node:path';
 import { Store, ROOT, DEFAULT_CONFIG, deepMerge, configPathKeys } from './store.mjs';
 import { MIGRATIONS } from './config-migrations.mjs';
 import { instanceId } from './instance-id.mjs';
-import { validatePatch, validatePath, validateChatVariantsTransition, warnUnknownKeys } from './config-schema.mjs';
+import { validateLook, validatePatch, validatePath, validateChatVariantsTransition, warnUnknownKeys } from './config-schema.mjs';
 import { Bus } from './bus.mjs';
 import { acceptWebSocket } from './ws-stream.mjs';
 import { Twitch } from './twitch.mjs';
@@ -47,7 +49,7 @@ import { registerWidgetRoutes } from './routes/widgets.mjs';
 import { registerCreditsRoutes } from './routes/credits.mjs';
 import { setupAutoSession } from './auto-session.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
-import { activeTheme, isThemedWrite } from './theme-looks.mjs';
+import { activeTheme, applyLook, extractLook, isThemedWrite, isThemeTargetRequest } from './theme-looks.mjs';
 import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
 import { FollowerRegistry } from './followers.mjs';
@@ -156,7 +158,19 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Validate private process settings before loading or changing any application state.
   const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs,
     onChange: () => notifyPushStatus(), onSpace: () => requestPushReconciliation(), onCheckpoint: () => notifyPushCheckpoint() });
-  const store = await new Store(dataDir).load();
+  const liveStore = await new Store(dataDir).load();
+  // Existing handlers and services see a detached Store only inside the one targeted request.
+  // No shared config is ever swapped, even while handlers await filesystem reads.
+  const themeContext = new AsyncLocalStorage();
+  const store = new Proxy(liveStore, {
+    get(target, key) {
+      const actual = themeContext.getStore()?.store || target;
+      const value = Reflect.get(actual, key, actual);
+      return typeof value === 'function' ? value.bind(actual) : value;
+    },
+    set(target, key, value) { return Reflect.set(themeContext.getStore()?.store || target, key, value); },
+  });
+  const isProjection = () => !!themeContext.getStore();
   const id = await instanceId(store.dir);
   // la interfaz React si está compilada; si no, la página mínima de las páginas de app
   // (appDist inyectable solo para pruebas: un directorio vacío simula «sin compilar»)
@@ -979,7 +993,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   registerAlertRoutes({ route, store, engine, bus, timers, checkActions, pick, ALERT_KEYS,
     commandOf: id => commandOf(id), timerOf: id => timerOf(id), ackAdmits: id => ackAdmits(id), CLOSING_MESSAGE });
   const commandOf = registerCommandRoutes({ route, store, checkActions, pick, COMMAND_KEYS });
-  const timerOf = registerTimerRoutes({ route, store, timers, checkActions, pick, COMMAND_KEYS });
+  const timerOf = registerTimerRoutes({ route, store, timers, checkActions, pick, COMMAND_KEYS, isProjection });
 
   // ---------- interactivos, chat y Meld: módulos propios (patrón de rutas por áreas, #71/#107/#119) ----------
   // Registra /api/chat* (anuncios incluidos), los interactivos (preguntas, tier lists,
@@ -988,13 +1002,13 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // del resto de rutas se conserva. /api/chat/announce estaba antes de los interactivos
   // y las rutas de Meld después de las de sesión: el orden de resolución no cambia.
   registerChatRoutes({ route, store, engine, twitch, youtube, chat, id8 });
-  registerInteractiveRoutes({ route, store, interactive });
+  registerInteractiveRoutes({ route, store, interactive, isProjection });
   registerViewersRoutes({ route, store, viewers });
   registerTeleprompterRoutes({ route, teleprompter });
   registerInterviewRoutes({ route, interviews });
   registerCustomOverlayRoutes({ route, customOverlays, bus, engine, checkActions, log });
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
-  const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
+  const themeRoutes = registerThemeRoutes({ route, store, listMedia, isProjection, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
     onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });
   const savedThemes = registerThemesRoutes({ route, store, mediaDir, onActivated: themeRoutes.clearDraft });
   const themeTransfer = registerThemeTransfer({ route, store, themes: savedThemes, transfer: configTransfer, mediaDir, zipUploadLimit, zipExportLimit });
@@ -1096,6 +1110,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   }
 
   function afterConfig(patch) {
+    if (isProjection()) return;
     if (store.config.program.kind !== selectedProgram) {
       program.stop();
       selectedProgram = store.config.program.kind;
@@ -1378,9 +1393,45 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         if (editedTheme !== undefined && isThemedWrite(req.method, url.pathname, body) && editedTheme !== store.config.themes.activeId)
           throw httpError(409, 'El tema activo cambió mientras editabas; tus cambios no se guardaron');
         // rutas con parámetros: fn(params, body, url) · sin parámetros: fn(body, _, url)
+        const invoke = () => m.groups ? r.fn(m.groups, body, url, req) : r.fn(body, null, url, req);
+        const requested = req.headers['x-antena-target-theme'];
+        if (requested !== undefined) {
+          let themeId;
+          try { themeId = decodeURIComponent(requested); } catch { throw httpError(400, 'Id de tema no válido'); }
+          const active = liveStore.config.themes.activeId;
+          const item = liveStore.config.themes.saved.find(t => t.id === themeId);
+          if (!item) throw httpError(404, `No existe el tema «${themeId}»`);
+          if (themeId !== active) {
+            if (!isThemeTargetRequest(req.method, url.pathname, body, url))
+              throw httpError(400, 'Solo se pueden editar o leer campos del tema guardado');
+            const originalLook = structuredClone(item.look);
+            const shadow = new Store(liveStore.dir);
+            shadow.config = applyLook(structuredClone(liveStore.config), originalLook);
+            shadow.secrets = liveStore.secrets;
+            shadow.write = async () => {};
+            shadow.emit = () => false;
+            const result = await themeContext.run({ store: shadow }, invoke);
+            if (req.method !== 'GET' && req.method !== 'HEAD') {
+              const current = liveStore.config.themes.saved.find(t => t.id === themeId);
+              if (liveStore.config.themes.activeId !== active || !current || !isDeepStrictEqual(current.look, originalLook))
+                throw httpError(409, 'El tema cambió mientras editabas; tus cambios no se guardaron');
+              const look = extractLook(shadow.config);
+              const [error] = validateLook(look);
+              if (error) throw httpError(400, error.message);
+              const before = structuredClone(liveStore.config), next = structuredClone(before);
+              next.themes.saved.find(t => t.id === themeId).look = look;
+              // Reuse the CAS transaction and atomic writer without consuming restore points.
+              // Suppress ordinary live change listeners; only the panel refreshes.
+              await liveStore.replaceConfigWithBackup(next, before, null, undefined, { backup: false });
+              includeThemesConfig = true;
+              pushPanelConfig();
+            }
+            return json(res, 200, result);
+          }
+        }
         const mediaWrite = req.method === 'POST' && ['/api/media/import', '/api/media/delete'].includes(url.pathname);
-        if (mediaWrite) return json(res, 200, await withMediaLock(() => r.fn(body, null, url, req)));
-        return json(res, 200, await (m.groups ? r.fn(m.groups, body, url, req) : r.fn(body, null, url, req)));
+        if (mediaWrite) return json(res, 200, await withMediaLock(invoke));
+        return json(res, 200, await invoke());
       }
       if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'No existe' });
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Método no permitido' });

@@ -98,7 +98,7 @@ function rewriteCss(text, change) {
 }
 
 /** Recorre las referencias conocidas y devuelve copias reescritas y nombres únicos. */
-export function themeMedia(inputLook, inputAvatar, replacements = new Map()) {
+export function themeMedia(inputLook, inputAvatar, replacements = new Map(), { cssOnly = false } = {}) {
   const look = structuredClone(inputLook), avatar = structuredClone(inputAvatar);
   const names = new Set(), required = new Set(), cssNames = new Set(), warnings = new Set();
   const rewrite = (name, kind) => {
@@ -155,22 +155,24 @@ export function themeMedia(inputLook, inputAvatar, replacements = new Map()) {
       else if (child && typeof child === 'object') styles(child, base);
     }
   };
-  tagged(look.theme, 'fontDisplay'); tagged(look.theme, 'fontBody');
-  for (const key of Object.keys(look.theme?.icons || {})) tagged(look.theme.icons, key);
-  direct(look.theme, 'sound');
-  const alert = item => {
-    if (!item || typeof item !== 'object') return;
-    direct(item, 'media'); direct(item, 'sound');
-    for (const variation of item.variations || []) { direct(variation, 'media'); direct(variation, 'sound'); alert(variation.overrides); }
-  };
-  for (const item of Object.values(look.alerts || {})) alert(item);
-  for (const item of look.commands || []) alert(item);
-  for (const item of look.timers || []) alert(item);
+  if (!cssOnly) {
+    tagged(look.theme, 'fontDisplay'); tagged(look.theme, 'fontBody');
+    for (const key of Object.keys(look.theme?.icons || {})) tagged(look.theme.icons, key);
+    direct(look.theme, 'sound');
+    const alert = item => {
+      if (!item || typeof item !== 'object') return;
+      direct(item, 'media'); direct(item, 'sound');
+      for (const variation of item.variations || []) { direct(variation, 'media'); direct(variation, 'sound'); alert(variation.overrides); }
+    };
+    for (const item of Object.values(look.alerts || {})) alert(item);
+    for (const item of look.commands || []) alert(item);
+    for (const item of look.timers || []) alert(item);
+  }
   for (const key of ['theme', 'alerts', 'overlay', 'commands', 'timers']) styles(look[key], '/overlay');
   for (const key of ['widgets', 'interactive']) styles(look[key], '/widget/chat');
   for (const [id, text] of Object.entries(look.customOverlayCss || {})) if (typeof text === 'string') {
     look.customOverlayCss[id] = rewriteCss(text, raw => cssUrl(raw, `/custom/${id}/frame`));
   }
-  if (avatar?.image) avatar.image = rewrite(avatar.image, 'direct');
+  if (!cssOnly && avatar?.image) avatar.image = rewrite(avatar.image, 'direct');
   return { look, avatar, names, required, cssNames, warnings: [...warnings] };
 }

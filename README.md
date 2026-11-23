@@ -520,16 +520,18 @@ Claude Desktop (`claude_desktop_config.json`):
 | Interactives | `estado_interactivos`, `configurar_interactivos` |
 | Files | `listar_archivos`, `importar_archivo` (from a path on your PC), `borrar_archivo` |
 | Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube or both), `simular_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
-| Widgets | `ver_widgets`, `editar_widget`, `editar_variante_chat`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `sumar_objetivo`, `fijar_objetivo`, `lanzar_creditos`, `parar_creditos` |
-| Custom overlays | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay` (fires a sample event at one open layer) |
+| Widgets | `ver_widgets`, `editar_widget`, `editar_variante_chat`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `crear_barra`, `editar_barra`, `borrar_barra`, `sumar_objetivo`, `fijar_objetivo`, `sumar_barra`, `fijar_barra`, `lanzar_creditos`, `parar_creditos` |
+| Custom overlays | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay`, `css_overlay_tema` |
 | Stream | `resumen_directo`, `metricas_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
-| Appearance | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema` |
+| Appearance and saved themes | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema`, `listar_temas`, `crear_tema`, `duplicar_tema`, `renombrar_tema`, `activar_tema`, `borrar_tema`, `exportar_tema`, `importar_tema_guardado` |
 | Viewers record | `estado_espectadores`, `configurar_espectadores`, `fijar_record_espectadores` |
 | Timeline and prompter | `cronologia`, `crear_marca`, `nota_cronologia`, `editar_nota_cronologia`, `borrar_nota_cronologia`, `marcar_agradecido`, `prompter_pestana` |
 | Broadcast program | `programa_estado`, `programa_conectar`, `programa_desconectar`, `programa_escena`, `programa_capa`, `programa_efecto`, `programa_comando`, `programa_evento`, `programa_audio`, `programa_media`, `programa_propiedad`, `programa_llamar`, `ejecutar_acciones` |
 | Teleprompter | `estado_teleprompter`, `controlar_teleprompter` (play, pause, toggle, reset, next, prev, block, seek, faster, slower), `configurar_teleprompter`, `crear_guion`, `editar_guion`, `elegir_guion`, `borrar_guion` |
 | Interviews | `listar_entrevistas`, `ver_entrevista`, `crear_entrevista`, `importar_entrevista`, `editar_entrevista`, `elegir_entrevista`, `parar_entrevista`, `borrar_entrevista`; live control: `entrevista_estado`, `entrevista_siguiente`, `entrevista_anterior`, `entrevista_ir`, `entrevista_media`, `entrevista_ocultar` (format and controls: [docs/entrevista-formato.md](docs/entrevista-formato.md)) |
 | Connections | `twitch_conectar`, `twitch_desconectar`, `youtube_escuchar`, `youtube_parar`, `acceso_movil` |
+
+The MCP prompt `disenar_tema` guides an agent through designing an inactive theme. `crear_tema` starts from platform colors or a saved copy; theme-owned editing and matching read tools accept `tema: <id>` without activating that theme. Live goal counters are deliberately excluded. Activation requires explicit confirmation. See [saved themes](docs/themes.md) for previews, targeting and the legacy `importar_tema` contract.
 
 The corresponding `meld_*` MCP tools and `/api/meld*` routes remain permanent aliases of `programa_*` and `/api/program*`.
 

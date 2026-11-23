@@ -10,7 +10,7 @@
 import { deepMerge as deepMergeBase } from '../store.mjs';
 import { httpError as httpErrorBase } from '../http-util.mjs';
 
-export function registerInteractiveRoutes({ route, store, interactive, deepMerge = deepMergeBase, httpError = httpErrorBase }) {
+export function registerInteractiveRoutes({ route, store, interactive, isProjection = () => false, deepMerge = deepMergeBase, httpError = httpErrorBase }) {
   void httpError; // aceptado por compatibilidad con los tests, como en shortcuts.mjs
   const I = interactive;
   const pick = (obj, allowed) => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => allowed.includes(k)));
@@ -19,7 +19,7 @@ export function registerInteractiveRoutes({ route, store, interactive, deepMerge
   route('PUT', '/api/interactive/config', async body => {
     store.config.interactive = deepMerge(store.config.interactive, pick(body, ['questions', 'tierlist', 'giveaway']));
     await store.save('interactive');
-    I.emit('change', 'config');
+    if (!isProjection()) I.emit('change', 'config');
     return store.config.interactive;
   });
 

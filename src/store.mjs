@@ -235,25 +235,29 @@ export class Store extends EventEmitter {
     this.config = replace ? patch : deepMerge(this.config, patch);
     await this.write(this.cfgFile, this.config);
     onPersist?.(); // The atomic write has committed even if a change listener throws.
-    this.emit('change', change);
+    // A detached theme transaction publishes only to the panel, not the live consumers.
+    if (change !== null) this.emit('change', change);
     return this.config;
   }
-  /** Local restore point: exact prior config bytes and mode, never the separate credential file. */
-  async replaceConfigWithBackup(next, expected, change, onCommit) {
+  /** Transactional config replacement; imports and activation keep a local restore point. */
+  async replaceConfigWithBackup(next, expected, change, onCommit, { backup = true } = {}) {
     // An imported file never sets the stored version; keep the version this store loaded.
     if (next && typeof next === 'object') next = { ...next, configVersion: this.config.configVersion };
     const conflict = () => Object.assign(new Error('La configuración ha cambiado; vuelve a previsualizar'), { status: 409 });
     const barrier = this.chain;
     await barrier;
     if (this.chain !== barrier || this.dirty.config || !isDeepStrictEqual(this.config, expected)) throw conflict();
-    const mode = (await stat(this.cfgFile)).mode & 0o777;
-    const now = this.lastConfigBackup = Math.max(Date.now(), (this.lastConfigBackup || 0) + 1);
-    const name = `config.backup-${new Date(now).toISOString().replace(/[:.]/g, '-')}-${randomUUID()}.json`;
-    const target = path.join(this.dir, name);
-    await copyFile(this.cfgFile, target, constants.COPYFILE_EXCL);
+    let name, target, mode;
+    if (backup) {
+      mode = (await stat(this.cfgFile)).mode & 0o777;
+      const now = this.lastConfigBackup = Math.max(Date.now(), (this.lastConfigBackup || 0) + 1);
+      name = `config.backup-${new Date(now).toISOString().replace(/[:.]/g, '-')}-${randomUUID()}.json`;
+      target = path.join(this.dir, name);
+      await copyFile(this.cfgFile, target, constants.COPYFILE_EXCL);
+    }
     let started = false, committed = false, listenerError, importChain;
     try {
-      await chmod(target, mode);
+      if (backup) await chmod(target, mode);
       if (this.chain !== barrier || !isDeepStrictEqual(this.config, expected)) throw conflict();
       started = true;
       const writing = this.patchConfig(next, { replace: true, change, onPersist: () => { committed = true; onCommit?.(); } });
@@ -262,7 +266,7 @@ export class Store extends EventEmitter {
     } catch (error) {
       if (!committed) {
         if (started) this.config = expected;
-        await unlink(target).catch(() => {});
+        if (target) await unlink(target).catch(() => {});
         if (started && error.code === 'PERSISTENCE_FAILED') {
           // Unlike ordinary writes, this transaction restored memory and has no pending changes.
           if (this.chain === importChain) { this.#markClean('config'); this.#publishPersistence(); }
@@ -273,7 +277,7 @@ export class Store extends EventEmitter {
       listenerError = error; // Match PUT: report the listener error, but never roll back a committed write.
     }
     // Only files created by this feature are eligible; the current restore point always stays.
-    try {
+    if (backup) try {
       const others = (await readdir(this.dir)).filter(n => /^config\.backup-\d{4}-\d\d-\d\dT[\dTZ-]+-[0-9a-f-]{36}\.json$/.test(n) && n !== name).sort().reverse();
       for (const old of others.slice(9)) await unlink(path.join(this.dir, old));
     } catch { /* successful import remains successful if old backup cleanup fails */ }

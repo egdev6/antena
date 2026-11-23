@@ -3,16 +3,18 @@
 import { DEFAULT_THEME, PRESETS, FONTS, ICON_NAMES, cleanTheme, publicTheme, themeRangeError } from '../theme.mjs';
 import { httpError as httpErrorBase } from '../http-util.mjs';
 
-export function registerThemeRoutes({ route, store, listMedia, onChange, onDraft = () => {}, httpError = httpErrorBase }) {
+export function registerThemeRoutes({ route, store, listMedia, onChange, onDraft = () => {}, isProjection = () => false, httpError = httpErrorBase }) {
   const current = () => ({ ...DEFAULT_THEME, ...(store.config.theme || {}) });
   // Borrador (guardado manual de Apariencia): solo lo ven las vistas previas (?themeDraft); Meld sigue con lo guardado.
   let draft = null;
   const save = async next => {
     store.config.theme = next;
-    draft = null;
+    if (!isProjection()) draft = null;
     await store.save('theme');
-    onChange(publicTheme(next));
-    onDraft({ ...publicTheme(next), draft: true });
+    if (!isProjection()) {
+      onChange(publicTheme(next));
+      onDraft({ ...publicTheme(next), draft: true });
+    }
     return info();
   };
   const info = async () => {
