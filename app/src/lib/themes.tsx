@@ -41,6 +41,16 @@ export async function activateTheme(theme: SavedThemeSummary) {
   toast(`${theme.name} activado · se aplica al momento en pantalla`);
 }
 
+const PLATFORM_SWATCH = 'conic-gradient(var(--color-primitive-red-neon) 0 25%,var(--color-status-warning) 25% 50%,var(--color-status-success) 50% 75%,var(--color-status-info) 75%)';
+
+export function ThemeAvatar({ theme, look, size = 20 }: { theme?: SavedThemeSummary; look?: { theme?: Pick<Theme, 'accent' | 'platformAccent'> }; size?: number }) {
+  const avatar = theme?.avatar;
+  const background = avatar?.color || (look?.theme?.platformAccent ? PLATFORM_SWATCH : look?.theme?.accent) || 'var(--color-primitive-red-neon)';
+  return <span className="theme-avatar" aria-hidden="true" style={{ width: size, height: size, borderColor: avatar?.color || 'var(--color-border-control)' }}>
+    <span className="theme-avatar__content" style={{ background }}>{avatar?.image && <img src={'/media/' + encodeURIComponent(avatar.image)} alt="" />}</span>
+  </span>;
+}
+
 export function ThemeSwatch({ color }: { color?: string }) {
   return <span className="theme-swatch" aria-hidden="true" style={{ background: color || 'var(--color-primitive-red-neon)' } as CSSProperties} />;
 }

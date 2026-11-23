@@ -409,7 +409,7 @@ En **Ajustes › Apariencia** se cambia el tema de **todo lo que sale en pantall
 - **Forma y efectos:** esquinas, ancho y escala de la alerta, inclinación 3D, reflejo, decoraciones y barra de tiempo.
 - **Posición y movimiento:** altura y lado de la alerta, ajuste fino y animación de entrada y salida (giro 3D, deslizar, fundido, rebote o ninguna). Un `?pos=` en la URL del overlay sigue mandando.
 - **Sonido:** el sonido «de serie» de las alertas (el tono EGDEV, ninguno o uno tuyo) y su volumen.
-- **Temas:** previsualizar, crear, duplicar, renombrar, activar y borrar temas guardados. **Exportar**, **importar** y **restaurar aspecto de serie** afectan al activo.
+- **Temas:** previsualizar, crear, duplicar, editar, activar y borrar temas guardados. Al crear o editar puedes elegir una imagen o color para el avatar. **Exportar**, **importar** y **restaurar aspecto de serie** afectan al activo.
 
 El tema se sirve en `/theme.css`, en la capa `egdev-theme`, por encima de los estilos de serie: el CSS propio de cada alerta o widget sigue ganando. Se valida igual en todas las vías de escritura (`PUT /api/theme`, `PUT /api/config`, `POST /api/config/set` y la carga de `config.json`): un valor inválido se rechaza con 400 y `/theme.css` no emite nunca nada sin validar; los rangos (brillo, tamaño, posición…) se rechazan con el mismo mensaje del esquema en todas menos al **importar**, que recorta para que sigan entrando los temas antiguos exportados. Por MCP: `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema`. El prompter y el teleprompter no cambian: son para ti, no para el directo.
 

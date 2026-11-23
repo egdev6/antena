@@ -980,7 +980,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
   const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
     onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });
-  registerThemesRoutes({ route, store, onActivated: themeRoutes.clearDraft });
+  registerThemesRoutes({ route, store, mediaDir, onActivated: themeRoutes.clearDraft });
 
 
   // ---------- archivos: módulo propio (patrón de rutas por áreas, #71/#107) ----------

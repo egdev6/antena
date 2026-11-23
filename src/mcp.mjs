@@ -201,8 +201,10 @@ tool('fijar_record_espectadores', 'Cambia a mano el récord guardado de una plat
 // Temas guardados: los cambios de pantalla y el borrado requieren confirmación humana.
 tool('listar_temas', 'Lista los temas guardados e indica cuál está activo.', {}, () => get('/api/themes'));
 tool('activar_tema', 'Activa un tema guardado inmediatamente en las capas del directo.', { id: S.str('Id del tema') }, ({ id }) => post(`/api/themes/${enc(id)}/activate`), ['id']);
-tool('duplicar_tema', 'Crea un tema como copia completa de otro.', { id: S.str('Id del tema de origen'), nombre: S.str('Nombre del nuevo tema') }, ({ id, nombre }) => post('/api/themes/duplicate', { from: id, name: nombre }), ['id', 'nombre']);
-tool('renombrar_tema', 'Cambia el nombre de un tema guardado.', { id: S.str('Id del tema'), nombre: S.str('Nuevo nombre') }, ({ id, nombre }) => put(`/api/themes/${enc(id)}`, { name: nombre }), ['id', 'nombre']);
+tool('duplicar_tema', 'Crea un tema como copia completa de otro, sin copiar su avatar.', { id: S.str('Id del tema de origen'), nombre: S.str('Nombre del nuevo tema') }, ({ id, nombre }) => post('/api/themes/duplicate', { from: id, name: nombre }), ['id', 'nombre']);
+tool('renombrar_tema', 'Cambia el nombre y opcionalmente el avatar de un tema guardado. Los campos de avatar omitidos se conservan.',
+  { id: S.str('Id del tema'), nombre: S.str('Nuevo nombre'), color: S.str('Color #RRGGBB; vacío quita el color'), imagen: S.str('Nombre de imagen PNG, JPG, WebP o GIF existente en media/; vacío quita la imagen') },
+  ({ id, nombre, color, imagen }) => put(`/api/themes/${enc(id)}`, { name: nombre, ...(color !== undefined || imagen !== undefined ? { avatar: { ...(color !== undefined && { color }), ...(imagen !== undefined && { image: imagen }) } } : {}) }), ['id', 'nombre']);
 tool('borrar_tema', 'Borra un tema inactivo; el activo no se puede borrar.', { id: S.str('Id del tema') }, ({ id }) => del(`/api/themes/${enc(id)}`), ['id']);
 
 // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)

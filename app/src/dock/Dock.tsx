@@ -10,8 +10,8 @@ import { DockQuestions } from './DockQuestions';
 import { DockTierlist } from './DockTierlist';
 import { DockGiveaway } from './DockGiveaway';
 import { InterviewPad, useInterview } from '../lib/InterviewControls';
-import { activateTheme, ThemeSwatch, useThemes } from '../lib/themes';
-import type { DockConfig, DockModuleId, DockZone, MeldTrack, TeleprompterState, TimelineItem, ViewerPlatform, ViewerSettings } from '../lib/types';
+import { activateTheme, ThemeAvatar, useThemes, type ThemeLook } from '../lib/themes';
+import type { DockConfig, DockModuleId, DockZone, MeldTrack, SavedThemeSummary, TeleprompterState, TimelineItem, ViewerPlatform, ViewerSettings } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
 const INTERACTIVE_TAB = 'egdev.dock.interactive.tab';
@@ -52,7 +52,7 @@ function useMedia(query: string) {
   return matches;
 }
 
-function Status({ active, color }: { active?: string; color?: string }) {
+function Status({ active, look }: { active?: SavedThemeSummary; look?: ThemeLook }) {
   const s = useLive(x => x);
   const now = useNow();
   const tl = live.timeline;
@@ -74,7 +74,7 @@ function Status({ active, color }: { active?: string; color?: string }) {
       {st.twitch && st.twitch.state !== 'conectado' && <ConnPill platform="twitch" state={st.twitch.state} />}
       {st.youtube?.state === 'en espera' && <ConnPill platform="youtube" state="en espera" label={st.youtube.notice || undefined} />}
     </div>
-    <div className="d-theme-active" data-dock-active-theme><ThemeSwatch color={color} /><span>Tema activo: <b>{active || 'Cargando…'}</b></span></div>
+    <div className="d-theme-active" data-dock-active-theme><ThemeAvatar theme={active} look={look} /><span>Tema activo: <b>{active?.name || 'Cargando…'}</b></span></div>
   </header>;
 }
 
@@ -83,7 +83,7 @@ function ThemeChoices({ data }: { data: ReturnType<typeof useThemes> }) {
     <h2 className="d-card-h">Cambiar tema <span className="d-meta">{data.themes.length} / 10</span></h2>
     <p className="d-muted">Se aplica al momento, también en directo.</p>
     {data.themes.map(theme => <button key={theme.id} type="button" className={cx('d-btn d-theme-choice', theme.active && 'is-active')} aria-pressed={theme.active} data-dock-theme-switch={theme.id} onClick={guard(() => activateTheme(theme))}>
-      <ThemeSwatch color={data.looks[theme.id]?.theme?.accent} /><strong>{theme.name}</strong><small>{theme.active ? '✓ ACTIVO' : 'Activar'}</small>
+      <ThemeAvatar theme={theme} look={data.looks[theme.id]} /><strong>{theme.name}</strong><small>{theme.active ? '✓ ACTIVO' : 'Activar'}</small>
     </button>)}
     <p className="d-card d-muted">Las alertas que ya están en pantalla terminan con su aspecto anterior. La cola continúa.</p>
   </div>;
@@ -530,7 +530,7 @@ export function Dock() {
   return <div className={cx('dock', layout !== 'tabs' && 'dock-wide')} inert={PREVIEW || undefined}
     onClickCapture={PREVIEW ? block : undefined} onSubmitCapture={PREVIEW ? block : undefined}
     onChangeCapture={PREVIEW ? block : undefined} onInputCapture={PREVIEW ? block : undefined} onKeyDownCapture={PREVIEW ? block : undefined}>
-    <Status active={activeTheme?.name} color={activeTheme && themeData.looks[activeTheme.id]?.theme?.accent} />
+    <Status active={activeTheme} look={activeTheme && themeData.looks[activeTheme.id]} />
     {layout !== 'tabs'
       ? <><nav className="d-wide-tabs" role="tablist" aria-label="Secciones del dock">
           <button type="button" role="tab" aria-selected={selected !== 'saved-theme'} onClick={() => setTab(zones[0]?.id || '')}>Control</button>

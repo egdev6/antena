@@ -30,14 +30,14 @@ async function fixture(t) {
     await browser.cdp.send('Page.navigate', { url: base + url });
     return browser.cdp;
   };
-  return { call, open };
+  return { call, open, base };
 }
 const ev = (c, expr) => evaluateChrome(c, expr);
 const active = async call => (await call('GET', '/api/themes')).themes.find(x => x.active).id;
 const click = (c, selector) => ev(c, `document.querySelector(${JSON.stringify(selector)}).click(); true`);
 const setValue = (c, selector, value) => ev(c, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', {bubbles:true})); return true; })()`);
 
-test('Apariencia: select without activating, activate, duplicate, rename and delete', { timeout: 120000 }, async t => {
+test('Apariencia: select without activating, activate, duplicate, edit and delete', { timeout: 120000 }, async t => {
   const f = await fixture(t); if (!f) return;
   await f.call('PUT', '/api/theme', { accent: '#123456' });
   await f.call('PUT', '/api/config', { alerts: { follow: { title: 'Alerta de invierno' } }, widgets: { chat: { fontSize: 36 }, goals: [{ id: 'g', title: 'Meta de invierno', visible: true, showMetric: true, css: '', bars: [{ id: 'b', platform: 'twitch', metric: 'follows', target: 50, visible: true }] }] } });
@@ -61,7 +61,7 @@ test('Apariencia: select without activating, activate, duplicate, rename and del
   await click(c, '[data-theme-duplicate]'); await waitDom(c, `!!document.querySelector('[role=dialog] #theme-name')`);
   await setValue(c, '#theme-name', 'Copia de Navidad'); await click(c, '[data-theme-submit]');
   await waitDom(c, `document.body.textContent.includes('Copia de Navidad') && !document.querySelector('[role=dialog]')`);
-  await click(c, '[data-theme-rename]'); await waitDom(c, `!!document.querySelector('[role=dialog] #theme-name')`);
+  await click(c, '[data-theme-edit]'); await waitDom(c, `!!document.querySelector('[role=dialog] #theme-name') && document.querySelector('[role=dialog]').textContent.includes('Editar tema')`);
   await setValue(c, '#theme-name', 'Invierno'); await click(c, '[data-theme-submit]');
   await waitDom(c, `document.querySelector('[data-theme-preview]').textContent.includes('Invierno')`);
   await ev(c, `window.confirm = () => true`); await click(c, '[data-theme-delete]');
@@ -75,7 +75,7 @@ test('new theme from default and the ten-theme limit', { timeout: 120000 }, asyn
   await waitDom(c, `!!document.querySelector('[data-theme-new]')`, { timeoutMs: 20000 });
   await click(c, '[data-theme-new]');
   await waitDom(c, `!!document.querySelector('#theme-origin')`);
-  await setValue(c, '#theme-origin', '__default'); await setValue(c, '#theme-name', 'Desde cero'); await click(c, '[data-theme-submit]');
+  await click(c, '[data-theme-origin="__default"]'); await setValue(c, '#theme-name', 'Desde cero'); await click(c, '[data-theme-submit]');
   await waitDom(c, `document.body.textContent.includes('Desde cero') && !document.querySelector('[role=dialog]')`);
   const created = (await f.call('GET', '/api/themes')).themes.find(x => x.name === 'Desde cero');
   const look = (await f.call('GET', `/api/themes/${created.id}/look`)).look;
@@ -104,7 +104,8 @@ test('inactive preview uses the real renderers without changing the active overl
   const frame = `document.querySelector('[data-theme-alert] iframe')?.contentDocument`;
   await waitDom(c, `${frame}?.querySelector('.alert.on') && getComputedStyle(${frame}.querySelector('.alert')).getPropertyValue('--accent').trim().toUpperCase() === '#2468AC'`);
   await waitDom(c, `document.querySelector('[data-theme-goal] iframe')?.contentDocument?.querySelector('#title')?.textContent === 'Meta invierno'`);
-  await waitDom(c, `document.querySelector('[data-theme-chat] iframe')?.contentDocument?.querySelector('.msg')`);
+  // The chat demo renders its messages before the theme CSS arrives; wait for the projected CSS itself.
+  await waitDom(c, `(() => { const m = document.querySelector('[data-theme-chat] iframe')?.contentDocument?.querySelector('.msg'); return !!m && getComputedStyle(m).borderLeftWidth === '11px'; })()`);
   assert.equal(await ev(c, `getComputedStyle(document.querySelector('[data-theme-chat] iframe').contentDocument.querySelector('.msg')).borderLeftWidth`), '11px');
   assert.equal(await active(f.call), 'normal');
   assert.equal(await ev(live, `document.querySelector('.alert-title').textContent.includes('Activo') && getComputedStyle(document.querySelector('.alert')).getPropertyValue('--accent').trim().toUpperCase() === '#FF0036'`), true);
@@ -159,6 +160,66 @@ for (const kind of ['alerta', 'widget', 'comando']) {
     await waitDom(c, `!document.querySelector('.lv-dirty.is-on') && (${field})?.value === ${JSON.stringify(original)}`);
   });
 }
+
+test('avatars appear in theme list, origins, sidebar and dock', { timeout: 120000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const upload = await fetch(f.base + '/api/media/upload?name=imagen.png', { method: 'POST', body: png });
+  assert.equal(upload.status, 200); const { name: image } = await upload.json();
+  const imageTheme = (await f.call('POST', '/api/themes/from-default', { name: 'Imagen', avatar: { image, color: '#AA5500' } })).theme;
+  const panel = await f.open('/#/apariencia');
+  await waitDom(panel, `!!document.querySelector('[data-theme-new]')`, { timeoutMs: 20000 });
+  await click(panel, '[data-theme-new]');
+  await waitDom(panel, `!!document.querySelector('[data-theme-avatar-color]')`);
+  await setValue(panel, '#theme-name', 'Color'); await setValue(panel, '[data-theme-avatar-color]', '#123456');
+  await waitDom(panel, `document.querySelector('[role=dialog] [data-theme-avatar-preview] .theme-avatar__content')?.style.background === 'rgb(18, 52, 86)'`);
+  await click(panel, '[data-theme-submit]');
+  await waitDom(panel, `!!document.querySelector('[data-theme-row="color"] .theme-avatar') && !document.querySelector('[role=dialog]')`);
+  const colorRow = '[data-theme-row="color"] .theme-avatar__content';
+  const imageRow = `[data-theme-row="${imageTheme.id}"] .theme-avatar img`;
+  assert.equal(await ev(panel, `document.querySelector(${JSON.stringify(colorRow)}).style.background`), 'rgb(18, 52, 86)');
+  assert.equal(await ev(panel, `document.querySelector(${JSON.stringify(imageRow)}).getAttribute('src')`), '/media/' + encodeURIComponent(image));
+  await click(panel, '[data-theme-new]');
+  await waitDom(panel, `!!document.querySelector('[data-theme-origin="color"] .theme-avatar') && !!document.querySelector('[data-theme-origin="${imageTheme.id}"] .theme-avatar img') && !!document.querySelector('[data-theme-origin="__default"] .theme-avatar')`);
+  await click(panel, '[role=dialog] [data-theme-cancel]');
+  await click(panel, '[data-theme-sidebar] summary');
+  await waitDom(panel, `!!document.querySelector('[data-theme-switch="color"] .theme-avatar') && !!document.querySelector('[data-theme-switch="${imageTheme.id}"] .theme-avatar img')`);
+  const dock = await f.open('/dock', 360);
+  await waitDom(dock, `!!document.querySelector('[data-dock-theme-tab]')`, { timeoutMs: 20000 });
+  await click(dock, '[data-dock-theme-tab]');
+  await waitDom(dock, `!!document.querySelector('[data-dock-theme-switch="color"] .theme-avatar') && !!document.querySelector('[data-dock-theme-switch="${imageTheme.id}"] .theme-avatar img')`);
+  await click(dock, `[data-dock-theme-switch="${imageTheme.id}"]`);
+  await waitDom(dock, `!!document.querySelector('[data-dock-active-theme] .theme-avatar img')`);
+  await waitDom(panel, `!!document.querySelector('[data-theme-sidebar] summary .theme-avatar img')`);
+  await click(dock, '[data-dock-theme-switch="color"]');
+  await waitDom(dock, `document.querySelector('[data-dock-active-theme] .theme-avatar__content')?.style.background === 'rgb(18, 52, 86)'`);
+  await waitDom(panel, `document.querySelector('[data-theme-sidebar] summary .theme-avatar__content')?.style.background === 'rgb(18, 52, 86)'`);
+});
+
+test('Editar uploads the returned media name, previews and removes avatar fields', { timeout: 120000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const first = await fetch(f.base + '/api/media/upload?name=avatar.png', { method: 'POST', body: Buffer.from(png, 'base64') });
+  assert.equal(first.status, 200);
+  const panel = await f.open('/#/apariencia');
+  await waitDom(panel, `!!document.querySelector('[data-theme-edit]')`, { timeoutMs: 20000 });
+  await click(panel, '[data-theme-edit]');
+  await waitDom(panel, `!!document.querySelector('[data-theme-avatar-image]')`);
+  assert.equal(await ev(panel, `document.querySelector('[data-theme-avatar-image]').getAttribute('accept')`), 'image/png,image/jpeg,image/webp,image/gif');
+  await ev(panel, `(() => { const bytes = Uint8Array.from(atob(${JSON.stringify(png)}), c => c.charCodeAt(0)); const transfer = new DataTransfer(); transfer.items.add(new File([bytes], 'avatar.png', {type:'image/png'})); const input = document.querySelector('[data-theme-avatar-image]'); input.files = transfer.files; input.dispatchEvent(new Event('change', {bubbles:true})); return true; })()`);
+  await waitDom(panel, `!!document.querySelector('[role=dialog] .theme-avatar img') && !document.querySelector('[data-theme-submit]').disabled`);
+  const src = await ev(panel, `document.querySelector('[role=dialog] .theme-avatar img').getAttribute('src')`);
+  const image = decodeURIComponent(src.slice('/media/'.length)); assert.notEqual(image, 'avatar.png');
+  await setValue(panel, '[data-theme-avatar-color]', '#345678');
+  await click(panel, '[data-theme-submit]');
+  await waitDom(panel, `!document.querySelector('[role=dialog]') && !!document.querySelector('[data-theme-row="normal"] .theme-avatar img')`);
+  assert.deepEqual((await f.call('GET', '/api/themes')).themes.find(x => x.id === 'normal').avatar, { image, color: '#345678' });
+  await click(panel, '[data-theme-edit]'); await waitDom(panel, `!!document.querySelector('[data-theme-avatar-remove-image]')`);
+  await click(panel, '[data-theme-avatar-remove-image]'); await click(panel, '[data-theme-avatar-remove-color]'); await click(panel, '[data-theme-submit]');
+  await waitDom(panel, `!document.querySelector('[role=dialog]') && !document.querySelector('[data-theme-row="normal"] .theme-avatar img')`);
+  assert.equal(Object.hasOwn((await f.call('GET', '/api/themes')).themes.find(x => x.id === 'normal'), 'avatar'), false);
+  assert.equal((await fetch(f.base + '/media/' + encodeURIComponent(image))).status, 200);
+});
 
 test('sidebar and dock theme switchers synchronize across narrow and wide layouts', { timeout: 120000 }, async t => {
   const f = await fixture(t); if (!f) return;

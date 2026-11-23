@@ -2,7 +2,7 @@ import { useLive } from '../lib/live';
 import { Icon, cx } from '../lib/ui';
 import type { IconData } from '../lib/icons';
 import { alertWarnings } from './views/Alertas';
-import { activateTheme, ThemeSwatch, useThemes } from '../lib/themes';
+import { activateTheme, ThemeAvatar, useThemes } from '../lib/themes';
 import { guard } from '../lib/ui';
 
 const P = (d: string) => ['path', { d }] as const;
@@ -97,10 +97,10 @@ export function Sidebar({ current }: { current: string }) {
     </nav>
     <div className="themes-side-foot" data-theme-sidebar>
       <p>Tema activo</p>
-      <details className="themes-switcher"><summary><span><ThemeSwatch color={activeTheme && looks[activeTheme.id]?.theme?.accent} /><b>{activeTheme?.name || 'Cargando…'}</b><span aria-hidden="true">⌃</span></span><small>Cambiar tema desde cualquier vista</small></summary>
+      <details className="themes-switcher"><summary><span><ThemeAvatar theme={activeTheme} look={activeTheme && looks[activeTheme.id]} /><b>{activeTheme?.name || 'Cargando…'}</b><span aria-hidden="true">⌃</span></span><small>Cambiar tema desde cualquier vista</small></summary>
         <div className="themes-popover"><div className="themes-pophead"><b>Cambiar tema</b><span>{themes.length} / 10</span></div>
           {themes.map(theme => <button key={theme.id} type="button" data-theme-switch={theme.id} onClick={guard(async e => { const details = e.currentTarget.closest('details') as HTMLDetailsElement | null; await activateTheme(theme); details?.removeAttribute('open'); })}>
-            <ThemeSwatch color={looks[theme.id]?.theme?.accent} /><span>{theme.name}</span>{theme.active && <small>✓ ACTIVO</small>}</button>)}
+            <ThemeAvatar theme={theme} look={looks[theme.id]} /><span>{theme.name}</span>{theme.active && <small>✓ ACTIVO</small>}</button>)}
           <p>Se aplica al momento en pantalla.</p></div>
       </details>
     </div>

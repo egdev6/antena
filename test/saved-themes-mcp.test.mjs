@@ -60,6 +60,15 @@ test('MCP themes: metadata, duplicate, rename, activate, delete and generic-writ
   const created = (await call('duplicar_tema', { id: 'normal', nombre: 'Navidad' })).theme;
   assert.equal(created.name, 'Navidad'); assert.equal(created.active, false);
   assert.equal((await call('renombrar_tema', { id: created.id, nombre: 'Invierno' })).theme.name, 'Invierno');
+  assert.equal(tools.renombrar_tema.inputSchema.properties.color.type, 'string');
+  assert.equal(tools.renombrar_tema.inputSchema.properties.imagen.type, 'string');
+  assert.deepEqual(tools.renombrar_tema.inputSchema.required, ['id', 'nombre']);
+  const upload = await fetch(base + '/api/media/upload?name=avatar.png', { method: 'POST', body: Buffer.from('imagen') });
+  assert.equal(upload.status, 200); const { name: image } = await upload.json();
+  assert.deepEqual((await call('renombrar_tema', { id: created.id, nombre: 'Invierno', color: '#123456' })).theme.avatar, { color: '#123456' });
+  assert.deepEqual((await call('renombrar_tema', { id: created.id, nombre: 'Invierno', imagen: image })).theme.avatar, { color: '#123456', image });
+  assert.deepEqual((await call('renombrar_tema', { id: created.id, nombre: 'Invierno', imagen: '' })).theme.avatar, { color: '#123456' });
+  assert.equal(Object.hasOwn((await call('renombrar_tema', { id: created.id, nombre: 'Invierno', color: '' })).theme, 'avatar'), false);
   for (const [name, args] of [['activar_tema', { id: created.id }], ['borrar_tema', { id: created.id }]]) {
     for (const confirm of [{}, { confirmar: false }, { confirmar: 'true' }]) {
       const before = await snapshot();

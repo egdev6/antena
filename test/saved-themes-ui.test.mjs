@@ -55,16 +55,16 @@ async function renderThemes(t) {
       b.onResolve({ filter: /^(\.\.\/\.\.\/lib\/api|\.\/api)$/ }, () => ({ path: 'api', namespace: 'theme-fixture' }));
       b.onLoad({ filter: /.*/, namespace: 'theme-fixture' }, args => ({ contents: {
         hooks: 'export const useEffect = () => {}; export const useState = value => [globalThis.__themeUiState++ === 0 ? globalThis.__themeUi.chosen : value, () => {}];',
-        themes: `export { ThemeSwatch } from ${JSON.stringify(path.resolve('app/src/lib/themes.tsx'))}; export const useThemes = () => globalThis.__themeUi; export const activateTheme = () => {};`,
+        themes: `export { ThemeAvatar, ThemeSwatch } from ${JSON.stringify(path.resolve('app/src/lib/themes.tsx'))}; export const useThemes = () => globalThis.__themeUi; export const activateTheme = () => {};`,
         live: 'export const useLive = select => select({ config: { widgets: {} }, alertPreviews: {} });',
-        api: 'export const get = () => {}; export const post = () => {}; export const put = () => {}; export const del = () => {};',
+        api: 'export const get = () => {}; export const post = () => {}; export const put = () => {}; export const del = () => {}; export const upload = () => {};',
       }[args.path], loader: 'js', resolveDir: process.cwd() }));
     } }],
   });
   const module = { exports: {} };
   new Function('module', 'exports', 'require', result.outputFiles[0].text)(module, module.exports, createRequire(import.meta.url));
-  return chosen => {
-    const themes = [{ id: 'normal', name: 'Normal', active: true }, { id: 'navidad', name: 'Navidad', active: false }, { id: 'platform', name: 'Plataformas', active: false }];
+  return (chosen, avatars = {}) => {
+    const themes = [{ id: 'normal', name: 'Normal', active: true }, { id: 'navidad', name: 'Navidad', active: false }, { id: 'platform', name: 'Plataformas', active: false }].map(item => ({ ...item, ...(avatars[item.id] && { avatar: avatars[item.id] }) }));
     const looks = { normal: { theme: { accent: '#AABBCC', platformAccent: false } }, navidad: { theme: { accent: '#123456', platformAccent: false } }, platform: { theme: { accent: '#FF0036', platformAccent: true } } };
     const html = module.exports.render({ themes, looks, activeId: 'normal', chosen });
     return new Map([...html.matchAll(/<button\b[^>]*data-theme-row="([^"]+)"[^>]*>([\s\S]*?)<\/button>/g)].map(m => [m[1], m[2]]));
@@ -89,6 +89,16 @@ test('theme rows use their own accent or a multicolour platform swatch', async t
   const rows = render('navidad');
   assert.match(rows.get('normal'), /background:#AABBCC/);
   assert.match(rows.get('navidad'), /background:#123456/);
+  assert.match(rows.get('platform'), /background:conic-gradient\(/);
+});
+
+test('theme avatars use uploaded image and colored ring, or the chosen color', async t => {
+  const render = await renderThemes(t);
+  const rows = render('navidad', { normal: { color: '#123456' }, navidad: { image: 'foto azul.png', color: '#ABCDEF' } });
+  assert.match(rows.get('normal'), /class="theme-avatar"[^>]*border-color:#123456/);
+  assert.match(rows.get('normal'), /class="theme-avatar__content"[^>]*background:#123456/);
+  assert.match(rows.get('navidad'), /border-color:#ABCDEF/);
+  assert.match(rows.get('navidad'), /<img src="\/media\/foto%20azul.png" alt=""/);
   assert.match(rows.get('platform'), /background:conic-gradient\(/);
 });
 

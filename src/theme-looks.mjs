@@ -29,5 +29,5 @@ export function applyLook(config, look) {
 }
 
 export function publicThemes(themes) {
-  return (themes?.saved || []).map(({ id, name }) => ({ id, name, active: id === themes.activeId }));
+  return (themes?.saved || []).map(({ id, name, avatar }) => ({ id, name, active: id === themes.activeId, ...(avatar !== undefined && { avatar }) }));
 }

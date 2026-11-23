@@ -1,9 +1,11 @@
 // Temas guardados: la configuración en activo sigue en sus secciones originales.
+import { lstat } from 'node:fs/promises';
+import path from 'node:path';
 import { DEFAULT_CONFIG } from '../store.mjs';
 import { DEFAULT_THEME, publicTheme, themeCss } from '../theme.mjs';
 import { buildAlert, SAMPLES } from '../alerts.mjs';
 import { extractLook, applyLook, publicThemes } from '../theme-looks.mjs';
-import { CONFIG_SCHEMA, validateLook, validatePatch } from '../config-schema.mjs';
+import { CONFIG_SCHEMA, themeAvatarError, validateLook, validatePatch } from '../config-schema.mjs';
 import { httpError } from '../http-util.mjs';
 
 const MAX_THEMES = 10;
@@ -31,7 +33,27 @@ const slugOf = (name, saved) => {
   return id;
 };
 
-export function registerThemesRoutes({ route, store, onActivated = () => {} }) {
+export function registerThemesRoutes({ route, store, mediaDir, onActivated = () => {} }) {
+  const avatarOf = async value => {
+    if (value === undefined || value === null) return value;
+    const error = themeAvatarError(value, { allowEmpty: true });
+    if (error) throw httpError(400, error);
+    if (value.image) {
+      // lstat: a symlink in the media folder could point outside it, so only regular files count.
+      const file = await lstat(path.join(mediaDir, value.image)).catch(() => null);
+      if (!file?.isFile()) throw httpError(400, `No existe la imagen «${value.image}» en la carpeta de media`);
+    }
+    return value;
+  };
+  const mergeAvatar = (previous, value) => {
+    if (value === undefined) return previous;
+    if (value === null) return undefined;
+    const next = { ...previous };
+    for (const key of ['image', 'color']) if (Object.hasOwn(value, key)) {
+      if (value[key] === '') delete next[key]; else next[key] = value[key];
+    }
+    return Object.keys(next).length ? next : undefined;
+  };
   const list = () => publicThemes(store.config.themes);
   const find = id => {
     let decoded;
@@ -46,14 +68,18 @@ export function registerThemesRoutes({ route, store, onActivated = () => {} }) {
     const [error] = validatePatch({ themes });
     if (error) throw httpError(400, error.message);
   };
-  const add = async (name, look) => {
+  const add = async (name, look, avatarInput) => {
+    if (store.config.themes.saved.length >= MAX_THEMES) throw httpError(409, 'Como máximo se pueden guardar 10 temas');
+    name = nameOf(name);
+    checkLook(look);
+    const patch = await avatarOf(avatarInput);
+    // stat can yield to another write: use the latest theme list before building the update.
     const themes = store.config.themes;
     if (themes.saved.length >= MAX_THEMES) throw httpError(409, 'Como máximo se pueden guardar 10 temas');
-    name = nameOf(name);
     uniqueName(name, themes.saved);
-    checkLook(look);
+    const avatar = mergeAvatar(undefined, patch);
     const id = slugOf(name, themes.saved);
-    const next = { ...themes, saved: [...themes.saved, { id, name, look: structuredClone(look) }] };
+    const next = { ...themes, saved: [...themes.saved, { id, name, look: structuredClone(look), ...(avatar && { avatar }) }] };
     validate(next);
     await store.patchConfig({ themes: next });
     return { theme: list().find(t => t.id === id) };
@@ -83,17 +109,27 @@ export function registerThemesRoutes({ route, store, onActivated = () => {} }) {
     return { theme: publicTheme(pick(look.theme, Object.keys(DEFAULT_THEME))), css: themeCss(look.theme), alert,
       widgets: { chat: pick(look.widgets?.chat, Object.keys(CONFIG_SCHEMA.widgets.chat)) }, goals };
   });
-  route('POST', '/api/themes/duplicate', async ({ from, name } = {}) => {
+  route('POST', '/api/themes/duplicate', async ({ from, name, avatar } = {}) => {
     const source = find(from);
-    return add(name, lookOf(source));
+    return add(name, lookOf(source), avatar);
   });
-  route('POST', '/api/themes/from-default', async ({ name } = {}) => {
-    return add(name, extractLook(structuredClone(DEFAULT_CONFIG)));
+  route('POST', '/api/themes/from-default', async ({ name, avatar } = {}) => {
+    return add(name, extractLook(structuredClone(DEFAULT_CONFIG)), avatar);
   });
   route('PUT', '/api/themes/:id', async ({ id }, body = {}) => {
-    const item = find(id), name = nameOf(body.name), themes = store.config.themes;
+    find(id);
+    if (!Object.hasOwn(body, 'name') && !Object.hasOwn(body, 'avatar')) nameOf(undefined);
+    const requestedName = Object.hasOwn(body, 'name') ? nameOf(body.name) : undefined;
+    const patch = await avatarOf(body.avatar);
+    const item = find(id), themes = store.config.themes;
+    const name = requestedName ?? item.name;
     uniqueName(name, themes.saved, item.id);
-    const next = { ...themes, saved: themes.saved.map(t => t.id === item.id ? { ...t, name } : t) };
+    const avatar = mergeAvatar(item.avatar, patch);
+    const next = { ...themes, saved: themes.saved.map(t => {
+      if (t.id !== item.id) return t;
+      const { avatar: _avatar, ...rest } = t;
+      return { ...rest, name, ...(avatar && { avatar }) };
+    }) };
     validate(next);
     await store.patchConfig({ themes: next });
     return { theme: list().find(t => t.id === item.id) };
@@ -114,9 +150,11 @@ export function registerThemesRoutes({ route, store, onActivated = () => {} }) {
     checkLook(current); checkLook(target.look);
     const next = structuredClone(before);
     applyLook(next, target.look);
-    next.themes = { activeId: target.id, saved: before.themes.saved.map(t => t.id === before.themes.activeId
-      ? { id: t.id, name: t.name, look: current }
-      : t.id === target.id ? { id: t.id, name: t.name } : t) };
+    next.themes = { activeId: target.id, saved: before.themes.saved.map(t => {
+      if (t.id === before.themes.activeId) return { ...t, look: current };
+      if (t.id === target.id) { const { look: _look, ...rest } = t; return rest; }
+      return t;
+    }) };
     validate(next.themes);
     await store.replaceConfigWithBackup(next, before, { themes: true, theme: true, alerts: true, overlay: true,
       widgets: true, interactive: true, commands: true, timers: true, customOverlays: true }, onActivated);

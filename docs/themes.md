@@ -6,18 +6,20 @@ Las conexiones y secretos, las sesiones, Meld/OBS y su configuración, Discord, 
 
 ## Panel y dock
 
-En **Ajustes › Apariencia › Temas** selecciona un tema para ver las capas reales de alerta, objetivo y chat sin activarlo. Las muestras usan sus colores, textos, diseño, medios y CSS guardados. Desde ahí puedes activarlo, duplicarlo, renombrarlo o borrar uno inactivo. **Nuevo tema** crea una copia completa del tema elegido o parte de **Color de cada plataforma**. El máximo es 10; primero activa otro para borrar el activo.
+En **Ajustes › Apariencia › Temas** selecciona un tema para ver las capas reales de alerta, objetivo y chat sin activarlo. Las muestras usan sus colores, textos, diseño, medios y CSS guardados. Desde ahí puedes activarlo, duplicarlo, editarlo o borrar uno inactivo. **Nuevo tema** crea una copia completa del tema elegido o parte de **Color de cada plataforma**. El máximo es 10; primero activa otro para borrar el activo.
+
+Al crear o editar un tema puedes asignarle un avatar: imagen, color o ambos (la imagen se recorta en círculo y el color dibuja el anillo). Se muestra en las listas de Apariencia, el selector lateral, el dock y la lista de origen. Sin avatar se usa el acento o el indicador multicolor del tema por plataformas. Se suben imágenes PNG, JPG/JPEG, WebP o GIF; no se admiten SVG, APNG ni AVIF. Duplicar copia el aspecto y ajustes, pero no el avatar: el tema nuevo tiene identidad propia. Quitar un avatar o borrar un tema no borra los archivos de media.
 
 El selector destacado al pie de la barra lateral y la pestaña **Tema** del dock cambian el tema en el momento; las tres superficies se sincronizan sin recargar. Los cambios corrientes y los resets de alertas o Apariencia afectan solo al activo. Si cambias desde el panel con un borrador local, se pide confirmación antes de descartarlo. Si otro cliente activa un tema, el borrador anterior permanece visible, Guardar se bloquea y puedes descartarlo; no se aplica al tema nuevo. La apariencia de serie para instalaciones nuevas usa el color y el logo de cada plataforma. Ya no se ofrece el selector «Punto de partida».
 
 ## API
 
-- `GET /api/themes` devuelve `{ "themes": [{ "id", "name", "active" }] }`.
+- `GET /api/themes` devuelve `{ "themes": [{ "id", "name", "active", "avatar"? }] }`; `avatar` es `{ "image"?: "foto.png", "color"?: "#RRGGBB" }` y queda fuera del look.
 - `GET /api/themes/:id/look` devuelve una proyección resumida sin acciones, comandos, timers ni CSS; el activo se lee de las secciones actuales.
 - `GET /api/themes/:id/preview` entrega solo los datos necesarios para pintar la alerta de muestra y los widgets de objetivo y chat (incluidos CSS y medios), sin acciones ni secciones operativas. La vista del overlay solo lo usa con `?still=follow&previewTheme=<id>` y los widgets solo con `?demo&previewTheme=<id>`; nunca se activa ni se guarda el tema.
-- `POST /api/themes/duplicate` con `{ "from": "normal", "name": "Navidad" }` copia el tema activo o uno inactivo.
-- `POST /api/themes/from-default` con `{ "name": "Plataformas" }` crea desde la configuración de serie con «Color de cada plataforma» (`platformAccent: true`, `platformBadge: "logo"`).
-- `PUT /api/themes/:id` con `{ "name": "Nuevo nombre" }` renombra sin cambiar el id.
+- `POST /api/themes/duplicate` con `{ "from": "normal", "name": "Navidad", "avatar": { "color": "#112233" } }` copia el tema activo o uno inactivo sin copiar su avatar; `avatar` es opcional.
+- `POST /api/themes/from-default` con `{ "name": "Plataformas", "avatar": { "image": "foto.png" } }` crea desde la configuración de serie con «Color de cada plataforma» (`platformAccent: true`, `platformBadge: "logo"`); `avatar` es opcional.
+- `PUT /api/themes/:id` acepta `name` y/o `avatar`; renombrar no cambia el id. En `avatar`, las claves omitidas se conservan, `image: ""` o `color: ""` quitan solo ese campo y `avatar: null` quita ambos. La imagen debe ser el nombre de un archivo existente en media (sin rutas); súbela primero con `POST /api/media/upload?name=<nombre>` y usa el `name` devuelto.
 - `POST /api/themes/:id/activate` activa el tema; repetirlo para el activo no escribe ni crea copia.
 - `DELETE /api/themes/:id` borra un tema inactivo. El activo responde 409: «Activa otro tema antes de borrar este».
 
@@ -33,7 +35,7 @@ Activar guarda el look saliente, aplica el entrante y actualiza `activeId` en un
 
 ## MCP
 
-`listar_temas`, `duplicar_tema { id, nombre }`, `renombrar_tema { id, nombre }`, `activar_tema { id, confirmar: true }` y `borrar_tema { id, confirmar: true }` usan la misma API. La activación y el borrado requieren confirmación de la persona antes de invocar la herramienta. `restaurar_tema` restaura el aspecto de serie del activo; `tema_de_partida` se conserva por compatibilidad solo con el id `plataforma`.
+`listar_temas`, `duplicar_tema { id, nombre }`, `renombrar_tema { id, nombre, color?, imagen? }`, `activar_tema { id, confirmar: true }` y `borrar_tema { id, confirmar: true }` usan la misma API. En `renombrar_tema`, `color` e `imagen` son opcionales; una cadena vacía quita ese campo, sin borrar el archivo. La activación y el borrado requieren confirmación de la persona antes de invocar la herramienta. `restaurar_tema` restaura el aspecto de serie del activo; `tema_de_partida` se conserva por compatibilidad solo con el id `plataforma`.
 
 ## Migración y copia
 
