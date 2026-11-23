@@ -9,6 +9,7 @@ import type { SavedThemeSummary } from '../../lib/types';
 const MAX = 10;
 const DELETE_REASON = 'No se puede borrar el tema activo. Activa otro primero.';
 const LIMIT = 'Máximo 10 temas. Borra un tema inactivo para crear otro.';
+const PLATFORM_SWATCH = 'conic-gradient(var(--color-primitive-red-neon) 0 25%,var(--color-status-warning) 25% 50%,var(--color-status-success) 50% 75%,var(--color-status-info) 75%)';
 
 type Dialog = { kind: 'new'; origin: string } | { kind: 'rename'; theme: SavedThemeSummary };
 
@@ -60,15 +61,15 @@ export function Temas() {
       <section className="lv-panel themes-master" aria-label="Lista de temas">
         <h3>Selecciona para previsualizar</h3>
         {themes.map(item => <button key={item.id} type="button" data-theme-row={item.id} className={cx('themes-row', selected?.id === item.id && 'is-selected')} aria-pressed={selected?.id === item.id} onClick={() => setChosen(item.id)}>
-          <ThemeSwatch color={looks[item.id]?.theme?.accent} /><span><b>{item.name}</b>{item.active && <small>✓ Activo</small>}</span>
+          <ThemeSwatch color={looks[item.id]?.theme?.platformAccent ? PLATFORM_SWATCH : looks[item.id]?.theme?.accent} /><span><b>{item.name}</b>{item.active ? <small className="is-active">✓ Activo</small> : selected?.id === item.id && <small>Vista previa seleccionada</small>}</span>
         </button>)}
       </section>
       {selected && <section className="lv-panel themes-detail" data-theme-preview data-look-accent={theme?.accent} aria-label={`Detalle y vista previa de ${selected.name}`}>
         <div className="themes-detail-head"><div><h3>{selected.name}</h3><p>{selected.active ? 'Activo' : 'Selección para vista previa · aún no activo'}</p></div><span className="lv-tag">Tema guardado</span></div>
         {theme && look ? <div className="themes-samples" key={previewKey}>
-          <div data-theme-alert><p className="themes-sample-label">Alerta · muestra</p><ScaledFrame src={`/overlay?still=follow&previewTheme=${previewId}`} className="preview wprev" title="Vista previa de alerta" /></div>
+          <div className="themes-alert-stage" data-theme-alert><p className="themes-sample-label">Alerta · muestra</p><ScaledFrame src={`/overlay?still=follow&previewTheme=${previewId}`} className="preview wprev themes-alert-frame" title="Vista previa de alerta" /></div>
           <div className="themes-sample-row"><div className="themes-sample" data-theme-goal><h4>Widget · objetivo</h4><ScaledFrame src={`/widget/goal?demo&previewTheme=${previewId}`} w={1000} h={300} title="Vista previa de objetivo" /></div>
-            <div className="themes-sample" data-theme-chat><h4>Widget · chat</h4><ScaledFrame src={`/widget/chat?demo&previewTheme=${previewId}`} w={600} h={700} title="Vista previa de chat" /></div></div>
+            <div className="themes-sample" data-theme-chat><h4>Widget · chat</h4><ScaledFrame src={`/widget/chat?demo&previewTheme=${previewId}`} w={600} h={180} title="Vista previa de chat" /></div></div>
         </div> : <p className="hint">Cargando vista previa…</p>}
         <div className="row tight">
           <button type="button" className="eg-btn eg-btn--primary eg-btn--sm" data-theme-activate disabled={selected.active} onClick={guard(() => activateTheme(selected))}>Activar</button>

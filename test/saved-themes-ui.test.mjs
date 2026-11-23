@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+import { build, stop } from 'esbuild';
 import { createApp } from '../src/server.mjs';
 import { Store } from '../src/store.mjs';
 import { DEFAULT_THEME } from '../src/theme.mjs';
@@ -29,6 +31,66 @@ async function fixture(t) {
   const snapshot = async () => ({ bytes: await readFile(path.join(dir, 'config.json'), 'utf8'), status: (await call('GET', '/api/status')).body.persistence });
   return { call, snapshot, dir };
 }
+
+// Render the real list and swatch components in memory, with a chosen selection and
+// already-loaded public looks; effects and network requests are not needed for this view.
+async function renderThemes(t) {
+  t.after(() => { stop(); delete globalThis.__themeUi; delete globalThis.__themeUiState; });
+  const result = await build({
+    stdin: { resolveDir: process.cwd(), loader: 'jsx', contents: `
+      import React from 'react';
+      import { renderToStaticMarkup } from 'react-dom/server';
+      import { Temas } from './app/src/panel/views/Temas';
+      export function render(fixture) {
+        globalThis.__themeUi = fixture; globalThis.__themeUiState = 0;
+        return renderToStaticMarkup(React.createElement(Temas));
+      }
+    ` },
+    bundle: true, platform: 'node', format: 'cjs', packages: 'external', write: false,
+    plugins: [{ name: 'themes-view-fixture', setup(b) {
+      b.onResolve({ filter: /^react$/ }, args => args.importer.endsWith('/panel/views/Temas.tsx')
+        ? { path: 'hooks', namespace: 'theme-fixture' } : null);
+      b.onResolve({ filter: /^\.\.\/\.\.\/lib\/themes$/ }, () => ({ path: 'themes', namespace: 'theme-fixture' }));
+      b.onResolve({ filter: /^(\.\.\/\.\.\/lib\/live|\.\/live)$/ }, () => ({ path: 'live', namespace: 'theme-fixture' }));
+      b.onResolve({ filter: /^(\.\.\/\.\.\/lib\/api|\.\/api)$/ }, () => ({ path: 'api', namespace: 'theme-fixture' }));
+      b.onLoad({ filter: /.*/, namespace: 'theme-fixture' }, args => ({ contents: {
+        hooks: 'export const useEffect = () => {}; export const useState = value => [globalThis.__themeUiState++ === 0 ? globalThis.__themeUi.chosen : value, () => {}];',
+        themes: `export { ThemeSwatch } from ${JSON.stringify(path.resolve('app/src/lib/themes.tsx'))}; export const useThemes = () => globalThis.__themeUi; export const activateTheme = () => {};`,
+        live: 'export const useLive = select => select({ config: { widgets: {} }, alertPreviews: {} });',
+        api: 'export const get = () => {}; export const post = () => {}; export const put = () => {}; export const del = () => {};',
+      }[args.path], loader: 'js', resolveDir: process.cwd() }));
+    } }],
+  });
+  const module = { exports: {} };
+  new Function('module', 'exports', 'require', result.outputFiles[0].text)(module, module.exports, createRequire(import.meta.url));
+  return chosen => {
+    const themes = [{ id: 'normal', name: 'Normal', active: true }, { id: 'navidad', name: 'Navidad', active: false }, { id: 'platform', name: 'Plataformas', active: false }];
+    const looks = { normal: { theme: { accent: '#AABBCC', platformAccent: false } }, navidad: { theme: { accent: '#123456', platformAccent: false } }, platform: { theme: { accent: '#FF0036', platformAccent: true } } };
+    const html = module.exports.render({ themes, looks, activeId: 'normal', chosen });
+    return new Map([...html.matchAll(/<button\b[^>]*data-theme-row="([^"]+)"[^>]*>([\s\S]*?)<\/button>/g)].map(m => [m[1], m[2]]));
+  };
+}
+
+test('theme rows identify the active and selected preview without changing activation', async t => {
+  const render = await renderThemes(t);
+  let rows = render('navidad');
+  assert.match(rows.get('normal'), /<small[^>]*>✓ Activo<\/small>/);
+  assert.match(rows.get('navidad'), /<small[^>]*>Vista previa seleccionada<\/small>/);
+  assert.doesNotMatch(rows.get('platform'), /Vista previa seleccionada|✓ Activo/);
+  rows = render('platform');
+  assert.match(rows.get('platform'), /<small[^>]*>Vista previa seleccionada<\/small>/);
+  assert.doesNotMatch(rows.get('navidad'), /Vista previa seleccionada|✓ Activo/);
+  rows = render('normal');
+  assert.match(rows.get('normal'), /<small[^>]*>✓ Activo<\/small>/);
+});
+
+test('theme rows use their own accent or a multicolour platform swatch', async t => {
+  const render = await renderThemes(t);
+  const rows = render('navidad');
+  assert.match(rows.get('normal'), /background:#AABBCC/);
+  assert.match(rows.get('navidad'), /background:#123456/);
+  assert.match(rows.get('platform'), /background:conic-gradient\(/);
+});
 
 test('new installs and themes from default use platform colors, old v2 installs keep their historical defaults', async t => {
   const dir = await mkdtemp(path.join(tmpdir(), 'antena-theme-v2-ui-'));
