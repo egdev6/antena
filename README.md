@@ -273,9 +273,11 @@ A new layer for the broadcast program made of HTML, CSS and JavaScript: a frame 
 
 | Where | What you get |
 |---|---|
-| Panel › **Overlays** | Card list, editor with HTML, CSS and JavaScript tabs, live preview, width and height, transparent background, permissions, copy URL and delete |
+| Panel › **Overlays** | Card list, editor with HTML, CSS and JavaScript tabs, theme-specific CSS, live preview, width and height, transparent background, permissions, copy URL and delete |
 | Broadcast program | Add a browser source with `http://127.0.0.1:4500/custom/<id>` and the overlay size (it is also on the «Fuentes del programa de emisión» page, as «Overlay · name») |
-| On save | Every open layer (in the broadcast program and the preview) reloads by itself: you never touch the source in the broadcast program |
+| On save | Saving overlay code reloads open layers; saving theme-specific CSS or switching themes updates them live without a frame reload |
+
+The editor's **CSS de este tema** belongs to the active saved theme. Duplicating copies it; switching swaps it live without changing the overlay's code, version or approvals. Up to 512 KB of JSON per overlay. The overlay, widgets and custom frame expose `data-tema="<id>"` on `<html>` for theme-specific selectors. The alert overlay defers its marker and look until the current alert exits; widgets and custom frames update immediately.
 
 `/theme.css` is already linked: use its variables (`var(--accent)`, `var(--text)`…) to match the rest. The background is transparent by default, so it sits well over the camera, and external https resources (fonts, images) do load. Width 16–7680, height 16–4320, up to 50 overlays and 512 KB of JSON per overlay.
 
@@ -301,6 +303,8 @@ antena.ready.then(() => {
 });
 document.querySelector('.frame').onclick = () => antena.run('scene', { scene: 'Camera' }).catch(e => console.warn(e.message));
 ```
+
+The `theme` event and `antena.state.theme` expose the existing appearance fields plus the active saved theme's `id` and `name`, for example `antena.on('theme', t => console.log(t.id, t.name, t.accent))`. They update on switching or renaming; the visual version hash is independent of the name.
 
 #### Permissions
 

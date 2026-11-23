@@ -47,10 +47,10 @@ async function fixture(t, config) {
   return { app, base, call, snapshot, dataDir };
 }
 
-async function stream(t, base, client) {
+async function stream(t, base, client, options = '') {
   const ctrl = new AbortController(), timeout = setTimeout(() => ctrl.abort(), 5000);
   t.after(() => { clearTimeout(timeout); ctrl.abort(); });
-  const response = await fetch(`${base}/api/stream?client=${client}`, { signal: ctrl.signal });
+  const response = await fetch(`${base}/api/stream?client=${client}${options}`, { signal: ctrl.signal });
   assert.equal(response.status, 200);
   const reader = response.body.getReader(), decoder = new TextDecoder(), pending = [];
   let buffer = '';
@@ -440,6 +440,140 @@ test('missing goal and chat variant APIs warn with 404 without changing config o
     assert.deepEqual(await f.call(method, url, body), { status: 404, body: { error } });
     assert.deepEqual(await f.snapshot(), before);
   }
+});
+
+test('theme CSS duplicates and swaps independently of approved overlay code and survives config transfer', async t => {
+  const f = await fixture(t);
+  const created = await f.call('POST', '/api/custom-overlays', { name: 'Marco', html: '<div>fijo</div>', css: '.base{}', js: 'void 0', requestedPermissions: ['say'] });
+  const id = created.body.overlay.id;
+  const approved = await fetch(`${f.base}/api/custom-overlays/${id}/permissions`, { method: 'PUT', headers: { 'content-type': 'application/json', Origin: f.base, 'Sec-Fetch-Site': 'same-origin' }, body: JSON.stringify({ permissions: ['say'] }) });
+  assert.equal(approved.status, 200);
+  const original = (await f.call('GET', `/api/custom-overlays/${id}`)).body.overlay;
+  assert.deepEqual(original.permissions, ['say']);
+  assert.equal((await f.call('GET', '/api/config')).body.customOverlayCss[id] ?? '', '');
+  assert.equal((await f.call('POST', '/api/config/set', { path: `customOverlayCss.${id}`, value: '.a{color:red}' })).status, 200);
+  const made = await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' });
+  assert.equal(made.status, 200);
+  assert.equal((await f.call('POST', '/api/config/set', { path: `customOverlayCss.${id}`, value: '.a{color:blue}' })).status, 200);
+  assert.equal((await f.call('POST', '/api/themes/invierno/activate')).status, 200);
+  assert.equal((await f.call('GET', '/api/config')).body.customOverlayCss[id], '.a{color:red}');
+  assert.deepEqual((await f.call('GET', `/api/custom-overlays/${id}`)).body.overlay, original);
+  const inactiveCopy = await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Copia' });
+  assert.equal(inactiveCopy.status, 200);
+  assert.equal((await f.call('POST', '/api/themes/copia/activate')).status, 200);
+  assert.equal((await f.call('GET', '/api/config')).body.customOverlayCss[id], '.a{color:blue}');
+  assert.deepEqual((await f.call('GET', `/api/custom-overlays/${id}`)).body.overlay, original);
+  const exported = (await f.call('GET', '/api/config/export?format=json')).body;
+  const preview = await f.call('POST', '/api/config/import/preview', exported);
+  assert.equal(preview.status, 200);
+  const imported = await fetch(f.base + '/api/config/import', { method: 'POST', headers: { 'content-type': 'application/json', 'x-config-fingerprint': preview.body.fingerprint }, body: JSON.stringify(exported) });
+  assert.equal(imported.status, 200);
+  assert.equal((await f.call('GET', '/api/config')).body.customOverlayCss[id], '.a{color:blue}');
+  assert.deepEqual((await f.call('GET', `/api/custom-overlays/${id}`)).body.overlay, original);
+});
+
+test('theme CSS rejects invalid ids, non-text and oversized CSS without writes', async t => {
+  const f = await fixture(t);
+  const overlay = (await f.call('POST', '/api/custom-overlays', { name: 'Marco' })).body.overlay;
+  const path = `customOverlayCss.${overlay.id}`;
+  for (const [method, url, body, error] of [
+    ['POST', '/api/config/set', { path, value: 42 }, `${path}: se esperaba un id de overlay y CSS de texto`],
+    ['PUT', '/api/config', { customOverlayCss: { [overlay.id]: null } }, `${path}: se esperaba un id de overlay y CSS de texto`],
+    ['POST', '/api/config/set', { path: 'customOverlayCss.A/B', value: 'x' }, 'customOverlayCss.A/B: se esperaba un id de overlay y CSS de texto'],
+    ['POST', '/api/config/set', { path, value: 'x'.repeat(512_000) }, `${path}: el CSS es demasiado grande (máx. 512 KB)`],
+    ['PUT', '/api/config', { customOverlayCss: { [overlay.id]: 'x'.repeat(512_000) } }, `${path}: el CSS es demasiado grande (máx. 512 KB)`],
+  ]) {
+    const before = await f.snapshot();
+    assert.deepEqual(await f.call(method, url, body), { status: 400, body: { error } });
+    assert.deepEqual(await f.snapshot(), before);
+    assert.deepEqual((await f.call('GET', `/api/custom-overlays/${overlay.id}`)).body.overlay, overlay);
+  }
+  const max = 'x'.repeat(511_998);
+  assert.equal((await f.call('POST', '/api/config/set', { path, value: max })).status, 200);
+  assert.equal((await f.call('GET', '/api/config')).body.customOverlayCss[overlay.id], max);
+  assert.deepEqual((await f.call('GET', `/api/custom-overlays/${overlay.id}`)).body.overlay, overlay);
+});
+
+test('extended stream snapshots follow all legacy frames in their original order', async t => {
+  const f = await fixture(t);
+  for (const [query, names] of [
+    ['client=overlay&themeInfo=1', ['pause', 'theme', 'activeTheme']],
+    ['client=preview&themeInfo=1', ['theme', 'activeTheme']],
+    ['client=teleprompter&themeInfo=1', ['teleprompter', 'theme', 'activeTheme']],
+    ['client=widget&themeInfo=1', ['widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'theme', 'activeTheme']],
+    ['client=widget&themeInfo=1&customTheme=1', ['widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'theme', 'activeTheme', 'customOverlayTheme']],
+  ]) {
+    const ctrl = new AbortController(); t.after(() => ctrl.abort());
+    const res = await fetch(`${f.base}/api/stream?${query}`, { signal: ctrl.signal });
+    assert.equal(res.status, 200);
+    const reader = res.body.getReader(), decoder = new TextDecoder();
+    let buffered = '', frames = [];
+    while (frames.length < names.length) {
+      const next = await reader.read(); assert.equal(next.done, false);
+      buffered += decoder.decode(next.value);
+      let end;
+      while ((end = buffered.indexOf('\n\n')) >= 0) {
+        const raw = buffered.slice(0, end); buffered = buffered.slice(end + 2);
+        const match = /^event: ([^\n]+)\ndata: (.+)$/s.exec(raw);
+        if (match) frames.push({ name: match[1], data: JSON.parse(match[2]) });
+      }
+    }
+    assert.deepEqual(frames.map(x => x.name), names, query);
+    assert.equal(Object.hasOwn(frames.find(x => x.name === 'theme').data, 'id'), false);
+    assert.deepEqual(frames.find(x => x.name === 'activeTheme').data, { id: 'normal', name: 'Normal' });
+    ctrl.abort();
+  }
+});
+
+test('custom overlay theme stream publishes matching identity, look and overlay CSS in one snapshot', async t => {
+  const f = await fixture(t);
+  const overlay = (await f.call('POST', '/api/custom-overlays', { name: 'Marco' })).body.overlay;
+  const id = overlay.id;
+  assert.equal((await f.call('PUT', '/api/config', { theme: { accent: '#112233' }, customOverlayCss: { [id]: '.normal{}' } })).status, 200);
+  assert.equal((await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' })).status, 200);
+  assert.equal((await f.call('PUT', '/api/config', { theme: { accent: '#445566' }, customOverlayCss: { [id]: '.active{}' } })).status, 200);
+  const widget = await stream(t, f.base, 'widget', '&themeInfo=1&customTheme=1');
+  const first = await widget('customOverlayTheme');
+  assert.deepEqual(first.activeTheme, { id: 'normal', name: 'Normal' });
+  assert.equal(first.theme.accent, '#445566');
+  assert.match(first.lookCss, /--red:#445566/);
+  assert.equal(first.customOverlayCss[id], '.active{}');
+  assert.equal((await f.call('POST', '/api/themes/invierno/activate')).status, 200);
+  const next = await widget('customOverlayTheme', x => x.activeTheme.id === 'invierno');
+  assert.deepEqual(next.activeTheme, { id: 'invierno', name: 'Invierno' });
+  assert.equal(next.theme.accent, '#112233');
+  assert.match(next.lookCss, /--red:#112233/);
+  assert.equal(next.customOverlayCss[id], '.normal{}');
+  assert.equal((await f.call('PUT', '/api/themes/invierno', { name: 'Navidad' })).status, 200);
+  const renamed = await widget('customOverlayTheme', x => x.activeTheme.name === 'Navidad');
+  assert.equal(renamed.theme.accent, '#112233');
+  assert.equal(renamed.customOverlayCss[id], '.normal{}');
+  assert.equal(renamed.theme.version, next.theme.version);
+});
+
+test('activeTheme is a separate live identity; renaming does not change theme or alert preview versions', async t => {
+  const f = await fixture(t);
+  const overlay = await stream(t, f.base, 'overlay', '&themeInfo=1');
+  const widget = await stream(t, f.base, 'widget', '&themeInfo=1');
+  const before = (await f.call('GET', '/api/state')).body;
+  assert.equal(Object.hasOwn(before, 'activeTheme'), false);
+  assert.deepEqual((({ id, name }) => ({ id, name }))((await f.call('GET', '/api/themes')).body.themes.find(x => x.active)), { id: 'normal', name: 'Normal' });
+  assert.equal(Object.hasOwn(before.theme, 'id'), false);
+  assert.equal(Object.hasOwn(before.theme, 'name'), false);
+  assert.deepEqual(await overlay('activeTheme'), { id: 'normal', name: 'Normal' });
+  assert.deepEqual(await widget('activeTheme'), { id: 'normal', name: 'Normal' });
+  assert.equal((await f.call('PUT', '/api/themes/normal', { name: 'Renombrado' })).status, 200);
+  assert.deepEqual(await overlay('activeTheme', x => x.name === 'Renombrado'), { id: 'normal', name: 'Renombrado' });
+  assert.deepEqual(await widget('activeTheme', x => x.name === 'Renombrado'), { id: 'normal', name: 'Renombrado' });
+  const after = (await f.call('GET', '/api/state')).body;
+  assert.deepEqual((({ id, name }) => ({ id, name }))((await f.call('GET', '/api/themes')).body.themes.find(x => x.active)), { id: 'normal', name: 'Renombrado' });
+  assert.deepEqual(after.theme, before.theme);
+  assert.deepEqual(after.alertPreviews, before.alertPreviews);
+  const other = await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' });
+  assert.equal(other.status, 200);
+  assert.equal((await f.call('POST', '/api/themes/invierno/activate')).status, 200);
+  assert.deepEqual(await overlay('activeTheme', x => x.id === 'invierno'), { id: 'invierno', name: 'Invierno' });
+  assert.deepEqual(await widget('activeTheme', x => x.id === 'invierno'), { id: 'invierno', name: 'Invierno' });
 });
 
 test('avatar: a symlink in media pointing outside mediaDir is refused with nothing written', async t => {

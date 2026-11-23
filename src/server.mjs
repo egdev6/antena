@@ -46,7 +46,7 @@ import { registerWidgetRoutes } from './routes/widgets.mjs';
 import { registerCreditsRoutes } from './routes/credits.mjs';
 import { setupAutoSession } from './auto-session.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
-import { isThemedWrite } from './theme-looks.mjs';
+import { activeTheme, isThemedWrite } from './theme-looks.mjs';
 import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
 import { FollowerRegistry } from './followers.mjs';
@@ -485,6 +485,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       media: store.config.alerts[type]?.media || '',
     }]));
   };
+  // Composite snapshots keep identity, look and CSS from the same committed config.
+  const overlayThemeSnapshot = (theme = store.config.theme) => ({ theme: publicTheme(theme), activeTheme: activeTheme(store.config.themes) });
+  const customOverlayThemeSnapshot = () => ({ ...overlayThemeSnapshot(), lookCss: themeCss(store.config.theme), customOverlayCss: store.config.customOverlayCss || {} });
   // Once program settings change, include their public snapshot in every config event:
   // the bus coalesces by event type, so a later chat/alert update must not erase it.
   let includeProgramConfig = false;
@@ -507,6 +510,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   store.on('change', patch => {
     if (patch.youtube || patch.all) followers.updateYouTubePolling();
     if (patch.theme || patch.all) bus.send('theme', publicTheme(store.config.theme), ['overlay', 'preview', 'widget']);
+    if (patch.themes || patch.all) bus.send('activeTheme', activeTheme(store.config.themes), ['overlay', 'preview', 'widget', 'teleprompter'], 'themeInfo');
+    if (patch.theme || patch.themes || patch.customOverlayCss || patch.all) bus.send('customOverlayTheme', customOverlayThemeSnapshot(), ['widget'], 'customTheme');
+    if (patch.customOverlayCss || patch.all) bus.send('customOverlayCss', store.config.customOverlayCss || {}, ['panel']);
     // The replace-by-type Bus needs a COMPLETE panel rendering snapshot, including
     // after common CSS changes. Keep the three-section config contract unchanged.
     if (patch.theme || patch.alerts || patch.all || patch.overlay === true || Object.hasOwn(patch.overlay || {}, 'css')) {
@@ -842,6 +848,11 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // #106: validación por esquema antes de guardar nada; las claves desconocidas se aceptan y se avisan.
     const errors = validatePatch(patch);
     if (errors.length) throw httpError(400, errors.map(e => e.message).join('; '));
+    // Los parches de mapa se fusionan: validar también el resultado completo antes de escribir.
+    if (Object.hasOwn(patch, 'customOverlayCss')) {
+      const [error] = validatePatch({ customOverlayCss: deepMerge(store.config.customOverlayCss || {}, patch.customOverlayCss) });
+      if (error) throw httpError(400, error.message);
+    }
     // La validación anterior conserva las rutas y mensajes históricos de los alias.
     const onlyRecording = patch.meld && typeof patch.meld === 'object' && !Array.isArray(patch.meld)
       && Object.keys(patch.meld).length === 1 && Object.hasOwn(patch.meld, 'recordOnStart');
@@ -917,6 +928,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }
     const [error] = validatePath(p, value);
     if (error) throw httpError(400, error.message);
+    if (keys[0] === 'customOverlayCss' && keys.length === 2 && value !== undefined) {
+      const [mapError] = validatePatch({ customOverlayCss: { ...store.config.customOverlayCss, [keys[1]]: value } });
+      if (mapError) throw httpError(400, mapError.message);
+    }
     if (keys[0] === 'obs' && keys[1] === 'passwordSet') throw httpError(400, 'obs.passwordSet: es de solo lectura');
     if (keys.length === 2 && keys[0] === 'obs' && keys[1] === 'password') {
       await setObsPassword(value);
@@ -1239,7 +1254,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const stream = (res, url) => {
     const c = url.searchParams.get('client');
     const kind = ['panel', 'preview', 'widget', 'teleprompter', 'dock-meters'].includes(c) ? c : 'overlay';
-    bus.addClient(res, kind);
+    // New snapshots are opt-in so legacy SSE/WebSocket clients keep their exact stream.
+    const themeInfo = url.searchParams.get('themeInfo') === '1';
+    const customTheme = kind === 'widget' && url.searchParams.get('customTheme') === '1';
+    bus.addClient(res, kind, { events: [...(themeInfo ? ['themeInfo'] : []), ...(customTheme ? ['customTheme'] : [])] });
     if (kind === 'dock-meters') {
       meterWatchers.add(res);
       updateMeterInterest();
@@ -1263,6 +1281,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (kind !== 'panel' && kind !== 'dock-meters') {
       const d = url.searchParams.has('themeDraft') ? themeRoutes.getDraft() : null;
       res.write(`event: theme\ndata: ${JSON.stringify(d ? { ...publicTheme(d), draft: true } : publicTheme(store.config.theme))}\n\n`);
+      // The original frames above remain first and byte-for-byte unchanged.
+      if (themeInfo) res.write(`event: activeTheme\ndata: ${JSON.stringify(activeTheme(store.config.themes))}\n\n`);
+      if (customTheme) res.write(`event: customOverlayTheme\ndata: ${JSON.stringify(customOverlayThemeSnapshot())}\n\n`);
     }
     pushStatus();
   };

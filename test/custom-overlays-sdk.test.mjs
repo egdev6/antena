@@ -127,6 +127,36 @@ test('los seis eventos de la especificación llegan al manejador con sus datos',
   assert.deepEqual(got.map(([ev]) => ev), ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme']);
 });
 
+test('theme snapshot applies look, marker and overlay CSS before every SDK theme observer', () => {
+  const { win, antena, deliver } = loadSdk();
+  const nodes = new Map(), attributes = new Map();
+  const doc = {
+    documentElement: { setAttribute: (k, v) => attributes.set(k, v), removeAttribute: k => attributes.delete(k) },
+    head: { appendChild: node => { nodes.set(node.id, node); } },
+    createElement: tag => ({ tagName: tag.toUpperCase(), textContent: '', id: '' }),
+    getElementById: id => nodes.get(id) || null,
+  };
+  nodes.set('antena-look', { tagName: 'LINK', replaceWith: node => nodes.set(node.id, node) });
+  nodes.set('antena-theme-extra', { tagName: 'STYLE', id: 'antena-theme-extra', textContent: '' });
+  win.document = doc;
+  const seen = [];
+  antena.on('theme', t => seen.push({ id: t.id, name: t.name, accent: t.accent,
+    marker: attributes.get('data-tema'), lookCss: nodes.get('antena-look')?.textContent,
+    extraCss: nodes.get('antena-theme-extra')?.textContent }));
+  const emit = (id, name, accent, lookCss, extraCss) => deliver({ antena: 1, event: 'themeSnapshot', data: { theme: { id, name, accent }, lookCss, extraCss } });
+  emit('normal', 'Normal', '#112233', 'look-normal', 'css-normal');
+  emit('invierno', 'Invierno', '#445566', 'look-invierno', 'css-invierno');
+  emit('invierno', 'Navidad', '#445566', 'look-invierno', 'css-invierno');
+  assert.deepEqual(seen, [
+    { id: 'normal', name: 'Normal', accent: '#112233', marker: 'normal', lookCss: 'look-normal', extraCss: 'css-normal' },
+    { id: 'invierno', name: 'Invierno', accent: '#445566', marker: 'invierno', lookCss: 'look-invierno', extraCss: 'css-invierno' },
+    { id: 'invierno', name: 'Navidad', accent: '#445566', marker: 'invierno', lookCss: 'look-invierno', extraCss: 'css-invierno' },
+  ]);
+  assert.equal(antena.state.theme.name, 'Navidad');
+  deliver({ antena: 1, event: 'themeSnapshot', data: { theme: { id: 'evil' }, lookCss: 'evil', extraCss: 'evil' } }, {});
+  assert.equal(antena.state.theme.name, 'Navidad');
+});
+
 // T5/S11b: la única salida del SDK es la petición de acción hacia la shell (nunca a la API).
 test('run: pide la acción a la shell por el padre y resuelve o rechaza con su runResult', async () => {
   const { antena, deliver, delivered } = loadSdk();

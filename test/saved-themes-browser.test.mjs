@@ -69,6 +69,75 @@ test('Apariencia: select without activating, activate, duplicate, edit and delet
   assert.equal(await active(f.call), copy.id);
 });
 
+test('theme marker switches live on overlay and widgets; previews keep their selected id', { timeout: 120000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const other = (await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' })).theme;
+  const overlay = await f.open('/overlay');
+  const widget = await f.open('/widget/chat');
+  const previewOverlay = await f.open(`/overlay?still=follow&previewTheme=${other.id}`);
+  const previewWidget = await f.open(`/widget/chat?demo&previewTheme=${other.id}`);
+  for (const c of [overlay, widget]) await waitDom(c, `document.documentElement.dataset.tema === 'normal'`);
+  for (const c of [previewOverlay, previewWidget]) await waitDom(c, `document.documentElement.dataset.tema === ${JSON.stringify(other.id)}`);
+  for (const c of [overlay, widget]) await ev(c, `window.__markerPageIdentity = Math.random(); true`);
+  const oldIds = await Promise.all([overlay, widget].map(c => ev(c, 'window.__markerPageIdentity')));
+  await f.call('POST', `/api/themes/${other.id}/activate`);
+  for (const c of [overlay, widget]) await waitDom(c, `document.documentElement.dataset.tema === ${JSON.stringify(other.id)}`);
+  assert.deepEqual(await Promise.all([overlay, widget].map(c => ev(c, 'window.__markerPageIdentity'))), oldIds);
+  await f.call('POST', '/api/themes/normal/activate');
+  for (const c of [overlay, widget]) await waitDom(c, `document.documentElement.dataset.tema === 'normal'`);
+  for (const c of [previewOverlay, previewWidget]) assert.equal(await ev(c, 'document.documentElement.dataset.tema'), other.id);
+});
+
+test('theme stylesheet updates immediately when no alert is visible', { timeout: 120000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const page = await f.open('/overlay');
+  await waitDom(page, `document.documentElement.dataset.tema === 'normal' && !!document.querySelector('#eg-theme')?.sheet`);
+  assert.equal(await ev(page, `!!document.querySelector('.alert')`), false);
+  const before = await ev(page, `document.querySelector('#eg-theme').href`);
+  const changed = await f.call('PUT', '/api/theme', { accent: '#123456' });
+  const version = changed.theme.version;
+  await waitDom(page, `(() => { const link = document.querySelector('#eg-theme'); return !!link && link.href.includes(${JSON.stringify('v=' + version)}) && !!link.sheet && link.sheet.href === link.href; })()`);
+  assert.notEqual(await ev(page, `document.querySelector('#eg-theme').href`), before);
+  assert.equal(await ev(page, `!!document.querySelector('.alert')`), false);
+});
+
+test('non-follow still preview uses the selected theme, CSS and alert without activating it', { timeout: 120000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  await f.call('PUT', '/api/config', { theme: { accent: '#123456', platformAccent: false }, overlay: { css: '.alert { --preview-theme: invierno; }' }, alerts: { sub: { title: 'Sub de invierno', css: '.alert { --preview-sub: elegido; }' } } });
+  const other = (await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' })).theme;
+  await f.call('PUT', '/api/config', { theme: { accent: '#654321' }, overlay: { css: '' }, alerts: { sub: { title: 'Sub activa', css: '' } } });
+  const page = await f.open(`/overlay?still=sub&previewTheme=${other.id}`);
+  await waitDom(page, `document.documentElement.dataset.tema === ${JSON.stringify(other.id)} && !!document.querySelector('.alert.on') && document.querySelector('.alert-title')?.textContent.includes('Sub de invierno')`);
+  assert.equal(await ev(page, `getComputedStyle(document.querySelector('.alert')).getPropertyValue('--preview-theme').trim()`), 'invierno');
+  assert.equal(await ev(page, `getComputedStyle(document.querySelector('.alert')).getPropertyValue('--preview-sub').trim()`), 'elegido');
+  assert.equal(await ev(page, `getComputedStyle(document.documentElement).getPropertyValue('--red').trim().toUpperCase()`), '#123456');
+  assert.equal(await active(f.call), 'normal');
+});
+
+test('visible alert keeps its marker and look until exit while a widget switches immediately', { timeout: 120000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const css = 'html[data-tema="normal"] .alert{--marker-look:normal} html[data-tema="invierno"] .alert{--marker-look:invierno}';
+  await f.call('PUT', '/api/config', { theme: { accent: '#123456', platformAccent: false }, overlay: { css }, alerts: { follow: { durationMs: 30000 } } });
+  const other = (await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' })).theme;
+  await f.call('PUT', '/api/theme', { accent: '#654321' });
+  const overlay = await f.open('/overlay'), widget = await f.open('/widget/chat');
+  await waitDom(overlay, `document.documentElement.dataset.tema === 'normal'`);
+  await waitDom(widget, `document.documentElement.dataset.tema === 'normal'`);
+  const until = Date.now() + 10000;
+  while (!(await f.call('GET', '/api/status')).overlays) { assert.ok(Date.now() < until); await new Promise(resolve => setTimeout(resolve, 25)); }
+  await f.call('POST', '/api/test', { type: 'follow', target: 'live' });
+  await waitDom(overlay, `!!document.querySelector('.alert.on') && getComputedStyle(document.querySelector('.alert')).getPropertyValue('--marker-look').trim() === 'normal'`);
+  const oldHref = await ev(overlay, `document.querySelector('#eg-theme').href`);
+  await f.call('POST', `/api/themes/${other.id}/activate`);
+  await waitDom(widget, `document.documentElement.dataset.tema === ${JSON.stringify(other.id)}`);
+  assert.equal(await ev(overlay, `document.documentElement.dataset.tema`), 'normal');
+  assert.equal(await ev(overlay, `document.querySelector('#eg-theme').href`), oldHref);
+  assert.equal(await ev(overlay, `getComputedStyle(document.querySelector('.alert')).getPropertyValue('--marker-look').trim()`), 'normal');
+  await f.call('POST', '/api/skip');
+  await waitDom(overlay, `document.documentElement.dataset.tema === ${JSON.stringify(other.id)} && document.querySelector('#eg-theme').href !== ${JSON.stringify(oldHref)}`);
+  assert.equal(await ev(widget, `document.documentElement.dataset.tema`), other.id);
+});
+
 test('new theme from default and the ten-theme limit', { timeout: 120000 }, async t => {
   const f = await fixture(t); if (!f) return;
   const c = await f.open('/#/apariencia');

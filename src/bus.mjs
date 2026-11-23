@@ -40,9 +40,9 @@ export class Bus {
     return false;
   }
 
-  addClient(res, kind) {
+  addClient(res, kind, { events = [] } = {}) {
     const client = {
-      res, kind,
+      res, kind, events: new Set(events),
       closing: false,
       blocked: false,          // write() devolvió false: no escribir de nuevo hasta drain
       queue: [], queueHead: 0, queueBytes: 0, // mensajes pendientes, en orden
@@ -246,7 +246,7 @@ export class Bus {
     }
   }
 
-  send(event, data, kinds = null) {
+  send(event, data, kinds = null, subscription = null) {
     // Un tipo desconocido nunca debe romper al productor (store/meld/emisores sin catch):
     // se avisa una vez y se trata como efímero; el test de clasificación sigue fallando
     // en revisión si aparece un tipo nuevo sin declarar.
@@ -254,7 +254,7 @@ export class Bus {
     if (cls === null) { warnUnknown(event); cls = 'ephemeral'; }
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const c of this.clients) {
-      if (!kinds || kinds.includes(c.kind)) this.#write(c, msg, event, cls);
+      if ((!kinds || kinds.includes(c.kind)) && (!subscription || c.events.has(subscription))) this.#write(c, msg, event, cls);
     }
   }
 

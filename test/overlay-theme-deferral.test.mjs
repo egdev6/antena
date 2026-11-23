@@ -6,12 +6,15 @@ import { runInNewContext } from 'node:vm';
 
 class Element {
   constructor(tag = 'div') {
-    this.tag = tag; this.parts = new Map(); this.children = [];
+    this.tag = tag; this.parts = new Map(); this.children = []; this.attributes = new Map();
     const classes = new Set();
     this.classList = { add: (...xs) => xs.forEach(x => classes.add(x)), remove: (...xs) => xs.forEach(x => classes.delete(x)), contains: x => classes.has(x) };
     this.style = { setProperty() {}, removeProperty() {} };
     this.scrollWidth = 0; this.clientWidth = 100; this.textContent = ''; this.href = '';
   }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  removeAttribute(name) { this.attributes.delete(name); }
   querySelector(selector) { if (!this.parts.has(selector)) this.parts.set(selector, new Element()); return this.parts.get(selector); }
   replaceChildren(...children) { this.children = children; }
   cloneNode() { return new Element(this.tag); }
@@ -45,12 +48,42 @@ async function overlay() {
     }
     now = until;
   };
-  return { emit, advance, audio, ...elements };
+  return { emit, advance, audio, root: document.documentElement, ...elements };
 }
 
 const theme = (version, position, icon, sound) => ({ version, position, align: 'center', icons: { follow: `emoji:${icon}` }, sound, soundVolume: 100 });
 const alert = id => ({ id, type: 'follow', platform: 'twitch', icon: 'heart', title: id, text: id, sub: '', durationMs: 1000,
   volume: 1, look: { layout: 'card', sound: 'default', soundVolume: 100 }, actions: [] });
+
+test('legacy theme event updates the stylesheet immediately when no alert is visible', async () => {
+  const page = await overlay();
+  // A previously received extension must never suppress the existing theme event.
+  page.emit('overlayTheme', { activeTheme: { id: 'normal', name: 'Normal' }, theme: theme('old', 'top', '🎉', 'old.mp3') });
+  page.emit('theme', theme('fixture-icons', 'bottom', '⭐', 'none'));
+  assert.equal(page['eg-theme'].href, '/theme.css?v=fixture-icons');
+  assert.equal(page.stage.classList.contains('bottom'), true);
+});
+
+test('marker and visual theme switch together only after the visible alert exits', async () => {
+  const page = await overlay();
+  page.emit('theme', theme('old', 'top', '🎉', 'old.mp3'));
+  page.emit('activeTheme', { id: 'normal', name: 'Normal' });
+  assert.equal(page.root.getAttribute('data-tema'), 'normal');
+  assert.equal(page['eg-theme'].href, '/theme.css?v=old');
+  page.emit('alert', alert('visible')); await Promise.resolve(); await Promise.resolve();
+  // Both existing look and added identity notifications are deferred while visible.
+  page.emit('theme', theme('new', 'bottom', '💜', 'new.mp3'));
+  page.emit('activeTheme', { id: 'invierno', name: 'Invierno' });
+  assert.equal(page.root.getAttribute('data-tema'), 'normal');
+  assert.equal(page['eg-theme'].href, '/theme.css?v=old');
+  await page.advance(1400);
+  assert.equal(page.root.getAttribute('data-tema'), 'normal');
+  assert.equal(page['eg-theme'].href, '/theme.css?v=old');
+  await page.advance(560);
+  assert.equal(page.root.getAttribute('data-tema'), 'invierno');
+  assert.equal(page['eg-theme'].href, '/theme.css?v=new');
+  assert.equal(page.stage.classList.contains('bottom'), true);
+});
 
 test('theme SSE waits through the current exit; queued alert uses the latest CSS, icon, position and sound', async () => {
   const page = await overlay();

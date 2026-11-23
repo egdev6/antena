@@ -69,6 +69,7 @@ function OverlaySlide({ id }: { id: string }) {
   useManualSave();
   useDraftVersion();
   const remote = useLive(s => (s.customOverlays || []).find(o => o.id === id));
+  const themeCss = useLive(s => s.config.customOverlayCss?.[id] ?? '');
   const [saved, setSaved] = useState<CustomOverlay | null>(remote || null);
   const [draft, setDraft] = useState<Partial<OverlayDraft> | null>(null);
   /** Versión remota que llegó mientras había cambios sin guardar: se carga solo a mano. */
@@ -191,6 +192,11 @@ function OverlaySlide({ id }: { id: string }) {
         <textarea className="code" data-code={field} aria-label={`${CODE_TABS.find(t => t.id === tab)?.label} del overlay`}
           spellCheck={false} placeholder={CODE_TIP[field]} value={String(cur[field])} onKeyDown={codeTab}
           onChange={e => set(field === 'html' ? { html: e.target.value } : field === 'css' ? { css: e.target.value } : { js: e.target.value })} />
+      </Panel>
+      <Panel title="CSS de este tema">
+        <p className="hint">Este CSS pertenece al tema activo y se guarda en él. Cambiarlo no modifica el código ni las aprobaciones del overlay.</p>
+        <textarea className="code" aria-label="CSS de este tema" spellCheck={false} value={themeCss} onKeyDown={codeTab}
+          onChange={e => live.patchConfig({ customOverlayCss: { [id]: e.target.value } })} />
       </Panel>
       <Panel title="Permisos" aside={<span className="hint">{requested.length ? `${approved.length} de ${requested.length} aprobados` : 'sin permisos'}</span>}>
         <div data-permisos>

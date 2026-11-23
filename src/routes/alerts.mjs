@@ -2,6 +2,7 @@
 import { httpError, id8 } from '../http-util.mjs';
 import { alertFields } from '../timers.mjs';
 import { publicTheme } from '../theme.mjs';
+import { activeTheme } from '../theme-looks.mjs';
 import {
   ALERT_TYPES, DEFAULT_ALERTS, DEFAULT_CONDITIONS, SAMPLES,
   buildAlert, buildCommandAlert, buildCustomAlert, alertConfig,
@@ -120,7 +121,7 @@ export function registerAlertRoutes({ route, store, engine, bus, timers, checkAc
   // con la configuración y el tema guardados, sin entregarla a nadie
   route('GET', '/api/alerts/:type/sample', async ({ type }) => {
     if (!ALERT_TYPES[type]) throw httpError(404, 'Tipo desconocido');
-    return { alert: buildAlert(type, { ...SAMPLES[type] }, store.config, { test: true }), theme: publicTheme(store.config.theme) };
+    return { alert: buildAlert(type, { ...SAMPLES[type] }, store.config, { test: true }), theme: publicTheme(store.config.theme), activeTheme: activeTheme(store.config.themes) };
   });
   route('POST', '/api/simulate', async ({ type, vars = {} }) => {
     if (!ALERT_TYPES[type]) throw httpError(400, 'Tipo desconocido');

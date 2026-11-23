@@ -19,7 +19,7 @@ import { DEFAULT_ALERTS, DEFAULT_COMMAND } from './alerts.mjs';
 import { PLATFORM_METRICS } from './goals.mjs';
 import { TELEPROMPTER_SCRIPTS_MAX_BYTES } from './teleprompter.mjs';
 import { INTERVIEWS_MAX_BYTES, INTERVIEWS_MAX_ITEMS } from './interviews.mjs';
-import { CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES, CUSTOM_OVERLAY_ID } from './custom-overlays.mjs';
+import { CUSTOM_OVERLAY_MAX_BYTES, CUSTOM_OVERLAYS_MAX_ITEMS, CUSTOM_OVERLAYS_MAX_BYTES, CUSTOM_OVERLAY_ID } from './custom-overlays.mjs';
 import { LOOK_SECTIONS } from './theme-looks.mjs';
 import { THEME_RULES, THEME_RANGES, themeFieldError, themeIconError, keepValidIcons } from './theme.mjs';
 import { DOCK_LAYOUTS } from './dock-layout.mjs';
@@ -364,13 +364,25 @@ function validateSavedThemes(value, prefix, errors) {
 // ---------- validación ----------
 const TIPO = { num: 'un número', str: 'un texto', bool: 'true o false', enum: 'uno de los valores permitidos', arrStr: 'una lista de textos' };
 
+function overlayCssError(id, css, path) {
+  if (!CUSTOM_OVERLAY_ID.test(id) || PROTO_KEYS.has(id) || typeof css !== 'string')
+    return `${path}: se esperaba un id de overlay y CSS de texto`;
+  if (JSON.stringify(css).length > CUSTOM_OVERLAY_MAX_BYTES)
+    return `${path}: el CSS es demasiado grande (máx. ${Math.round(CUSTOM_OVERLAY_MAX_BYTES / 1000)} KB)`;
+  return null;
+}
+
 function checkNode(node, value, path, errors) {
   if (node?.kind === 'savedThemes' && value !== undefined) { validateSavedThemes(value, path, errors); return; }
   if (node?.kind === 'overlayCssMap' && value !== undefined) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) errors.push({ path, message: `${path}: se esperaba un mapa de CSS` });
-    else for (const [id, css] of Object.entries(value)) {
-      if (!CUSTOM_OVERLAY_ID.test(id) || PROTO_KEYS.has(id) || typeof css !== 'string')
-        errors.push({ path: `${path}.${id}`, message: `${path}.${id}: se esperaba un id de overlay y CSS de texto` });
+    else {
+      for (const [id, css] of Object.entries(value)) {
+        const entry = `${path}.${id}`, message = overlayCssError(id, css, entry);
+        if (message) errors.push({ path: entry, message });
+      }
+      if (Object.keys(value).length > CUSTOM_OVERLAYS_MAX_ITEMS || JSON.stringify(value).length > CUSTOM_OVERLAYS_MAX_BYTES)
+        errors.push({ path, message: `${path}: el mapa de CSS es demasiado grande` });
     }
     return;
   }
@@ -589,9 +601,10 @@ export function validatePath(dotted, value) {
     return [{ path: dotted, message: `${dotted}: no admite null` }];
   const keys = String(dotted || '').split('.').filter(Boolean);
   if (keys[0] === 'customOverlayCss' && keys.length > 1) {
-    if (keys.length !== 2 || !CUSTOM_OVERLAY_ID.test(keys[1]) || PROTO_KEYS.has(keys[1]) || (value !== undefined && typeof value !== 'string'))
+    if (keys.length !== 2 || !CUSTOM_OVERLAY_ID.test(keys[1]) || PROTO_KEYS.has(keys[1]))
       return [{ path: dotted, message: `${dotted}: se esperaba un id de overlay y CSS de texto` }];
-    return [];
+    const message = value === undefined ? null : overlayCssError(keys[1], value, dotted);
+    return message ? [{ path: dotted, message }] : [];
   }
   const proto = keys.find(k => PROTO_KEYS.has(k));
   if (proto) return [{ path: dotted, message: `${dotted}: ruta no válida («${proto}»)` }];

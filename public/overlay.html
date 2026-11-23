@@ -254,17 +254,21 @@ const MUTE = qs.has('mute') || !!STILL;
 const GAP = 700;
 
 const queue = [];
-let current = null, exiting = false, pendingTheme = null;
+let current = null, exiting = false, pendingTheme = null, pendingIdentity, identityPending = false;
 // La tarjeta (también su animación de salida) conserva el tema con que empezó.
 // Si llegan varios cambios, el siguiente elemento usa el más reciente.
 function receiveTheme(theme) {
   if (current || exiting) pendingTheme = theme;
   else { pendingTheme = null; applyTheme(theme); }
 }
+function receiveIdentity(identity) {
+  if (current || exiting) { pendingIdentity = identity; identityPending = true; }
+  else { identityPending = false; setActiveTheme(identity); }
+}
 function flushTheme() {
-  if (!current && !exiting && pendingTheme) {
-    const theme = pendingTheme; pendingTheme = null; applyTheme(theme);
-  }
+  if (current || exiting) return;
+  if (pendingTheme) { const theme = pendingTheme; pendingTheme = null; applyTheme(theme); }
+  if (identityPending) { identityPending = false; setActiveTheme(pendingIdentity); }
 }
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -536,10 +540,11 @@ if (STILL) {
     else { v.pause(); try { v.currentTime = 0.05; } catch { /* nada */ } }
   });
   const selected = qs.get('previewTheme');
-  const sampleUrl = selected && STILL === 'follow'
-    ? '/api/themes/' + encodeURIComponent(selected) + '/preview'
+  const sampleUrl = selected
+    ? '/api/themes/' + encodeURIComponent(selected) + '/preview?type=' + encodeURIComponent(STILL)
     : '/api/alerts/' + encodeURIComponent(STILL) + '/sample';
-  fetch(sampleUrl).then(r => { if (!r.ok) throw new Error('preview'); return r.json(); }).then(({ alert, theme, css }) => {
+  fetch(sampleUrl).then(r => { if (!r.ok) throw new Error('preview'); return r.json(); }).then(({ alert, theme, css, activeTheme }) => {
+    setActiveTheme(activeTheme);
     applyTheme(theme, css);
     if (alert.look) alert.look.textDelayMs = 0;   // la composición final, sin esperar a la entrada del texto
     show(alert);
@@ -557,9 +562,15 @@ if (STILL) {
   }).catch(() => {});
 }
 
+// La identidad no forma parte del tema visual ni de su hash.
+function setActiveTheme(theme) {
+  if (theme?.id) document.documentElement.setAttribute('data-tema', theme.id);
+  else document.documentElement.removeAttribute('data-tema');
+}
+
 // ---------- conexión ----------
 if (PREVIEW) stage.insertAdjacentHTML('beforebegin', '<div class="hint" id="hint">Vista previa</div>');
-const es = STILL ? new EventTarget() : new AntenaStream('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay') + (qs.has('themeDraft') ? '&themeDraft=1' : ''));
+const es = STILL ? new EventTarget() : new AntenaStream('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay') + '&themeInfo=1' + (qs.has('themeDraft') ? '&themeDraft=1' : ''));
 // El panel no debe enviar el ejemplo hasta que el servidor haya admitido este marco.
 if (PREVIEW && !STILL) window.antenaPreviewReady = new Promise(resolve => { es.onopen = resolve; });
 es.addEventListener('alert', e => {
@@ -584,7 +595,12 @@ es.addEventListener('control', e => {
   }
   if (action === 'clear') { queue.length = 0; hide(); if ('speechSynthesis' in window) speechSynthesis.cancel(); }
 });
-es.addEventListener('theme', e => { const t = JSON.parse(e.data); if (t.draft && !qs.has('themeDraft')) return; receiveTheme(t); });
+es.addEventListener('activeTheme', e => receiveIdentity(JSON.parse(e.data)));
+es.addEventListener('theme', e => {
+  const t = JSON.parse(e.data);
+  if (t.draft && !qs.has('themeDraft')) return;
+  receiveTheme(t);
+});
 es.addEventListener('say', e => { if (!PREVIEW) speak(JSON.parse(e.data)); });
 </script>
 </body>
