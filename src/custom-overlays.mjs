@@ -354,7 +354,7 @@ export function shellHtml(overlay) {
   const id = ${JSON.stringify(overlay.id)};
   const frame = document.getElementById('frame');
   // Solo lo que el usuario puede ver: nada de secretos ni de la cola de alertas.
-  const SNAPSHOTS = ['widgets', 'viewers', 'interactive', 'theme'];
+  const SNAPSHOTS = ['widgets', 'viewers', 'interactive', 'themeSnapshot'];
   const state = {};
   let version = ${Number(overlay.updatedAt) || 0};
   let loaded = false;
@@ -366,11 +366,17 @@ export function shellHtml(overlay) {
   };
   // El SDK resuelve «ready» cuando ya tiene el estado de los widgets y el marco ha cargado.
   const sendReady = () => {
-    if (ready || !loaded || !('widgets' in state) || !frame.contentWindow) return;
+    if (ready || !loaded || !('widgets' in state) || !('themeSnapshot' in state) || !frame.contentWindow) return;
     ready = true;
     frame.contentWindow.postMessage({ antena: 1, ready: true }, '*');
   };
   const relay = event => data => { state[event] = data; post(event, data); sendReady(); };
+  // Una sola instantánea: el SDK aplica CSS e identidad antes de emitir el evento theme.
+  const relayTheme = data => relay('themeSnapshot')({
+    theme: { ...data.theme, ...(data.activeTheme || {}) },
+    lookCss: data.lookCss,
+    extraCss: typeof data.customOverlayCss?.[id] === 'string' ? data.customOverlayCss[id] : '',
+  });
 
   // Puente de acciones (S11b): el SDK del marco pide una acción y esta shell —que sí está en el
   // origen del panel— la manda a la ruta de acciones de SU overlay. Se atiende SOLO al marco
@@ -422,7 +428,7 @@ export function shellHtml(overlay) {
     widgets: relay('widgets'),
     viewers: relay('viewers'),
     interactive: relay('interactive'),
-    theme: relay('theme'),
+    customOverlayTheme: relayTheme,
     chat: relay('chat'),
     publicAlert: data => relay('alert')(data),
     customOverlayVersions: v => {
@@ -449,10 +455,11 @@ export function frameHtml(overlay) {
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>${escAttr(overlay.name)}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link href="/theme.css" rel="stylesheet">
+<link href="/theme.css" rel="stylesheet" id="antena-look">
 <script src="/custom/sdk.js"></script>
 <style>html,body{margin:0}${bg}</style>
 <style>${String(overlay.css || '').replace(/<\/style/gi, '<\\/style')}</style>
+<style id="antena-theme-extra"></style>
 </head><body>
 ${overlay.html || ''}
 <script>${String(overlay.js || '').replace(/<\/script/gi, '<\\/script')}</script>

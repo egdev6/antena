@@ -3,7 +3,7 @@ import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { DEFAULT_CONFIG } from '../store.mjs';
 import { DEFAULT_THEME, publicTheme, themeCss } from '../theme.mjs';
-import { buildAlert, SAMPLES } from '../alerts.mjs';
+import { ALERT_TYPES, buildAlert, SAMPLES } from '../alerts.mjs';
 import { extractLook, applyLook, publicThemes } from '../theme-looks.mjs';
 import { CONFIG_SCHEMA, themeAvatarError, validateLook, validatePatch } from '../config-schema.mjs';
 import { httpError } from '../http-util.mjs';
@@ -98,15 +98,17 @@ export function registerThemesRoutes({ route, store, mediaDir, onActivated = () 
     } };
   });
   // Preview-only projection: real renderer inputs, never the operational actions or global config.
-  route('GET', '/api/themes/:id/preview', async ({ id }) => {
-    const look = lookOf(find(id));
-    const built = buildAlert('follow', { ...SAMPLES.follow }, look, { test: true });
+  route('GET', '/api/themes/:id/preview', async ({ id }, _body, url) => {
+    const item = find(id), look = lookOf(item);
+    const type = url.searchParams.get('type') || 'follow';
+    if (!Object.hasOwn(ALERT_TYPES, type)) throw httpError(404, 'Tipo desconocido');
+    const built = buildAlert(type, { ...SAMPLES[type] }, look, { test: true });
     const { actions: _actions, tts: _tts, ...alert } = built;
     const goals = (look.widgets?.goals || []).map(goal => ({
       ...pick(goal, ['id', 'title', 'label', 'visible', 'showMetric', 'showLabel', 'showTitle', 'css']),
       bars: (goal.bars || []).map(bar => pick(bar, ['id', 'platform', 'metric', 'target', 'visible'])),
     }));
-    return { theme: publicTheme(pick(look.theme, Object.keys(DEFAULT_THEME))), css: themeCss(look.theme), alert,
+    return { activeTheme: { id: item.id, name: item.name }, theme: publicTheme(pick(look.theme, Object.keys(DEFAULT_THEME))), css: themeCss(look.theme), alert,
       widgets: { chat: pick(look.widgets?.chat, Object.keys(CONFIG_SCHEMA.widgets.chat)) }, goals };
   });
   route('POST', '/api/themes/duplicate', async ({ from, name, avatar } = {}) => {
@@ -157,7 +159,7 @@ export function registerThemesRoutes({ route, store, mediaDir, onActivated = () 
     }) };
     validate(next.themes);
     await store.replaceConfigWithBackup(next, before, { themes: true, theme: true, alerts: true, overlay: true,
-      widgets: true, interactive: true, commands: true, timers: true, customOverlays: true }, onActivated);
+      widgets: true, interactive: true, commands: true, timers: true, customOverlays: true, customOverlayCss: true }, onActivated);
     return { theme: list().find(t => t.id === item.id) };
   };
   route('POST', '/api/themes/:id/activate', activate);

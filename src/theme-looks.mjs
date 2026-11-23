@@ -17,7 +17,7 @@ export function isThemedWrite(method, path, body) {
   return false;
 }
 
-/** Instantánea aislada; el mapa de CSS de overlays queda reservado para una fase posterior. */
+/** Instantánea aislada, incluido el CSS de los overlays del tema activo. */
 export function extractLook(config) {
   return Object.fromEntries(LOOK_SECTIONS.map(key => [key, structuredClone(config[key] ?? (key === 'customOverlayCss' ? {} : config[key]))]));
 }
@@ -26,6 +26,12 @@ export function extractLook(config) {
 export function applyLook(config, look) {
   for (const key of LOOK_SECTIONS) config[key] = structuredClone(look[key]);
   return config;
+}
+
+/** Identidad pública separada del aspecto y de su hash. */
+export function activeTheme(themes) {
+  const item = themes?.saved?.find(t => t.id === themes.activeId);
+  return item ? { id: item.id, name: item.name } : null;
 }
 
 export function publicThemes(themes) {

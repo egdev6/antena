@@ -273,9 +273,11 @@ Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un
 
 | Dónde | Qué hay |
 |---|---|
-| Panel › **Overlays** | Lista en tarjetas, editor con pestañas HTML, CSS y JavaScript, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
+| Panel › **Overlays** | Lista en tarjetas, editor con pestañas HTML, CSS y JavaScript, CSS por tema, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
 | Programa de emisión | Añade una fuente de navegador con `http://127.0.0.1:4500/custom/<id>` y el tamaño del overlay (también está en la página «Fuentes del programa de emisión», como «Overlay · nombre») |
-| Al guardar | Todas las capas abiertas (en el programa de emisión y la vista previa) se recargan solas: no hay que tocar la fuente en el programa de emisión |
+| Al guardar | El código del overlay recarga las capas abiertas; el CSS del tema y los cambios de tema se aplican en vivo sin recargar el marco |
+
+**CSS de este tema** pertenece al tema guardado activo. Al duplicar se copia; al cambiar de tema se sustituye en vivo sin modificar el código, la versión ni los permisos del overlay. Admite hasta 512 KB de JSON por overlay. El overlay, los widgets y el marco propio exponen `data-tema="<id>"` en `<html>` para selectores por tema. El overlay de alertas difiere el marcador y el aspecto hasta que la alerta actual salga; widgets y marcos propios se actualizan al momento.
 
 `/theme.css` ya viene enlazado: usa sus variables (`var(--accent)`, `var(--text)`…) para que combine. El fondo es transparente por defecto, así que queda bien encima de la cámara, y los recursos externos por https (fuentes, imágenes) sí cargan. Ancho 16–7680, alto 16–4320, hasta 50 overlays y 512 KB de JSON por overlay.
 
@@ -301,6 +303,8 @@ antena.ready.then(() => {
 });
 document.querySelector('.marco').onclick = () => antena.run('scene', { scene: 'Cámara' }).catch(e => console.warn(e.message));
 ```
+
+El evento `theme` y `antena.state.theme` incluyen los campos de apariencia habituales junto con `id` y `name` del tema guardado activo; por ejemplo, `antena.on('theme', t => console.log(t.id, t.name, t.accent))`. Se actualizan al cambiar o renombrar; el hash visual es independiente del nombre.
 
 #### Permisos
 

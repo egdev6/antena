@@ -180,6 +180,48 @@ test('matching and absent theme headers preserve mixed overlay and themed writes
   }
 });
 
+test('theme CSS writes are fenced and preserve the global overlay', async t => {
+  const f = await fixture(t);
+  const overlay = (await f.call('POST', '/api/custom-overlays', { name: 'Marco', css: '.base{}' })).body.overlay;
+  const path = `customOverlayCss.${overlay.id}`;
+  assert.equal((await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Otro' })).status, 200);
+  assert.equal((await f.call('POST', '/api/themes/otro/activate')).status, 200);
+  for (const [method, url, body] of [
+    ['POST', '/api/config/set', { path, value: '.stale{}' }],
+    ['PUT', '/api/config', { customOverlayCss: { [overlay.id]: '.stale{}' } }],
+  ]) {
+    const before = await f.snapshot();
+    assert.deepEqual(await f.call(method, url, body, 'normal'), { status: 409, body: { error: STALE } });
+    assert.deepEqual(await f.snapshot(), before);
+    assert.deepEqual((await f.call('GET', `/api/custom-overlays/${overlay.id}`)).body.overlay, overlay);
+  }
+  assert.equal((await f.call('POST', '/api/config/set', { path, value: '.actual{}' }, 'otro')).status, 200);
+  assert.equal((await f.call('GET', '/api/config')).body.customOverlayCss[overlay.id], '.actual{}');
+  assert.deepEqual((await f.call('GET', `/api/custom-overlays/${overlay.id}`)).body.overlay, overlay);
+});
+
+test('a non-follow preview projects the selected theme and alert without leaking actions or changing state', async t => {
+  const f = await fixture(t);
+  const winter = { theme: { accent: '#123456', platformAccent: false }, overlay: { css: '.winter{}' },
+    alerts: { sub: { title: 'Sub invierno', css: '.sub-winter{}', actions: [{ kind: 'say', text: 'private-action' }] } } };
+  assert.equal((await f.call('PUT', '/api/config', winter)).status, 200);
+  assert.equal((await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' })).status, 200);
+  assert.equal((await f.call('PUT', '/api/config', { theme: { accent: '#654321' }, alerts: { sub: { title: 'Sub activa' } } })).status, 200);
+  const before = await f.snapshot();
+  const preview = await f.call('GET', '/api/themes/invierno/preview?type=sub');
+  assert.equal(preview.status, 200);
+  assert.deepEqual(preview.body.activeTheme, { id: 'invierno', name: 'Invierno' });
+  assert.equal(preview.body.alert.type, 'sub');
+  assert.equal(preview.body.alert.title, 'Sub invierno');
+  assert.equal(preview.body.theme.accent, '#123456');
+  assert.match(preview.body.css, /--red:#123456/);
+  assert.equal(preview.body.alert.globalCss, '.winter{}');
+  assert.equal(preview.body.alert.look.css, '.sub-winter{}');
+  assert.doesNotMatch(JSON.stringify(preview.body), /private-action|"actions"|"clientSecret"|"apiKey"/);
+  assert.deepEqual(await f.call('GET', '/api/themes/invierno/preview?type=invalid'), { status: 404, body: { error: 'Tipo desconocido' } });
+  assert.deepEqual(await f.snapshot(), before);
+});
+
 test('preview returns real selected alert and widget visual data without operational fields or changing active state', async t => {
   const f = await fixture(t);
   const patch = { theme: { accent: '#123456', platformAccent: false }, overlay: { css: '.alert { --card-width: 777px }' },

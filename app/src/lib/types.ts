@@ -533,6 +533,7 @@ export interface LiveEvents {
   theme: Theme & { alertPreviews?: Record<string, AlertPreview> };
   /** Lista completa de overlays propios: sustituye la anterior en cada cambio (panel). */
   customOverlays: CustomOverlay[];
+  customOverlayCss: Record<string, string>;
   gap: unknown;
   /** Evento solo de cliente: fallos de fetch/config que el propio Live emite. */
   error: Error;

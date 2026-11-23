@@ -313,6 +313,7 @@ class Live {
     on('timers', t => this.update(() => ({ timers: t })));
     // Overlays propios: la lista completa en cada cambio (panel, MCP o API).
     on('customOverlays', list => this.update(() => ({ customOverlays: list })));
+    on('customOverlayCss', css => this.update(s => ({ config: { ...s.config, customOverlayCss: css } })));
     on('meld', m => this.update(s => ({ meld: { ...s.meld, session: m } })));
     // El evento 'widgets' trae la ventana corta del overlay (50): el panel conserva SU
     // lista de chat (tope 200, #48) y del evento solo toma lo demás. Los borrados y las

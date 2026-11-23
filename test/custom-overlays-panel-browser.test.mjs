@@ -222,6 +222,36 @@ test('panel: editar el CSS y guardar persiste y sube updatedAt; un ancho inváli
   }
 });
 
+test('panel: CSS de este tema is saved with the theme fence and an external switch leaves its draft stale', { timeout: 150000 }, async t => {
+  const ctx = await start(t); if (!ctx) return;
+  const { bin, api, close } = ctx;
+  let chrome;
+  try {
+    const { overlay } = await api('POST', '/api/custom-overlays', { name: 'Marco', css: '.base{}' });
+    await api('POST', '/api/themes/duplicate', { from: 'normal', name: 'Otro' });
+    chrome = await openChromePage(bin, `${ctx.base}/#/overlays/${overlay.id}`);
+    const c = chrome.cdp, field = 'textarea[aria-label="CSS de este tema"]';
+    await waitDom(c, `!!document.querySelector(${JSON.stringify(field)})`, { timeoutMs: 15000 });
+    assert.match(await dom(c, `document.querySelector('main .lv-slide').textContent`), /tema activo/i);
+    await dom(c, `(() => { const original = window.fetch; window.__themeHeaders = []; window.fetch = (url, options) => { if (String(url).includes('/api/config') && options?.method === 'PUT') window.__themeHeaders.push(options.headers['X-Antena-Theme']); return original(url, options); }; return true; })()`);
+    await dom(c, setValue(field, '.tema{color:red}'));
+    assert.equal((await api('GET', '/api/config')).customOverlayCss[overlay.id] ?? '', '');
+    await waitDom(c, `!!document.querySelector('.lv-dirty.is-on')`);
+    await dom(c, `document.querySelector('.lv-slide .lv-sfoot .eg-btn--secondary').click(); true`);
+    await eventually(async () => (await api('GET', '/api/config')).customOverlayCss[overlay.id], '.tema{color:red}');
+    assert.deepEqual(await dom(c, `window.__themeHeaders`), ['normal']);
+    assert.deepEqual((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay, overlay);
+    await dom(c, setValue(field, '.borrador{}'));
+    await waitDom(c, `!!document.querySelector('.lv-dirty.is-on')`);
+    await api('POST', '/api/themes/otro/activate');
+    await waitDom(c, `!!document.querySelector('.lv-savebar') && document.querySelector('.lv-savebar').textContent.includes('El tema activo cambió mientras editabas') && document.querySelector('.lv-savebar .eg-btn--secondary').disabled`);
+    assert.equal(await dom(c, `document.querySelector(${JSON.stringify(field)}).value`), '.borrador{}');
+    assert.equal((await api('GET', '/api/config')).customOverlayCss[overlay.id] ?? '', '');
+    await dom(c, `[...document.querySelectorAll('.lv-savebar button')].find(b => b.textContent.trim() === 'Descartar').click(); true`);
+    await waitDom(c, `!document.querySelector('.lv-dirty.is-on') && document.querySelector(${JSON.stringify(field)}).value === ''`);
+  } finally { await closeAll(() => closeChrome(chrome), close); }
+});
+
 test('panel: un cambio del agente llega al editor abierto y nunca pisa el borrador', { timeout: 150000 }, async t => {
   const ctx = await start(t);
   if (!ctx) return;

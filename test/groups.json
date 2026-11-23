@@ -94,6 +94,7 @@
     "test/saved-themes.test.mjs",
     "test/saved-themes-freeze.test.mjs",
     "test/saved-themes-default-look.test.mjs",
+    "test/saved-themes-marker-contract.test.mjs",
     "test/sd-origin.test.mjs",
     "test/session-end.test.mjs",
     "test/session-rename.test.mjs",

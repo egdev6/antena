@@ -12,6 +12,12 @@ const style = document.createElement('style');
 document.head.append(style);
 export function setCss(css) { style.textContent = css || ''; }
 
+/** Actualiza solo el marcador: el aspecto y su versión siguen siendo independientes. */
+function setActiveTheme(theme) {
+  if (theme?.id) document.documentElement.setAttribute('data-tema', theme.id);
+  else document.documentElement.removeAttribute('data-tema');
+}
+
 /** Conecta con el servidor. handlers: { widgets(state), chat(msg), chatDelete, chatClear, credits, theme }
  *  client: kind de SSE («widget» por defecto; el teleprompter usa su propio kind para no
  *  recibir contenido de otros widgets ni mandárselo). */
@@ -25,14 +31,22 @@ export function connect(handlers, client = 'widget') {
     }).then(data => {
       const link = document.getElementById('eg-theme'), style = document.createElement('style');
       style.id = 'eg-theme'; style.textContent = data.css; link?.replaceWith(style);
+      setActiveTheme(data.activeTheme);
+      handlers.activeTheme?.(data.activeTheme);
       handlers.theme?.(data.theme);
       handlers.widgets?.({ widgets: data.widgets, goals: data.goals, chat: [] });
     }).catch(() => {});
     return es;
   }
-  const es = new AntenaStream('/api/stream?client=' + encodeURIComponent(client) + (THEME_DRAFT ? '&themeDraft=1' : ''));
+  const es = new AntenaStream('/api/stream?client=' + encodeURIComponent(client) + '&themeInfo=1' +
+    (handlers.customOverlayTheme ? '&customTheme=1' : '') + (THEME_DRAFT ? '&themeDraft=1' : ''));
   // Apariencia: al cambiar el tema se recarga /theme.css (sin recargar la página). Con ?themeDraft
   // (vista previa del panel) se ve también el borrador sin guardar; en Meld, solo lo guardado.
+  es.addEventListener('activeTheme', e => {
+    const theme = JSON.parse(e.data);
+    setActiveTheme(theme);
+    handlers.activeTheme?.(theme);
+  });
   es.addEventListener('theme', e => {
     const t = JSON.parse(e.data), link = document.getElementById('eg-theme');
     if (t.draft && !THEME_DRAFT) return;
@@ -40,7 +54,7 @@ export function connect(handlers, client = 'widget') {
     if (link && !link.href.endsWith(href)) link.href = href;
     handlers.theme?.(t);
   });
-  for (const [ev, fn] of Object.entries(handlers)) if (ev !== 'theme') es.addEventListener(ev, e => fn(JSON.parse(e.data)));
+  for (const [ev, fn] of Object.entries(handlers)) if (ev !== 'theme' && ev !== 'activeTheme') es.addEventListener(ev, e => fn(JSON.parse(e.data)));
   return es;
 }
 

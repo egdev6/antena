@@ -26,7 +26,7 @@ export const DATA = process.env.ANTENA_DATA || path.join(ROOT, 'data');
 export const DEFAULT_CONFIG = {
   configVersion: CURRENT_CONFIG_VERSION,
   themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] },
-  customOverlayCss: {},              // reservado por tema; aún no se aplica a los overlays
+  customOverlayCss: {},              // CSS adicional por id de overlay, del tema activo
   port: 4500,
   paused: false,
   twitch: { clientId: '' },

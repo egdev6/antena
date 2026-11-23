@@ -86,6 +86,95 @@ test('un overlay propio recibe la alerta por el SDK dentro del marco opaco', { t
   }
 });
 
+test('theme identity and per-overlay CSS reach the sandbox live without reloading the frame', { timeout: 120000 }, async t => {
+  const bin = await findChrome();
+  if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la prueba de navegador');
+  const back = await recorder();
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-theme-browser-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), push: {}, log: () => {} });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const api = async (method, url, body) => {
+    const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const data = await r.json(); assert.equal(r.ok, true, JSON.stringify(data)); return data;
+  };
+  let chrome;
+  try {
+    const js = `fetch('${back.base}/frame-loaded', {mode:'no-cors'});\n` +
+      `function report() { const t = antena.state.theme || {}; const q = new URLSearchParams({id:t.id || '', name:t.name || '', marker:document.documentElement.dataset.tema || '', color:getComputedStyle(document.getElementById('target')).color, accent:t.accent || ''}); fetch('${back.base}/theme?' + q, {mode:'no-cors'}); }\n` +
+      `antena.on('theme', () => setTimeout(report, 100)); new MutationObserver(() => setTimeout(report, 100)).observe(document.documentElement, {attributes:true,childList:true,characterData:true,subtree:true});`;
+    const overlay = (await api('POST', '/api/custom-overlays', { name: 'Marco', html: '<div id="target">hola</div>', css: '#target{color:rgb(0,0,0)}', js })).overlay;
+    const p = `customOverlayCss.${overlay.id}`;
+    await api('POST', '/api/config/set', { path: p, value: '#target{color:rgb(255,0,0)}' });
+    await api('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' });
+    await api('POST', '/api/config/set', { path: p, value: '#target{color:rgb(0,0,255)}' });
+    chrome = await openChromePage(bin, `${base}/custom/${overlay.id}`);
+    const matches = (name, color, marker) => hit => {
+      if (!hit.startsWith('/theme?')) return false;
+      const q = new URL(hit, back.base).searchParams;
+      return q.get('id') === marker && q.get('name') === name && q.get('marker') === marker && q.get('color') === color && !!q.get('accent');
+    };
+    await back.waitFor(matches('Normal', 'rgb(0, 0, 255)', 'normal'));
+    await api('POST', '/api/themes/invierno/activate');
+    await back.waitFor(matches('Invierno', 'rgb(255, 0, 0)', 'invierno'));
+    await api('PUT', '/api/themes/invierno', { name: 'Navidad' });
+    await back.waitFor(matches('Navidad', 'rgb(255, 0, 0)', 'invierno'));
+    await api('POST', '/api/config/set', { path: p, value: '#target{color:rgb(0,128,0)}' });
+    await back.waitFor(matches('Navidad', 'rgb(0, 128, 0)', 'invierno'));
+    assert.equal(back.hits.filter(h => h === '/frame-loaded').length, 1);
+    assert.deepEqual((await api('GET', `/api/custom-overlays/${overlay.id}`)).overlay, overlay);
+  } finally {
+    await closeAll(() => chrome && closeChrome(chrome), () => back.close(),
+      () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
+  }
+});
+
+test('SDK theme observers never see mixed identity, look or themed CSS during a switch', { timeout: 120000 }, async t => {
+  const bin = await findChrome();
+  if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la prueba de navegador');
+  const back = await recorder();
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-atomic-browser-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), push: {}, log: () => {} });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const api = async (method, url, body) => {
+    const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const data = await r.json(); assert.equal(r.ok, true, JSON.stringify(data)); return data;
+  };
+  let chrome;
+  try {
+    const js = `antena.on('theme', t => { const q = new URLSearchParams({id:t.id || '', name:t.name || '', accent:t.accent || '', marker:document.documentElement.dataset.tema || '', look:getComputedStyle(document.documentElement).getPropertyValue('--red').trim(), color:getComputedStyle(document.getElementById('target')).color}); fetch('${back.base}/observed?' + q, {mode:'no-cors'}); });`;
+    const overlay = (await api('POST', '/api/custom-overlays', { name: 'Atómico', html: '<div id="target">hola</div>', css: '#target{color:black}', js })).overlay;
+    const id = overlay.id;
+    await api('PUT', '/api/config', { theme: { accent: '#112233', platformAccent: false }, customOverlayCss: { [id]: '#target{color:rgb(255,0,0)}' } });
+    await api('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' });
+    await api('PUT', '/api/config', { theme: { accent: '#445566' }, customOverlayCss: { [id]: '#target{color:rgb(0,0,255)}' } });
+    chrome = await openChromePage(bin, `${base}/custom/${id}`);
+    const contains = name => hit => hit.startsWith('/observed?') && new URL(hit, back.base).searchParams.get('name') === name;
+    await back.waitFor(contains('Normal'));
+    await api('POST', '/api/themes/invierno/activate');
+    await back.waitFor(contains('Invierno'));
+    await api('PUT', '/api/themes/invierno', { name: 'Navidad' });
+    await back.waitFor(contains('Navidad'));
+    for (const hit of back.hits.filter(h => h.startsWith('/observed?'))) {
+      const q = new URL(hit, back.base).searchParams;
+      const expected = q.get('id') === 'normal' ? ['Normal', '#445566', 'rgb(0, 0, 255)'] : ['Invierno', '#112233', 'rgb(255, 0, 0)'];
+      assert.ok(q.get('id') === 'normal' || q.get('id') === 'invierno');
+      assert.ok(q.get('name') === expected[0] || (q.get('id') === 'invierno' && q.get('name') === 'Navidad'));
+      assert.equal(q.get('accent'), expected[1]);
+      assert.equal(q.get('look').toUpperCase(), expected[1]);
+      assert.equal(q.get('color'), expected[2]);
+      assert.equal(q.get('marker'), q.get('id'));
+    }
+    assert.deepEqual((await api('GET', `/api/custom-overlays/${id}`)).overlay, overlay);
+  } finally {
+    await closeAll(() => chrome && closeChrome(chrome), () => back.close(),
+      () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
+  }
+});
+
 // T3: probar_overlay en Chrome. La prueba sale del servidor, la shell la filtra por id y el SDK la
 // entrega tal cual al código del usuario, sin cambios en el SDK.
 test('probar_overlay: la prueba llega al marco de su capa y a ninguna otra', { timeout: 120000 }, async t => {
