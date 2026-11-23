@@ -43,7 +43,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Browser sources for the broadcast program:** every alert, widget, panel and custom overlay is a browser source with its size, ready to copy.
 - **Prompter for the Elgato Prompter** (1024×600): the app opens it full screen on that display.
 - **Viewers record alert** per platform (Twitch and YouTube), with anti-spam brakes.
-- **Appearance:** one theme for everything that goes on screen (alerts, widgets and credits): colors, fonts (including yours), icons per alert, shape, position, animation and sound. The default one is the EGDEV theme.
+- **Appearance:** the active theme controls everything on screen (alerts, widgets and credits): colors, fonts, icons, shape, position, animation and sound. Manage and preview saved themes in Appearance, share one theme with its media as a ZIP, and switch them from the sidebar, dock, API or MCP.
 - **Customizable Stream Deck shortcuts:** each one chains steps (bookmark, pause, scene, layer, chat, prompter tab…) and has its own `/sd/custom/<id>` endpoint.
 - **Dock:** the whole live show minus the video preview — scenes, broadcast program audio tracks, alerts, questions, vote, giveaway, teleprompter, and credits — with customizable modules and layouts. By default it uses columns from 768 px wide and tabs below that.
 
@@ -132,6 +132,10 @@ Panel: http://127.0.0.1:4500/ · prompter: `/prompter` · dock: `/dock`. Without
 ### Scheduled streams
 
 **Conexiones › Programación** can use a local external stream calendar at stream start (off by default). Save a read-only credential, test it, then enable the switch. A matching event supplies the YouTube video without search and can set Twitch title/category once; on failure antena falls back to normal discovery. Credentials remain local and are excluded from exports. The loopback-only API contract and details are in [docs/scheduled-stream-calendar.md](docs/scheduled-stream-calendar.md).
+
+### Saved themes
+
+Manage up to 10 full saved themes in **Appearance › Temas**, `/api/themes` or MCP. Selecting previews the real alert, goal and chat renderers without activating; create a complete copy or start from each platform's colors. The sidebar and dock switch immediately. Edits apply to the active theme; switching leaves connections, sessions and custom-overlay code untouched. Alerts already showing or queued keep the per-alert settings they were built with. Existing installs migrate to **Normal** with their effective appearance frozen. Share an individual theme and its referenced media as a ZIP; imports preview conflicts and create a new inactive theme. Per-overlay theme CSS travels with the theme, while overlay code remains global. See [docs/themes.md](docs/themes.md).
 
 ### Configuration backup
 
@@ -269,9 +273,11 @@ A new layer for the broadcast program made of HTML, CSS and JavaScript: a frame 
 
 | Where | What you get |
 |---|---|
-| Panel › **Overlays** | Card list, editor with HTML, CSS and JavaScript tabs, live preview, width and height, transparent background, permissions, copy URL and delete |
+| Panel › **Overlays** | Card list, editor with HTML, CSS and JavaScript tabs, theme-specific CSS, live preview, width and height, transparent background, permissions, copy URL and delete |
 | Broadcast program | Add a browser source with `http://127.0.0.1:4500/custom/<id>` and the overlay size (it is also on the «Fuentes del programa de emisión» page, as «Overlay · name») |
-| On save | Every open layer (in the broadcast program and the preview) reloads by itself: you never touch the source in the broadcast program |
+| On save | Saving overlay code reloads open layers; saving theme-specific CSS or switching themes updates them live without a frame reload |
+
+The editor's **CSS de este tema** belongs to the active saved theme. Duplicating copies it; switching swaps it live without changing the overlay's code, version or approvals. Up to 512 KB of JSON per overlay. The overlay, widgets and custom frame expose `data-tema="<id>"` on `<html>` for theme-specific selectors. The alert overlay defers its marker and look until the current alert exits; widgets and custom frames update immediately.
 
 `/theme.css` is already linked: use its variables (`var(--accent)`, `var(--text)`…) to match the rest. The background is transparent by default, so it sits well over the camera, and external https resources (fonts, images) do load. Width 16–7680, height 16–4320, up to 50 overlays and 512 KB of JSON per overlay.
 
@@ -297,6 +303,8 @@ antena.ready.then(() => {
 });
 document.querySelector('.frame').onclick = () => antena.run('scene', { scene: 'Camera' }).catch(e => console.warn(e.message));
 ```
+
+The `theme` event and `antena.state.theme` expose the existing appearance fields plus the active saved theme's `id` and `name`, for example `antena.on('theme', t => console.log(t.id, t.name, t.accent))`. They update on switching or renaming; the visual version hash is independent of the name.
 
 #### Permissions
 
@@ -397,7 +405,7 @@ What it carries:
 
 ### Appearance
 
-In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. There is a single theme; the default is the EGDEV one and whatever you change here overrides it. While you change it, only the panel preview shows it (a draft in `/api/theme/draft` that only `?themeDraft` previews load); pressing **Save** sends it to every layer open in the broadcast program at once, without reloading them. If saving fails, the draft stays and the panel warns; a starting point, an import or «Restore EGDEV» are applied and saved right away and drop the draft.
+In **Settings › Appearance** you change the theme of **everything that goes on screen**: alert overlay, chat, goals, latest, ticker, question, tier list, giveaway and credits. These controls edit the active saved theme; the existing installation starts in «Normal» with its appearance preserved. While you change it, only the panel preview shows it (a draft in `/api/theme/draft` that only `?themeDraft` previews load); pressing **Save** sends it to every layer open in the broadcast program at once, without reloading them. If saving fails, the draft stays and the panel warns; an import or «Restore default appearance» is applied and saved right away and drops the draft.
 
 - **Color:** accent, soft accent, card background (gradient, solid or glass, with its opacity), texts, border (accent or its own), glow intensity and, if you want, the color of each platform.
 - **Typography:** title and body fonts (the brand's, the system's or your own in woff2/woff/ttf/otf uploaded in General and files), alert text size, uppercase and black outline.
@@ -405,7 +413,7 @@ In **Settings › Appearance** you change the theme of **everything that goes on
 - **Shape and effects:** corners, alert width and scale, 3D tilt, reflection, decorations and time bar.
 - **Position and motion:** alert height and side, fine adjustment and enter/exit animation (3D spin, slide, fade, bounce or none). A `?pos=` in the overlay URL still wins.
 - **Sound:** the default alert sound (the EGDEV tone, none or one of yours) and its volume.
-- **Starting points** (EGDEV, Cyan, Emerald, Amber, Each platform's color, Sober, Glass), **export** and **import** the theme as JSON and **Restore EGDEV**.
+- **Temas:** preview, create, duplicate, edit, activate, delete and export saved themes, or import a ZIP as a new inactive theme. The legacy appearance import and restore actions still apply to the active theme.
 
 The theme is served at `/theme.css`, in the `egdev-theme` layer, above the default styles: each alert's or widget's own CSS still wins. It is validated the same way on every write path (`PUT /api/theme`, `PUT /api/config`, `POST /api/config/set` and the loading of `config.json`): an invalid value is rejected with 400 and `/theme.css` never emits anything unvalidated; ranges (glow, size, position…) are rejected with the same schema message everywhere except on **import**, which clamps so that previously exported themes still load. Via MCP: `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema`. The prompter and the teleprompter do not change: they are for you, not for the stream.
 
@@ -512,16 +520,18 @@ Claude Desktop (`claude_desktop_config.json`):
 | Interactives | `estado_interactivos`, `configurar_interactivos` |
 | Files | `listar_archivos`, `importar_archivo` (from a path on your PC), `borrar_archivo` |
 | Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube or both), `simular_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
-| Widgets | `ver_widgets`, `editar_widget`, `editar_variante_chat`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `sumar_objetivo`, `fijar_objetivo`, `lanzar_creditos`, `parar_creditos` |
-| Custom overlays | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay` (fires a sample event at one open layer) |
+| Widgets | `ver_widgets`, `editar_widget`, `editar_variante_chat`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `crear_barra`, `editar_barra`, `borrar_barra`, `sumar_objetivo`, `fijar_objetivo`, `sumar_barra`, `fijar_barra`, `lanzar_creditos`, `parar_creditos` |
+| Custom overlays | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay`, `css_overlay_tema` |
 | Stream | `resumen_directo`, `metricas_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
-| Appearance | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema` |
+| Appearance and saved themes | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema`, `listar_temas`, `crear_tema`, `duplicar_tema`, `renombrar_tema`, `activar_tema`, `borrar_tema`, `exportar_tema`, `importar_tema_guardado` |
 | Viewers record | `estado_espectadores`, `configurar_espectadores`, `fijar_record_espectadores` |
 | Timeline and prompter | `cronologia`, `crear_marca`, `nota_cronologia`, `editar_nota_cronologia`, `borrar_nota_cronologia`, `marcar_agradecido`, `prompter_pestana` |
 | Broadcast program | `programa_estado`, `programa_conectar`, `programa_desconectar`, `programa_escena`, `programa_capa`, `programa_efecto`, `programa_comando`, `programa_evento`, `programa_audio`, `programa_media`, `programa_propiedad`, `programa_llamar`, `ejecutar_acciones` |
 | Teleprompter | `estado_teleprompter`, `controlar_teleprompter` (play, pause, toggle, reset, next, prev, block, seek, faster, slower), `configurar_teleprompter`, `crear_guion`, `editar_guion`, `elegir_guion`, `borrar_guion` |
 | Interviews | `listar_entrevistas`, `ver_entrevista`, `crear_entrevista`, `importar_entrevista`, `editar_entrevista`, `elegir_entrevista`, `parar_entrevista`, `borrar_entrevista`; live control: `entrevista_estado`, `entrevista_siguiente`, `entrevista_anterior`, `entrevista_ir`, `entrevista_media`, `entrevista_ocultar` (format and controls: [docs/entrevista-formato.md](docs/entrevista-formato.md)) |
 | Connections | `twitch_conectar`, `twitch_desconectar`, `youtube_escuchar`, `youtube_parar`, `acceso_movil` |
+
+The MCP prompt `disenar_tema` guides an agent through designing an inactive theme. `crear_tema` starts from platform colors or a saved copy; theme-owned editing and matching read tools accept `tema: <id>` without activating that theme. Live goal counters are deliberately excluded. Activation requires explicit confirmation. See [saved themes](docs/themes.md) for previews, targeting and the legacy `importar_tema` contract.
 
 The corresponding `meld_*` MCP tools and `/api/meld*` routes remain permanent aliases of `programa_*` and `/api/program*`.
 

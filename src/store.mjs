@@ -18,12 +18,15 @@ import { DEFAULT_INTERACTIVE_CONFIG } from './interactive.mjs';
 import { DEFAULT_TELEPROMPTER } from './teleprompter.mjs';
 import { DEFAULT_THEME } from './theme.mjs';
 import { DEFAULT_DOCK } from './dock-layout.mjs';
+import { publicThemes } from './theme-looks.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const DATA = process.env.ANTENA_DATA || path.join(ROOT, 'data');
 
 export const DEFAULT_CONFIG = {
   configVersion: CURRENT_CONFIG_VERSION,
+  themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] },
+  customOverlayCss: {},              // CSS adicional por id de overlay, del tema activo
   port: 4500,
   paused: false,
   twitch: { clientId: '' },
@@ -163,7 +166,9 @@ export class Store extends EventEmitter {
   async load() {
     // Migrar los datos originales antes de fusionar defaults: así un default nuevo no
     // pisa el valor antiguo. Una versión futura nunca se migra ni se rebaja al cargar.
-    const migration = migrateConfig(await readJson(this.cfgFile, {}));
+    // Un fichero inexistente o corrupto no se reemplaza ni tiene copia previa.
+    const raw = await readJson(this.cfgFile, null);
+    const migration = raw === null ? { config: {}, changed: false, future: false } : migrateConfig(raw);
     if (migration.future) console.warn(`config.json: configVersion ${migration.config.configVersion} es más reciente; no se migra`);
     this.config = deepMerge(structuredClone(DEFAULT_CONFIG), migration.config);
     // Nunca importar una contraseña de config.json a las vistas o a guardados posteriores.
@@ -230,25 +235,29 @@ export class Store extends EventEmitter {
     this.config = replace ? patch : deepMerge(this.config, patch);
     await this.write(this.cfgFile, this.config);
     onPersist?.(); // The atomic write has committed even if a change listener throws.
-    this.emit('change', change);
+    // A detached theme transaction publishes only to the panel, not the live consumers.
+    if (change !== null) this.emit('change', change);
     return this.config;
   }
-  /** Local restore point: exact prior config bytes and mode, never the separate credential file. */
-  async replaceConfigWithBackup(next, expected, change, onCommit) {
+  /** Transactional config replacement; imports and activation keep a local restore point. */
+  async replaceConfigWithBackup(next, expected, change, onCommit, { backup = true } = {}) {
     // An imported file never sets the stored version; keep the version this store loaded.
     if (next && typeof next === 'object') next = { ...next, configVersion: this.config.configVersion };
     const conflict = () => Object.assign(new Error('La configuración ha cambiado; vuelve a previsualizar'), { status: 409 });
     const barrier = this.chain;
     await barrier;
     if (this.chain !== barrier || this.dirty.config || !isDeepStrictEqual(this.config, expected)) throw conflict();
-    const mode = (await stat(this.cfgFile)).mode & 0o777;
-    const now = this.lastConfigBackup = Math.max(Date.now(), (this.lastConfigBackup || 0) + 1);
-    const name = `config.backup-${new Date(now).toISOString().replace(/[:.]/g, '-')}-${randomUUID()}.json`;
-    const target = path.join(this.dir, name);
-    await copyFile(this.cfgFile, target, constants.COPYFILE_EXCL);
+    let name, target, mode;
+    if (backup) {
+      mode = (await stat(this.cfgFile)).mode & 0o777;
+      const now = this.lastConfigBackup = Math.max(Date.now(), (this.lastConfigBackup || 0) + 1);
+      name = `config.backup-${new Date(now).toISOString().replace(/[:.]/g, '-')}-${randomUUID()}.json`;
+      target = path.join(this.dir, name);
+      await copyFile(this.cfgFile, target, constants.COPYFILE_EXCL);
+    }
     let started = false, committed = false, listenerError, importChain;
     try {
-      await chmod(target, mode);
+      if (backup) await chmod(target, mode);
       if (this.chain !== barrier || !isDeepStrictEqual(this.config, expected)) throw conflict();
       started = true;
       const writing = this.patchConfig(next, { replace: true, change, onPersist: () => { committed = true; onCommit?.(); } });
@@ -257,7 +266,7 @@ export class Store extends EventEmitter {
     } catch (error) {
       if (!committed) {
         if (started) this.config = expected;
-        await unlink(target).catch(() => {});
+        if (target) await unlink(target).catch(() => {});
         if (started && error.code === 'PERSISTENCE_FAILED') {
           // Unlike ordinary writes, this transaction restored memory and has no pending changes.
           if (this.chain === importChain) { this.#markClean('config'); this.#publishPersistence(); }
@@ -268,7 +277,7 @@ export class Store extends EventEmitter {
       listenerError = error; // Match PUT: report the listener error, but never roll back a committed write.
     }
     // Only files created by this feature are eligible; the current restore point always stays.
-    try {
+    if (backup) try {
       const others = (await readdir(this.dir)).filter(n => /^config\.backup-\d{4}-\d\d-\d\dT[\dTZ-]+-[0-9a-f-]{36}\.json$/.test(n) && n !== name).sort().reverse();
       for (const old of others.slice(9)) await unlink(path.join(this.dir, old));
     } catch { /* successful import remains successful if old backup cleanup fails */ }
@@ -282,6 +291,7 @@ export class Store extends EventEmitter {
     // defensa en profundidad (validatePath ya lo rechaza): nunca se escribe en el prototipo
     if (keys.some(k => PROTO_KEYS.has(k))) throw new Error(`Ruta no válida: ${dotted}`);
     if (keys[0] === 'configVersion') throw Object.assign(new Error('configVersion lo gestiona antena; no se puede cambiar'), { status: 400 });
+    if (keys[0] === 'themes') throw Object.assign(new Error('themes: se gestionan con /api/themes'), { status: 400 });
     if (['meld', 'obs'].includes(keys[0])) {
       if (keys.length === 2 && keys[1] === 'url') value = this.#retainProgramUrl(keys[0], value);
       else if (keys.length === 1 && value && typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, 'url')) {
@@ -373,6 +383,7 @@ export class Store extends EventEmitter {
   /** Config apta para el panel: oculta secretos y credenciales en las URL de programa. */
   publicConfig() {
     const c = structuredClone(this.config);
+    c.themes = { activeId: c.themes.activeId, saved: publicThemes(c.themes) };
     c.discord = { ...c.discord, webhookUrl: this.secrets.discord?.webhookUrl ? '••••' : '', webhookUrlSet: !!this.secrets.discord?.webhookUrl };
     c.scheduleCalendar = { ...c.scheduleCalendar, token: this.secrets.scheduleCalendar?.token ? '••••' : '', tokenSet: !!this.secrets.scheduleCalendar?.token };
     c.obs = { ...c.obs, url: cleanUrl(c.obs?.url), passwordSet: !!this.secrets.obs?.password };

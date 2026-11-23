@@ -229,6 +229,7 @@ export const DEMO_ITEMS = [
 ];
 
 if (DEMO) {
+  connect({}); // incluso la muestra aislada necesita el marcador de tema
   // ?demo cycles the samples; ?demo&item=N pins sample N (1-based).
   const pin = Number(qs.get('item'));
   if (pin >= 1 && pin <= DEMO_ITEMS.length) show(DEMO_ITEMS[pin - 1]);

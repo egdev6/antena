@@ -3,16 +3,18 @@
 import { DEFAULT_THEME, PRESETS, FONTS, ICON_NAMES, cleanTheme, publicTheme, themeRangeError } from '../theme.mjs';
 import { httpError as httpErrorBase } from '../http-util.mjs';
 
-export function registerThemeRoutes({ route, store, listMedia, onChange, onDraft = () => {}, httpError = httpErrorBase }) {
+export function registerThemeRoutes({ route, store, listMedia, onChange, onDraft = () => {}, isProjection = () => false, httpError = httpErrorBase }) {
   const current = () => ({ ...DEFAULT_THEME, ...(store.config.theme || {}) });
   // Borrador (guardado manual de Apariencia): solo lo ven las vistas previas (?themeDraft); Meld sigue con lo guardado.
   let draft = null;
   const save = async next => {
     store.config.theme = next;
-    draft = null;
+    if (!isProjection()) draft = null;
     await store.save('theme');
-    onChange(publicTheme(next));
-    onDraft({ ...publicTheme(next), draft: true });
+    if (!isProjection()) {
+      onChange(publicTheme(next));
+      onDraft({ ...publicTheme(next), draft: true });
+    }
     return info();
   };
   const info = async () => {
@@ -57,6 +59,12 @@ export function registerThemeRoutes({ route, store, listMedia, onChange, onDraft
     if (!p) throw httpError(404, `No existe el punto de partida «${id}». Hay: ${Object.keys(PRESETS).join(', ')}`);
     return save(cleanTheme(p.theme, { ...DEFAULT_THEME, icons: {} }));
   });
+  // Un borrador pertenece al tema editado: nunca debe reaparecer tras activar otro.
+  const clearDraft = () => {
+    if (!draft) return;
+    draft = null;
+    onDraft({ ...publicTheme(current()), draft: true });
+  };
   // para /theme.css?draft=1 y el estado inicial del SSE de las vistas previas
-  return { getDraft: () => draft };
+  return { getDraft: () => draft, clearDraft };
 }

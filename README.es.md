@@ -43,7 +43,7 @@ antena se queda entera en tu PC y le da a tu directo una capa completa de alerta
 - **Fuentes para el programa de emisión:** cada alerta, widget, panel y overlay propio es una fuente de navegador con su tamaño, listas para copiar.
 - **Prompter para el Elgato Prompter** (1024×600): la app lo abre a pantalla completa en esa pantalla.
 - **Alerta de récord de espectadores** por plataforma (Twitch y YouTube), con freno anti-spam.
-- **Apariencia:** un solo tema para todo lo que sale en pantalla (alertas, widgets y créditos): colores, fuentes (también las tuyas), iconos por alerta, forma, posición, animación y sonido. El de serie es el de EGDEV.
+- **Apariencia:** el tema activo controla todo lo que sale en pantalla (alertas, widgets y créditos): colores, fuentes, iconos, forma, posición, animación y sonido. Gestiona y previsualiza temas guardados en Apariencia, comparte un tema con sus medios en ZIP y cámbialos desde la barra lateral, el dock, la API o MCP.
 - **Atajos para Stream Deck** personalizables: cada uno encadena pasos (marca, pausa, escena, capa, chat, pestaña del prompter…) y tiene su dirección `/sd/custom/<id>`.
 - **Dock:** todo el manejo del directo menos la vista previa de vídeo —escenas, pistas de audio del programa de emisión, alertas, preguntas, votación, sorteo, teleprompter y créditos— con módulos y distribuciones personalizables. De serie usa columnas desde 768 px de ancho y pestañas por debajo.
 
@@ -132,6 +132,10 @@ Panel: http://127.0.0.1:4500/ · prompter: `/prompter` · dock: `/dock`. Sin `ap
 ### Directos programados
 
 En **Conexiones › Programación** puedes usar un calendario externo local al empezar el directo (desactivado por defecto). Guarda una credencial de lectura, prueba la conexión y activa el interruptor. Si hay un evento, usa su vídeo de YouTube sin búsqueda y puede aplicar título y categoría de Twitch una vez; si falla, vuelve al descubrimiento habitual. La credencial queda en local y no se exporta. Contrato local y detalles en [docs/scheduled-stream-calendar.md](docs/scheduled-stream-calendar.md).
+
+### Temas guardados
+
+Gestiona hasta 10 temas completos en **Apariencia › Temas**, `/api/themes` o MCP. Selecciona para previsualizar la alerta, el objetivo y el chat reales sin activar; crea una copia completa o parte del color de cada plataforma. La barra lateral y el dock cambian el tema al momento. Los cambios editan el tema activo y no tocan conexiones, sesiones ni código de overlays propios. Las alertas ya visibles o en cola conservan los ajustes con que se construyeron. Las instalaciones existentes pasan a **Normal** con su aspecto conservado. Comparte un tema individual con sus medios en ZIP; al importar se revisan las colisiones y se crea un tema nuevo inactivo. El CSS por tema viaja con él; el código de los overlays sigue siendo global. Detalles en [docs/themes.md](docs/themes.md).
 
 ### Copia de la configuración
 
@@ -269,9 +273,11 @@ Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un
 
 | Dónde | Qué hay |
 |---|---|
-| Panel › **Overlays** | Lista en tarjetas, editor con pestañas HTML, CSS y JavaScript, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
+| Panel › **Overlays** | Lista en tarjetas, editor con pestañas HTML, CSS y JavaScript, CSS por tema, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
 | Programa de emisión | Añade una fuente de navegador con `http://127.0.0.1:4500/custom/<id>` y el tamaño del overlay (también está en la página «Fuentes del programa de emisión», como «Overlay · nombre») |
-| Al guardar | Todas las capas abiertas (en el programa de emisión y la vista previa) se recargan solas: no hay que tocar la fuente en el programa de emisión |
+| Al guardar | El código del overlay recarga las capas abiertas; el CSS del tema y los cambios de tema se aplican en vivo sin recargar el marco |
+
+**CSS de este tema** pertenece al tema guardado activo. Al duplicar se copia; al cambiar de tema se sustituye en vivo sin modificar el código, la versión ni los permisos del overlay. Admite hasta 512 KB de JSON por overlay. El overlay, los widgets y el marco propio exponen `data-tema="<id>"` en `<html>` para selectores por tema. El overlay de alertas difiere el marcador y el aspecto hasta que la alerta actual salga; widgets y marcos propios se actualizan al momento.
 
 `/theme.css` ya viene enlazado: usa sus variables (`var(--accent)`, `var(--text)`…) para que combine. El fondo es transparente por defecto, así que queda bien encima de la cámara, y los recursos externos por https (fuentes, imágenes) sí cargan. Ancho 16–7680, alto 16–4320, hasta 50 overlays y 512 KB de JSON por overlay.
 
@@ -297,6 +303,8 @@ antena.ready.then(() => {
 });
 document.querySelector('.marco').onclick = () => antena.run('scene', { scene: 'Cámara' }).catch(e => console.warn(e.message));
 ```
+
+El evento `theme` y `antena.state.theme` incluyen los campos de apariencia habituales junto con `id` y `name` del tema guardado activo; por ejemplo, `antena.on('theme', t => console.log(t.id, t.name, t.accent))`. Se actualizan al cambiar o renombrar; el hash visual es independiente del nombre.
 
 #### Permisos
 
@@ -397,7 +405,7 @@ Las **marcas de short** quedan en la pestaña Eventos con su minuto y, si estás
 
 ### Apariencia
 
-En **Ajustes › Apariencia** se cambia el tema de **todo lo que sale en pantalla**: overlay de alertas, chat, objetivos, últimos, ticker, pregunta, tier list, sorteo y créditos. Hay un único tema; el de serie es el de EGDEV y lo que cambies aquí lo sobrescribe. Mientras lo cambias, solo se ve en la vista previa del panel (un borrador en `/api/theme/draft` que solo cargan las vistas con `?themeDraft`); al pulsar **Guardar** llega a la vez a todas las capas abiertas en el programa de emisión, sin recargarlas. Si el guardado falla, el borrador sigue ahí y el panel avisa; un punto de partida, una importación o «Restaurar EGDEV» se aplican y guardan al momento y tiran el borrador.
+En **Ajustes › Apariencia** se cambia el tema de **todo lo que sale en pantalla**: overlay de alertas, chat, objetivos, últimos, ticker, pregunta, tier list, sorteo y créditos. Estos controles editan el tema guardado activo; una instalación existente empieza en «Normal» con su aspecto conservado. Mientras lo cambias, solo se ve en la vista previa del panel (un borrador en `/api/theme/draft` que solo cargan las vistas con `?themeDraft`); al pulsar **Guardar** llega a la vez a todas las capas abiertas en el programa de emisión, sin recargarlas. Si el guardado falla, el borrador sigue ahí y el panel avisa; una importación o «Restaurar aspecto de serie» se aplican y guardan al momento y tiran el borrador.
 
 - **Color:** acento, acento suave, fondo de las tarjetas (degradado, sólido o cristal, con su opacidad), textos, borde (del acento o propio), intensidad del brillo y, si quieres, el color de cada plataforma.
 - **Tipografía:** fuente de títulos y de textos (las de la marca, las del sistema o una tuya en woff2/woff/ttf/otf subida en General y archivos), tamaño del texto de las alertas, mayúsculas y contorno negro.
@@ -405,7 +413,7 @@ En **Ajustes › Apariencia** se cambia el tema de **todo lo que sale en pantall
 - **Forma y efectos:** esquinas, ancho y escala de la alerta, inclinación 3D, reflejo, decoraciones y barra de tiempo.
 - **Posición y movimiento:** altura y lado de la alerta, ajuste fino y animación de entrada y salida (giro 3D, deslizar, fundido, rebote o ninguna). Un `?pos=` en la URL del overlay sigue mandando.
 - **Sonido:** el sonido «de serie» de las alertas (el tono EGDEV, ninguno o uno tuyo) y su volumen.
-- **Puntos de partida** (EGDEV, Cian, Esmeralda, Ámbar, Color de cada plataforma, Sobrio, Cristal), **exportar** e **importar** el tema en JSON y **Restaurar EGDEV**.
+- **Temas:** previsualizar, crear, duplicar, editar, activar, borrar y exportar temas guardados, o importar un ZIP como tema nuevo inactivo. Al crear o editar puedes elegir una imagen o color para el avatar. La importación antigua de apariencia y «Restaurar aspecto de serie» siguen afectando al activo.
 
 El tema se sirve en `/theme.css`, en la capa `egdev-theme`, por encima de los estilos de serie: el CSS propio de cada alerta o widget sigue ganando. Se valida igual en todas las vías de escritura (`PUT /api/theme`, `PUT /api/config`, `POST /api/config/set` y la carga de `config.json`): un valor inválido se rechaza con 400 y `/theme.css` no emite nunca nada sin validar; los rangos (brillo, tamaño, posición…) se rechazan con el mismo mensaje del esquema en todas menos al **importar**, que recorta para que sigan entrando los temas antiguos exportados. Por MCP: `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema`. El prompter y el teleprompter no cambian: son para ti, no para el directo.
 
@@ -512,16 +520,18 @@ Claude Desktop (`claude_desktop_config.json`):
 | Interactivos | `estado_interactivos`, `configurar_interactivos` |
 | Archivos | `listar_archivos`, `importar_archivo` (desde una ruta de tu PC), `borrar_archivo` |
 | Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube o los dos), `simular_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
-| Widgets | `ver_widgets`, `editar_widget`, `editar_variante_chat`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `sumar_objetivo`, `fijar_objetivo`, `lanzar_creditos`, `parar_creditos` |
-| Overlays propios | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay` (lanza un evento de ejemplo a una capa abierta) |
+| Widgets | `ver_widgets`, `editar_widget`, `editar_variante_chat`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `crear_barra`, `editar_barra`, `borrar_barra`, `sumar_objetivo`, `fijar_objetivo`, `sumar_barra`, `fijar_barra`, `lanzar_creditos`, `parar_creditos` |
+| Overlays propios | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay`, `css_overlay_tema` |
 | Directo | `resumen_directo`, `metricas_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |
-| Apariencia | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema` |
+| Apariencia y temas guardados | `ver_tema`, `cambiar_tema`, `tema_de_partida`, `restaurar_tema`, `importar_tema`, `listar_temas`, `crear_tema`, `duplicar_tema`, `renombrar_tema`, `activar_tema`, `borrar_tema`, `exportar_tema`, `importar_tema_guardado` |
 | Récord de espectadores | `estado_espectadores`, `configurar_espectadores`, `fijar_record_espectadores` |
 | Cronología y prompter | `cronologia`, `crear_marca`, `nota_cronologia`, `editar_nota_cronologia`, `borrar_nota_cronologia`, `marcar_agradecido`, `prompter_pestana` |
 | Programa de emisión | `programa_estado`, `programa_conectar`, `programa_desconectar`, `programa_escena`, `programa_capa`, `programa_efecto`, `programa_comando`, `programa_evento`, `programa_audio`, `programa_media`, `programa_propiedad`, `programa_llamar`, `ejecutar_acciones` |
 | Teleprompter | `estado_teleprompter`, `controlar_teleprompter` (play, pause, toggle, reset, next, prev, block, seek, faster, slower), `configurar_teleprompter`, `crear_guion`, `editar_guion`, `elegir_guion`, `borrar_guion` |
 | Entrevistas | `listar_entrevistas`, `ver_entrevista`, `crear_entrevista`, `importar_entrevista`, `editar_entrevista`, `elegir_entrevista`, `parar_entrevista`, `borrar_entrevista`; control en directo: `entrevista_estado`, `entrevista_siguiente`, `entrevista_anterior`, `entrevista_ir`, `entrevista_media`, `entrevista_ocultar` (formato y controles: [docs/entrevista-formato.md](docs/entrevista-formato.md)) |
 | Conexiones | `twitch_conectar`, `twitch_desconectar`, `youtube_escuchar`, `youtube_parar`, `acceso_movil` |
+
+El prompt MCP `disenar_tema` guía al agente para diseñar un tema inactivo. `crear_tema` parte de los colores por plataforma o de una copia guardada; las herramientas de edición y lectura de elementos del tema aceptan `tema: <id>` sin activarlo. Se excluyen los contadores del directo. La activación requiere confirmación explícita. Consulta [temas guardados](docs/themes.md) para vistas previas, destinos y el contrato anterior de `importar_tema`.
 
 Las herramientas MCP `meld_*` y las rutas `/api/meld*` siguen siendo alias permanentes de `programa_*` y `/api/program*`.
 

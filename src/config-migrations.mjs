@@ -1,9 +1,21 @@
 // Migraciones puras de config.json y de las configuraciones portables importadas.
 import { isDeepStrictEqual } from 'node:util';
 import { convertLegacyGoals } from './goals.mjs';
+import { DEFAULT_CONFIG, deepMerge } from './store.mjs';
+import { extractLook } from './theme-looks.mjs';
+import { ALERT_FIELDS, DEFAULT_COMMAND, DEFAULT_CONDITIONS, DEFAULT_CUSTOM_ALERT } from './alerts.mjs';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const PROGRAM_SETTINGS = ['autoSession', 'recordOnStart'];
+// Solo campos consumidos al construir la alerta; añadir defaults de permisos, cooldown o
+// programación cambiaría el comportamiento histórico de entradas antiguas incompletas.
+const RENDER_KEYS = Object.keys(ALERT_FIELDS).filter(key => key !== 'enabled' && key !== 'minAmount');
+function freezeRenderDefaults(item, defaults) {
+  if (!object(item)) return item;
+  const resolved = Object.fromEntries(RENDER_KEYS.filter(key => Object.hasOwn(defaults, key))
+    .map(key => [key, structuredClone(defaults[key])]));
+  return { ...resolved, ...item };
+}
 
 export const MIGRATIONS = [
   { to: 1, up(config) {
@@ -22,6 +34,23 @@ export const MIGRATIONS = [
       delete meld[key];
     }
     return { ...config, meld, program };
+  } },
+  { to: 3, up(config) {
+    // Resolver con los defaults vigentes ANTES de que cambien: el tema activo vive
+    // en las secciones originales. No se copia ningún dato global al look.
+    const effective = deepMerge(structuredClone(DEFAULT_CONFIG), config);
+    // Los v2 resolvían estos campos con los defaults anteriores a los temas guardados.
+    // Congelarlos aquí también protege una instalación que actualiza directamente a esta versión.
+    effective.theme = deepMerge({ ...structuredClone(DEFAULT_CONFIG.theme), platformAccent: false, platformBadge: 'text' }, config.theme || {});
+    // matchesConditions resuelve los defaults por variación; persistirlos impide que
+    // un cambio futuro de chance, users u otra condición altere las reglas existentes.
+    if (object(effective.alerts)) effective.alerts = Object.fromEntries(Object.entries(effective.alerts).map(([type, alert]) => [type,
+      object(alert) && Array.isArray(alert.variations) ? { ...alert, variations: alert.variations.map(variation => object(variation)
+        ? { ...variation, conditions: { ...structuredClone(DEFAULT_CONDITIONS), ...variation.conditions } } : variation) } : alert,
+    ]));
+    if (Array.isArray(effective.commands)) effective.commands = effective.commands.map(item => freezeRenderDefaults(item, DEFAULT_COMMAND));
+    if (Array.isArray(effective.timers)) effective.timers = effective.timers.map(item => freezeRenderDefaults(item, DEFAULT_CUSTOM_ALERT));
+    return { ...config, ...extractLook(effective), themes: config.themes ?? { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] } };
   } },
 ];
 

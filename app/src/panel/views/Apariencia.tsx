@@ -1,13 +1,13 @@
-// Apariencia: un solo tema para todo lo que sale en pantalla (overlay de alertas, widgets y créditos).
-// El de serie es el de EGDEV; aquí se sobrescribe. Se guarda solo (src/theme.mjs) y llega en vivo a Meld.
+// Apariencia: temas guardados y edición manual del tema activo.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { del, get, post, put } from '../../lib/api';
 import { deepMerge, live, useLive } from '../../lib/live';
 import { ManualDraft } from '../../lib/manual-draft';
 import { copy, cx, guard, PfIcon, ScaledFrame, Sec, Seg, Switch, toast } from '../../lib/ui';
 import type { Theme, ThemeInfo } from '../../lib/types';
-import { isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
+import { isSaving, registerDraft, themeIdentity, useDraftVersion, useManualSave } from '../../lib/draft';
 import { PageHead, SaveBar, usePageTab } from '../../lib/layout';
+import { Temas } from './Temas';
 
 const SAMPLES: [string, string][] = [['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['viewers', 'Récord']];
 const WIDGETS: { id: string; label: string; src: string; w: number; h: number }[] = [
@@ -25,7 +25,7 @@ const ICON_TYPES: [string, string][] = [['follow', 'heart'], ['sub', 'star'], ['
   ['ytsub', 'heart'], ['ytsubcount', 'heart'], ['superchat', 'coin'], ['supersticker', 'coin'], ['member', 'badge'], ['milestone', 'badge'], ['giftmember', 'gift'], ['jewels', 'gift'], ['viewers', 'twitch'], ['ytviewers', 'youtube'], ['welcome', 'smile'], ['streak', 'fire'], ['command', 'spark']];
 const ICON_LABEL: Record<string, string> = { heart: 'Corazón', star: 'Estrella', gift: 'Regalo', gem: 'Gema', rocket: 'Cohete', spark: 'Chispa', coin: 'Moneda', badge: 'Insignia', eye: 'Ojo', bell: 'Campana', fire: 'Fuego', trophy: 'Trofeo', crown: 'Corona', zap: 'Rayo', megaphone: 'Megáfono', music: 'Música', smile: 'Sonrisa', users: 'Personas', rocket2: 'Cohete 2', thumb: 'Pulgar' };
 
-const TABS = ['color', 'tipografia', 'iconos', 'forma', 'sonido'];
+const TABS = ['temas', 'color', 'tipografia', 'iconos', 'forma', 'sonido'];
 const draftSrc = (src: string) => src + (src.includes('?') ? '&' : '?') + 'themeDraft';
 export function Apariencia({ parts }: { parts: string[] }) {
   useManualSave();
@@ -35,6 +35,7 @@ export function Apariencia({ parts }: { parts: string[] }) {
   const info = useRef<ThemeInfo | null>(null);
   const [, setLoaded] = useState(0);
   const t = useLive(s => s.theme);
+  const activeThemeId = useLive(s => s.config.themes?.activeId);
   const types = useLive(s => s.types);
   const [view, setView] = useState('alert');
   const [frameKey, setFrameKey] = useState(0);
@@ -42,8 +43,8 @@ export function Apariencia({ parts }: { parts: string[] }) {
   const sampleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const active = useRef(true);
   const [buffer] = useState(() => new ManualDraft<Partial<Theme>, ThemeInfo>({
-    empty: () => ({}), merge: deepMerge, take: () => info.current!,
-    persist: patch => put<ThemeInfo>('/api/theme', patch),
+    empty: () => ({}), merge: deepMerge, take: () => info.current!, themed: true,
+    persist: (patch, themeId) => put<ThemeInfo>('/api/theme', patch, { themeId }),
     publish: (saved, newer) => { info.current = saved; live.update(() => ({ theme: deepMerge(saved.theme, newer) })); },
     restore: saved => { info.current = saved; live.update(() => ({ theme: saved.theme })); },
     protect: (state, intent) => ({ ...state, theme: deepMerge(state.theme, intent) }),
@@ -54,20 +55,38 @@ export function Apariencia({ parts }: { parts: string[] }) {
     info.current = loaded; live.update(() => ({ theme: loaded.theme })); setLoaded(x => x + 1);
   });
   // Preview-only draft writes are not durable saves of B.
-  const sendDraft = () => { if (buffer.dirty()) put('/api/theme/draft', buffer.changes()).catch(e => toast(e.message, true)); };
+  const sendDraft = () => { if (buffer.dirty() && !buffer.stale()) put('/api/theme/draft', buffer.changes(), { themeId: buffer.themeId() }).catch(e => toast(e.message, true)); };
   const discard = () => {
     if (isSaving()) return;
-    clearTimeout(timer.current); buffer.discard();
-    del('/api/theme/draft').catch(() => {});
+    clearTimeout(timer.current); const themeId = buffer.themeId(), stale = buffer.stale(); buffer.discard();
+    del('/api/theme/draft', { themeId }).catch(() => {});
+    const revision = themeIdentity().revision;
+    if (stale) get<ThemeInfo>('/api/theme').then(loaded => {
+      if (!active.current || revision !== themeIdentity().revision) return;
+      info.current = loaded; live.update(() => ({ theme: loaded.theme })); setLoaded(x => x + 1);
+    }).catch(e => toast(e.message, true));
   };
   useEffect(() => {
     load();
     const unregister = registerDraft('theme', {
-      dirty: buffer.dirty, keys: buffer.keys, protect: buffer.protect,
+      dirty: buffer.dirty, stale: buffer.stale, keys: buffer.keys, protect: buffer.protect,
       prepareSave: () => { clearTimeout(timer.current); return buffer.prepareSave(); }, discard,
     });
     return () => { active.current = false; clearTimeout(timer.current); clearTimeout(sampleTimer.current); unregister(); buffer.dispose(); };
   }, [buffer]);
+  // El baseline del borrador también pertenece al tema activo, no al que estaba al abrir la página.
+  useEffect(() => {
+    if (!activeThemeId) return;
+    let current = true;
+    const revision = themeIdentity().revision;
+    get<ThemeInfo>('/api/theme').then(loaded => {
+      if (!current || !active.current || revision !== themeIdentity().revision) return;
+      info.current = loaded;
+      if (!buffer.dirty()) live.update(() => ({ theme: loaded.theme }));
+      setLoaded(x => x + 1);
+    }).catch(e => toast(e.message, true));
+    return () => { current = false; };
+  }, [activeThemeId, buffer]);
   // El ejemplo espera al marco Y a su conexión: onload por sí solo no garantiza que el bus lo haya admitido.
   const viewRef = useRef(view); viewRef.current = view;
   const sampleFrame = useCallback((el: HTMLIFrameElement | null) => {
@@ -85,7 +104,7 @@ export function Apariencia({ parts }: { parts: string[] }) {
     live.update(s => ({ theme: deepMerge(s.theme, patch) }));
     clearTimeout(timer.current); timer.current = setTimeout(sendDraft, 300);
   };
-  // el punto de partida, la importación y la restauración mandan: se aplican y guardan al momento y
+  // La importación y la restauración mandan: se aplican y guardan al momento y
   // tiran el borrador; se cancela antes de pedirlos para que un envío del borrador en cola no los pise (#157, #164)
   const cancelPending = () => { if (!isSaving()) discard(); };
   const replace = (d: ThemeInfo) => { cancelPending(); info.current = d; live.update(() => ({ theme: d.theme })); setFrameKey(k => k + 1); };
@@ -113,12 +132,8 @@ export function Apariencia({ parts }: { parts: string[] }) {
   return <>
     <PageHead crumb="Ajustes" title="Apariencia"
       desc="Un solo tema para todo lo que sale en el directo: alertas, chat, objetivos, ticker, preguntas, sorteo, tier list y créditos. La vista previa cambia al momento; el programa de emisión, al guardar. El CSS propio de cada alerta o widget sigue ganando."
-      tabs={[{ id: 'color', label: 'Color' }, { id: 'tipografia', label: 'Tipografía' }, { id: 'iconos', label: 'Iconos' }, { id: 'forma', label: 'Forma y posición' }, { id: 'sonido', label: 'Sonido' }]} tab={tab} onTab={setTab}
-      actions={<>
-        <label className="sr-only" htmlFor="ap-preset">Punto de partida</label>
-        <select id="ap-preset" className="ap-preset" disabled={saving} value="" onChange={e => { if (isSaving()) return; const id = e.target.value; if (!id) return; if (!confirm(`¿Empezar desde «${I.presets.find(p => p.id === id)?.label}»? Se sustituye el tema actual.`)) return; guard(async () => { cancelPending(); replace(await post<ThemeInfo>('/api/theme/preset', { id })); }, 'Tema aplicado')(); }}>
-          <option value="">Punto de partida…</option>{I.presets.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-        </select>
+      tabs={[{ id: 'temas', label: 'Temas' }, { id: 'color', label: 'Color' }, { id: 'tipografia', label: 'Tipografía' }, { id: 'iconos', label: 'Iconos' }, { id: 'forma', label: 'Forma y posición' }, { id: 'sonido', label: 'Sonido' }]} tab={tab} onTab={setTab}
+      actions={tab !== 'temas' ? <>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => { const { version, ...rest } = t; void version; copy(JSON.stringify(rest, null, 2)); }}>Exportar</button>
         <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" disabled={saving} onClick={guard(async () => {
           if (isSaving()) return;
@@ -127,9 +142,9 @@ export function Apariencia({ parts }: { parts: string[] }) {
           cancelPending();
           replace(await post<ThemeInfo>('/api/theme/import', { theme }));
         }, 'Tema importado')}>Importar</button>
-        <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={saving || isDefault} onClick={guard(async () => { if (isSaving() || !confirm('¿Volver al tema de serie de EGDEV?')) return; cancelPending(); replace(await post<ThemeInfo>('/api/theme/reset')); }, 'Tema de EGDEV restaurado')}>Restaurar EGDEV</button>
-      </>} />
-    <div className="cols ap">
+        <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={saving || isDefault} onClick={guard(async () => { if (isSaving() || !confirm('¿Volver al aspecto de serie Color de cada plataforma?')) return; cancelPending(); replace(await post<ThemeInfo>('/api/theme/reset')); }, 'Aspecto de serie restaurado')}>Restaurar aspecto de serie</button>
+      </> : undefined} />
+    {tab === 'temas' ? <Temas /> : <div className="cols ap">
       <div className="stack">
         {tab === 'color' && <Sec title="Color" id="ap-color">
           <div className="row3">{color('accent', 'Acento')}{color('accentSoft', 'Acento suave', 'Antetítulos y detalles')}{color('surface', 'Fondo de las tarjetas')}</div>
@@ -216,7 +231,7 @@ export function Apariencia({ parts }: { parts: string[] }) {
 
       <div className="stack ap-preview">
         <figure className="eg-stage">
-          <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista previa</span><span className="eg-stage__spacer" /><span className="hint">{isDefault ? 'Tema de EGDEV' : 'Tema propio'}</span></figcaption>
+          <figcaption className="eg-stage__bar"><span className="eg-eyebrow">Vista previa</span><span className="eg-stage__spacer" /><span className="hint">{isDefault ? 'Aspecto de serie' : 'Tema propio'}</span></figcaption>
           <div className="ap-tabs" role="tablist" aria-label="Qué ver">
             {WIDGETS.map(w => <button key={w.id} type="button" role="tab" aria-selected={view === w.id} className={cx('eg-chip', view === w.id && 'is-on')} onClick={() => setView(w.id)}>{w.label}</button>)}
           </div>
@@ -227,7 +242,7 @@ export function Apariencia({ parts }: { parts: string[] }) {
         </figure>
         <p className="hint">{view === 'alert' ? 'Las alertas de ejemplo salen solo aquí. Para verlas en el programa de emisión, usa «Probar en el directo» en cada alerta.' : 'Con datos de ejemplo. Al guardar, el tema llega a la vez a todas las capas que tengas en el programa de emisión.'}</p>
       </div>
-    </div>
+    </div>}
     <SaveBar />
   </>;
 }

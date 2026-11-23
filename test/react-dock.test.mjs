@@ -27,14 +27,14 @@ test('dock React: estado, pausa, pestañas sin atajos ni chat', { timeout: 12000
     // This test checks the tab layout, so pin a narrow viewport instead of relying on
     // headless Chrome's default width (wider than the 768 px three-column breakpoint).
     await c.send('Emulation.setDeviceMetricsOverride', { width: 600, height: 900, deviceScaleFactor: 1, mobile: false });
-    await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 3`, { timeoutMs: 9000 });
+    await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 4`, { timeoutMs: 9000 });
     const ev = expr => import('./helpers/chrome-dom.mjs').then(m => m.evaluateChrome(c, expr));
     await waitDom(c, `!!(document.querySelector('.d-top') && document.querySelector('.d-grid'))`, { timeoutMs: 12000 });
 
     // estado visible: cabecera de sesión y pestañas Control/Audio/Interactivos; sin chat
     assert.ok(await ev(`document.querySelector('.d-live').textContent.includes('Sesión') || document.querySelector('.d-live').textContent.includes('Sin emitir')`));
     const tabs = await ev(`Array.from(document.querySelectorAll('.d-tabs [role="tab"]')).map(b => b.firstChild.textContent.trim())`);
-    assert.deepEqual(tabs, ['Control', 'Audio', 'Interactivos']);
+    assert.deepEqual(tabs, ['Control', 'Audio', 'Interactivos', 'Tema']);
     assert.equal(await ev(`!!document.querySelector('.d-chat, .d-msgs, .d-send')`), false, 'sin mini-chat en el dock');
 
     // Un atajo existente sigue guardado en el panel, pero no aparece en el dock.

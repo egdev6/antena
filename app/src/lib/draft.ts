@@ -14,6 +14,8 @@ export type PreparedSave = {
 export type DraftSource = {
   /** ¿Hay cambios sin guardar? */
   dirty: () => boolean;
+  /** A theme-scoped draft remains stale even if the user later switches back. */
+  stale?: () => boolean;
   /** Pestañas (o claves) con cambios, para el punto de cada pestaña. */
   keys?: () => string[];
   prepareSave: () => PreparedSave | undefined;
@@ -26,6 +28,19 @@ const subs = new Set<() => void>();
 let version = 0;
 let holds = 0;
 const holdSubs = new Set<(on: boolean) => void>();
+export const STALE_THEME_MESSAGE = 'El tema activo cambió mientras editabas; tus cambios no se guardaron';
+let activeThemeId: string | undefined;
+let themeRevision = 0;
+let refreshAfterStaleDiscard: (() => void) | undefined;
+export const themeIdentity = () => ({ id: activeThemeId, revision: themeRevision });
+export function observeActiveTheme(id: string | undefined) {
+  if (!id || id === activeThemeId) return false;
+  if (activeThemeId) themeRevision++;
+  activeThemeId = id;
+  draftChanged();
+  return true;
+}
+export function onStaleDiscard(fn: () => void) { refreshAfterStaleDiscard = fn; }
 
 /** Avisa a SaveBar (y a las pestañas) de que algo ha cambiado. */
 export function draftChanged() { version++; subs.forEach(f => f()); }
@@ -35,6 +50,7 @@ export function registerDraft(id: string, s: DraftSource) {
 }
 
 export const isDirty = () => [...sources.values()].some(s => s.dirty());
+export const isStale = () => [...sources.values()].some(s => s.dirty() && s.stale?.());
 export const dirtyKeys = () => [...new Set([...sources.values()].flatMap(s => (s.dirty() ? (s.keys?.() || ['*']) : [])))];
 let busy = false;
 let operation: Promise<unknown> | undefined;
@@ -45,6 +61,7 @@ export function protectDrafts(state: AppState) {
 }
 export function saveSources(selected: DraftSource[]): Promise<unknown> {
   if (busy) return operation ?? Promise.resolve();
+  if (selected.some(source => source.dirty() && source.stale?.())) return Promise.reject(new Error(STALE_THEME_MESSAGE));
   busy = true; // synchronous lock, including rapid clicks before React re-renders
   const jobs: PreparedSave[] = [];
   try {
@@ -74,8 +91,10 @@ export async function flushSources(selected: DraftSource[]): Promise<unknown> {
 export const saveAll = () => saveSources([...sources.values()]);
 export function discardAll() {
   if (busy) return;
+  const stale = isStale();
   for (const s of [...sources.values()]) if (s.dirty()) s.discard();
   draftChanged();
+  if (stale) refreshAfterStaleDiscard?.();
 }
 
 /** true mientras alguna pantalla con guardado manual está montada (los guardados automáticos esperan). */

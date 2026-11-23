@@ -212,13 +212,18 @@ const ICONS = {
 
 // ---------- tema (Apariencia, /theme.css): lo que no se puede hacer solo con CSS ----------
 let THEME = {};
-function applyTheme(t) {
+function applyTheme(t, previewCss) {
   THEME = t || {};
   if (!qs.get('pos')) { stage.classList.remove('top', 'center', 'bottom'); stage.classList.add(['top', 'center', 'bottom'].includes(THEME.position) ? THEME.position : 'center'); }
   if (!qs.get('align')) { stage.classList.remove('left', 'right'); if (['left', 'right'].includes(THEME.align)) stage.classList.add(THEME.align); }
   const link = document.getElementById('eg-theme');
-  const href = '/theme.css?' + (qs.has('themeDraft') ? 'draft=1&' : '') + 'v=' + encodeURIComponent(THEME.version || '');
-  if (link && !link.href.endsWith(href)) link.href = href;
+  if (typeof previewCss === 'string') {
+    const style = document.createElement('style'); style.id = 'eg-theme'; style.textContent = previewCss;
+    link?.replaceWith(style);
+  } else {
+    const href = '/theme.css?' + (qs.has('themeDraft') ? 'draft=1&' : '') + 'v=' + encodeURIComponent(THEME.version || '');
+    if (link && !link.href.endsWith(href)) link.href = href;
+  }
 }
 /** Icono de la casilla: el elegido en el tema para ese tipo o el de serie. */
 function tileIcon(a) {
@@ -249,7 +254,22 @@ const MUTE = qs.has('mute') || !!STILL;
 const GAP = 700;
 
 const queue = [];
-let current = null;
+let current = null, exiting = false, pendingTheme = null, pendingIdentity, identityPending = false;
+// La tarjeta (también su animación de salida) conserva el tema con que empezó.
+// Si llegan varios cambios, el siguiente elemento usa el más reciente.
+function receiveTheme(theme) {
+  if (current || exiting) pendingTheme = theme;
+  else { pendingTheme = null; applyTheme(theme); }
+}
+function receiveIdentity(identity) {
+  if (current || exiting) { pendingIdentity = identity; identityPending = true; }
+  else { identityPending = false; setActiveTheme(identity); }
+}
+function flushTheme() {
+  if (current || exiting) return;
+  if (pendingTheme) { const theme = pendingTheme; pendingTheme = null; applyTheme(theme); }
+  if (identityPending) { identityPending = false; setActiveTheme(pendingIdentity); }
+}
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // resalta números y cantidades (5 subs, 500 bits, 5,00 €), no los que van pegados a letras (V2)
@@ -454,8 +474,8 @@ function hide() {
   node.classList.remove('on'); node.classList.add('out');
   if (bg) { bg.classList.remove('on'); bg.classList.add('out'); }
   if (video) fadeOut(video, outMs);
-  current = null;
-  setTimeout(() => { node.remove(); bg?.remove(); setTimeout(next, GAP); }, outMs);
+  current = null; exiting = true;
+  setTimeout(() => { node.remove(); bg?.remove(); exiting = false; flushTheme(); setTimeout(next, GAP); }, outMs);
 }
 
 function fadeOut(v, ms) {
@@ -464,7 +484,7 @@ function fadeOut(v, ms) {
   requestAnimationFrame(step);
 }
 
-function next() { if (!current && queue.length) show(queue.shift()); }
+function next() { if (!current && !exiting && queue.length) { flushTheme(); show(queue.shift()); } }
 
 // ---------- sonido ----------
 let ctx;
@@ -519,8 +539,13 @@ if (STILL) {
     if (allow) { v.loop = true; try { v.currentTime = 0; } catch { /* aún sin datos */ } v.play().catch(() => {}); }
     else { v.pause(); try { v.currentTime = 0.05; } catch { /* nada */ } }
   });
-  fetch('/api/alerts/' + encodeURIComponent(STILL) + '/sample').then(r => r.json()).then(({ alert, theme }) => {
-    applyTheme(theme);
+  const selected = qs.get('previewTheme');
+  const sampleUrl = selected
+    ? '/api/themes/' + encodeURIComponent(selected) + '/preview?type=' + encodeURIComponent(STILL)
+    : '/api/alerts/' + encodeURIComponent(STILL) + '/sample';
+  fetch(sampleUrl).then(r => { if (!r.ok) throw new Error('preview'); return r.json(); }).then(({ alert, theme, css, activeTheme }) => {
+    setActiveTheme(activeTheme);
+    applyTheme(theme, css);
     if (alert.look) alert.look.textDelayMs = 0;   // la composición final, sin esperar a la entrada del texto
     show(alert);
     // la barra de tiempo de la tarjeta se queda llena
@@ -537,15 +562,21 @@ if (STILL) {
   }).catch(() => {});
 }
 
+// La identidad no forma parte del tema visual ni de su hash.
+function setActiveTheme(theme) {
+  if (theme?.id) document.documentElement.setAttribute('data-tema', theme.id);
+  else document.documentElement.removeAttribute('data-tema');
+}
+
 // ---------- conexión ----------
 if (PREVIEW) stage.insertAdjacentHTML('beforebegin', '<div class="hint" id="hint">Vista previa</div>');
-const es = STILL ? new EventTarget() : new AntenaStream('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay') + (qs.has('themeDraft') ? '&themeDraft=1' : ''));
+const es = STILL ? new EventTarget() : new AntenaStream('/api/stream?client=' + (PREVIEW ? 'preview' : 'overlay') + '&themeInfo=1' + (qs.has('themeDraft') ? '&themeDraft=1' : ''));
 // El panel no debe enviar el ejemplo hasta que el servidor haya admitido este marco.
 if (PREVIEW && !STILL) window.antenaPreviewReady = new Promise(resolve => { es.onopen = resolve; });
 es.addEventListener('alert', e => {
   document.getElementById('hint')?.remove();
   const a = JSON.parse(e.data);
-  if (PREVIEW) { queue.length = 0; if (current) { clearTimeout(current.timer); current.node.remove(); current.bg?.remove(); current = null; } }
+  if (PREVIEW) { queue.length = 0; if (current) { clearTimeout(current.timer); current.node.remove(); current.bg?.remove(); current = null; flushTheme(); } }
   // #66: una alerta agrupada en el motor actualiza la que ya está en cola; nunca se encola dos veces
   if (a.merged) {
     const i = queue.findIndex(x => x.id === a.id);
@@ -564,7 +595,12 @@ es.addEventListener('control', e => {
   }
   if (action === 'clear') { queue.length = 0; hide(); if ('speechSynthesis' in window) speechSynthesis.cancel(); }
 });
-es.addEventListener('theme', e => { const t = JSON.parse(e.data); if (t.draft && !qs.has('themeDraft')) return; applyTheme(t); });
+es.addEventListener('activeTheme', e => receiveIdentity(JSON.parse(e.data)));
+es.addEventListener('theme', e => {
+  const t = JSON.parse(e.data);
+  if (t.draft && !qs.has('themeDraft')) return;
+  receiveTheme(t);
+});
 es.addEventListener('say', e => { if (!PREVIEW) speak(JSON.parse(e.data)); });
 </script>
 </body>

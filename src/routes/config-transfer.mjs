@@ -11,6 +11,8 @@ import { migrateConfig } from '../config-migrations.mjs';
 import { PROTO_KEYS, validatePatch, validateImportedChatVariants } from '../config-schema.mjs';
 import { httpError, credential, credentialParam, cleanUrl } from '../http-util.mjs';
 import { checkZipName, openZip, writeZip, MAX_ZIP_TOTAL, MAX_ZIP_ENTRIES, MAX_SESSION } from '../zip-archive.mjs';
+import { extractLook } from '../theme-looks.mjs';
+import { themeMedia } from '../theme-media.mjs';
 import { isImportableArchive } from '../session.mjs';
 import { serialize } from '../json-file.mjs';
 import { checkInterviewsSection } from '../interviews.mjs';
@@ -25,6 +27,7 @@ const validStream = (id, data) => {
 };
 
 const VERSION = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
+const ZIP_NAME_ERROR = 'Nombre de archivo no permitido en el ZIP.';
 const object = value => value !== null && typeof value === 'object';
 // Retain only local credentials, never the old destination, and only for the same endpoint.
 function withLocalUrlCredentials(previous, imported) {
@@ -39,7 +42,7 @@ function withLocalUrlCredentials(previous, imported) {
   } catch { return imported; }
 }
 
-function portable(value, prefix = '', reject = false) {
+export function portable(value, prefix = '', reject = false) {
   if (!object(value)) return value;
   const out = Array.isArray(value) ? [] : {};
   for (const [key, child] of Object.entries(value)) {
@@ -51,6 +54,62 @@ function portable(value, prefix = '', reject = false) {
     out[key] = portable(clean, p, reject);
   }
   return out;
+}
+
+export const transferAppVersion = VERSION;
+
+// Active data lives in the top-level sections; only inactive saved entries own a look.
+// Ignore direct media references here: unrelated, unportable names must not break full backups.
+function referencedStylesheets(config) {
+  const names = new Set();
+  const collect = look => {
+    if (!look || typeof look !== 'object' || Array.isArray(look)) return;
+    for (const name of themeMedia(look, undefined, undefined, { cssOnly: true }).cssNames)
+      if (/\.css$/i.test(name)) names.add(name);
+  };
+  collect(extractLook(config));
+  const themes = config.themes;
+  if (Array.isArray(themes?.saved)) for (const item of themes.saved)
+    if (item?.id !== themes.activeId) collect(item?.look);
+  return names;
+}
+
+// Shared streamed ZIP admission and lifetime for configuration and individual themes.
+export async function withZipUpload(req, zipUploadLimit, callback, zipOptions) {
+  const limit = Math.min(zipUploadLimit ?? Infinity, 2 * 1024 ** 3 + 32 * 1024 ** 2);
+  const tooLarge = () => httpError(413, 'El archivo ZIP es demasiado grande');
+  if (Number(req.headers['content-length'] || 0) > limit) { req.resume(); throw tooLarge(); }
+  const scratch = await mkdtemp(path.join(tmpdir(), 'antena-config-')); let zip;
+  try {
+    const archive = path.join(scratch, 'upload.zip'), fd = await open(archive, 'wx', 0o600), hash = createHash('sha256'); let size = 0;
+    try {
+      for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+        size += chunk.length; if (size > limit) { req.resume(); throw tooLarge(); }
+        hash.update(chunk); await fd.writeFile(chunk);
+      }
+    } finally { await fd.close(); }
+    const { legacyCssNameError = false, ...openOptions } = zipOptions || {};
+    let legacyError;
+    if (legacyCssNameError) {
+      try { zip = await openZip(archive); }
+      catch (error) {
+        if (error.status !== 400 || error.message !== ZIP_NAME_ERROR) throw error;
+        legacyError = error;
+        // Preserve the original first admission error if the CSS-capable reader also fails.
+        try { zip = await openZip(archive, openOptions); } catch { throw legacyError; }
+      }
+    } else zip = await openZip(archive, openOptions);
+    try {
+      return await callback(zip, hash.digest('hex'), scratch, () => { legacyError = undefined; });
+    } catch (error) {
+      // Until a valid config confirms all CSS references, the old name rejection wins.
+      if (legacyError) throw legacyError;
+      throw error;
+    }
+  } finally {
+    if (zip) await zip.close();
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 function preserveLocal(previous, next, prefix = '') {
@@ -199,12 +258,14 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
       }
     }
     const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+    let stylesheets;
     for (const entry of (await readdir(mediaDir, { withFileTypes: true, encoding: 'buffer' })).sort((a, b) => Buffer.compare(a.name, b.name))) {
       if (entry.isDirectory()) continue;
       let name;
       try { name = decoder.decode(entry.name); } catch { skipped.push(`base64:${entry.name.toString('base64url')} (Nombre no válido en UTF-8)`); continue; }
       if (!entry.isFile()) { skipped.push(`${name} (No es un archivo normal)`); continue; }
-      try { checkZipName(`media/${name}`, seen); }
+      const allowCss = /\.css$/i.test(name) && (stylesheets ||= referencedStylesheets(file.config)).has(name);
+      try { checkZipName(`media/${name}`, seen, { allowCss }); }
       catch (err) { skipped.push(`${name} (${err.message})`); continue; }
       const filename = path.join(mediaDir, name); let info;
       try { info = await lstat(filename); } catch { skipped.push(`${name} (No se pudo leer el archivo)`); continue; }
@@ -229,7 +290,7 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
       }
       res.setHeader('Content-Disposition', `attachment; filename="antena-config-${file.exportedAt.slice(0, 10)}.zip"`);
       res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Type', 'application/zip');
-      await writeZip(res, entries);
+      await writeZip(res, entries, { allowCss: true });
     } finally { if (scratch) await rm(scratch, { recursive: true, force: true }); }
   };
   const exportSkipped = async (file, options = {}) => (await planExport(file, options)).skipped;
@@ -300,22 +361,18 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
       } catch { /* una limpieza fallida no deshace la importación confirmada */ }
     }
   };
-  const importZip = async (req, applying) => {
-    const limit = Math.min(zipUploadLimit ?? Infinity, 2 * 1024 ** 3 + 32 * 1024 ** 2);
-    const tooLarge = () => httpError(413, 'El archivo ZIP es demasiado grande');
-    if (Number(req.headers['content-length'] || 0) > limit) { req.resume(); throw tooLarge(); }
-    const scratch = await mkdtemp(path.join(tmpdir(), 'antena-config-')); let zip, stage;
+  const importZip = async (req, applying) => withZipUpload(req, zipUploadLimit, async (zip, archiveHash, scratch, confirmCss) => {
+    let stage;
     try {
-      const archive = path.join(scratch, 'upload.zip'), fd = await open(archive, 'wx', 0o600), hash = createHash('sha256'); let size = 0;
-      try {
-        for await (const chunk of req.iterator({ destroyOnReturn: false })) {
-          size += chunk.length; if (size > limit) { req.resume(); throw tooLarge(); }
-          hash.update(chunk); await fd.writeFile(chunk);
-        }
-      } finally { await fd.close(); }
-      zip = await openZip(archive); let file;
+      let file;
       try { file = JSON.parse((await zip.readConfig()).toString('utf8')); } catch (e) { if (e.status) throw e; throw httpError(400, 'JSON no válido'); }
       const prepared = prepare(file), state = [], media = { added: [], replaced: [], unchanged: 0 };
+      const cssEntries = zip.entries.filter(e => e.name.startsWith('media/') && /\.css$/i.test(e.name));
+      if (cssEntries.length) {
+        const referenced = referencedStylesheets(file.config);
+        if (cssEntries.some(entry => !referenced.has(entry.name.slice(6)))) throw httpError(400, ZIP_NAME_ERROR);
+      }
+      confirmCss();
       stage = applying ? await mkdtemp(path.join(mediaDir, '.antena-stage-')) : path.join(scratch, 'stage');
       if (!applying) await mkdir(stage, { mode: 0o700 });
       for (const entry of zip.entries.filter(e => e.name.startsWith('media/') && e.name !== 'media/').sort((a, b) => a.name.localeCompare(b.name))) {
@@ -342,17 +399,15 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
         if (currentRetention > 0 && await session.archiveCount() + counts.added > currentRetention) counts.retention = currentRetention;
         streams = { stage: sessionStage, state: sessionState, counts, retention: currentRetention };
       }
-      const token = fingerprint(prepared.before, { archive: hash.digest('hex'), media: state, ...(streams ? { sessions: streams.state } : {}) });
+      const token = fingerprint(prepared.before, { archive: archiveHash, media: state, ...(streams ? { sessions: streams.state } : {}) });
       if (!applying) return { summary: prepared.summary, media, ...(streams ? { sessions: streams.counts } : {}), fingerprint: token };
       if (req.headers['x-config-fingerprint'] !== token) throw conflict();
       const dir = stage; stage = null;
       const apply = () => applyMedia(prepared, media, state, dir, streams);
       return await (streams ? session.withArchiveImport(apply) : apply());
     } finally {
-      if (zip) await zip.close();
       if (stage && applying) await rm(stage, { recursive: true, force: true });
-      await rm(scratch, { recursive: true, force: true });
     }
-  };
-  return { exportFile, exportZip, exportSkipped, importZip };
+  }, { allowCss: true, legacyCssNameError: true });
+  return { exportFile, exportZip, exportSkipped, importZip, fingerprint, hashFile, localHash };
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, mkdir, open, writeFile, readFile, readdir, rm, rename, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, open, writeFile, readFile, readdir, rm, rename, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
@@ -17,7 +17,9 @@ async function fixture(t, options = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'antena-transfer-media-'));
   const data = path.join(root, 'data'), media = path.join(root, 'media');
   await mkdir(data); await mkdir(media);
-  await writeFile(path.join(data, 'config.json'), JSON.stringify({ access: { key: canary }, youtube: { apiKey: canary } }));
+  await writeFile(path.join(data, 'config.json'), JSON.stringify({ configVersion: 3,
+    themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] }, customOverlayCss: {},
+    access: { key: canary }, youtube: { apiKey: canary } }));
   await writeFile(path.join(data, 'secrets.json'), JSON.stringify({ obs: { password: canary } }));
   const app = await createApp({ dataDir: data, mediaDir: media, push: {}, log: () => {}, ...options });
   t.after(async () => { app.teleprompter.stop(); app.viewers.stop(); app.timers.stop(); await app.program.quiesceClose(); app.program.dispose(); await app.closeHttp(); await rm(root, { recursive: true, force: true }); });
@@ -42,8 +44,8 @@ async function fixture(t, options = {}) {
   return { root, data, media, app, base, call, json, postZip, download, snapshot, failWrite };
 }
 
-async function archiveConfig(f, bytes) {
-  const file = path.join(f.root, 'inspect.zip'); await writeFile(file, bytes); const zip = await openZip(file);
+async function archiveConfig(f, bytes, options) {
+  const file = path.join(f.root, 'inspect.zip'); await writeFile(file, bytes); const zip = await openZip(file, options);
   try { return { file: JSON.parse((await zip.readConfig()).toString()), names: zip.entries.map(e => e.name) }; }
   finally { await zip.close(); }
 }
@@ -67,7 +69,7 @@ function rawZip(entries) {
     local.writeUInt32LE(crc, 14); local.writeUInt32LE(compressed.length, 18); local.writeUInt32LE(size, 22); local.writeUInt16LE(name.length, 26);
     cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(0x0314, 4); cd.writeUInt16LE(20, 6); cd.writeUInt16LE(0x800, 8); cd.writeUInt16LE(method, 10);
     cd.writeUInt32LE(crc, 16); cd.writeUInt32LE(compressed.length, 20); cd.writeUInt32LE(size, 24); cd.writeUInt16LE(name.length, 28);
-    cd.writeUInt32LE((0o100644 << 16) >>> 0, 38); cd.writeUInt32LE(offset, 42);
+    cd.writeUInt32LE((e.external ?? (0o100644 << 16)) >>> 0, 38); cd.writeUInt32LE(offset, 42);
     locals.push(local, name, compressed); central.push(cd, name); offset += local.length + name.length + compressed.length;
   }
   const dir = Buffer.concat(central), end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0);
@@ -315,4 +317,186 @@ test('old JSON API export and fingerprinted import remain available', async t =>
   file.body.config.overlay.volume = 0.81; const p = await f.json('POST', '/api/config/import/preview', file.body); assert.equal(p.status, 200);
   const r = await f.call('POST', '/api/config/import', JSON.stringify(file.body), { 'content-type': 'application/json', 'x-config-fingerprint': p.body.fingerprint });
   assert.equal(r.status, 200); assert.equal((await f.json('GET', '/api/config')).body.overlay.volume, 0.81);
+});
+
+test('full backup carries only CSS referenced by the active and saved looks, alongside ordinary media', async t => {
+  const source = await fixture(t), target = await fixture(t);
+  const savedCss = '@import "media/saved%20sheet.CSS?rev=2#part";';
+  const widgetCss = '@import "../media/widget.css";';
+  let r = await source.json('PUT', '/api/config', { overlay: { css: savedCss }, widgets: { chat: { css: widgetCss } }, alerts: { follow: { media: '../unsafe.png' } } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  r = await source.json('POST', '/api/themes/duplicate', { from: 'normal', name: 'Guardado' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const activeCss = '@import url("/media/active.css"); /* url(/media/comment.css) */ .x::after{content:"url(/media/string.css)"} @import "http://example.invalid/media/remote.css";';
+  r = await source.json('PUT', '/api/config', { overlay: { css: activeCss }, widgets: { chat: { css: '' } } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const files = [
+    ['active.css', '@import "/media/transitive.css"; .x{color:red}'], ['saved sheet.CSS', '.saved{color:blue}'],
+    ['widget.css', '.widget{color:green}'], ['normal.png', 'image'], ['unreferenced.css', '.unused{}'],
+    ['comment.css', 'comment'], ['string.css', 'string'], ['remote.css', 'remote'], ['transitive.css', 'transitive'],
+  ];
+  for (const [name, content] of files) await writeFile(path.join(source.media, name), content);
+  for (const [name, content] of [['active.css', 'local'], ['widget.css', '.widget{color:green}'], ['keep.mp3', 'keep']]) await writeFile(path.join(target.media, name), content);
+
+  const beforeSource = await source.snapshot(), exported = await source.download();
+  assert.equal(exported.status, 200); assert.equal(exported.headers.get('content-type'), 'application/zip');
+  assert.equal(exported.headers.get('cache-control'), 'no-store');
+  assert.match(exported.headers.get('content-disposition'), /^attachment; filename="antena-config-\d{4}-\d{2}-\d{2}\.zip"$/);
+  const skipped = ['comment.css', 'remote.css', 'string.css', 'transitive.css', 'unreferenced.css'].map(name => `${name} (Nombre de archivo no permitido en el ZIP.)`);
+  assert.equal(exported.headers.get('x-antena-skipped-media-count'), '5'); assert.deepEqual(skippedHeader(exported), skipped);
+  const report = await source.json('GET', '/api/config/export?skipped=1');
+  assert.equal(report.status, 200); assert.equal(report.headers.get('cache-control'), 'no-store'); assert.deepEqual(report.body, { skipped });
+  assert.deepEqual(await source.snapshot(), beforeSource);
+  const archive = await archiveConfig(source, exported.bytes, { allowCss: true });
+  assert.deepEqual(archive.names, ['config.json', 'media/active.css', 'media/normal.png', 'media/saved sheet.CSS', 'media/widget.css']);
+  assert.equal(archive.file.config.overlay.css, activeCss);
+  const saved = archive.file.config.themes.saved.find(item => item.name === 'Guardado');
+  assert.equal(saved.look.overlay.css, savedCss); assert.equal(saved.look.widgets.chat.css, widgetCss);
+
+  const before = await target.snapshot(), p = await preview(target, exported.bytes);
+  assert.equal(p.status, 200, JSON.stringify(p.body));
+  assert.deepEqual(p.body.media, { added: ['normal.png', 'saved sheet.CSS'], replaced: ['active.css'], unchanged: 1 });
+  assert.match(p.body.fingerprint, /^[a-f0-9]{64}$/); assert.deepEqual(await target.snapshot(), before);
+  r = await apply(target, exported.bytes, p.body.fingerprint); assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.media, p.body.media); assert.deepEqual(await readFile(path.join(target.data, r.body.backup)), before.config);
+  assert.equal(await readFile(path.join(target.media, r.body.mediaBackup, 'active.css'), 'utf8'), 'local');
+  for (const name of ['active.css', 'saved sheet.CSS', 'widget.css', 'normal.png'])
+    assert.deepEqual(await readFile(path.join(target.media, name)), await readFile(path.join(source.media, name)), name);
+  assert.equal(await readFile(path.join(target.media, 'keep.mp3'), 'utf8'), 'keep');
+  const config = (await target.json('GET', '/api/config/export?format=json')).body.config;
+  assert.equal(config.overlay.css, activeCss); assert.equal(config.themes.saved.find(item => item.name === 'Guardado').look.overlay.css, savedCss);
+  const listing = await target.json('GET', '/api/media'); assert.equal(listing.status, 200);
+  assert.deepEqual(listing.body.map(item => item.name).sort(), ['keep.mp3', 'normal.png']);
+  const state = await target.json('GET', '/api/state'); assert.equal(state.status, 200);
+  assert.deepEqual(state.body.media.map(item => item.name).sort(), ['keep.mp3', 'normal.png']);
+});
+
+test('an unreferenced CSS entry is rejected even if the destination references it, without any mutation', async t => {
+  const source = await fixture(t), target = await fixture(t);
+  const file = (await source.json('GET', '/api/config/export?format=json')).body;
+  // Local-only credentials can be preserved into the prepared config, but are not references in the imported file.
+  const setup = await target.json('PUT', '/api/config', { overlay: { css: '@import "media/free.css";', apiKey: { css: '@import "media/free.css";' } } });
+  assert.equal(setup.status, 200, JSON.stringify(setup.body));
+  await writeFile(path.join(target.media, 'sentinel.png'), 'untouched');
+  const bytes = rawZip([{ name: 'config.json', data: JSON.stringify(file) }, { name: 'media/a.png', data: 'new' }, { name: 'media/free.css', data: 'new CSS' }]);
+  const before = await target.snapshot();
+  for (const run of [preview, apply]) {
+    const response = await run(target, bytes);
+    assert.deepEqual({ status: response.status, body: response.body }, { status: 400, body: error('Nombre de archivo no permitido en el ZIP.') });
+    assert.deepEqual(await target.snapshot(), before);
+  }
+});
+
+test('a CSS entry keeps the historical name error ahead of config.json errors', async t => {
+  const f = await fixture(t), file = (await f.json('GET', '/api/config/export?format=json')).body;
+  const bad = structuredClone(file); bad.config.overlay = { volume: 'loud' };
+  const wrongFormat = { ...file, format: 99 }, css = { name: 'media/x.css', data: '.x{}' };
+  const before = await f.snapshot();
+  for (const entries of [
+    [{ name: 'config.json', data: '{not json' }, css],
+    [css, { name: 'config.json', data: '{not json' }],
+    [css, { name: 'media/a.png', data: 'a' }],
+    [{ name: 'config.json', data: JSON.stringify(bad) }, css],
+    [{ name: 'config.json', data: JSON.stringify(wrongFormat) }, css],
+    [{ name: 'config.json', data: JSON.stringify(file), crc: 123 }, css],
+  ]) for (const run of [preview, apply]) {
+    const r = await run(f, rawZip(entries));
+    assert.deepEqual({ status: r.status, body: r.body }, { status: 400, body: error('Nombre de archivo no permitido en el ZIP.') });
+    assert.deepEqual(await f.snapshot(), before);
+  }
+});
+
+test('ZIP entry validation retains the historical first error before CSS reference confirmation', async t => {
+  const f = await fixture(t), file = (await f.json('GET', '/api/config/export?format=json')).body;
+  const config = { name: 'config.json', data: JSON.stringify(file) }, css = { name: 'media/x.css', data: '.x{}' };
+  const oversized = { name: 'media/big.png', data: 'x', size: 300 * 2 ** 20 + 1 };
+  const before = await f.snapshot();
+  const cases = [
+    [[config, css, oversized], 'Nombre de archivo no permitido en el ZIP.'],
+    [[config, oversized, css], 'El archivo de medios supera 300 MB.'],
+    [[config, { name: 'media/a.png', data: 'x' }, { name: 'media/A.png', data: 'x' }, css], 'El ZIP contiene nombres duplicados.'],
+    [[config, { name: 'media/link.png', data: 'x', external: 0o120777 << 16 }, css], 'El ZIP contiene enlaces o tipos de archivo no admitidos.'],
+  ];
+  for (const [entries, message] of cases) for (const run of [preview, apply]) {
+    const r = await run(f, rawZip(entries));
+    assert.deepEqual({ status: r.status, body: r.body }, { status: 400, body: error(message) });
+    assert.deepEqual(await f.snapshot(), before);
+  }
+});
+
+test('hostile CSS names and ZIP entries are rejected before any config, media or counters change', async t => {
+  const f = await fixture(t), config = (await f.json('GET', '/api/config/export?format=json')).body;
+  config.config.overlay.css = '@import "/media/guard.css";';
+  await writeFile(path.join(f.media, 'sentinel.png'), 'untouched');
+  const before = await f.snapshot();
+  const names = ['media/../escape.css', 'media/sub/guard.css', 'media/dir\\guard.css', 'media/.css', 'media/CON.css', 'media/a..css', 'media/bad?.css'];
+  const cases = [
+    ...names.map(name => [{ name, data: 'x' }, 'Nombre de archivo no permitido en el ZIP.']),
+    [{ name: 'media/guard.css', data: 'x', external: 0o120777 << 16 }, 'Nombre de archivo no permitido en el ZIP.'],
+    [{ name: 'media/guard.css', data: 'x', size: 300 * 2 ** 20 + 1 }, 'Nombre de archivo no permitido en el ZIP.'],
+    [{ name: 'media/guard.css', data: 'bad crc', crc: 123 }, 'El CRC del archivo ZIP no coincide.'],
+    [{ name: 'media/guard.css', data: Buffer.alloc(4096, 65), method: 8, size: 10 }, 'El tamaño declarado no coincide con el contenido del ZIP.'],
+  ];
+  for (const [entry, message] of cases) {
+    const bytes = rawZip([{ name: 'config.json', data: JSON.stringify(config) }, { name: 'media/a.png', data: 'new' }, entry]);
+    for (const run of [preview, apply]) {
+      const response = await run(f, bytes);
+      assert.deepEqual({ status: response.status, body: response.body }, { status: 400, body: error(message) }, entry.name);
+      assert.deepEqual(await f.snapshot(), before, entry.name);
+    }
+  }
+});
+
+// Windows may refuse symlinks without privileges; skip only when the OS actually refuses (CI allow-list reason).
+async function trySymlink(t, target, link) {
+  try { await symlink(target, link); return true; }
+  catch (e) { if (['EPERM', 'ENOTSUP'].includes(e.code)) { t.skip(`symlink no soportado en esta plataforma (${e.code})`); return false; } throw e; }
+}
+
+test('referenced CSS export retains media size and regular-file protections', async t => {
+  const f = await fixture(t), setup = await f.json('PUT', '/api/config', { overlay: { css: '@import "media/large.css"; @import "media/link.css";' } });
+  assert.equal(setup.status, 200, JSON.stringify(setup.body));
+  await sparse(path.join(f.media, 'large.css'), 301 * 2 ** 20);
+  const outside = path.join(f.root, 'outside.css'); await writeFile(outside, 'private'); if (!await trySymlink(t, outside, path.join(f.media, 'link.css'))) return;
+  const r = await f.download(); assert.equal(r.status, 200);
+  assert.deepEqual(skippedHeader(r), ['large.css (supera 300 MB)', 'link.css (No es un archivo normal)']);
+  assert.deepEqual((await archiveConfig(f, r.bytes, { allowCss: true })).names, ['config.json']);
+  const report = await f.json('GET', '/api/config/export?skipped=1'); assert.equal(report.status, 200); assert.deepEqual(report.body.skipped, skippedHeader(r));
+  assert.equal(await readFile(outside, 'utf8'), 'private');
+});
+
+test('referenced CSS import refuses a local symlink and preserves its target and state', async t => {
+  const f = await fixture(t), config = (await f.json('GET', '/api/config/export?format=json')).body;
+  config.config.overlay.css = '@import "media/guard.css";';
+  const outside = path.join(f.root, 'outside.css'); await writeFile(outside, 'private'); if (!await trySymlink(t, outside, path.join(f.media, 'guard.css'))) return;
+  const bytes = rawZip([{ name: 'config.json', data: JSON.stringify(config) }, { name: 'media/guard.css', data: 'incoming' }]);
+  const before = await f.snapshot();
+  for (const run of [preview, apply]) {
+    const response = await run(f, bytes);
+    assert.deepEqual({ status: response.status, body: response.body }, { status: 400, body: error('El archivo de medios local no es un archivo normal') });
+    assert.deepEqual(await f.snapshot(), before); assert.equal(await readFile(outside, 'utf8'), 'private');
+  }
+});
+
+test('single-theme export and import still carry and rename CSS and direct media on conflict', async t => {
+  const source = await fixture(t), target = await fixture(t);
+  const setup = await source.json('PUT', '/api/config', { overlay: { css: '@import "/media/sheet.css";' }, alerts: { follow: { media: 'asset.png' } } });
+  assert.equal(setup.status, 200, JSON.stringify(setup.body));
+  for (const [name, contents] of [['sheet.css', 'new CSS'], ['asset.png', 'new image']]) {
+    await writeFile(path.join(source.media, name), contents); await writeFile(path.join(target.media, name), `local ${contents}`);
+  }
+  const download = await fetch(source.base + '/api/themes/normal/export'); assert.equal(download.status, 200);
+  const bytes = Buffer.from(await download.arrayBuffer()), zip = await archiveConfig(source, bytes, { allowCss: true });
+  assert.deepEqual(zip.names, ['config.json', 'media/asset.png', 'media/sheet.css']);
+  const before = await target.snapshot(), p = await target.postZip('/api/themes/import/preview', bytes);
+  assert.equal(p.status, 200, JSON.stringify(p.body)); assert.deepEqual(p.body.media.conflicts, ['asset.png', 'sheet.css']);
+  assert.deepEqual(p.body.warnings, []); assert.deepEqual(await target.snapshot(), before);
+  const r = await target.postZip('/api/themes/import', bytes, p.body.fingerprint);
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.theme.active, false); assert.deepEqual(r.body.warnings, []);
+  const imported = (await target.json('GET', '/api/config/export?format=json')).body.config.themes.saved.find(item => item.id === r.body.theme.id);
+  assert.equal(imported.look.overlay.css, '@import "/media/sheet-1.css";'); assert.equal(imported.look.alerts.follow.media, 'asset-1.png');
+  assert.equal(await readFile(path.join(target.media, 'sheet.css'), 'utf8'), 'local new CSS');
+  assert.equal(await readFile(path.join(target.media, 'sheet-1.css'), 'utf8'), 'new CSS');
+  assert.equal(await readFile(path.join(target.media, 'asset.png'), 'utf8'), 'local new image');
+  assert.equal(await readFile(path.join(target.media, 'asset-1.png'), 'utf8'), 'new image');
 });

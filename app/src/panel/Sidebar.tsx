@@ -2,6 +2,8 @@ import { useLive } from '../lib/live';
 import { Icon, cx } from '../lib/ui';
 import type { IconData } from '../lib/icons';
 import { alertWarnings } from './views/Alertas';
+import { activateTheme, ThemeAvatar, useThemes } from '../lib/themes';
+import { guard } from '../lib/ui';
 
 const P = (d: string) => ['path', { d }] as const;
 // iconos del menú lateral del lienzo (v2 · jerarquía): uno por entrada
@@ -31,6 +33,8 @@ type Item = { href: string; label: string; tail?: any };
 
 export function Sidebar({ current }: { current: string }) {
   const s = useLive(x => x);
+  const { themes, activeId, looks } = useThemes();
+  const activeTheme = themes.find(theme => theme.id === activeId);
   const I = s.interactive || {};
   const meldOn = s.status?.meld?.state === 'conectado';
   // a la derecha de cada entrada, como en el lienzo: un número (en rojo si es algo en marcha) o un punto de aviso
@@ -91,5 +95,14 @@ export function Sidebar({ current }: { current: string }) {
         </ul>
       </div>)}
     </nav>
+    <div className="themes-side-foot" data-theme-sidebar>
+      <p>Tema activo</p>
+      <details className="themes-switcher"><summary><span><ThemeAvatar theme={activeTheme} look={activeTheme && looks[activeTheme.id]} /><b>{activeTheme?.name || 'Cargando…'}</b><span aria-hidden="true">⌃</span></span><small>Cambiar tema desde cualquier vista</small></summary>
+        <div className="themes-popover"><div className="themes-pophead"><b>Cambiar tema</b><span>{themes.length} / 10</span></div>
+          {themes.map(theme => <button key={theme.id} type="button" data-theme-switch={theme.id} onClick={guard(async e => { const details = e.currentTarget.closest('details') as HTMLDetailsElement | null; await activateTheme(theme); details?.removeAttribute('open'); })}>
+            <ThemeAvatar theme={theme} look={looks[theme.id]} /><span>{theme.name}</span>{theme.active && <small>✓ ACTIVO</small>}</button>)}
+          <p>Se aplica al momento en pantalla.</p></div>
+      </details>
+    </div>
   </aside>;
 }

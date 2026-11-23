@@ -29,6 +29,8 @@ const rows = [
   ['borrar_objetivo', { id: 'o 1' }, 'DELETE', '/api/goals/o%201', {}],
   ['borrar_barra', { id: 'o 1', barra: 'b 1' }, 'DELETE', '/api/goals/o%201/bars/b%201', {}],
   ['borrar_overlay', { id: 'x 1' }, 'DELETE', '/api/custom-overlays/x%201', {}],
+  ['borrar_tema', { id: 't 1' }, 'DELETE', '/api/themes/t%201', {}],
+  ['activar_tema', { id: 't 1' }, 'POST', '/api/themes/t%201/activate', {}],
   ['borrar_nota_cronologia', { id: 'n 1' }, 'DELETE', '/api/timeline/n%201', {}],
   ['borrar_atajo', { id: 'a 1' }, 'DELETE', '/api/shortcuts/a%201', {}],
   ['quitar_elemento', { id: 't 1', elemento: 'e 1' }, 'DELETE', '/api/tierlists/t%201/items/e%201', {}],
@@ -58,7 +60,7 @@ const viewerTools = [
 const readTools = [
   'estado', 'ver_config', 'exportar_configuracion', 'listar_alertas', 'ver_alerta', 'historial_alertas',
   'listar_comandos', 'listar_mensajes', 'estado_interactivos', 'listar_preguntas', 'estado_sorteo',
-  'estado_espectadores', 'ver_tema', 'estado_teleprompter', 'listar_archivos', 'leer_chat', 'ver_widgets',
+  'estado_espectadores', 'ver_tema', 'listar_temas', 'estado_teleprompter', 'listar_archivos', 'leer_chat', 'ver_widgets',
   'listar_overlays', 'ver_overlay', 'metricas_directo', 'resumen_directo', 'listar_directos',
   'eventos_directo', 'cronologia', 'listar_atajos', 'fuentes_meld', 'meld_estado', 'programa_estado',
   'entrevista_estado',

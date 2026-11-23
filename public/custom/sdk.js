@@ -29,7 +29,8 @@
  *   'viewers'      Public viewer counts: { twitch: { live, current, peak, record }, youtube: { ... } }.
  *   'widgets'      Widget state: totals, latest, goals, recent, credits, session…
  *   'interactive'  Live questions, tier list, vote and giveaway state.
- *   'theme'        Public theme (the accents and the other variables of /theme.css).
+ *   'theme'        Public theme (the accents and other variables of /theme.css), plus the active
+ *                  saved theme's id and name. antena.state.theme is the latest snapshot.
  *
  * Only messages posted by the parent window (the shell) and marked with `antena: 1` are accepted;
  * anything else in the page (another frame, a stray script, a user event) is ignored.
@@ -45,6 +46,50 @@
   var RUN_TIMEOUT_MS = 15000;
   var runs = {};        // reqId → responde la promesa de antena.run
   var runSeq = 0;
+  var themeStyle = null, pendingSnapshot = null;
+
+  // CSS is always installed as text, never parsed as HTML.
+  function applyThemeCss(css) {
+    var doc = win.document;
+    if (!doc || !doc.head || typeof css !== 'string') return;
+    if (!themeStyle) {
+      themeStyle = doc.getElementById('antena-theme-extra') || doc.createElement('style');
+      themeStyle.id = 'antena-theme-extra';
+    }
+    themeStyle.textContent = css;
+    doc.head.appendChild(themeStyle);
+  }
+  function applyLookCss(css) {
+    var doc = win.document, node = doc && doc.getElementById('antena-look');
+    if (!node || typeof css !== 'string') return;
+    if (node.tagName !== 'STYLE') {
+      var style = doc.createElement('style'); style.id = 'antena-look';
+      style.textContent = css; node.replaceWith(style);
+    } else node.textContent = css;
+  }
+  function setThemeMarker(theme) {
+    if (!win.document) return;
+    var id = theme && theme.id;
+    if (typeof id === 'string' && id) win.document.documentElement.setAttribute('data-tema', id);
+    else win.document.documentElement.removeAttribute('data-tema');
+  }
+  function applyThemeSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object' || !snapshot.theme || typeof snapshot.theme !== 'object' ||
+        typeof snapshot.lookCss !== 'string' || typeof snapshot.extraCss !== 'string') return;
+    // The script loads before the user's CSS. Wait for the reserved final style node to be
+    // parsed, so a late subscription cannot observe a snapshot with the wrong CSS precedence.
+    if (win.document && !win.document.getElementById('antena-theme-extra')) { pendingSnapshot = snapshot; return; }
+    pendingSnapshot = null;
+    applyLookCss(snapshot.lookCss);
+    applyThemeCss(snapshot.extraCss);
+    setThemeMarker(snapshot.theme);
+    state.theme = snapshot.theme;
+    emit('theme', snapshot.theme);
+  }
+  if (win.document) win.document.addEventListener('DOMContentLoaded', function () {
+    if (pendingSnapshot) applyThemeSnapshot(pendingSnapshot);
+    else if (themeStyle) win.document.head.appendChild(themeStyle);
+  });
 
   for (var i = 0; i < EVENTS.length; i++) {
     state[EVENTS[i]] = null;
@@ -117,7 +162,10 @@
       waiting(out.ok === true, out.ok === true ? out.result : (typeof out.error === 'string' && out.error ? out.error : 'No se pudo ejecutar la acción'));
       return;
     }
+    if (data.event === 'themeSnapshot') { applyThemeSnapshot(data.data); return; }
+    if (data.event === 'themeCss') { applyThemeCss(data.data); return; }
     if (typeof data.event !== 'string' || EVENTS.indexOf(data.event) < 0) return;
+    if (data.event === 'theme') setThemeMarker(data.data);
     state[data.event] = data.data;
     emit(data.event, data.data);
   });

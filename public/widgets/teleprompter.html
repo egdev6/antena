@@ -164,6 +164,7 @@ function demoControl(action) {
   apply(snap, true);
 }
 if (DEMO) {
+  connect({}, 'teleprompter'); // marcador sin suscribirse a datos privados de widgets
   const text = ['¡Muy buenas a todos y bienvenidos al directo! Hoy seguimos construyendo criterio. [Saluda al chat]', 'Lo que vamos a ver hoy es cómo organizar el proyecto para que crezca sin dolor.\n\nEmpezamos por la estructura de carpetas y luego pasamos a los tests. [PAUSA · enseñar el repo]'];
   let i = 0;
   const blocks = text.map((tx, k) => { const tokens = []; for (const m of tx.matchAll(/\[([^\]]*)\]|(\n\s*\n)|([^\s[]+)/g)) { if (m[1]) tokens.push({ note: m[1], at: i }); else if (m[2]) tokens.push({ br: 2 }); else tokens.push({ w: m[3], i: i++ }); } return { id: 'b' + k, title: ['Saludo', 'Tema del día'][k], tokens }; });

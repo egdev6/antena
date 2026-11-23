@@ -2,6 +2,8 @@
 // Todo lo que hace el panel pasa por esta API REST, que también usa el servidor MCP (src/mcp.mjs).
 import http from 'node:http';
 import os from 'node:os';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { isDeepStrictEqual } from 'node:util';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import { readdir, stat, mkdir, unlink, rename, readFile, writeFile } from 'node:fs/promises';
@@ -10,7 +12,7 @@ import path from 'node:path';
 import { Store, ROOT, DEFAULT_CONFIG, deepMerge, configPathKeys } from './store.mjs';
 import { MIGRATIONS } from './config-migrations.mjs';
 import { instanceId } from './instance-id.mjs';
-import { validatePatch, validatePath, validateChatVariantsTransition, warnUnknownKeys } from './config-schema.mjs';
+import { validateLook, validatePatch, validatePath, validateChatVariantsTransition, warnUnknownKeys } from './config-schema.mjs';
 import { Bus } from './bus.mjs';
 import { acceptWebSocket } from './ws-stream.mjs';
 import { Twitch } from './twitch.mjs';
@@ -37,7 +39,9 @@ import { registerChatVariantsRoutes } from './routes/chat-variants.mjs';
 import { registerMeldRoutes } from './routes/meld.mjs';
 import { registerViewersRoutes } from './routes/viewers.mjs';
 import { registerThemeRoutes } from './routes/theme.mjs';
+import { registerThemesRoutes } from './routes/themes.mjs';
 import { registerConfigTransferRoutes } from './routes/config-transfer.mjs';
+import { registerThemeTransfer } from './routes/theme-transfer.mjs';
 import { registerAlertRoutes } from './routes/alerts.mjs';
 import { registerCommandRoutes } from './routes/commands.mjs';
 import { registerTimerRoutes } from './routes/timers.mjs';
@@ -45,6 +49,7 @@ import { registerWidgetRoutes } from './routes/widgets.mjs';
 import { registerCreditsRoutes } from './routes/credits.mjs';
 import { setupAutoSession } from './auto-session.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
+import { activeTheme, applyLook, extractLook, isThemedWrite, isThemeTargetRequest } from './theme-looks.mjs';
 import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
 import { FollowerRegistry } from './followers.mjs';
@@ -153,7 +158,19 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Validate private process settings before loading or changing any application state.
   const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs,
     onChange: () => notifyPushStatus(), onSpace: () => requestPushReconciliation(), onCheckpoint: () => notifyPushCheckpoint() });
-  const store = await new Store(dataDir).load();
+  const liveStore = await new Store(dataDir).load();
+  // Existing handlers and services see a detached Store only inside the one targeted request.
+  // No shared config is ever swapped, even while handlers await filesystem reads.
+  const themeContext = new AsyncLocalStorage();
+  const store = new Proxy(liveStore, {
+    get(target, key) {
+      const actual = themeContext.getStore()?.store || target;
+      const value = Reflect.get(actual, key, actual);
+      return typeof value === 'function' ? value.bind(actual) : value;
+    },
+    set(target, key, value) { return Reflect.set(themeContext.getStore()?.store || target, key, value); },
+  });
+  const isProjection = () => !!themeContext.getStore();
   const id = await instanceId(store.dir);
   // la interfaz React si está compilada; si no, la página mínima de las páginas de app
   // (appDist inyectable solo para pruebas: un directorio vacío simula «sin compilar»)
@@ -483,6 +500,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       media: store.config.alerts[type]?.media || '',
     }]));
   };
+  // Composite snapshots keep identity, look and CSS from the same committed config.
+  const overlayThemeSnapshot = (theme = store.config.theme) => ({ theme: publicTheme(theme), activeTheme: activeTheme(store.config.themes) });
+  const customOverlayThemeSnapshot = () => ({ ...overlayThemeSnapshot(), lookCss: themeCss(store.config.theme), customOverlayCss: store.config.customOverlayCss || {} });
   // Once program settings change, include their public snapshot in every config event:
   // the bus coalesces by event type, so a later chat/alert update must not erase it.
   let includeProgramConfig = false;
@@ -490,6 +510,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   let includeScheduleConfig = false;
   // #39: an open dock follows saved layout/module and shortcut changes without reloading.
   let includeDockConfig = false;
+  let includeThemesConfig = false;
   const pushPanelConfig = () => {
     const config = store.publicConfig();
     bus.send('config', {
@@ -498,17 +519,23 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       ...(includeDiscordConfig ? { discord: config.discord } : {}),
       ...(includeScheduleConfig ? { scheduleCalendar: config.scheduleCalendar } : {}),
       ...(includeDockConfig ? { dock: config.dock, shortcuts: config.shortcuts } : {}),
+      ...(includeThemesConfig ? { themes: config.themes } : {}),
     }, ['panel']);
   };
   store.on('change', patch => {
     if (patch.youtube || patch.all) followers.updateYouTubePolling();
     if (patch.theme || patch.all) bus.send('theme', publicTheme(store.config.theme), ['overlay', 'preview', 'widget']);
+    if (patch.themes || patch.all) bus.send('activeTheme', activeTheme(store.config.themes), ['overlay', 'preview', 'widget', 'teleprompter'], 'themeInfo');
+    if (patch.theme || patch.themes || patch.customOverlayCss || patch.all) bus.send('customOverlayTheme', customOverlayThemeSnapshot(), ['widget'], 'customTheme');
+    if (patch.customOverlayCss || patch.all) bus.send('customOverlayCss', store.config.customOverlayCss || {}, ['panel']);
     // The replace-by-type Bus needs a COMPLETE panel rendering snapshot, including
     // after common CSS changes. Keep the three-section config contract unchanged.
     if (patch.theme || patch.alerts || patch.all || patch.overlay === true || Object.hasOwn(patch.overlay || {}, 'css')) {
       bus.send('theme', { ...publicTheme(store.config.theme), alertPreviews: alertPreviews() }, ['panel']);
     }
     if (patch.widgets || patch.all) engine.pushWidgets();
+    if (patch.themes && patch.interactive) pushInteractive();
+    if (patch.themes && patch.timers) bus.send('timers', timers.snapshot(), ['panel']);
     // Overlays editados fuera de sus rutas (PUT /api/config, config/set o el MCP genérico):
     // mismo par de eventos que onChange, para que la vista previa y las capas se recarguen.
     if (patch.customOverlays || patch.all) {
@@ -518,7 +545,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // El Bus sustituye config por tipo: cada envío debe conservar todas sus secciones.
     // Incluye alertas editadas fuera de este panel (MCP, otra ventana, el móvil).
     if (patch.dock || patch.shortcuts) includeDockConfig = true;
-    if (patch.prompter || patch.chat || patch.alerts || patch.dock || patch.shortcuts || patch.all) pushPanelConfig();
+    if (patch.themes) includeThemesConfig = true;
+    if (patch.prompter || patch.chat || patch.alerts || patch.dock || patch.shortcuts || patch.themes || patch.all) pushPanelConfig();
   });
   // la persistencia puede fallar sin emitir 'change' (o estar en vuelo): el panel necesita su propio canal
   store.on('persistence', state => bus.send('persistence', state, ['panel']));
@@ -808,8 +836,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return { patch, hasToken, value };
   };
   const saveScheduleSecret = value => store.setSecret('scheduleCalendar', value ? { token: value } : undefined);
-  route('PUT', '/api/config', async body => {
+  route('PUT', '/api/config', async (body, _, _url, req) => {
     let patch = { ...body };
+    if (Object.hasOwn(patch, 'themes')) throw httpError(400, 'themes: se gestionan con /api/themes');
     const discordChange = Object.hasOwn(patch, 'discord') ? prepareDiscord(patch.discord) : null;
     if (discordChange) patch.discord = discordChange.patch;
     const scheduleChange = Object.hasOwn(patch, 'scheduleCalendar') ? prepareSchedule(patch.scheduleCalendar) : null;
@@ -834,6 +863,11 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // #106: validación por esquema antes de guardar nada; las claves desconocidas se aceptan y se avisan.
     const errors = validatePatch(patch);
     if (errors.length) throw httpError(400, errors.map(e => e.message).join('; '));
+    // Los parches de mapa se fusionan: validar también el resultado completo antes de escribir.
+    if (Object.hasOwn(patch, 'customOverlayCss')) {
+      const [error] = validatePatch({ customOverlayCss: deepMerge(store.config.customOverlayCss || {}, patch.customOverlayCss) });
+      if (error) throw httpError(400, error.message);
+    }
     // La validación anterior conserva las rutas y mensajes históricos de los alias.
     const onlyRecording = patch.meld && typeof patch.meld === 'object' && !Array.isArray(patch.meld)
       && Object.keys(patch.meld).length === 1 && Object.hasOwn(patch.meld, 'recordOnStart');
@@ -847,10 +881,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (error) throw httpError(400, error.message);
     }
     warnUnknownKeys(patch);
-    if (hasOverlays && hasVariants) {
-      // Preparar ambos y aceptarlos juntos antes del primer await: ninguna otra petición
-      // puede cambiar las variantes entre la validación y la mutación del store.
+    const editedTheme = req.headers['x-antena-theme'];
+    const fenced = editedTheme !== undefined && isThemedWrite('PUT', '/api/config', body);
+    if (hasOverlays && (hasVariants || fenced)) {
+      // Preparar y aceptar todo antes del primer await evita que un cambio de tema
+      // (o de variantes) se intercale entre el overlay y el resto de la configuración.
       const overlays = customOverlays.prepareReplacement(overlaysInput);
+      if (fenced && editedTheme !== store.config.themes.activeId)
+        throw httpError(409, 'El tema activo cambió mientras editabas; tus cambios no se guardaron');
       await store.patchConfig({ ...patch, customOverlays: overlays });
       customOverlays.notify(overlays); // la segunda notificación es la de replaceAll
     } else {
@@ -868,6 +906,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   route('POST', '/api/config/set', async ({ path: p, value }) => {
     if (!p) throw httpError(400, 'Falta «path»');
     const keys = configPathKeys(p);
+    if (keys[0] === 'themes') throw httpError(400, 'themes: se gestionan con /api/themes');
     if (keys[0] === 'interviews') throw httpError(400, 'interviews: se gestionan con /api/interviews (o las herramientas MCP), no con la configuración genérica');
     if (keys[0] === 'customOverlays') {
       await customOverlays.setPath(keys.join('.'), value);
@@ -904,6 +943,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     }
     const [error] = validatePath(p, value);
     if (error) throw httpError(400, error.message);
+    if (keys[0] === 'customOverlayCss' && keys.length === 2 && value !== undefined) {
+      const [mapError] = validatePatch({ customOverlayCss: { ...store.config.customOverlayCss, [keys[1]]: value } });
+      if (mapError) throw httpError(400, mapError.message);
+    }
     if (keys[0] === 'obs' && keys[1] === 'passwordSet') throw httpError(400, 'obs.passwordSet: es de solo lectura');
     if (keys.length === 2 && keys[0] === 'obs' && keys[1] === 'password') {
       await setObsPassword(value);
@@ -950,7 +993,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   registerAlertRoutes({ route, store, engine, bus, timers, checkActions, pick, ALERT_KEYS,
     commandOf: id => commandOf(id), timerOf: id => timerOf(id), ackAdmits: id => ackAdmits(id), CLOSING_MESSAGE });
   const commandOf = registerCommandRoutes({ route, store, checkActions, pick, COMMAND_KEYS });
-  const timerOf = registerTimerRoutes({ route, store, timers, checkActions, pick, COMMAND_KEYS });
+  const timerOf = registerTimerRoutes({ route, store, timers, checkActions, pick, COMMAND_KEYS, isProjection });
 
   // ---------- interactivos, chat y Meld: módulos propios (patrón de rutas por áreas, #71/#107/#119) ----------
   // Registra /api/chat* (anuncios incluidos), los interactivos (preguntas, tier lists,
@@ -959,14 +1002,16 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // del resto de rutas se conserva. /api/chat/announce estaba antes de los interactivos
   // y las rutas de Meld después de las de sesión: el orden de resolución no cambia.
   registerChatRoutes({ route, store, engine, twitch, youtube, chat, id8 });
-  registerInteractiveRoutes({ route, store, interactive });
+  registerInteractiveRoutes({ route, store, interactive, isProjection });
   registerViewersRoutes({ route, store, viewers });
   registerTeleprompterRoutes({ route, teleprompter });
   registerInterviewRoutes({ route, interviews });
   registerCustomOverlayRoutes({ route, customOverlays, bus, engine, checkActions, log });
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
-  const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
+  const themeRoutes = registerThemeRoutes({ route, store, listMedia, isProjection, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
     onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });
+  const savedThemes = registerThemesRoutes({ route, store, mediaDir, onActivated: themeRoutes.clearDraft });
+  const themeTransfer = registerThemeTransfer({ route, store, themes: savedThemes, transfer: configTransfer, mediaDir, zipUploadLimit, zipExportLimit });
 
 
   // ---------- archivos: módulo propio (patrón de rutas por áreas, #71/#107) ----------
@@ -1065,6 +1110,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   }
 
   function afterConfig(patch) {
+    if (isProjection()) return;
     if (store.config.program.kind !== selectedProgram) {
       program.stop();
       selectedProgram = store.config.program.kind;
@@ -1225,7 +1271,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   const stream = (res, url) => {
     const c = url.searchParams.get('client');
     const kind = ['panel', 'preview', 'widget', 'teleprompter', 'dock-meters'].includes(c) ? c : 'overlay';
-    bus.addClient(res, kind);
+    // New snapshots are opt-in so legacy SSE/WebSocket clients keep their exact stream.
+    const themeInfo = url.searchParams.get('themeInfo') === '1';
+    const customTheme = kind === 'widget' && url.searchParams.get('customTheme') === '1';
+    bus.addClient(res, kind, { events: [...(themeInfo ? ['themeInfo'] : []), ...(customTheme ? ['customTheme'] : [])] });
     if (kind === 'dock-meters') {
       meterWatchers.add(res);
       updateMeterInterest();
@@ -1249,6 +1298,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (kind !== 'panel' && kind !== 'dock-meters') {
       const d = url.searchParams.has('themeDraft') ? themeRoutes.getDraft() : null;
       res.write(`event: theme\ndata: ${JSON.stringify(d ? { ...publicTheme(d), draft: true } : publicTheme(store.config.theme))}\n\n`);
+      // The original frames above remain first and byte-for-byte unchanged.
+      if (themeInfo) res.write(`event: activeTheme\ndata: ${JSON.stringify(activeTheme(store.config.themes))}\n\n`);
+      if (customTheme) res.write(`event: customOverlayTheme\ndata: ${JSON.stringify(customOverlayThemeSnapshot())}\n\n`);
     }
     pushStatus();
   };
@@ -1311,6 +1363,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         res.setHeader('Cache-Control', 'no-store');
         return json(res, 200, file);
       }
+      const themeExport = req.method === 'GET' && /^\/api\/themes\/([^/]+)\/export$/.exec(url.pathname);
+      if (themeExport) return await withMediaLock(() => themeTransfer.exportZip(res, themeExport[1]));
       if (url.pathname === '/theme.css') {
         res.writeHead(200, { 'Content-Type': MIME['.css'], 'Cache-Control': 'no-store' });
         return res.end(themeCss((url.searchParams.has('draft') && themeRoutes.getDraft()) || store.config.theme));
@@ -1327,15 +1381,57 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         // A portable config includes up to 2.5M overlay characters plus scripts and other sections.
         // Allow 8M JSON characters here only; existing routes retain their 2M limit.
         const transfer = req.method === 'POST' && (url.pathname === '/api/config/import' || url.pathname === '/api/config/import/preview');
-        if (transfer && /^application\/zip(?:\s*;|$)/i.test(req.headers['content-type'] || '')) {
-          const applying = url.pathname === '/api/config/import', run = () => configTransfer.importZip(req, applying);
+        const themeImport = req.method === 'POST' && (url.pathname === '/api/themes/import' || url.pathname === '/api/themes/import/preview');
+        if ((transfer || themeImport) && /^application\/zip(?:\s*;|$)/i.test(req.headers['content-type'] || '')) {
+          const applying = url.pathname === '/api/config/import' || url.pathname === '/api/themes/import';
+          const run = () => themeImport ? themeTransfer.importZip(req, applying, url.searchParams.get('name')) : configTransfer.importZip(req, applying);
           return json(res, 200, await (applying ? withMediaLock(run) : run()));
         }
         const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream' || url.pathname === '/api/program/stream', transfer ? 8e6 : 2e6) : {};
+        // Check after the complete request body and immediately before dispatch, before any route mutates state.
+        const editedTheme = req.headers['x-antena-theme'];
+        if (editedTheme !== undefined && isThemedWrite(req.method, url.pathname, body) && editedTheme !== store.config.themes.activeId)
+          throw httpError(409, 'El tema activo cambió mientras editabas; tus cambios no se guardaron');
         // rutas con parámetros: fn(params, body, url) · sin parámetros: fn(body, _, url)
+        const invoke = () => m.groups ? r.fn(m.groups, body, url, req) : r.fn(body, null, url, req);
+        const requested = req.headers['x-antena-target-theme'];
+        if (requested !== undefined) {
+          let themeId;
+          try { themeId = decodeURIComponent(requested); } catch { throw httpError(400, 'Id de tema no válido'); }
+          const active = liveStore.config.themes.activeId;
+          const item = liveStore.config.themes.saved.find(t => t.id === themeId);
+          if (!item) throw httpError(404, `No existe el tema «${themeId}»`);
+          if (themeId !== active) {
+            if (!isThemeTargetRequest(req.method, url.pathname, body, url))
+              throw httpError(400, 'Solo se pueden editar o leer campos del tema guardado');
+            const originalLook = structuredClone(item.look);
+            const shadow = new Store(liveStore.dir);
+            shadow.config = applyLook(structuredClone(liveStore.config), originalLook);
+            shadow.secrets = liveStore.secrets;
+            shadow.write = async () => {};
+            shadow.emit = () => false;
+            const result = await themeContext.run({ store: shadow }, invoke);
+            if (req.method !== 'GET' && req.method !== 'HEAD') {
+              const current = liveStore.config.themes.saved.find(t => t.id === themeId);
+              if (liveStore.config.themes.activeId !== active || !current || !isDeepStrictEqual(current.look, originalLook))
+                throw httpError(409, 'El tema cambió mientras editabas; tus cambios no se guardaron');
+              const look = extractLook(shadow.config);
+              const [error] = validateLook(look);
+              if (error) throw httpError(400, error.message);
+              const before = structuredClone(liveStore.config), next = structuredClone(before);
+              next.themes.saved.find(t => t.id === themeId).look = look;
+              // Reuse the CAS transaction and atomic writer without consuming restore points.
+              // Suppress ordinary live change listeners; only the panel refreshes.
+              await liveStore.replaceConfigWithBackup(next, before, null, undefined, { backup: false });
+              includeThemesConfig = true;
+              pushPanelConfig();
+            }
+            return json(res, 200, result);
+          }
+        }
         const mediaWrite = req.method === 'POST' && ['/api/media/import', '/api/media/delete'].includes(url.pathname);
-        if (mediaWrite) return json(res, 200, await withMediaLock(() => r.fn(body, null, url, req)));
-        return json(res, 200, await (m.groups ? r.fn(m.groups, body, url, req) : r.fn(body, null, url, req)));
+        if (mediaWrite) return json(res, 200, await withMediaLock(invoke));
+        return json(res, 200, await invoke());
       }
       if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'No existe' });
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Método no permitido' });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
@@ -129,7 +129,8 @@ async function fixture(t, populated) {
   const dataDir = path.join(root, 'data'), mediaDir = path.join(root, 'media'), home = path.join(root, 'home');
   await Promise.all([dataDir, mediaDir, home].map(dir => mkdir(dir)));
   const configFile = path.join(dataDir, 'config.json');
-  const seed = { port: 4617, paused: false, access: { key: 'ODD09_FAKE_ACCESS_ONLY' },
+  const seed = { configVersion: 3, themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] }, customOverlayCss: {},
+    port: 4617, paused: false, access: { key: 'ODD09_FAKE_ACCESS_ONLY' },
     youtube: { apiKey: populated ? API_KEY : '', clientSecret: populated ? CLIENT_SECRET : '' } };
   const seedText = JSON.stringify(seed);
   await writeFile(configFile, seedText, { flag: 'wx' });
@@ -199,6 +200,60 @@ async function fixture(t, populated) {
     }
     t.diagnostic(JSON.stringify({ parentGuard: guard.state, childGuard, childClose, fixture: root }));
   } };
+}
+
+// El arranque v2 sí reescribe: comprueba cada valor original no temático y la copia exacta.
+for (const populated of [true, false]) {
+  test(`v2 migration preserves raw ${populated ? 'fake' : 'empty'} secrets and other non-theme values`, async t => {
+    const root = await mkdtemp(path.join(tmpdir(), 'odd09-migrate-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const original = {
+      port: 4617, paused: true,
+      twitch: { clientId: 'FAKE_CLIENT_á' },
+      youtube: { apiKey: populated ? API_KEY : '', clientSecret: populated ? CLIENT_SECRET : '', clientId: 'FAKE_YOUTUBE_CLIENT', channelId: 'UC_example', pollSeconds: 13 },
+      access: { key: 'ODD09_FAKE_ACCESS_ONLY', lan: false },
+      chat: { twitchChannel: 'fixture_channel', sendTo: 'youtube' },
+      program: { kind: 'obs', autoSession: false, recordOnStart: true },
+      obs: { url: 'ws://127.0.0.1:4457' }, meld: { enabled: false, url: 'ws://127.0.0.1:13377' },
+      discord: { enabled: false, emojiTwitch: '🎉' },
+      scheduleCalendar: { enabled: false, url: 'http://localhost:4400' },
+      sessions: { retention: 7 }, panel: { onboardingDone: true }, dock: { layout: 'tabs' },
+      prompter: { fontSize: 30, css: '/* texto ñ \\n test */' },
+      customOverlays: [{ id: 'fake-overlay', name: 'Prueba', html: '<b>á</b>', css: '.x{}', js: 'void 0;',
+        width: 640, height: 360, transparent: true, requestedPermissions: ['say'], permissions: ['say'], updatedAt: 12, approvedAt: 13, approvedUpdatedAt: 12 }],
+      future: { nested: { fakeToken: 'SYNTHETIC_ONLY_🔒', note: 'comillas " y barra \\' }, values: ['á', 'b'] },
+    };
+    const seed = { configVersion: 2, ...original, theme: { accent: '#123456' } };
+    const bytes = JSON.stringify(seed, null, 1) + '\n', file = path.join(root, 'config.json');
+    await writeFile(file, bytes, { flag: 'wx' });
+    const { Store } = await import('../src/store.mjs');
+    const store = await new Store(root).load(), saved = await readFile(file, 'utf8'), disk = JSON.parse(saved);
+    const assertValues = (expected, actual, field = 'config') => {
+      if (Array.isArray(expected) || expected === null || typeof expected !== 'object') {
+        if (typeof expected === 'string') {
+          assert.equal(typeof actual, 'string', field);
+          assert.deepEqual(Buffer.from(actual, 'utf8'), Buffer.from(expected, 'utf8'), field);
+        } else assert.deepEqual(actual, expected, field);
+        return;
+      }
+      assert.ok(actual && typeof actual === 'object' && !Array.isArray(actual), field);
+      for (const [key, value] of Object.entries(expected)) {
+        assert.ok(Object.hasOwn(actual, key), `${field}.${key}`);
+        assertValues(value, actual[key], `${field}.${key}`);
+      }
+    };
+    assertValues(original, disk);
+    assertValues(original, store.config);
+    assert.equal(disk.configVersion, 3);
+    assert.deepEqual(disk.themes, { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal' }] });
+    assert.equal(disk.theme.accent, '#123456');
+    const backups = (await readdir(root)).filter(name => name.startsWith('config.backup-'));
+    assert.equal(backups.length, 1);
+    assert.equal(await readFile(path.join(root, backups[0]), 'utf8'), bytes);
+    await new Store(root).load();
+    assert.equal(await readFile(file, 'utf8'), saved, 'v3 reload must not rewrite');
+    assert.deepEqual((await readdir(root)).filter(name => name.startsWith('config.backup-')), backups);
+  });
 }
 
 for (const populated of [true, false]) {

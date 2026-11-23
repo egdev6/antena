@@ -1,8 +1,4 @@
-// #157 Apariencia: carrera entre el borrador y un punto de partida, y fallo del guardado (guardado manual, v2).
-// Por la interfaz pública (panel React en Chrome): cambiar un color y, antes del
-// debounce, aplicar un punto de partida debe dejar el tema del preset en el
-// servidor; y si PUT /api/theme falla, el panel vuelve al último tema guardado
-// y avisa con un toast de error.
+// #157: import wins over a pending draft; failed manual saves preserve the draft.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -17,7 +13,7 @@ const setNativeValue = `(el, v) => {
   el.dispatchEvent(el.tagName === 'SELECT' ? new Event('change', { bubbles: true }) : new Event('input', { bubbles: true }));
 }`;
 
-test('apariencia: el punto de partida gana a un cambio pendiente del autoguardado', { timeout: 120000 }, async t => {
+test('apariencia: la importación gana a un borrador pendiente', { timeout: 120000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
   const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-apariencia-157-'));
@@ -28,37 +24,34 @@ test('apariencia: el punto de partida gana a un cambio pendiente del autoguardad
   const temaGuardado = async () => (await fetch(`${base}/api/theme`).then(r => r.json())).theme;
   let chrome;
   try {
-    chrome = await openChromePage(bin, `${base}/#/apariencia`);
+    chrome = await openChromePage(bin, `${base}/#/apariencia/color`);
     const c = chrome.cdp;
     const ev = expr => import('./helpers/chrome-dom.mjs').then(m => m.evaluateChrome(c, expr));
-    await waitDom(c, `!!document.querySelector('#ap-preset')`, { timeoutMs: 12000 });
-    await ev(`window.confirm = () => true`);
-    // el servidor tarda 800 ms en contestar al preset: más que el debounce de 350 ms,
-    // así que el autoguardado dispara mientras la petición sigue en vuelo (#164)
+    await waitDom(c, `!!document.querySelector('#ap-color')`, { timeoutMs: 12000 });
+    await ev(`window.prompt = () => '{"accent":"#00D1FF"}'`);
+    // Retener la respuesta de importación más que el debounce del borrador (#164).
     await ev(`(() => {
       const real = window.fetch;
       window.fetch = async (url, opts) => {
         const r = await real(url, opts);
-        if (String(url).includes('/api/theme/preset')) await new Promise(res => setTimeout(res, 800));
+        if (String(url).includes('/api/theme/import')) await new Promise(res => setTimeout(res, 800));
         return r;
       };
     })()`);
 
-    // sin esperar el debounce, se aplica el punto de partida «cian»
+    // Sin esperar el debounce, se importa otro aspecto.
     await ev(`(() => {
       const input = document.querySelector('.ap-color input.mono');
       (${setNativeValue})(input, '#00FF00');
     })()`);
     await ev(`(() => {
-      const sel = document.querySelector('#ap-preset');
-      (${setNativeValue})(sel, 'cian');
+      [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Importar').click();
     })()`);
     await waitDom(c, `true`, { timeoutMs: 1200 });
-    // deja pasar el debounce (350 ms), el autoguardado y la respuesta lenta del preset (800 ms)
+    // Deja pasar el debounce y la respuesta lenta de importación.
     await new Promise(r => setTimeout(r, 1800));
-    const trasPreset = await temaGuardado();
-    assert.equal(trasPreset.accent, '#00D1FF',
-      `el preset «cian» gana al cambio pendiente (guardado ${trasPreset.accent})`);
+    const imported = await temaGuardado();
+    assert.equal(imported.accent, '#00D1FF', 'la importación gana al borrador pendiente');
   } finally {
     await closeAll(() => chrome && closeChrome(chrome), () => new Promise(r => app.server.close(r)));
   }
@@ -75,14 +68,14 @@ test('apariencia: si «Guardar» falla, avisa y el borrador sigue; «Descartar»
   const temaGuardado = async () => (await fetch(`${base}/api/theme`).then(r => r.json())).theme;
   let chrome;
   try {
-    chrome = await openChromePage(bin, `${base}/#/apariencia`);
+    chrome = await openChromePage(bin, `${base}/#/apariencia/color`);
     const c = chrome.cdp;
     // sin reconexión de SSE: un reintento recargaría el tema del servidor y enmascararía
     // la reversión; así la única vía de volver al tema guardado es la del panel
     await c.send('Network.enable');
     await c.send('Network.setBlockedURLs', { urls: ['/api/stream*'] });
     const ev = expr => import('./helpers/chrome-dom.mjs').then(m => m.evaluateChrome(c, expr));
-    await waitDom(c, `!!document.querySelector('#ap-preset')`, { timeoutMs: 12000 });
+    await waitDom(c, `!!document.querySelector('#ap-color')`, { timeoutMs: 12000 });
     const ultimo = (await temaGuardado()).accent;
     // PUT /api/theme falla (el borrador, PUT /api/theme/draft, sí funciona)
     await ev(`(() => {
