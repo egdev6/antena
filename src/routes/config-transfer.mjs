@@ -39,7 +39,7 @@ function withLocalUrlCredentials(previous, imported) {
   } catch { return imported; }
 }
 
-function portable(value, prefix = '', reject = false) {
+export function portable(value, prefix = '', reject = false) {
   if (!object(value)) return value;
   const out = Array.isArray(value) ? [] : {};
   for (const [key, child] of Object.entries(value)) {
@@ -51,6 +51,30 @@ function portable(value, prefix = '', reject = false) {
     out[key] = portable(clean, p, reject);
   }
   return out;
+}
+
+export const transferAppVersion = VERSION;
+
+// Shared streamed ZIP admission and lifetime for configuration and individual themes.
+export async function withZipUpload(req, zipUploadLimit, callback, zipOptions) {
+  const limit = Math.min(zipUploadLimit ?? Infinity, 2 * 1024 ** 3 + 32 * 1024 ** 2);
+  const tooLarge = () => httpError(413, 'El archivo ZIP es demasiado grande');
+  if (Number(req.headers['content-length'] || 0) > limit) { req.resume(); throw tooLarge(); }
+  const scratch = await mkdtemp(path.join(tmpdir(), 'antena-config-')); let zip;
+  try {
+    const archive = path.join(scratch, 'upload.zip'), fd = await open(archive, 'wx', 0o600), hash = createHash('sha256'); let size = 0;
+    try {
+      for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+        size += chunk.length; if (size > limit) { req.resume(); throw tooLarge(); }
+        hash.update(chunk); await fd.writeFile(chunk);
+      }
+    } finally { await fd.close(); }
+    zip = await openZip(archive, zipOptions);
+    return await callback(zip, hash.digest('hex'), scratch);
+  } finally {
+    if (zip) await zip.close();
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 function preserveLocal(previous, next, prefix = '') {
@@ -300,20 +324,10 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
       } catch { /* una limpieza fallida no deshace la importación confirmada */ }
     }
   };
-  const importZip = async (req, applying) => {
-    const limit = Math.min(zipUploadLimit ?? Infinity, 2 * 1024 ** 3 + 32 * 1024 ** 2);
-    const tooLarge = () => httpError(413, 'El archivo ZIP es demasiado grande');
-    if (Number(req.headers['content-length'] || 0) > limit) { req.resume(); throw tooLarge(); }
-    const scratch = await mkdtemp(path.join(tmpdir(), 'antena-config-')); let zip, stage;
+  const importZip = async (req, applying) => withZipUpload(req, zipUploadLimit, async (zip, archiveHash, scratch) => {
+    let stage;
     try {
-      const archive = path.join(scratch, 'upload.zip'), fd = await open(archive, 'wx', 0o600), hash = createHash('sha256'); let size = 0;
-      try {
-        for await (const chunk of req.iterator({ destroyOnReturn: false })) {
-          size += chunk.length; if (size > limit) { req.resume(); throw tooLarge(); }
-          hash.update(chunk); await fd.writeFile(chunk);
-        }
-      } finally { await fd.close(); }
-      zip = await openZip(archive); let file;
+      let file;
       try { file = JSON.parse((await zip.readConfig()).toString('utf8')); } catch (e) { if (e.status) throw e; throw httpError(400, 'JSON no válido'); }
       const prepared = prepare(file), state = [], media = { added: [], replaced: [], unchanged: 0 };
       stage = applying ? await mkdtemp(path.join(mediaDir, '.antena-stage-')) : path.join(scratch, 'stage');
@@ -342,17 +356,15 @@ export function registerConfigTransferRoutes({ route, store, customOverlays, aft
         if (currentRetention > 0 && await session.archiveCount() + counts.added > currentRetention) counts.retention = currentRetention;
         streams = { stage: sessionStage, state: sessionState, counts, retention: currentRetention };
       }
-      const token = fingerprint(prepared.before, { archive: hash.digest('hex'), media: state, ...(streams ? { sessions: streams.state } : {}) });
+      const token = fingerprint(prepared.before, { archive: archiveHash, media: state, ...(streams ? { sessions: streams.state } : {}) });
       if (!applying) return { summary: prepared.summary, media, ...(streams ? { sessions: streams.counts } : {}), fingerprint: token };
       if (req.headers['x-config-fingerprint'] !== token) throw conflict();
       const dir = stage; stage = null;
       const apply = () => applyMedia(prepared, media, state, dir, streams);
       return await (streams ? session.withArchiveImport(apply) : apply());
     } finally {
-      if (zip) await zip.close();
       if (stage && applying) await rm(stage, { recursive: true, force: true });
-      await rm(scratch, { recursive: true, force: true });
     }
-  };
-  return { exportFile, exportZip, exportSkipped, importZip };
+  });
+  return { exportFile, exportZip, exportSkipped, importZip, fingerprint, hashFile, localHash };
 }

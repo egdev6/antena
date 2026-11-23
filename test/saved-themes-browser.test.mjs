@@ -37,6 +37,52 @@ const active = async call => (await call('GET', '/api/themes')).themes.find(x =>
 const click = (c, selector) => ev(c, `document.querySelector(${JSON.stringify(selector)}).click(); true`);
 const setValue = (c, selector, value) => ev(c, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); const proto = el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', {bubbles:true})); return true; })()`);
 
+test('Apariencia: export the selected theme and preview an import before creating it inactive', { timeout: 120000 }, async t => {
+  const f = await fixture(t); if (!f) return;
+  const other = (await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Invierno' })).theme;
+  const panel = await f.open('/#/apariencia');
+  await waitDom(panel, `!!document.querySelector('[data-theme-row="${other.id}"]')`, { timeoutMs: 20000 });
+  await click(panel, `[data-theme-row="${other.id}"]`);
+  await waitDom(panel, `!!document.querySelector('[data-theme-export]')`);
+  await ev(panel, `(() => { const old = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function() { window.__themeExportUrl = this.href; }; window.__restoreThemeClick = () => { HTMLAnchorElement.prototype.click = old; }; return true; })()`);
+  await click(panel, '[data-theme-export]');
+  await waitDom(panel, `!!window.__themeExportUrl`);
+  assert.equal(await ev(panel, `new URL(window.__themeExportUrl).pathname`), `/api/themes/${other.id}/export`);
+  await ev(panel, `window.__restoreThemeClick(); true`);
+  await ev(panel, `(async () => { const response = await fetch(window.__themeExportUrl); const blob = await response.blob(); const files = new DataTransfer(); files.items.add(new File([blob], 'tema.zip', {type:'application/zip'})); const input = document.querySelector('[data-theme-import-file]'); input.files = files.files; input.dispatchEvent(new Event('change', {bubbles:true})); return true; })()`);
+  await waitDom(panel, `!!document.querySelector('[role=dialog] [data-theme-import-name]')`);
+  assert.equal(await ev(panel, `document.querySelector('[data-theme-import-name]').value`), 'Invierno (2)');
+  assert.equal(await ev(panel, `document.querySelector('[role=dialog]').textContent.includes('medios')`), true);
+  await setValue(panel, '[data-theme-import-name]', 'Invierno importado');
+  await click(panel, '[data-theme-import-submit]');
+  await waitDom(panel, `!!document.querySelector('[data-theme-row="invierno-importado"]') && !document.querySelector('[role=dialog]')`);
+  const list = (await f.call('GET', '/api/themes')).themes;
+  assert.equal(list.find(item => item.name === 'Invierno importado').active, false); assert.equal(await active(f.call), 'normal');
+});
+
+test('imported relative CSS media resolves in the real overlay and chat after a collision', { timeout: 120000 }, async t => {
+  const source = await fixture(t), target = await fixture(t); if (!source || !target) return;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  for (const [f, bytes] of [[source, png], [target, Buffer.from('local collision')]]) {
+    const upload = await fetch(f.base + '/api/media/upload?name=css.png', { method: 'POST', body: bytes }); assert.equal(upload.status, 200);
+  }
+  await source.call('PUT', '/api/config', { overlay: { css: '.alert{background-image:url(media/css.png)}' }, widgets: { chat: { css: '.msg{background-image:url(../media/css.png)}' } } });
+  const exported = await fetch(source.base + '/api/themes/normal/export'); assert.equal(exported.status, 200);
+  const archive = Buffer.from(await exported.arrayBuffer()).toString('base64');
+  const panel = await target.open('/#/apariencia');
+  await waitDom(panel, `!!document.querySelector('[data-theme-import-file]')`, { timeoutMs: 20000 });
+  await ev(panel, `(() => { const bytes = Uint8Array.from(atob(${JSON.stringify(archive)}), c => c.charCodeAt(0)); const files = new DataTransfer(); files.items.add(new File([bytes], 'tema.zip', {type:'application/zip'})); const input = document.querySelector('[data-theme-import-file]'); input.files = files.files; input.dispatchEvent(new Event('change', {bubbles:true})); return true; })()`);
+  await waitDom(panel, `!!document.querySelector('[data-theme-import-submit]')`);
+  await click(panel, '[data-theme-import-submit]');
+  await waitDom(panel, `!!document.querySelector('[data-theme-row="normal-2"]') && !document.querySelector('[role=dialog]')`);
+  await target.call('POST', '/api/themes/normal-2/activate');
+  const overlay = await target.open('/overlay?still=follow'), chat = await target.open('/widget/chat?demo');
+  for (const [page, selector] of [[overlay, '.alert.on'], [chat, '.msg']]) {
+    await waitDom(page, `(() => { const node = document.querySelector(${JSON.stringify(selector)}); return !!node && getComputedStyle(node).backgroundImage.includes('/media/css-1.png'); })()`);
+  }
+  const copied = await fetch(target.base + '/media/css-1.png'); assert.equal(copied.status, 200); assert.deepEqual(Buffer.from(await copied.arrayBuffer()), png);
+});
+
 test('Apariencia: select without activating, activate, duplicate, edit and delete', { timeout: 120000 }, async t => {
   const f = await fixture(t); if (!f) return;
   await f.call('PUT', '/api/theme', { accent: '#123456' });

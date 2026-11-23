@@ -33,12 +33,12 @@ const fail = key => { throw httpError(400, errors[key]); };
 const u16 = (b, n) => b.readUInt16LE(n), u32 = (b, n) => b.readUInt32LE(n);
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
-export function checkZipName(name, seen = new Set()) {
+export function checkZipName(name, seen = new Set(), { allowCss = false } = {}) {
   const base = name.startsWith('media/') ? name.slice(6) : '';
   if (name !== 'config.json' && name !== 'media/' && !SESSION_NAME.test(name) &&
       (!base || base.lastIndexOf('.') === 0 || name.includes('..') || base.includes('/') || base.length > 255 ||
        /[\\\x00-\x1f\x7f<>:"|?*]/.test(base) || /[. ]$/.test(base) ||
-       /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(base) || !mediaKind(base))) fail('name');
+       /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(base) || (!mediaKind(base) && !(allowCss && /\.css$/i.test(base))))) fail('name');
   const key = name.normalize('NFC').toLowerCase();
   if (seen.has(key)) fail('duplicate');
   seen.add(key);
@@ -71,7 +71,7 @@ async function readAt(fd, pos, length, end) {
 }
 
 // Data descriptors permiten CRC y tamaños calculados mientras se comprime.
-export async function writeZip(dest, entries) {
+export async function writeZip(dest, entries, { allowCss = false } = {}) {
   let offset = 0, total = 0; const seen = new Set(), central = [];
   const onError = () => {}; dest.on('error', onError);
   const send = async b => {
@@ -84,7 +84,7 @@ export async function writeZip(dest, entries) {
     // Preflight antes de producir bytes, incluso para archivos dispersos > 4 GiB.
     const inputs = [];
     for (const { name, source } of entries) {
-      checkZipName(name, seen);
+      checkZipName(name, seen, { allowCss });
       const filename = source && typeof source === 'object' && !Buffer.isBuffer(source) ? source.path : null;
       const data = filename ? null : Buffer.isBuffer(source) ? source : Buffer.from(source);
       const size = filename ? (await stat(filename)).size : data.length;
@@ -130,7 +130,7 @@ export async function writeZip(dest, entries) {
   finally { dest.off('error', onError); }
 }
 
-export async function openZip(filename) {
+export async function openZip(filename, { allowCss = false } = {}) {
   const fd = await open(filename, 'r');
   try {
     const length = (await fd.stat()).size, tailStart = Math.max(0, length - 65557);
@@ -158,7 +158,7 @@ export async function openZip(filename) {
       const variable = await readAt(fd, cursor + 46, nameLen + extraLen + commentLen, end);
       const nameBytes = variable.subarray(0, nameLen); let name;
       try { name = decoder.decode(nameBytes); } catch { fail('name'); }
-      checkZipName(name, seen); checkSize(name, size); total += size;
+      checkZipName(name, seen, { allowCss }); checkSize(name, size); total += size;
       if (total > MAX_ZIP_TOTAL) fail('total');
       checkExtra(variable.subarray(nameLen, nameLen + extraLen));
       const type = (attr >>> 16) & 0o170000, dir = name === 'media/';

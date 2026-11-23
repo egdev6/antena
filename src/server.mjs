@@ -39,6 +39,7 @@ import { registerViewersRoutes } from './routes/viewers.mjs';
 import { registerThemeRoutes } from './routes/theme.mjs';
 import { registerThemesRoutes } from './routes/themes.mjs';
 import { registerConfigTransferRoutes } from './routes/config-transfer.mjs';
+import { registerThemeTransfer } from './routes/theme-transfer.mjs';
 import { registerAlertRoutes } from './routes/alerts.mjs';
 import { registerCommandRoutes } from './routes/commands.mjs';
 import { registerTimerRoutes } from './routes/timers.mjs';
@@ -995,7 +996,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
   const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
     onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });
-  registerThemesRoutes({ route, store, mediaDir, onActivated: themeRoutes.clearDraft });
+  const savedThemes = registerThemesRoutes({ route, store, mediaDir, onActivated: themeRoutes.clearDraft });
+  const themeTransfer = registerThemeTransfer({ route, store, themes: savedThemes, transfer: configTransfer, mediaDir, zipUploadLimit, zipExportLimit });
 
 
   // ---------- archivos: módulo propio (patrón de rutas por áreas, #71/#107) ----------
@@ -1346,6 +1348,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         res.setHeader('Cache-Control', 'no-store');
         return json(res, 200, file);
       }
+      const themeExport = req.method === 'GET' && /^\/api\/themes\/([^/]+)\/export$/.exec(url.pathname);
+      if (themeExport) return await withMediaLock(() => themeTransfer.exportZip(res, themeExport[1]));
       if (url.pathname === '/theme.css') {
         res.writeHead(200, { 'Content-Type': MIME['.css'], 'Cache-Control': 'no-store' });
         return res.end(themeCss((url.searchParams.has('draft') && themeRoutes.getDraft()) || store.config.theme));
@@ -1362,8 +1366,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
         // A portable config includes up to 2.5M overlay characters plus scripts and other sections.
         // Allow 8M JSON characters here only; existing routes retain their 2M limit.
         const transfer = req.method === 'POST' && (url.pathname === '/api/config/import' || url.pathname === '/api/config/import/preview');
-        if (transfer && /^application\/zip(?:\s*;|$)/i.test(req.headers['content-type'] || '')) {
-          const applying = url.pathname === '/api/config/import', run = () => configTransfer.importZip(req, applying);
+        const themeImport = req.method === 'POST' && (url.pathname === '/api/themes/import' || url.pathname === '/api/themes/import/preview');
+        if ((transfer || themeImport) && /^application\/zip(?:\s*;|$)/i.test(req.headers['content-type'] || '')) {
+          const applying = url.pathname === '/api/config/import' || url.pathname === '/api/themes/import';
+          const run = () => themeImport ? themeTransfer.importZip(req, applying, url.searchParams.get('name')) : configTransfer.importZip(req, applying);
           return json(res, 200, await (applying ? withMediaLock(run) : run()));
         }
         const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream' || url.pathname === '/api/program/stream', transfer ? 8e6 : 2e6) : {};

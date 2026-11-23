@@ -68,7 +68,7 @@ export function registerThemesRoutes({ route, store, mediaDir, onActivated = () 
     const [error] = validatePatch({ themes });
     if (error) throw httpError(400, error.message);
   };
-  const add = async (name, look, avatarInput) => {
+  const add = async (name, look, avatarInput, options = {}) => {
     if (store.config.themes.saved.length >= MAX_THEMES) throw httpError(409, 'Como máximo se pueden guardar 10 temas');
     name = nameOf(name);
     checkLook(look);
@@ -81,8 +81,22 @@ export function registerThemesRoutes({ route, store, mediaDir, onActivated = () 
     const id = slugOf(name, themes.saved);
     const next = { ...themes, saved: [...themes.saved, { id, name, look: structuredClone(look), ...(avatar && { avatar }) }] };
     validate(next);
-    await store.patchConfig({ themes: next });
+    if (options.transactional) {
+      const before = options.expected || structuredClone(store.config);
+      await store.replaceConfigWithBackup({ ...before, themes: next }, before, { themes: true }, options.onCommit);
+    } else await store.patchConfig({ themes: next });
     return { theme: list().find(t => t.id === id) };
+  };
+  const ensureCapacity = () => {
+    if (store.config.themes.saved.length >= MAX_THEMES) throw httpError(409, 'Como máximo se pueden guardar 10 temas');
+  };
+  const suggestName = value => {
+    const name = nameOf(value), used = new Set(store.config.themes.saved.map(item => item.name.toLowerCase()));
+    if (!used.has(name.toLowerCase())) return name;
+    for (let n = 2; ; n++) {
+      const suffix = ` (${n})`, candidate = name.slice(0, 40 - suffix.length).trimEnd() + suffix;
+      if (!used.has(candidate.toLowerCase())) return candidate;
+    }
   };
 
   route('GET', '/api/themes', async () => ({ themes: list() }));
@@ -166,4 +180,5 @@ export function registerThemesRoutes({ route, store, mediaDir, onActivated = () 
   // Stream Deck uses the same activation transaction and errors as the panel and MCP.
   route('GET', '/sd/tema/:id', activate);
   route('POST', '/sd/tema/:id', activate);
+  return { find, lookOf, add, ensureCapacity, suggestName, nameOf };
 }

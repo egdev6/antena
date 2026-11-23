@@ -38,7 +38,7 @@ test('MCP themes: metadata, duplicate, rename, activate, delete and generic-writ
     files: (await readdir(root)).filter(n => n === 'config.json' || n.startsWith('config.backup-')).sort(),
     persistence: (await fetch(base + '/api/status').then(r => r.json())).persistence });
   const tools = Object.fromEntries((await rpc('tools/list')).result.tools.map(tool => [tool.name, tool]));
-  for (const name of ['listar_temas', 'duplicar_tema', 'renombrar_tema', 'activar_tema', 'borrar_tema']) assert.ok(tools[name], name);
+  for (const name of ['listar_temas', 'duplicar_tema', 'renombrar_tema', 'activar_tema', 'borrar_tema', 'exportar_tema', 'importar_tema_guardado']) assert.ok(tools[name], name);
   assert.equal(tools.listar_temas.annotations.readOnlyHint, true);
   assert.match(tools.tema_de_partida.description, /único id disponible es plataforma/);
   assert.doesNotMatch(tools.tema_de_partida.description, /cian|esmeralda|cristal/i);
@@ -93,5 +93,14 @@ test('MCP themes: metadata, duplicate, rename, activate, delete and generic-writ
   before = await snapshot(); rejected = await raw('activar_tema', { id: 'missing', confirmar: true });
   assert.equal(rejected.isError, true); assert.match(rejected.content[0].text, /No existe el tema/);
   assert.deepEqual(await snapshot(), before);
+  const ruta = path.join(root, 'tema.zip');
+  const exported = await call('exportar_tema', { id: 'normal', ruta });
+  assert.equal(exported.ruta, ruta); assert.equal((await readFile(ruta)).readUInt32LE(0), 0x04034b50);
+  before = await snapshot();
+  const preview = await call('importar_tema_guardado', { ruta });
+  assert.equal(preview.name, 'Normal'); assert.equal(preview.suggestedName, 'Normal (2)'); assert.deepEqual(await snapshot(), before);
+  const imported = await call('importar_tema_guardado', { ruta, nombre: 'Desde MCP', confirmar: true });
+  assert.equal(imported.theme.name, 'Desde MCP'); assert.equal(imported.theme.active, false);
+  assert.equal((await call('listar_temas')).themes.find(item => item.active).id, 'normal');
   assert.equal(pending.size, 0);
 });
