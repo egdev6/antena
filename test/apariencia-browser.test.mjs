@@ -43,7 +43,7 @@ test('apariencia: la vista previa muestra una alerta de ejemplo al cargar', { ti
   const base = `http://127.0.0.1:${proxy.address().port}`;
   let chrome;
   try {
-    chrome = await openChromePage(bin, `${base}/#/apariencia`);
+    chrome = await openChromePage(bin, `${base}/#/apariencia/color`);
     const c = chrome.cdp;
     // la vista carga con su marco de previsualización de alertas
     await waitDom(c, `!!document.querySelector('.ap-preview .preview iframe[src*="/overlay?preview"]')`, { timeoutMs: 12000 });

@@ -59,7 +59,7 @@ const layout = chrome => evaluateChrome(chrome.cdp, `(() => {
 function assertLayout(actual, width, height, wide) {
   assert.deepEqual(actual.viewport, [width, height]);
   if (!wide) {
-    assert.deepEqual(actual.tabs, ['Control', 'Audio', 'Interactivos']);
+    assert.deepEqual(actual.tabs, ['Control', 'Audio', 'Interactivos', 'Tema']);
     assert.deepEqual(actual.selected, ['Control']);
     assert.deepEqual(actual.panels, ['d-p-control']);
     assert.deepEqual(actual.columns, []);
@@ -153,7 +153,7 @@ test('dock breakpoint: initial viewport and live resize', { timeout: 120000 }, a
     await waitDom(chrome.cdp, `document.querySelector('#d-t-audio')?.getAttribute('aria-selected') === 'true' && !document.querySelector('#d-p-audio').hidden`);
     const actual = await layout(chrome);
     assert.deepEqual(actual.viewport, [767, 700]);
-    assert.deepEqual(actual.tabs, ['Control', 'Audio', 'Interactivos']);
+    assert.deepEqual(actual.tabs, ['Control', 'Audio', 'Interactivos', 'Tema']);
     assert.deepEqual(actual.selected, ['Audio']);
     assert.deepEqual(actual.panels, ['d-p-audio']);
     assert.deepEqual(actual.columns, []);

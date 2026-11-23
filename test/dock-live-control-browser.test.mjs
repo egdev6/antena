@@ -125,7 +125,7 @@ test('dock ancho: columnas, escenas emparejadas, al aire y nombre largo recortad
   const c = chrome.cdp;
 
   await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && !!document.querySelector('.d-scene')`, { timeoutMs: 15000 });
-  assert.equal(await dom(chrome, `document.querySelectorAll('[role="tablist"]').length`), 1, 'solo las subpestañas de interactivos');
+  assert.equal(await dom(chrome, `document.querySelectorAll('[role="tablist"]').length`), 2, 'secciones y subpestañas de interactivos');
   assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-col-h')).map(h => h.firstChild.textContent.trim())`), ['Control', 'Audio', 'Interactivos']);
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-btn.sc').length`), 0, 'sin atajos');
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-chat, .d-msgs, .d-send').length`), 0, 'sin chat en el dock (S12)');
@@ -187,8 +187,8 @@ test('dock estrecho: pestañas Control/Audio/Interactivos, teclado, memoria y ca
   const chrome = await openDock(t, ctx, { width: 420, height: 780 });
   const c = chrome.cdp;
 
-  await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 3`, { timeoutMs: 15000 });
-  assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-tabs [role="tab"]')).map(x => x.firstChild.textContent.trim())`), ['Control', 'Audio', 'Interactivos']);
+  await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 4`, { timeoutMs: 15000 });
+  assert.deepEqual(await dom(chrome, `Array.from(document.querySelectorAll('.d-tabs [role="tab"]')).map(x => x.firstChild.textContent.trim())`), ['Control', 'Audio', 'Interactivos', 'Tema']);
   assert.ok(await dom(chrome, `!!document.querySelector('#d-t-audio [aria-label*="desactivada"]')`), 'Audio avisa de pistas silenciadas');
   assert.equal(await dom(chrome, `document.querySelectorAll('.d-col').length`), 0, 'en estrecho no hay columnas');
   assert.equal(await dom(chrome, `document.querySelector('[role="tab"][aria-selected="true"]').textContent.trim()`), 'Control', 'Control va primera y seleccionada');
@@ -201,6 +201,8 @@ test('dock estrecho: pestañas Control/Audio/Interactivos, teclado, memoria y ca
   await dom(chrome, `(() => { document.querySelector('#d-t-audio').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); return true; })()`);
   await waitDom(c, `document.activeElement?.id === 'd-t-control'`, { timeoutMs: 9000 });
   await dom(chrome, `(() => { document.querySelector('#d-t-control').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); return true; })()`);
+  await waitDom(c, `document.activeElement?.id === 'd-t-saved-theme'`, { timeoutMs: 9000 });
+  await dom(chrome, `document.querySelector('#d-t-saved-theme').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))`);
   await waitDom(c, `document.activeElement?.id === 'd-t-interactivos'`, { timeoutMs: 9000 });
   await clickWhen(c, `document.querySelector('#d-i-sorteo')`);
   await c.send('Page.reload');
@@ -208,13 +210,13 @@ test('dock estrecho: pestañas Control/Audio/Interactivos, teclado, memoria y ca
 
   // por debajo de 768 px: pestañas; desde 768 (tablet en retrato incluida): columnas; vuelta a pestañas.
   await resize(chrome, 767, 1024);
-  await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 3 && document.querySelectorAll('.d-col').length === 0`, { timeoutMs: 9000 });
+  await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 4 && document.querySelectorAll('.d-col').length === 0`, { timeoutMs: 9000 });
   await resize(chrome, 768, 1024);
-  await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && document.querySelectorAll('[role="tablist"]').length === 1`, { timeoutMs: 9000 });
+  await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && document.querySelectorAll('[role="tablist"]').length === 2`, { timeoutMs: 9000 });
   await resize(chrome, 1256, 780);
-  await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && document.querySelectorAll('[role="tablist"]').length === 1`, { timeoutMs: 9000 });
+  await waitDom(c, `document.querySelectorAll('.d-col').length === 3 && document.querySelectorAll('[role="tablist"]').length === 2`, { timeoutMs: 9000 });
   await resize(chrome, 420, 780);
-  await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 3 && document.querySelectorAll('.d-col').length === 0`, { timeoutMs: 9000 });
+  await waitDom(c, `document.querySelectorAll('.d-tabs [role="tab"]').length === 4 && document.querySelectorAll('.d-col').length === 0`, { timeoutMs: 9000 });
 });
 
 test('dock audio: globales y de la escena al aire, interruptor de mute y fader con el gain real', { timeout: 120000 }, async t => {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
@@ -99,6 +99,7 @@ test('v2 migration backs up bytes and freezes effective defaults in all element 
   const bytes = JSON.stringify(v2, null, 1), file = path.join(root, 'config.json');
   await writeFile(file, bytes);
   const expected = deepMerge(structuredClone(DEFAULT_CONFIG), v2);
+  expected.theme.platformAccent = false; expected.theme.platformBadge = 'text'; // effective v2 defaults
   // The built-in welcome variation also receives its resolved v3 conditions.
   expected.alerts.welcome.variations[0].conditions = { ...DEFAULT_CONDITIONS, returning: 'true' };
   const store = await new Store(root).load();
@@ -338,6 +339,96 @@ test('public projections never expose inactive looks; generic writes cannot alte
   assert.equal((await f.call('POST', '/api/config/set', { path: 'tts.rate', value: 1.25 })).body.value, 1.25);
 });
 
+test('avatar: create from default with color and expose it in public projections', async t => {
+  const f = await fixture(t);
+  const made = await f.call('POST', '/api/themes/from-default', { name: 'Azul', avatar: { color: '#123ABC' } });
+  assert.deepEqual(made, { status: 200, body: { theme: { id: 'azul', name: 'Azul', active: false, avatar: { color: '#123ABC' } } } });
+  for (const url of ['/api/themes', '/api/state', '/api/config']) {
+    const data = (await f.call('GET', url)).body;
+    const saved = url === '/api/themes' ? data.themes : url === '/api/state' ? data.config.themes.saved : data.themes.saved;
+    assert.deepEqual(saved.find(x => x.id === 'azul').avatar, { color: '#123ABC' }, url);
+  }
+  const item = (await f.snapshot()).config.themes.saved.find(x => x.id === 'azul');
+  assert.deepEqual(item.avatar, { color: '#123ABC' }); assert.equal(item.look.avatar, undefined);
+});
+
+test('avatar: uploaded image and color can be edited and removed without deleting media', async t => {
+  const f = await fixture(t);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const upload = await fetch(f.base + '/api/media/upload?name=avatar.png', { method: 'POST', body: png });
+  assert.equal(upload.status, 200); const { name } = await upload.json();
+  const edit = await f.call('PUT', '/api/themes/normal', { avatar: { image: name, color: '#123456' } });
+  assert.deepEqual(edit, { status: 200, body: { theme: { ...normal, avatar: { image: name, color: '#123456' } } } });
+  assert.deepEqual((await f.call('PUT', '/api/themes/normal', { avatar: { image: '' } })).body.theme.avatar, { color: '#123456' });
+  assert.deepEqual((await f.call('PUT', '/api/themes/normal', { avatar: { image: name } })).body.theme.avatar, { image: name, color: '#123456' });
+  assert.deepEqual((await f.call('PUT', '/api/themes/normal', { name: 'Normal nuevo' })).body.theme.avatar, { image: name, color: '#123456' });
+  assert.equal(Object.hasOwn((await f.call('PUT', '/api/themes/normal', { avatar: null })).body.theme, 'avatar'), false);
+  assert.equal((await fetch(f.base + '/media/' + encodeURIComponent(name))).status, 200);
+  const made = await f.call('POST', '/api/themes/from-default', { name: 'Foto', avatar: { image: name, color: '#ABCDEF' } });
+  assert.equal(made.status, 200);
+  for (const id of ['foto', 'normal']) {
+    assert.equal((await f.call('POST', `/api/themes/${id}/activate`)).status, 200);
+    assert.deepEqual((await f.call('GET', '/api/themes')).body.themes.find(x => x.id === 'foto').avatar, { image: name, color: '#ABCDEF' });
+  }
+  assert.equal((await f.call('DELETE', '/api/themes/foto')).status, 200);
+  assert.equal((await fetch(f.base + '/media/' + encodeURIComponent(name))).status, 200);
+});
+
+test('avatar: invalid input is rejected without config, backup or counter changes', async t => {
+  const f = await fixture(t);
+  const svg = await fetch(f.base + '/api/media/upload?name=x.svg', { method: 'POST', body: '<svg xmlns="http://www.w3.org/2000/svg" />' });
+  assert.equal(svg.status, 200);
+  for (const [avatar, error] of [
+    [{ color: '#abc' }, 'El color del avatar debe ser #RRGGBB'],
+    [{ image: 'x.svg' }, 'El avatar admite imágenes PNG, JPG, WebP o GIF'],
+    [{ image: 'x.apng' }, 'El avatar admite imágenes PNG, JPG, WebP o GIF'],
+    [{ image: 'x.avif' }, 'El avatar admite imágenes PNG, JPG, WebP o GIF'],
+    [{ image: '../x.png' }, 'El avatar admite imágenes PNG, JPG, WebP o GIF'],
+    [{ image: 'dir\\\\x.png' }, 'El avatar admite imágenes PNG, JPG, WebP o GIF'],
+    [{ image: 'missing.png' }, 'No existe la imagen «missing.png» en la carpeta de media'],
+    [{ other: 'x' }, 'El avatar solo admite imagen y color'],
+    [[], 'El avatar debe ser un objeto'],
+  ]) {
+    const before = await f.snapshot();
+    assert.deepEqual(await f.call('PUT', '/api/themes/normal', { avatar }), { status: 400, body: { error } });
+    assert.deepEqual(await f.snapshot(), before, JSON.stringify(avatar));
+  }
+  for (const body of [{}, { name: '' }, { name: '', avatar: { color: '#123456' } }]) {
+    const before = await f.snapshot();
+    assert.deepEqual(await f.call('PUT', '/api/themes/normal', body), { status: 400, body: { error: 'El nombre del tema es obligatorio y admite hasta 40 caracteres' } });
+    assert.deepEqual(await f.snapshot(), before);
+  }
+  const before = await f.snapshot();
+  assert.deepEqual(await f.call('POST', '/api/themes/from-default', { name: 'Malo', avatar: { image: 'x.svg' } }),
+    { status: 400, body: { error: 'El avatar admite imágenes PNG, JPG, WebP o GIF' } });
+  assert.deepEqual(await f.snapshot(), before);
+});
+
+test('avatar: duplication starts a new identity and activation preserves both avatars', async t => {
+  const f = await fixture(t);
+  assert.equal((await f.call('PUT', '/api/themes/normal', { avatar: { color: '#112233' } })).status, 200);
+  const clone = await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Copia' });
+  assert.equal(clone.status, 200); assert.equal(Object.hasOwn(clone.body.theme, 'avatar'), false);
+  const other = await f.call('POST', '/api/themes/duplicate', { from: 'normal', name: 'Azul', avatar: { color: '#AABBCC' } });
+  assert.equal(other.status, 200); assert.deepEqual(other.body.theme.avatar, { color: '#AABBCC' });
+  for (const id of ['azul', 'normal']) {
+    assert.equal((await f.call('POST', `/api/themes/${id}/activate`)).status, 200);
+    const list = (await f.call('GET', '/api/themes')).body.themes;
+    assert.deepEqual(list.find(x => x.id === 'normal').avatar, { color: '#112233' });
+    assert.deepEqual(list.find(x => x.id === 'azul').avatar, { color: '#AABBCC' });
+  }
+  assert.equal((await f.call('DELETE', '/api/themes/azul')).status, 200);
+});
+
+test('saved theme schema validates avatar shape, colors and raster basenames', async () => {
+  const { validatePatch } = await import('../src/config-schema.mjs');
+  const check = avatar => validatePatch({ themes: { activeId: 'normal', saved: [{ id: 'normal', name: 'Normal', avatar }] } });
+  assert.deepEqual(check({ image: 'foto.JPG', color: '#12AbEF' }), []);
+  for (const avatar of [null, [], 'image', { image: '' }, { image: '../x.png' }, { image: 'a\\\\b.png' }, { image: 'x.svg' }, { image: 'x.apng' }, { image: 'x.avif' }, { color: '#abc' }, { color: null }, { extra: true }]) {
+    assert.ok(check(avatar).length, JSON.stringify(avatar));
+  }
+});
+
 test('missing goal and chat variant APIs warn with 404 without changing config or counters', async t => {
   const f = await fixture(t), before = await f.snapshot();
   for (const [method, url, body, error] of [
@@ -348,5 +439,26 @@ test('missing goal and chat variant APIs warn with 404 without changing config o
   ]) {
     assert.deepEqual(await f.call(method, url, body), { status: 404, body: { error } });
     assert.deepEqual(await f.snapshot(), before);
+  }
+});
+
+test('avatar: a symlink in media pointing outside mediaDir is refused with nothing written', async t => {
+  const f = await fixture(t);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const mediaDir = path.join(path.dirname(f.dataDir), 'media');
+  await mkdir(mediaDir, { recursive: true });
+  const outside = path.join(path.dirname(f.dataDir), 'outside.png');
+  await writeFile(outside, png);
+  await symlink(outside, path.join(mediaDir, 'link.png'));
+  for (const [method, url, body] of [
+    ['PUT', '/api/themes/normal', { avatar: { image: 'link.png' } }],
+    ['POST', '/api/themes/from-default', { name: 'Enlace', avatar: { image: 'link.png' } }],
+    ['POST', '/api/themes/duplicate', { from: 'normal', name: 'Enlace', avatar: { image: 'link.png' } }],
+  ]) {
+    const before = await f.snapshot();
+    const res = await f.call(method, url, body);
+    assert.equal(res.status, 400, url);
+    assert.deepEqual(res.body, { error: 'No existe la imagen «link.png» en la carpeta de media' }, url);
+    assert.deepEqual(await f.snapshot(), before, url);
   }
 });

@@ -2,12 +2,16 @@
 // Desde el móvil, la clave llega en ?key=… y se reenvía en cada petición.
 const KEY = new URLSearchParams(location.search).get('key');
 import type { UploadResult } from './types';
+import { themeIdentity } from './draft';
+import { isThemedWrite } from '../../../src/theme-looks.mjs';
 export const withKey = (p: string) => (KEY ? p + (p.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(KEY) : p);
 
-export async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+type ApiOptions = { themeId?: string };
+export async function api<T = unknown>(method: string, path: string, body?: unknown, options?: ApiOptions): Promise<T> {
+  const themeId = options?.themeId ?? (isThemedWrite(method, path, body) ? themeIdentity().id : undefined);
   const r = await fetch(withKey(path), {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(themeId ? { 'X-Antena-Theme': themeId } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const d: unknown = await r.json().catch(() => ({}));
@@ -16,9 +20,9 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   return d as T;
 }
 export const get = <T = unknown>(p: string) => api<T>('GET', p);
-export const post = <T = unknown>(p: string, b: unknown = {}) => api<T>('POST', p, b);
-export const put = <T = unknown>(p: string, b: unknown = {}) => api<T>('PUT', p, b);
-export const del = <T = unknown>(p: string) => api<T>('DELETE', p);
+export const post = <T = unknown>(p: string, b: unknown = {}, options?: ApiOptions) => api<T>('POST', p, b, options);
+export const put = <T = unknown>(p: string, b: unknown = {}, options?: ApiOptions) => api<T>('PUT', p, b, options);
+export const del = <T = unknown>(p: string, options?: ApiOptions) => api<T>('DELETE', p, undefined, options);
 export const enc = encodeURIComponent;
 
 /** Sube un archivo a media/ con progreso. */

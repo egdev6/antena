@@ -40,15 +40,35 @@ test('MCP themes: metadata, duplicate, rename, activate, delete and generic-writ
   const tools = Object.fromEntries((await rpc('tools/list')).result.tools.map(tool => [tool.name, tool]));
   for (const name of ['listar_temas', 'duplicar_tema', 'renombrar_tema', 'activar_tema', 'borrar_tema']) assert.ok(tools[name], name);
   assert.equal(tools.listar_temas.annotations.readOnlyHint, true);
+  assert.match(tools.tema_de_partida.description, /único id disponible es plataforma/);
+  assert.doesNotMatch(tools.tema_de_partida.description, /cian|esmeralda|cristal/i);
+  assert.match(tools.restaurar_tema.description, /Color de cada plataforma/);
   for (const name of ['activar_tema', 'borrar_tema']) {
     assert.equal(tools[name].inputSchema.properties.confirmar.type, 'boolean');
     assert.ok(tools[name].inputSchema.required.includes('confirmar'));
     assert.equal(tools[name].annotations.destructiveHint, true);
   }
   assert.deepEqual((await call('listar_temas')).themes, [{ id: 'normal', name: 'Normal', active: true }]);
+  assert.equal((await call('cambiar_tema', { cambios: { accent: '#123456' } })).theme.accent, '#123456');
+  const beforePreset = await snapshot(), removed = await raw('tema_de_partida', { id: 'cian' });
+  assert.equal(removed.isError, true); assert.match(removed.content[0].text, /No existe el punto de partida/);
+  assert.deepEqual(await snapshot(), beforePreset);
+  const platform = await call('tema_de_partida', { id: 'plataforma' });
+  assert.equal(platform.theme.platformAccent, true); assert.equal(platform.theme.platformBadge, 'logo');
+  const reset = await call('restaurar_tema');
+  assert.equal(reset.theme.platformAccent, true); assert.equal(reset.theme.platformBadge, 'logo');
   const created = (await call('duplicar_tema', { id: 'normal', nombre: 'Navidad' })).theme;
   assert.equal(created.name, 'Navidad'); assert.equal(created.active, false);
   assert.equal((await call('renombrar_tema', { id: created.id, nombre: 'Invierno' })).theme.name, 'Invierno');
+  assert.equal(tools.renombrar_tema.inputSchema.properties.color.type, 'string');
+  assert.equal(tools.renombrar_tema.inputSchema.properties.imagen.type, 'string');
+  assert.deepEqual(tools.renombrar_tema.inputSchema.required, ['id', 'nombre']);
+  const upload = await fetch(base + '/api/media/upload?name=avatar.png', { method: 'POST', body: Buffer.from('imagen') });
+  assert.equal(upload.status, 200); const { name: image } = await upload.json();
+  assert.deepEqual((await call('renombrar_tema', { id: created.id, nombre: 'Invierno', color: '#123456' })).theme.avatar, { color: '#123456' });
+  assert.deepEqual((await call('renombrar_tema', { id: created.id, nombre: 'Invierno', imagen: image })).theme.avatar, { color: '#123456', image });
+  assert.deepEqual((await call('renombrar_tema', { id: created.id, nombre: 'Invierno', imagen: '' })).theme.avatar, { color: '#123456' });
+  assert.equal(Object.hasOwn((await call('renombrar_tema', { id: created.id, nombre: 'Invierno', color: '' })).theme, 'avatar'), false);
   for (const [name, args] of [['activar_tema', { id: created.id }], ['borrar_tema', { id: created.id }]]) {
     for (const confirm of [{}, { confirmar: false }, { confirmar: 'true' }]) {
       const before = await snapshot();

@@ -55,10 +55,10 @@ function VariantFields({ id, initial, anims, refresh }: { id: string; initial: C
   const savedRef = useRef(saved);
   const [buffer] = useState(() => new ManualDraft<Changes, ChatVariant>({
     empty: () => ({}), merge: (older, newer) => ({ ...older, ...newer }),
-    take: () => savedRef.current,
+    take: () => savedRef.current, themed: true,
     keys: () => ['chat'],
-    persist: async changes => {
-      await put<{ variant: ChatVariant }>(`${ROUTE}/${enc(id)}`, changes);
+    persist: async (changes, themeId) => {
+      await put<{ variant: ChatVariant }>(`${ROUTE}/${enc(id)}`, changes, { themeId });
       // A PUT reply only describes this id and widgets events do not update config.widgets.
       // Re-read before publishing so a concurrent change to another variant is not overwritten.
       let variants: ChatVariant[];

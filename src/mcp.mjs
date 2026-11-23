@@ -201,16 +201,18 @@ tool('fijar_record_espectadores', 'Cambia a mano el récord guardado de una plat
 // Temas guardados: los cambios de pantalla y el borrado requieren confirmación humana.
 tool('listar_temas', 'Lista los temas guardados e indica cuál está activo.', {}, () => get('/api/themes'));
 tool('activar_tema', 'Activa un tema guardado inmediatamente en las capas del directo.', { id: S.str('Id del tema') }, ({ id }) => post(`/api/themes/${enc(id)}/activate`), ['id']);
-tool('duplicar_tema', 'Crea un tema como copia completa de otro.', { id: S.str('Id del tema de origen'), nombre: S.str('Nombre del nuevo tema') }, ({ id, nombre }) => post('/api/themes/duplicate', { from: id, name: nombre }), ['id', 'nombre']);
-tool('renombrar_tema', 'Cambia el nombre de un tema guardado.', { id: S.str('Id del tema'), nombre: S.str('Nuevo nombre') }, ({ id, nombre }) => put(`/api/themes/${enc(id)}`, { name: nombre }), ['id', 'nombre']);
+tool('duplicar_tema', 'Crea un tema como copia completa de otro, sin copiar su avatar.', { id: S.str('Id del tema de origen'), nombre: S.str('Nombre del nuevo tema') }, ({ id, nombre }) => post('/api/themes/duplicate', { from: id, name: nombre }), ['id', 'nombre']);
+tool('renombrar_tema', 'Cambia el nombre y opcionalmente el avatar de un tema guardado. Los campos de avatar omitidos se conservan.',
+  { id: S.str('Id del tema'), nombre: S.str('Nuevo nombre'), color: S.str('Color #RRGGBB; vacío quita el color'), imagen: S.str('Nombre de imagen PNG, JPG, WebP o GIF existente en media/; vacío quita la imagen') },
+  ({ id, nombre, color, imagen }) => put(`/api/themes/${enc(id)}`, { name: nombre, ...(color !== undefined || imagen !== undefined ? { avatar: { ...(color !== undefined && { color }), ...(imagen !== undefined && { image: imagen }) } } : {}) }), ['id', 'nombre']);
 tool('borrar_tema', 'Borra un tema inactivo; el activo no se puede borrar.', { id: S.str('Id del tema') }, ({ id }) => del(`/api/themes/${enc(id)}`), ['id']);
 
 // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
-tool('ver_tema', 'Tema de pantalla actual (colores, fuentes, iconos, forma, posición, animación y sonido), el de serie, los puntos de partida, las fuentes y los iconos disponibles.', {}, () => get('/api/theme'));
+tool('ver_tema', 'Aspecto del tema activo, aspecto de serie por plataforma, fuentes e iconos disponibles.', {}, () => get('/api/theme'));
 tool('cambiar_tema', 'Cambia el tema de todo lo que sale en pantalla (solo los campos que pases). Color: accent, accentSoft, text, textSoft, muted, surface, surfaceOpacity (0–100), surfaceStyle (gradient|solid|glass), border (vacío = del acento), borderWidth, glow (0–200 %), platformAccent + twitchColor/youtubeColor. Tipografía: fontDisplay, fontBody (id de fuente o media:archivo.woff2), textScale (%), uppercase, outline. Iconos: iconStroke (thin|normal|bold), iconColor, tileShape (square|round|none), platformBadge (text|logo|none), icons { tipo: icono|logo|none|emoji:🎉|media:archivo.png } (null vuelve al de serie). Forma: round (%), alertWidth (px), alertScale (%), tilt, reflection, decorations, timerBar. Posición: position (top|center|bottom), align (left|center|right), offsetX, offsetY. Movimiento: animation (3d|slide|fade|pop|none). Sonido: sound (default|none|archivo), soundVolume (%).',
   { cambios: S.obj('{"accent":"#00D1FF","animation":"slide","icons":{"follow":"emoji:💜"}}') }, ({ cambios }) => put('/api/theme', cambios), ['cambios']);
-tool('tema_de_partida', 'Aplica un punto de partida del tema (sustituye el actual): egdev, cian, esmeralda, ambar, plataforma, sobrio, cristal.', { id: S.str('Punto de partida') }, ({ id }) => post('/api/theme/preset', { id }), ['id']);
-tool('restaurar_tema', 'Vuelve al tema de serie de EGDEV.', {}, () => post('/api/theme/reset'));
+tool('tema_de_partida', 'Compatibilidad: aplica «Color de cada plataforma» al tema activo. El único id disponible es plataforma.', { id: S.str('Id: plataforma') }, ({ id }) => post('/api/theme/preset', { id }), ['id']);
+tool('restaurar_tema', 'Restaura el aspecto de serie (Color de cada plataforma) del tema activo.', {}, () => post('/api/theme/reset'));
 tool('importar_tema', 'Sustituye el tema entero por uno exportado (JSON del tema); lo que falte vuelve al de serie.', { tema: S.obj('El objeto del tema') }, ({ tema }) => post('/api/theme/import', { theme: tema }), ['tema']);
 // teleprompter (solo lo ves tú: /widget/teleprompter)
 tool('estado_teleprompter', 'Guion activo, bloques, posición, velocidad y ajustes del teleprompter, y la lista de guiones.', {}, () => get('/api/teleprompter'));

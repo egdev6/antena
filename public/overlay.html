@@ -212,13 +212,18 @@ const ICONS = {
 
 // ---------- tema (Apariencia, /theme.css): lo que no se puede hacer solo con CSS ----------
 let THEME = {};
-function applyTheme(t) {
+function applyTheme(t, previewCss) {
   THEME = t || {};
   if (!qs.get('pos')) { stage.classList.remove('top', 'center', 'bottom'); stage.classList.add(['top', 'center', 'bottom'].includes(THEME.position) ? THEME.position : 'center'); }
   if (!qs.get('align')) { stage.classList.remove('left', 'right'); if (['left', 'right'].includes(THEME.align)) stage.classList.add(THEME.align); }
   const link = document.getElementById('eg-theme');
-  const href = '/theme.css?' + (qs.has('themeDraft') ? 'draft=1&' : '') + 'v=' + encodeURIComponent(THEME.version || '');
-  if (link && !link.href.endsWith(href)) link.href = href;
+  if (typeof previewCss === 'string') {
+    const style = document.createElement('style'); style.id = 'eg-theme'; style.textContent = previewCss;
+    link?.replaceWith(style);
+  } else {
+    const href = '/theme.css?' + (qs.has('themeDraft') ? 'draft=1&' : '') + 'v=' + encodeURIComponent(THEME.version || '');
+    if (link && !link.href.endsWith(href)) link.href = href;
+  }
 }
 /** Icono de la casilla: el elegido en el tema para ese tipo o el de serie. */
 function tileIcon(a) {
@@ -530,8 +535,12 @@ if (STILL) {
     if (allow) { v.loop = true; try { v.currentTime = 0; } catch { /* aún sin datos */ } v.play().catch(() => {}); }
     else { v.pause(); try { v.currentTime = 0.05; } catch { /* nada */ } }
   });
-  fetch('/api/alerts/' + encodeURIComponent(STILL) + '/sample').then(r => r.json()).then(({ alert, theme }) => {
-    applyTheme(theme);
+  const selected = qs.get('previewTheme');
+  const sampleUrl = selected && STILL === 'follow'
+    ? '/api/themes/' + encodeURIComponent(selected) + '/preview'
+    : '/api/alerts/' + encodeURIComponent(STILL) + '/sample';
+  fetch(sampleUrl).then(r => { if (!r.ok) throw new Error('preview'); return r.json(); }).then(({ alert, theme, css }) => {
+    applyTheme(theme, css);
     if (alert.look) alert.look.textDelayMs = 0;   // la composición final, sin esperar a la entrada del texto
     show(alert);
     // la barra de tiempo de la tarjeta se queda llena

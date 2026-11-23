@@ -46,6 +46,7 @@ import { registerWidgetRoutes } from './routes/widgets.mjs';
 import { registerCreditsRoutes } from './routes/credits.mjs';
 import { setupAutoSession } from './auto-session.mjs';
 import { themeCss, publicTheme } from './theme.mjs';
+import { isThemedWrite } from './theme-looks.mjs';
 import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
 import { FollowerRegistry } from './followers.mjs';
@@ -814,7 +815,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return { patch, hasToken, value };
   };
   const saveScheduleSecret = value => store.setSecret('scheduleCalendar', value ? { token: value } : undefined);
-  route('PUT', '/api/config', async body => {
+  route('PUT', '/api/config', async (body, _, _url, req) => {
     let patch = { ...body };
     if (Object.hasOwn(patch, 'themes')) throw httpError(400, 'themes: se gestionan con /api/themes');
     const discordChange = Object.hasOwn(patch, 'discord') ? prepareDiscord(patch.discord) : null;
@@ -854,10 +855,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (error) throw httpError(400, error.message);
     }
     warnUnknownKeys(patch);
-    if (hasOverlays && hasVariants) {
-      // Preparar ambos y aceptarlos juntos antes del primer await: ninguna otra petición
-      // puede cambiar las variantes entre la validación y la mutación del store.
+    const editedTheme = req.headers['x-antena-theme'];
+    const fenced = editedTheme !== undefined && isThemedWrite('PUT', '/api/config', body);
+    if (hasOverlays && (hasVariants || fenced)) {
+      // Preparar y aceptar todo antes del primer await evita que un cambio de tema
+      // (o de variantes) se intercale entre el overlay y el resto de la configuración.
       const overlays = customOverlays.prepareReplacement(overlaysInput);
+      if (fenced && editedTheme !== store.config.themes.activeId)
+        throw httpError(409, 'El tema activo cambió mientras editabas; tus cambios no se guardaron');
       await store.patchConfig({ ...patch, customOverlays: overlays });
       customOverlays.notify(overlays); // la segunda notificación es la de replaceAll
     } else {
@@ -975,7 +980,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Apariencia: tema de todo lo que sale en pantalla (overlay, widgets y créditos)
   const themeRoutes = registerThemeRoutes({ route, store, listMedia, onChange: () => {},   // el aviso sale de store 'change' (también vale para cambiar_config)
     onDraft: t => bus.send('theme', t, ['overlay', 'preview', 'widget']) });
-  registerThemesRoutes({ route, store, onActivated: themeRoutes.clearDraft });
+  registerThemesRoutes({ route, store, mediaDir, onActivated: themeRoutes.clearDraft });
 
 
   // ---------- archivos: módulo propio (patrón de rutas por áreas, #71/#107) ----------
@@ -1341,6 +1346,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
           return json(res, 200, await (applying ? withMediaLock(run) : run()));
         }
         const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req, url.pathname === '/api/meld/stream' || url.pathname === '/api/program/stream', transfer ? 8e6 : 2e6) : {};
+        // Check after the complete request body and immediately before dispatch, before any route mutates state.
+        const editedTheme = req.headers['x-antena-theme'];
+        if (editedTheme !== undefined && isThemedWrite(req.method, url.pathname, body) && editedTheme !== store.config.themes.activeId)
+          throw httpError(409, 'El tema activo cambió mientras editabas; tus cambios no se guardaron');
         // rutas con parámetros: fn(params, body, url) · sin parámetros: fn(body, _, url)
         const mediaWrite = req.method === 'POST' && ['/api/media/import', '/api/media/delete'].includes(url.pathname);
         if (mediaWrite) return json(res, 200, await withMediaLock(() => r.fn(body, null, url, req)));

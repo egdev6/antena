@@ -61,7 +61,7 @@ test('S1/S2/S4/S5: custom dock layouts, modules, shortcut, preview and meter vis
   ]) await t.test(`S2/S4/S5 ${name}`, async () => {
     await save(standard(layout)); await open(width);
     const v = await view();
-    if (direction === 'tabs') { assert.deepEqual(v.tabs, expected); assert.deepEqual(v.cols, []); assert.equal(v.selected, 'd-t-control'); }
+    if (direction === 'tabs') { assert.deepEqual(v.tabs, [...expected, 'Tema']); assert.deepEqual(v.cols, []); assert.equal(v.selected, 'd-t-control'); }
     else {
       assert.deepEqual(v.tabs, []); assert.deepEqual(v.cols.map(x => x.label), expected);
       assert.ok(v.cols.every(x => x.width > 0 && x.height > 0));
@@ -121,7 +121,7 @@ test('S1/S2/S4/S5: custom dock layouts, modules, shortcut, preview and meter vis
     const beforeConfig = (await call('GET', '/api/config')).dock;
     const beforePause = (await call('GET', '/api/state')).status.pause.paused;
     await open(600, `?preview=${encoded}`);
-    assert.deepEqual((await view()).tabs, ['Previsión ágil']);
+    assert.deepEqual((await view()).tabs, ['Previsión ágil', 'Tema']);
     assert.equal(await dom(`!!document.querySelector('.dock[inert]')`), true);
     const beforeActions = actionRequests;
     await dom(`(() => { for (const b of document.querySelectorAll('.d-grid button')) { b.click(); b.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true})); } return true; })()`);

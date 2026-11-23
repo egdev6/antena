@@ -64,7 +64,7 @@ test('preview sample waits for the initial stream to be ready, including SSE fal
 }));
 
 test('Apariencia renders the sample with a delayed module and an HTTP-only proxy', { timeout: 40000 }, t => withProxy(t, async (c, _requests, base) => {
-  await c.send('Page.navigate', { url: base + '/#/apariencia' });
+  await c.send('Page.navigate', { url: base + '/#/apariencia/color' });
   await waitDom(c, `!!document.querySelector('.ap-preview .preview iframe[src*="/overlay?preview"]')`, { timeoutMs: 12000 });
   await waitDom(c, `(() => { const d = document.querySelector('.ap-preview .preview iframe')?.contentDocument; return !!d && !d.getElementById('hint') && !!d.querySelector('.alert.type-follow'); })()`, { timeoutMs: 8000 });
 }));

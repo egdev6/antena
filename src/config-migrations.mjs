@@ -39,6 +39,9 @@ export const MIGRATIONS = [
     // Resolver con los defaults vigentes ANTES de que cambien: el tema activo vive
     // en las secciones originales. No se copia ningún dato global al look.
     const effective = deepMerge(structuredClone(DEFAULT_CONFIG), config);
+    // Los v2 resolvían estos campos con los defaults anteriores a los temas guardados.
+    // Congelarlos aquí también protege una instalación que actualiza directamente a esta versión.
+    effective.theme = deepMerge({ ...structuredClone(DEFAULT_CONFIG.theme), platformAccent: false, platformBadge: 'text' }, config.theme || {});
     // matchesConditions resuelve los defaults por variación; persistirlos impide que
     // un cambio futuro de chance, users u otra condición altere las reglas existentes.
     if (object(effective.alerts)) effective.alerts = Object.fromEntries(Object.entries(effective.alerts).map(([type, alert]) => [type,

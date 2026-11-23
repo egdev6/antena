@@ -319,6 +319,18 @@ export function validateLook(look) {
   return validatePatch(Object.fromEntries(LOOK_SECTIONS.map(key => [key, look[key]])));
 }
 
+// Mismas reglas para avatares guardados y para los parches del CRUD.
+export function themeAvatarError(avatar, { allowEmpty = false } = {}) {
+  if (!avatar || typeof avatar !== 'object' || Array.isArray(avatar)) return 'El avatar debe ser un objeto';
+  if (Object.keys(avatar).some(key => key !== 'image' && key !== 'color')) return 'El avatar solo admite imagen y color';
+  if (Object.hasOwn(avatar, 'color') && !(allowEmpty && avatar.color === '') &&
+      (typeof avatar.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(avatar.color))) return 'El color del avatar debe ser #RRGGBB';
+  if (Object.hasOwn(avatar, 'image') && !(allowEmpty && avatar.image === '') &&
+      (typeof avatar.image !== 'string' || !/^[^/\\\\\x00-\x1f\x7f]+\.(?:png|jpe?g|webp|gif)$/i.test(avatar.image)))
+    return 'El avatar admite imágenes PNG, JPG, WebP o GIF';
+  return null;
+}
+
 function validateSavedThemes(value, prefix, errors) {
   const fail = (path, message) => errors.push({ path, message: `${path}: ${message}` });
   if (!value || typeof value !== 'object' || Array.isArray(value)) return fail(prefix, 'se esperaba un objeto');
@@ -333,6 +345,10 @@ function validateSavedThemes(value, prefix, errors) {
     else ids.add(item.id);
     if (typeof item.name !== 'string' || !item.name.trim() || item.name !== item.name.trim() || item.name.length > 40 || names.has(item.name.toLowerCase())) fail(`${p}.name`, 'nombre no válido o repetido');
     else names.add(item.name.toLowerCase());
+    if (Object.hasOwn(item, 'avatar')) {
+      const error = themeAvatarError(item.avatar);
+      if (error) fail(`${p}.avatar`, error);
+    }
     if (item.id === value.activeId) {
       if (Object.hasOwn(item, 'look')) fail(`${p}.look`, 'el tema activo vive en la configuración');
     } else {

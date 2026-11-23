@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { AntenaStream } from '../../../public/stream-client.js';
 import { warnUnknownClientEvent } from '../../../src/events.mjs'; // contrato único de eventos SSE (#72)
+import { LOOK_SECTIONS } from '../../../src/theme-looks.mjs';
 import { mergeChat } from './chat-merge.mjs';
 import { api, withKey } from './api';
-import { holding, protectDrafts, registerDraft, type DraftSource } from './draft';
+import { holding, isStale, observeActiveTheme, onStaleDiscard, protectDrafts, registerDraft, type DraftSource } from './draft';
 import { ManualDraft } from './manual-draft';
 import type { AppState, ChatMessage, Config, LiveEventName, InterviewControl, LiveEvents, PrompterState, Timeline } from './types';
 
@@ -103,7 +104,8 @@ class Live {
     this.configDraft = new ManualDraft({
       empty: () => ({}), merge: deepMerge,
       take: () => this.state!.config,
-      persist: async patch => (await api<{ config: Config }>('PUT', '/api/config', patch)).config,
+      themed: patch => LOOK_SECTIONS.some(key => Object.hasOwn(patch, key)),
+      persist: async (patch, themeId) => (await api<{ config: Config }>('PUT', '/api/config', patch, { themeId })).config,
       publish: (saved, newer) => this.update(() => ({ config: deepMerge(saved, newer) })),
       // Other sources may have saved another config section after this snapshot.
       restore: (saved, discarded) => this.update(s => ({ config: { ...s.config,
@@ -111,11 +113,12 @@ class Live {
       protect: (state, intent) => ({ ...state, config: deepMerge(state.config, intent) }),
     });
     this.configSource = {
-      dirty: this.configDraft.dirty, keys: this.configDraft.keys,
+      dirty: this.configDraft.dirty, stale: this.configDraft.stale, keys: this.configDraft.keys,
       prepareSave: () => { clearTimeout(this.cfgTimer); return this.configDraft.prepareSave(); },
       discard: () => this.discardConfig(), protect: this.configDraft.protect,
     };
     registerDraft('config', this.configSource);
+    onStaleDiscard(() => { void this.load().catch(() => {}); });
     // The selector is a manual editing unit, without holding unrelated autosaves.
     this.programDraft = new ManualDraft({
       empty: () => ({}), merge: deepMerge,
@@ -215,6 +218,7 @@ class Live {
       // status: keep only the fields received during the flight; the rest comes from the snapshot.
       const newer = Object.keys(this.statusTouched).filter(k => this.statusTouched[k] !== statusAtStart[k]);
       if (prev?.status && newer.length) kept.status = { ...snap.status, ...Object.fromEntries(newer.map(k => [k, prev.status[k as keyof AppState['status']]])) };
+      observeActiveTheme(config?.themes?.activeId);
       this.state = protectDrafts({ ...snap, ...kept, config, widgets: { ...widgets, chat: mergeChat(this.state?.widgets?.chat, chat, inFlight).slice(-200) } });
     } finally { this.inflightChat.delete(inFlight); this.inflightRemoved.delete(removed); }
     try {
@@ -333,7 +337,12 @@ class Live {
     on('timeline', tl => { this.timeline = tl; this.emit(); });
     on('interviewControl', c => { this.interviewTouch++; this.interview = c; this.emit(); });
     on('prompter', p => { this.prompter = { ...this.prompter, ...p }; this.emit(); });
-    on('config', c => this.update(s => ({ config: { ...s.config, ...c } })));
+    on('config', c => {
+      const changed = observeActiveTheme(c.themes?.activeId);
+      this.update(s => ({ config: { ...s.config, ...c } }));
+      // Keep stale edits visible until Discard; otherwise synchronize all swapped sections.
+      if (changed && !isStale()) void this.load().catch(() => {});
+    });
   }
 }
 

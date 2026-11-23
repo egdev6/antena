@@ -10,7 +10,8 @@ import { DockQuestions } from './DockQuestions';
 import { DockTierlist } from './DockTierlist';
 import { DockGiveaway } from './DockGiveaway';
 import { InterviewPad, useInterview } from '../lib/InterviewControls';
-import type { DockConfig, DockModuleId, DockZone, MeldTrack, TeleprompterState, TimelineItem, ViewerPlatform, ViewerSettings } from '../lib/types';
+import { activateTheme, ThemeAvatar, useThemes, type ThemeLook } from '../lib/themes';
+import type { DockConfig, DockModuleId, DockZone, MeldTrack, SavedThemeSummary, TeleprompterState, TimelineItem, ViewerPlatform, ViewerSettings } from '../lib/types';
 
 const DOCK_TAB = 'egdev.dock.tab';
 const INTERACTIVE_TAB = 'egdev.dock.interactive.tab';
@@ -51,7 +52,7 @@ function useMedia(query: string) {
   return matches;
 }
 
-function Status() {
+function Status({ active, look }: { active?: SavedThemeSummary; look?: ThemeLook }) {
   const s = useLive(x => x);
   const now = useNow();
   const tl = live.timeline;
@@ -73,7 +74,19 @@ function Status() {
       {st.twitch && st.twitch.state !== 'conectado' && <ConnPill platform="twitch" state={st.twitch.state} />}
       {st.youtube?.state === 'en espera' && <ConnPill platform="youtube" state="en espera" label={st.youtube.notice || undefined} />}
     </div>
+    <div className="d-theme-active" data-dock-active-theme><ThemeAvatar theme={active} look={look} /><span>Tema activo: <b>{active?.name || 'Cargando…'}</b></span></div>
   </header>;
+}
+
+function ThemeChoices({ data }: { data: ReturnType<typeof useThemes> }) {
+  return <div className="d-body d-themes" data-dock-theme-list>
+    <h2 className="d-card-h">Cambiar tema <span className="d-meta">{data.themes.length} / 10</span></h2>
+    <p className="d-muted">Se aplica al momento, también en directo.</p>
+    {data.themes.map(theme => <button key={theme.id} type="button" className={cx('d-btn d-theme-choice', theme.active && 'is-active')} aria-pressed={theme.active} data-dock-theme-switch={theme.id} onClick={guard(() => activateTheme(theme))}>
+      <ThemeAvatar theme={theme} look={data.looks[theme.id]} /><strong>{theme.name}</strong><small>{theme.active ? '✓ ACTIVO' : 'Activar'}</small>
+    </button>)}
+    <p className="d-card d-muted">Las alertas que ya están en pantalla terminan con su aspecto anterior. La cola continúa.</p>
+  </div>;
 }
 
 // ---------- Escenas (S7) ----------
@@ -476,7 +489,7 @@ function Tabs({ zones, tab, onTab }: { zones: DockZone[]; tab: string; onTab: (t
   return <nav className="d-tabs" role="tablist" aria-label="Secciones del dock">
     {zones.map(({ id, label, modules }, i) => <button key={id} type="button" role="tab" id={`d-t-${id}`} aria-controls={`d-p-${id}`}
       aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} ref={el => { refs.current[i] = el; }}
-      onClick={() => onTab(id)}
+      data-dock-theme-tab={id === 'saved-theme' ? '' : undefined} onClick={() => onTab(id)}
       onKeyDown={e => {
         if (e.key === 'ArrowRight') { e.preventDefault(); go(i + 1); }
         else if (e.key === 'ArrowLeft') { e.preventDefault(); go(i - 1); }
@@ -492,6 +505,8 @@ export function Dock() {
   const ready = useLive(s => !!s);
   const offline = useLive(() => live.failed);
   const saved = useLive(s => s?.config?.dock);
+  const themeData = useThemes();
+  const activeTheme = themeData.themes.find(item => item.id === themeData.activeId);
   const isObs = useLive(s => s?.config?.program?.kind === 'obs');
   const wide = useMedia(WIDE_MEDIA), forced = useMedia(FORCED_MEDIA);
   const stream = useStreamControl();
@@ -499,8 +514,9 @@ export function Dock() {
   const dock = normalizeDock(PREVIEW ? PREVIEW_CONFIG : saved) as DockConfig;
   const layout = dock.layout === 'auto' ? (wide ? 'columns' : 'tabs') : (!forced ? 'tabs' : dock.layout);
   const zones = visibleDockZones(dock.zones, layout);
-  const selected = zones.some(zone => zone.id === tab) ? tab : zones[0]?.id || '';
-  const watching = zones.some(zone => zone.modules.includes('audio') && (layout !== 'tabs' || zone.id === selected));
+  const selected = tab === 'saved-theme' || zones.some(zone => zone.id === tab) ? tab : zones[0]?.id || '';
+  const tabs = [...zones, { id: 'saved-theme', label: 'Tema', modules: [] }];
+  const watching = selected !== 'saved-theme' && zones.some(zone => zone.modules.includes('audio') && (layout !== 'tabs' || zone.id === selected));
   const meters = useMeters(ready && !PREVIEW && isObs && watching);
   useEffect(() => { live.load().then(() => live.connect('panel')).catch(e => toast(e.message, true)); }, []);
   useEffect(() => { if (ready && !PREVIEW && selected) storageSet(DOCK_TAB, selected); }, [ready, selected]);
@@ -514,19 +530,24 @@ export function Dock() {
   return <div className={cx('dock', layout !== 'tabs' && 'dock-wide')} inert={PREVIEW || undefined}
     onClickCapture={PREVIEW ? block : undefined} onSubmitCapture={PREVIEW ? block : undefined}
     onChangeCapture={PREVIEW ? block : undefined} onInputCapture={PREVIEW ? block : undefined} onKeyDownCapture={PREVIEW ? block : undefined}>
-    <Status />
+    <Status active={activeTheme} look={activeTheme && themeData.looks[activeTheme.id]} />
     {layout !== 'tabs'
-      ? <div className={cx('d-cols', layout === 'split-v' && 'd-split-v')} style={gridStyle}>
+      ? <><nav className="d-wide-tabs" role="tablist" aria-label="Secciones del dock">
+          <button type="button" role="tab" aria-selected={selected !== 'saved-theme'} onClick={() => setTab(zones[0]?.id || '')}>Control</button>
+          <button type="button" role="tab" data-dock-theme-tab aria-selected={selected === 'saved-theme'} onClick={() => setTab('saved-theme')}>Tema</button>
+        </nav>
+        {selected === 'saved-theme' ? <ThemeChoices data={themeData} /> : <div className={cx('d-cols', layout === 'split-v' && 'd-split-v')} style={gridStyle}>
         {zones.map(zone => <section key={zone.id} className={cx('d-col', onlyInteractive(zone) && 'd-col-inter')} aria-labelledby={`d-h-${zone.id}`}>
           <h2 className="d-col-h" id={`d-h-${zone.id}`}>{zone.label}{zone.id === 'control' && zone.modules.includes('stream') ? <span><ControlMeta /></span> : zone.id === 'audio' && zone.modules.includes('audio') ? <span><AudioMeta /></span> : null}</h2>
           {onlyInteractive(zone) ? <ZoneContent zone={zone} context={context} /> : <div className="d-body"><ZoneContent zone={zone} context={context} /></div>}
         </section>)}
-      </div>
+      </div>}</>
       : <>
-        <Tabs zones={zones} tab={selected} onTab={setTab} />
+        <Tabs zones={tabs} tab={selected} onTab={setTab} />
         <div className="d-panels">
           {zones.map(zone => <main key={zone.id} className={onlyInteractive(zone) ? 'd-inter-panel' : 'd-body'} role="tabpanel"
             id={`d-p-${zone.id}`} aria-labelledby={`d-t-${zone.id}`} hidden={selected !== zone.id}><ZoneContent zone={zone} context={context} /></main>)}
+          <main role="tabpanel" id="d-p-saved-theme" aria-labelledby="d-t-saved-theme" hidden={selected !== 'saved-theme'}><ThemeChoices data={themeData} /></main>
         </div>
       </>}
     {offline && <div className="d-off">Sin conexión con antena. Reintentando…</div>}

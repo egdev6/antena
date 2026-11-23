@@ -16,6 +16,20 @@ export function setCss(css) { style.textContent = css || ''; }
  *  client: kind de SSE («widget» por defecto; el teleprompter usa su propio kind para no
  *  recibir contenido de otros widgets ni mandárselo). */
 export function connect(handlers, client = 'widget') {
+  const selected = DEMO && qs.get('previewTheme');
+  if (selected) {
+    // Isolated demo: never subscribe to the active theme or leak real chat into the preview.
+    const es = new EventTarget();
+    fetch('/api/themes/' + encodeURIComponent(selected) + '/preview').then(r => {
+      if (!r.ok) throw new Error('preview'); return r.json();
+    }).then(data => {
+      const link = document.getElementById('eg-theme'), style = document.createElement('style');
+      style.id = 'eg-theme'; style.textContent = data.css; link?.replaceWith(style);
+      handlers.theme?.(data.theme);
+      handlers.widgets?.({ widgets: data.widgets, goals: data.goals, chat: [] });
+    }).catch(() => {});
+    return es;
+  }
   const es = new AntenaStream('/api/stream?client=' + encodeURIComponent(client) + (THEME_DRAFT ? '&themeDraft=1' : ''));
   // Apariencia: al cambiar el tema se recarga /theme.css (sin recargar la página). Con ?themeDraft
   // (vista previa del panel) se ve también el borrador sin guardar; en Meld, solo lo guardado.

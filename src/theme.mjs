@@ -1,6 +1,6 @@
 // Tema de todo lo que sale en pantalla (overlay de alertas, widgets y créditos): Apariencia.
 //
-// Un único tema para todo. El de serie es el de EGDEV y la página Apariencia lo sobrescribe.
+// El tema activo se aplica a todo; Apariencia y los temas guardados lo editan.
 // Se sirve como /theme.css en la capa `egdev-theme`, que va DESPUÉS de la capa `egdev` de los
 // estilos de serie: el tema gana a la serie sin !important y el CSS propio (sin capa) gana a los dos.
 // Lo que no se puede expresar con CSS (icono por tipo de alerta, etiqueta de plataforma, posición,
@@ -32,11 +32,11 @@ export const DEFAULT_THEME = {
   // color
   accent: '#FF0036', accentSoft: '#FF8FA6', text: '#FFFFFF', textSoft: '#CCCCCC', muted: '#888888',
   surface: '#0F0F13', surfaceOpacity: 96, surfaceStyle: 'gradient', border: '', borderWidth: 2, glow: 100,
-  platformAccent: false, twitchColor: '#9146FF', youtubeColor: '#FF0000',
+  platformAccent: true, twitchColor: '#9146FF', youtubeColor: '#FF0000',
   // tipografía
   fontDisplay: 'egdev-cond', fontBody: 'egdev-body', textScale: 100, uppercase: true, outline: false,
   // iconografía
-  iconStroke: 'normal', iconColor: '#FFFFFF', tileShape: 'square', platformBadge: 'text', icons: {},
+  iconStroke: 'normal', iconColor: '#FFFFFF', tileShape: 'square', platformBadge: 'logo', icons: {},
   // forma y efectos
   round: 100, alertWidth: 860, alertScale: 100, tilt: true, reflection: true, decorations: true, timerBar: true,
   // posición y movimiento
@@ -45,15 +45,9 @@ export const DEFAULT_THEME = {
   sound: 'default', soundVolume: 100,
 };
 
-/** Puntos de partida: solo lo que cambian respecto al de serie. */
+/** Compatibilidad de API: solo queda el aspecto por defecto de cada plataforma. */
 export const PRESETS = {
-  egdev:    { label: 'EGDEV (de serie)', theme: {} },
-  cian:     { label: 'Cian', theme: { accent: '#00D1FF', accentSoft: '#8FE9FF', surface: '#0B1116' } },
-  esmeralda:{ label: 'Esmeralda', theme: { accent: '#18E08B', accentSoft: '#9AF5C9', surface: '#0B130F' } },
-  ambar:    { label: 'Ámbar', theme: { accent: '#FFB21E', accentSoft: '#FFD98A', surface: '#15110A' } },
-  plataforma:{ label: 'Color de cada plataforma', theme: { platformAccent: true, platformBadge: 'logo' } },
-  sobrio:   { label: 'Sobrio', theme: { glow: 15, tilt: false, reflection: false, decorations: false, animation: 'slide', surfaceStyle: 'solid', surfaceOpacity: 92, round: 60 } },
-  cristal:  { label: 'Cristal', theme: { surfaceStyle: 'glass', surfaceOpacity: 70, glow: 55, tilt: false, reflection: false } },
+  plataforma: { label: 'Color de cada plataforma', theme: { platformAccent: true, platformBadge: 'logo' } },
 };
 
 const ENUMS = {
