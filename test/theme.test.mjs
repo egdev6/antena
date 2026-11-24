@@ -51,7 +51,7 @@ test('todas las capas del directo cargan /theme.css; el teleprompter no', async 
   }
   assert.match(await readFile(path.join(ROOT, 'public/overlay.html'), 'utf8'), /id="eg-theme"/);
   // sin rojos de marca fijos en las capas: todo sale de las variables del tema
-  for (const f of ['overlay.html', 'widgets/widget.css', 'widgets/chat.html', 'widgets/goal.html', 'widgets/ticker.html', 'widgets/question.html', 'widgets/giveaway.html', 'widgets/tierlist.html', 'widgets/credits.html', 'widgets/latest.html']) {
+  for (const f of ['overlay.html', 'widgets/widget.css', 'widgets/chat.html', 'widgets/goal.html', 'widgets/ticker.html', 'widgets/question.html', 'widgets/giveaway.html', 'widgets/tierlist.html', 'widgets/credits.html', 'widgets/latest.html', 'widgets/rotator.html']) {
     const src = await readFile(path.join(ROOT, 'public', f), 'utf8');
     assert.doesNotMatch(src, /rgba\(255, ?0, ?54/, f);
   }

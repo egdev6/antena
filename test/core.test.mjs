@@ -154,7 +154,7 @@ test('CSS: los estilos de serie van en una capa y el CSS común viaja con cada a
   const a = buildAlert('raid', { user: 'x', amount: 5 }, { overlay: { css: '.alert{--accent:#0ff}' }, alerts: { raid: { css: '.alert-name{color:red}' } } });
   assert.equal(a.globalCss, '.alert{--accent:#0ff}');
   assert.equal(a.look.css, '.alert-name{color:red}');
-  for (const f of ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway']) {
+  for (const f of ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'rotator']) {
     assert.match(await readFile(new URL(`../public/widgets/${f}.html`, import.meta.url), 'utf8'), /@layer egdev \{/, f);
   }
 });

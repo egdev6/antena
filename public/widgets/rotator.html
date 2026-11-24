@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>antena · mensajes en pantalla</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+.root{display:flex;align-items:flex-start;padding:18px}
+.item{display:flex;align-items:center;gap:14px;max-width:100%;padding:14px 20px;border-radius:18px;opacity:0;transform:translateY(12px);
+  transition:opacity .32s ease,transform .42s cubic-bezier(.34,1.56,.64,1)}
+.item.on{opacity:1;transform:none}
+.item .label{flex:none;padding:6px 10px;border-radius:8px;background:color-mix(in srgb,var(--red) 15%,transparent);border:1px solid color-mix(in srgb,var(--red) 45%,transparent);
+  font:700 14px/1 var(--f-cond);letter-spacing:.14em;text-transform:uppercase;color:var(--red)}
+.item .label:empty{display:none}
+.item .text{min-width:0;font:600 26px/1.2 var(--f-body);color:var(--white,#fff);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.slot .root{padding:0;align-items:center}
+body.slot .item{width:100%;height:100%;box-sizing:border-box}
+@media (prefers-reduced-motion:reduce){.item{transition:none;transform:none}}
+}
+</style></head>
+<body><div class="root" id="root"><div class="item eg-card soft" id="item" role="status" aria-live="polite"><span class="label" id="label"></span><span class="text" id="text"></span></div></div>
+<script type="module">
+import { connect, DEMO, setCss } from '/widgets/widget.js';
+import { createRotation, rotatorTiming } from '/widgets/rotator-core.js';
+const item = document.getElementById('item'), label = document.getElementById('label'), text = document.getElementById('text');
+const DEMO_MESSAGES = ['Únete a la comunidad en Discord con !discord', 'Todas mis redes en egdev.es', 'Si te gusta el directo, un like ayuda muchísimo'];
+let key = '', cycle, hide;
+function stop() { clearInterval(cycle); clearTimeout(hide); }
+function show(rotation, durationMs, intervalMs) {
+  const next = rotation.next();
+  if (next === null) { item.classList.remove('on'); return; }
+  text.textContent = next;
+  item.classList.add('on');
+  clearTimeout(hide);
+  // A visible time equal to the interval keeps the card on screen and only swaps the text.
+  if (durationMs < intervalMs) hide = setTimeout(() => item.classList.remove('on'), durationMs);
+}
+function apply(state) {
+  const cfg = state.widgets?.rotator || {};
+  setCss(cfg.css);
+  label.textContent = cfg.label ?? 'Mensaje';
+  let messages = (Array.isArray(cfg.messages) ? cfg.messages : []).map(m => String(m?.text || '').trim()).filter(Boolean);
+  if (DEMO && !messages.length) messages = DEMO_MESSAGES;
+  const timing = rotatorTiming(cfg, { demo: DEMO });
+  const nextKey = JSON.stringify([messages, cfg.order, timing]);
+  if (nextKey === key) return;
+  key = nextKey; stop();
+  const rotation = createRotation(messages, cfg.order);
+  show(rotation, timing.durationMs, timing.intervalMs);
+  if (messages.length) cycle = setInterval(() => show(rotation, timing.durationMs, timing.intervalMs), timing.intervalMs);
+}
+connect({ widgets: apply });
+if (DEMO) apply({ widgets: {} });
+</script></body></html>

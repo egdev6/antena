@@ -16,6 +16,10 @@ export function registerWidgetRoutes({ route, store, engine }) {
       const [error] = validatePath('widgets.thanks', patch.thanks);
       if (error) throw httpError(400, error.message);
     }
+    if (Object.hasOwn(patch, 'rotator')) {
+      const [error] = validatePath('widgets.rotator', patch.rotator);
+      if (error) throw httpError(400, error.message);
+    }
     if (Object.hasOwn(patch, 'chatVariants')) {
       const [error] = validateChatVariantsTransition(store.config.widgets?.chatVariants, patch.chatVariants, store.config.widgets?.chat);
       if (error) throw httpError(400, error.message);

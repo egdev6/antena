@@ -19,6 +19,7 @@ const WIDGETS: { id: string; label: string; src: string; w: number; h: number }[
   { id: 'question', label: 'Pregunta', src: '/widget/question?demo', w: 1920, h: 1080 },
   { id: 'giveaway', label: 'Sorteo', src: '/widget/giveaway?demo', w: 1920, h: 1080 },
   { id: 'credits', label: 'Créditos', src: '/widget/credits?demo', w: 1920, h: 1080 },
+  { id: 'rotator', label: 'Mensajes en pantalla', src: '/widget/rotator?demo', w: 1200, h: 120 },
 ];
 // tipos de alerta a los que se les puede cambiar el icono, con su icono de serie
 const ICON_TYPES: [string, string][] = [['follow', 'heart'], ['sub', 'star'], ['resub', 'star'], ['giftsub', 'gift'], ['cheer', 'gem'], ['raid', 'rocket'], ['redemption', 'spark'],
