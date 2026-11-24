@@ -25,11 +25,15 @@
 import { connect, DEMO, demoState, esc, setCss } from '/widgets/widget.js';
 const run = document.getElementById('run');
 let anim, key = '';
+const LATEST_TYPES = { follow: ['follow', 'ytsub'], sub: ['sub', 'resub', 'giftsub'], cheer: ['cheer'], raid: ['raid'], superchat: ['superchat', 'supersticker'], member: ['member', 'milestone', 'giftmember'] };
 function apply(s) {
   const cfg = s.widgets?.ticker || {};
   setCss(cfg.css);
   document.getElementById('label').textContent = cfg.label || 'Gracias a';
-  const items = (s.recent || []).slice(0, Number(cfg.count) || 15);
+  // Same event types as the «Últimos» block (widgets.latest.items); the groups mirror session.latest().
+  const kinds = s.widgets?.latest?.items || ['follow', 'sub', 'cheer', 'superchat'];
+  const types = kinds.includes('any') ? null : new Set(kinds.flatMap(k => LATEST_TYPES[k] || []));
+  const items = (s.recent || []).filter(e => !types || types.has(e.type)).slice(0, Number(cfg.count) || 15);
   const html = items.length
     ? items.map(e => `<span class="it"><span class="k">${esc(e.label)}</span><b>${esc(e.user)}</b>${e.sub ? esc(e.sub) : ''}</span>`).join('')
     : '<span class="it"><b>egdev.es</b>directos los miércoles a las 19:00</span>';
