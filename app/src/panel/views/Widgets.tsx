@@ -57,6 +57,7 @@ export function Widget({ name }: { name: string }) {
     <WField w="latest" f="css" label="CSS de «últimos»" type="css" placeholder=".item .big { font-size: 34px; }" />
     <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.item</code> <code>.item-{'<tipo>'}</code> <code>.item.empty</code> <code>.item.flash</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p>
     <h3 className="sub-h">Ticker</h3>
+    <p className="hint">Muestra los mismos tipos de apoyo que marcas arriba para «Últimos».</p>
     <div className="row3">
       <WField w="ticker" f="label" label="Etiqueta" />
       <WField w="ticker" f="count" label="Eventos" type="number" min={1} max={30} />
