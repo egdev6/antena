@@ -5,12 +5,13 @@ import { live, useLive } from '../../lib/live';
 import { useInterview } from '../../lib/InterviewControls';
 import { goalMetricLabel } from '../../lib/goal';
 import { patchWidgets } from '../../lib/patch';
-import { BrowserSource, codeTab, confirmDelete, copy, EmptyState, guard, LazyInput, Panel, PfIcon, Stage, Switch, WidgetLayout } from '../../lib/ui';
+import { BrowserSource, codeTab, confirmDelete, copy, EmptyState, guard, Icon, IconBtn, LazyInput, Panel, PfIcon, Stage, Switch, WidgetLayout } from '../../lib/ui';
+import { IC } from '../../lib/icons';
 import { useManualSave } from '../../lib/draft';
 import { Box, Card, CardGroup, Dot, ListPanel, NameCell, PageHead, SaveBar, Slide, Tags } from '../../lib/layout';
 import { go } from '../router';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { FollowerEntry, FollowersList, GoalBar, GoalConfig, GoalValue, WidgetSection } from '../../lib/types';
+import type { FollowerEntry, FollowersList, GoalBar, GoalConfig, GoalValue, RotatorMessage, WidgetSection } from '../../lib/types';
 import { CHAT_ANIMS, type ChatAnim } from '../../../../public/widgets/chat-anims.js';
 import { ChatWidget } from './ChatWidget';
 import { InterviewSettings } from './InterviewWidget';
@@ -20,6 +21,7 @@ const INFO: Record<string, { title: string; path: string; size: string; w: numbe
   chat: { title: 'Chat en pantalla', path: '/widget/chat', size: '600×900', w: 600, h: 900, desc: 'El chat de Twitch y YouTube juntos, con tu estilo. Ideal para la escena de solo cámara.' },
   latest: { title: 'Últimos y ticker', path: '/widget/latest', size: '1400×200', w: 1400, h: 260, desc: 'Último seguidor, sub, bits… y una banda que recorre los últimos apoyos.' },
   viewers: { title: 'Espectadores', path: '/widget/viewers', size: '900×160', w: 900, h: 160, desc: 'Espectadores a la vez en Twitch y YouTube, por separado y en total. Se actualiza solo mientras emites.' },
+  rotator: { title: 'Mensajes en pantalla', path: '/widget/rotator', size: '1200×120', w: 1200, h: 120, desc: 'Una lista de mensajes que van rotando en pantalla cada cierto tiempo, en orden o al azar. Son distintos de los mensajes programados del chat.' },
   thanks: { title: 'Agradecimientos', path: '/widget/thanks', size: '900×200', w: 900, h: 200, desc: 'Agradece a quienes te siguieron mientras antena estaba cerrada.' },
   interview: { title: 'Entrevista', path: '/widget/interview', size: '1920×1080', w: 1920, h: 1080, desc: 'La pregunta de la entrevista a pantalla completa, con su imagen, vídeo, YouTube o post y la fuente.' },
   credits: { title: 'Créditos', path: '/widget/credits', size: '1920×1080', w: 1920, h: 1080, desc: 'Créditos finales con todos los que han apoyado en el directo.' },
@@ -70,6 +72,7 @@ export function Widget({ name }: { name: string }) {
     <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.item</code> <code>.item-twitch</code> <code>.item-youtube</code> <code>.item-total</code> <code>.item.off</code> <code>.item.up</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p>
     <p className="hint mt">Parámetros: <code>?platforms=twitch</code> · <code>?layout=column</code> · <code>?total=0</code> · <code>?peak=1</code>. La cifra se refresca cada «pollSec» de la alerta de récord.</p></>;
   if (name === 'thanks') form = <ThanksSettings />;
+  if (name === 'rotator') form = <RotatorSettings />;
   if (name === 'interview') form = <InterviewSettings />;
   if (name === 'credits') form = <>
     <div className="row2"><WField w="credits" f="title" label="Título" /><WField w="credits" f="speed" label="Velocidad (px/s)" type="number" min={10} max={300} /></div>
@@ -89,6 +92,40 @@ export function Widget({ name }: { name: string }) {
       <Panel>{form}</Panel>
     </WidgetLayout>
   </Slide>;
+}
+
+/** Rotating on-screen messages: ordered list editor, cadence, visible time and order. */
+function RotatorSettings() {
+  const messages = useLive(s => (s.config.widgets.rotator?.messages || []) as RotatorMessage[]);
+  const order = useLive(s => s.config.widgets.rotator?.order || 'sequential');
+  const interval = useLive(s => Number(s.config.widgets.rotator?.intervalSec) || 240);
+  const setMessages = (next: RotatorMessage[]) => patchWidgets({ rotator: { messages: next } });
+  const move = (i: number, d: number) => { const next = [...messages]; const [m] = next.splice(i, 1); next.splice(i + d, 0, m); setMessages(next); };
+  const perHour = messages.length ? Math.floor(3600 / interval) : 0;
+  return <>
+    <WField w="rotator" f="label" label="Etiqueta" placeholder="Mensaje (vacía = sin etiqueta)" />
+    <div className="row3">
+      <WField w="rotator" f="intervalSec" label="Segundos entre mensajes" type="number" min={5} max={3600} />
+      <WField w="rotator" f="durationSec" label="Segundos en pantalla" type="number" min={1} max={3600} />
+      <label>Orden <select value={order} onChange={e => patchWidgets({ rotator: { order: e.target.value } })}>
+        <option value="sequential">En el orden de la lista</option><option value="random">Aleatorio sin repetir</option>
+      </select></label>
+    </div>
+    <p className="hint">{messages.length
+      ? `Sale un mensaje cada ${interval >= 60 ? `${+(interval / 60).toFixed(1)} min` : `${interval} s`}: ${perHour} por hora${messages.length > 1 ? `, cada uno unas ${+(perHour / messages.length).toFixed(1)} veces por hora` : ''}.`
+      : 'Añade al menos un mensaje para que el widget muestre algo.'} Si el tiempo en pantalla es igual al intervalo, la tarjeta no se oculta y solo cambia el texto.</p>
+    <h3 className="sub-h">Mensajes</h3>
+    {messages.map((m, i) => <div className="row tight" key={m.id} style={{ flexWrap: 'nowrap', alignItems: 'center', marginBottom: 8 }}>
+      <input style={{ flex: 1, minWidth: 0 }} aria-label={`Mensaje ${i + 1}`} value={m.text} maxLength={300} placeholder="Escribe el mensaje" onChange={e => setMessages(messages.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
+      <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={() => move(i, -1)} />
+      <IconBtn icon={IC.down} label="Bajar" disabled={i === messages.length - 1} onClick={() => move(i, 1)} />
+      <IconBtn icon={IC.x} label="Quitar mensaje" onClick={() => { if (m.text.trim() && !confirm(`¿Quitar «${m.text.trim()}»?`)) return; setMessages(messages.filter((_, j) => j !== i)); }} />
+    </div>)}
+    <div><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={messages.length >= 50} onClick={() => setMessages([...messages, { id: 'm' + Date.now().toString(36), text: '' }])}><Icon d={IC.plus} className="eg-btn__icon" />Añadir mensaje</button></div>
+    <WField w="rotator" f="css" label="CSS personalizado" type="css" placeholder=".item .text { font-size: 32px; }" />
+    <p className="css-help">Clases: <code>.root</code> <code>.item</code> <code>.item.on</code> <code>.label</code> <code>.text</code></p>
+    <p className="hint mt">La vista previa rota cada 5 s para que veas todos los mensajes. Los cambios se aplican al guardarlos.</p>
+  </>;
 }
 
 function ThanksSettings() {
@@ -178,7 +215,7 @@ export function Widgets({ parts }: { parts: string[] }) {
     <PageHead crumb={`Configurar · ${Object.keys(INFO).length + 5} widgets`} title="Widgets"
       desc="Cada uno es una fuente de navegador para el programa de emisión (sus URL también están en Fuentes del programa de emisión). Cuando la app trae un widget nuevo, aparece aquí como una tarjeta más." />
     <div className="lv-groups">
-      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={6} note="Se ajustan aquí y se dejan puestas en el programa de emisión" wide>
+      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={7} note="Se ajustan aquí y se dejan puestas en el programa de emisión" wide>
         {fixed('chat', <div className="lv-wchat"><i style={{ width: '62%' }} /><i style={{ width: '80%' }} /><i style={{ width: '48%' }} /><i style={{ width: '72%' }} /><i style={{ width: '56%' }} /></div>,
           [...((w.chat?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.chat?.css)])}
         <Card href="#/widgets/objetivos" label="Abrir Objetivos" open={open === 'objetivos'} title="Objetivos" aside={<span className="lv-cmeta">1 capa por objetivo</span>}
@@ -192,6 +229,9 @@ export function Widgets({ parts }: { parts: string[] }) {
           [...((w.viewers?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...(w.viewers?.showTotal === false ? [] : [{ t: 'con total' }]), ...css(w.viewers?.css)])}
         {fixed('thanks', <div className="lv-wcred"><b>GRACIAS</b><i /><i /></div>,
           [...((w.thanks?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.thanks?.css)])}
+        {fixed('rotator', <div className="lv-wbar"><i /></div>,
+          [{ t: (w.rotator?.messages || []).length ? `${(w.rotator.messages as unknown[]).length} mensajes` : 'Sin mensajes todavía', on: !!(w.rotator?.messages || []).length },
+            { t: w.rotator?.order === 'random' ? 'Aleatorio' : 'En orden' }, ...css(w.rotator?.css)])}
         {fixed('credits', <div className="lv-wcred"><b>GRACIAS</b><i /><i /><i /><i /></div>, [{ t: w.credits?.title || 'Créditos del directo' }, ...css(w.credits?.css)],
           <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>)}
       </CardGroup>

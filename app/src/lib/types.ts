@@ -174,6 +174,10 @@ export interface ThanksConfig extends WidgetSection {
   title: string; platforms: Platform[]; window: 'all' | 'lastStream' | 'days'; days: number;
   maxNames: number; intervalSec: number; showAnonymous: boolean; css: string;
 }
+export interface RotatorMessage { id: string; text: string }
+export interface RotatorConfig extends WidgetSection {
+  label: string; messages: RotatorMessage[]; intervalSec: number; durationSec: number; order: 'sequential' | 'random'; css: string;
+}
 export interface FollowerEntry { platform: Platform; id: string | null; name: string; followedAt: string | null; source: 'offline' | 'live'; thanked: boolean }
 export interface AnonymousFollowers { at: string | null; count: number; thanked: boolean }
 export interface FollowerSelection { entries: FollowerEntry[]; anonymous: AnonymousFollowers[] }
@@ -187,6 +191,7 @@ export interface WidgetsConfig {
   ticker?: WidgetSection;
   credits?: WidgetSection;
   thanks?: ThanksConfig;
+  rotator?: RotatorConfig;
   [k: string]: unknown;
 }
 /** Estado que consumen los widgets (engine.widgetState()). */

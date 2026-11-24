@@ -386,7 +386,7 @@ export function shellHtml(overlay) {
   const widgetParams = {
     chat: ['variant'], viewers: ['layout'], goal: ['id'], latest: ['items', 'layout'],
     ticker: [], thanks: [], giveaway: [], question: ['nocount'], tierlist: ['id', 'nopool'],
-    interview: ['item'], credits: ['loop', 'transparent'], alerts: [], custom: ['id'],
+    interview: ['item'], credits: ['loop', 'transparent'], rotator: [], alerts: [], custom: ['id'],
   };
   const directions = ['none', 'fade', 'left', 'right', 'up', 'down'];
   const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);

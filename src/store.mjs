@@ -64,6 +64,7 @@ export const DEFAULT_CONFIG = {
     ticker: { label: 'Gracias a', count: 15, speed: 70, css: '' },
     viewers: { platforms: ['twitch', 'youtube'], showTotal: true, showPeak: false, css: '' },  // espectadores a la vez por plataforma
     thanks: { title: 'Gracias por seguir', platforms: ['twitch', 'youtube'], window: 'lastStream', days: 30, maxNames: 20, intervalSec: 5, showAnonymous: true, css: '' },
+    rotator: { label: 'Mensaje', messages: [], intervalSec: 240, durationSec: 12, order: 'sequential', css: '' },  // mensajes en pantalla que rotan (independientes de los mensajes programados del chat)
     credits: { title: 'Gracias por estar', subtitle: 'egdev.es · directos los miércoles a las 19:00', speed: 60, css: '' },
   },
 };
