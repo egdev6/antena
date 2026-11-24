@@ -77,6 +77,13 @@ const THANKS_FIELDS = {
   intervalSec: num({ int: true, min: 1, max: 3600 }), showAnonymous: bool, css: str,
 };
 
+// Rotating on-screen messages: ordered list, cadence (start to start) and visible time.
+const ROTATOR_FIELDS = {
+  label: str, messages: list({ id: str, text: str }, { maxItems: 50 }),
+  intervalSec: num({ int: true, min: 5, max: 3600 }), durationSec: num({ int: true, min: 1, max: 3600 }),
+  order: en(['sequential', 'random']), css: str,
+};
+
 /** Mismo slug y reserva para CRUD y escrituras genéricas. */
 export function chatVariantId(name, variants) {
   const slug = name.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
@@ -298,6 +305,7 @@ export const CONFIG_SCHEMA = {
     credits: { title: str, subtitle: str, speed: num({ int: true, min: 10, max: 500 }), css: str },
     viewers: { platforms: arrStr(['twitch', 'youtube']), showTotal: bool, showPeak: bool, css: str },
     thanks: THANKS_FIELDS,
+    rotator: ROTATOR_FIELDS,
   },
 };
 

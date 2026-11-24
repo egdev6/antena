@@ -35,9 +35,14 @@ function apply(s) {
     : '<span class="it"><b>egdev.es</b>directos los miércoles a las 19:00</span>';
   const k = html + (cfg.speed || 70);
   if (k === key) return; key = k;
-  run.innerHTML = html + html; // doble para que el bucle no tenga saltos
   anim?.cancel();
   requestAnimationFrame(() => {
+    // Un bloque del bucle tiene que cubrir la cinta: si los eventos son más cortos, se repiten
+    // hasta llenarla; si no, al reiniciar el bucle el último evento se cortaba a la mitad.
+    run.innerHTML = html;
+    const one = run.scrollWidth || 1, track = run.parentElement.clientWidth;
+    const block = html.repeat(Math.max(1, Math.ceil(track / one)));
+    run.innerHTML = block + block; // doble para que el bucle no tenga saltos
     const w = run.scrollWidth / 2;
     anim = run.animate([{ transform: 'translateX(0)' }, { transform: `translateX(-${w}px)` }], { duration: w / (Number(cfg.speed) || 70) * 1000, iterations: Infinity });
   });

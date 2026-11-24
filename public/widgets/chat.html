@@ -280,8 +280,9 @@ function setPreview(on) {
   if (on) playDemo();
   else real.filter(visible).slice(-(Number(cfg.maxMessages) || 12)).forEach(render);
 }
+// Backlog: the last maxMessages visible messages, so hidden ones (yours, commands, other platforms) do not use up the limit.
 connect({
-  widgets: s => { apply(s.widgets); if (first && !DEMO) { (s.chat || []).forEach(keep); if (!preview) (s.chat || []).slice(-(Number(cfg.maxMessages) || 12)).forEach(render); } first = false; },
+  widgets: s => { apply(s.widgets); if (first && !DEMO) { (s.chat || []).forEach(keep); if (!preview) (s.chat || []).filter(visible).slice(-(Number(cfg.maxMessages) || 12)).forEach(render); } first = false; },
   chat: m => { if (DEMO) return; keep(m); if (!preview) render(m); },
   chatDelete: ({ id }) => { const i = real.findIndex(m => m.id === id); if (i >= 0) real.splice(i, 1); if (!preview) root.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove(); },
   chatClear: ({ login }) => { for (let i = real.length - 1; i >= 0; i--) if (!login || real[i].login === login) real.splice(i, 1); if (!preview) [...root.children].forEach(el => { if (!login || el.dataset.login === login) el.remove(); }); },

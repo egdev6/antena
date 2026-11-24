@@ -35,7 +35,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Chat commands** (`!engram`, `!web`…) that trigger their own alerts, with permissions and cooldowns.
 - **Scheduled messages:** texts that post themselves to chat every X minutes (also as a highlighted announcement) and, if you want, also appear on screen as an alert.
 - **Interactives:** chat question queue, a tier list the chat votes on, and giveaways with an on-screen roulette.
-- **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker, live concurrent viewers, offline follower thank-yous and end credits.
+- **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker, live concurrent viewers, offline follower thank-yous, rotating on-screen messages and end credits.
 - **Custom overlays:** HTML, CSS and JavaScript layers for a scene or to frame the camera, written by you or by Claude via MCP, with live data and actions you approve.
 - **Stream recap:** totals, who to thank and a timeline with the minute of each event, in Markdown.
 - **Offline followers:** records Twitch followers gained while antena was closed, and YouTube's public subscribers plus an anonymous count; YouTube requires a connected account.
@@ -167,6 +167,7 @@ In the panel, the «Fuentes del programa de emisión» page lists all of them wi
 | Viewers | `http://127.0.0.1:4500/widget/viewers` | 900×160 |
 | Thank-yous | `http://127.0.0.1:4500/widget/thanks` | 900×200 |
 | Interview | `http://127.0.0.1:4500/widget/interview` | 1920×1080 |
+| On-screen messages | `http://127.0.0.1:4500/widget/rotator` | 1200×120 |
 
 **Preview in your broadcast program:** in **Widgets › Chat**, «Simular mensajes en Meld» makes every real chat source (the default chat, its variants and custom overlay slots) play the same sample messages as the panel preview for 2 minutes, then return to the real chat. A source loaded during the simulation joins it. Nothing is added to the chat, the history or the metrics. API: `POST /api/chat/preview` with `{ "on": true }` (optional `"seconds"`, 1–600) or `{ "on": false }`; `GET /api/chat/preview` returns `{ on, until }`. MCP: `vista_previa_chat`.
 
@@ -326,7 +327,7 @@ antena.slots.clear('chat'); // clear() removes all without animation
 
 Only named slots change; unmentioned slots keep their state. Names use `a-z0-9_-` (up to 32 characters). Each slot has `widget`, optional `params`, `rect` (canvas pixels `[x,y,w,h]` or `null`), `enter`/`exit` (`none`, `fade`, `left`, `right`, `up`, `down`; default `fade`), `layer` (`above` by default or `below`), `fit` (`slot` by default or `canvas`) and optional extra `css` applied after the widget's own CSS. `slot` makes `.root` fill the rectangle; `canvas` fills the canvas and preserves the page's own positioning and animations. A changed widget or parameters reload its page. Calls return nothing; invalid input is ignored and reported once in the overlay console. For safety, slot CSS rejects resource-loading tokens (`url`, `image-set`, `image(`, `src(`, `@import`, `@namespace`, `@font-face`), CSS escapes and comments: it runs on a trusted same-origin page and must not make requests on the sandbox's behalf.
 
-Allowed: `chat` (`variant`), `viewers` (`layout: 'column'`), `goal` (`id`), `latest` (`items`, `layout: 'column'`), `ticker`, `thanks`, `giveaway`, `question` (`nocount`), `tierlist` (`id`, `nopool`), `interview` (`item`), `credits` (`loop`, `transparent`), `alerts` and `custom` (`id` of another overlay). No arbitrary URLs, self-embedding or custom overlays nested inside another embedded overlay. Maximum 12 slots; finite rects, width/height 1–4320 and x/y within ±2 canvas dimensions. Updates are coalesced per animation frame and limited to 20/s. The shell embeds these public pages, so no action permission is needed; it keeps the user frame sandboxed.
+Allowed: `chat` (`variant`), `viewers` (`layout: 'column'`), `goal` (`id`), `latest` (`items`, `layout: 'column'`), `ticker`, `thanks`, `giveaway`, `question` (`nocount`), `tierlist` (`id`, `nopool`), `interview` (`item`), `credits` (`loop`, `transparent`), `rotator`, `alerts` and `custom` (`id` of another overlay). No arbitrary URLs, self-embedding or custom overlays nested inside another embedded overlay. Maximum 12 slots; finite rects, width/height 1–4320 and x/y within ±2 canvas dimensions. Updates are coalesced per animation frame and limited to 20/s. The shell embeds these public pages, so no action permission is needed; it keeps the user frame sandboxed.
 
 Embedded alerts and interviews suppress audio while Page Visibility reports the overlay hidden; hidden YouTube interview media restarts when visible. **Meld's off-air visibility has not been verified**: use one browser source and Duplicator layers in other scenes to prevent duplicated audio even if Meld does not mark sources hidden.
 
@@ -368,6 +369,18 @@ Every 15 s it checks whether any message is due. The panel shows when the next o
 **Limits:** 500 characters on Twitch and 200 on YouTube. When saving, the panel warns if the template no longer fits. When sending, the text is never cut: if it does not fit on one platform, it is not sent there and stays as a partial failure with the reason; the other one does receive it. The same applies to «Write in chat» actions.
 
 The pause button also stops scheduled messages, automatic ones and «Send now». When resuming, each one restarts its full interval: whatever fell due during the pause is not recovered.
+
+### On-screen messages
+
+**Widgets › On-screen messages** (`/widget/rotator`, 1200×120) shows your own list of messages on screen, one after another. They are separate from scheduled messages: nothing is posted to chat, and the two lists are independent.
+
+- **Messages:** add, edit, remove and reorder up to 50 texts.
+- **Seconds between messages** (5–3600): from one message to the next. The panel shows how many come out per hour and how often each one repeats.
+- **Seconds on screen:** how long each message stays visible. If it is equal to the interval, the card never hides and only the text changes.
+- **Order:** in list order, or random. Random shows every message once per round and never shows the same message twice in a row.
+- **Label** (default «Mensaje»; empty hides it) and **custom CSS** with the classes `.root`, `.item`, `.item.on`, `.label` and `.text`.
+
+The preview rotates every 5 s with your messages so you can check all of them. Custom overlays can embed it as the `rotator` slot. Via MCP: `editar_widget` with `widget: "rotator"`; the message list is replaced as a whole.
 
 ### Questions, tier list and giveaway
 
