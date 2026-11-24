@@ -267,8 +267,8 @@ function apply(w) {
 // Al cambiar el tamaño de la capa se vuelve a limitar el DOM, sin suscripción adicional.
 new ResizeObserver(() => { if (cfg.layout === 'horizontal') trim(); }).observe(root);
 let first = true;
+// Backlog: the last maxMessages visible messages, so hidden ones (yours, commands, other platforms) do not use up the limit.
 connect({
-  // Backlog: the last maxMessages visible messages, so hidden ones (yours, commands, other platforms) do not use up the limit.
   widgets: s => { apply(s.widgets); if (first && !DEMO) (s.chat || []).filter(visible).slice(-(Number(cfg.maxMessages) || 12)).forEach(render); first = false; },
   chat: m => { if (!DEMO) render(m); },
   chatDelete: ({ id }) => root.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove(),
