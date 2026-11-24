@@ -550,7 +550,21 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   });
   // la persistencia puede fallar sin emitir 'change' (o estar en vuelo): el panel necesita su propio canal
   store.on('persistence', state => bus.send('persistence', state, ['panel']));
-  program.on('session', s => bus.send('meld', s, ['panel']));
+  // Escenas al aire para los overlays propios (opt-in «scene»): solo id y nombre, nunca capas,
+  // urls ni la lista completa. Meld puede tener dos a la vez (horizontal y vertical), así que es
+  // una lista en su orden; sin programa conectado, vacía. Solo se reenvía cuando cambia de verdad:
+  // la sesión también se emite por capas o volumen.
+  const onAirScenes = () => (program.connected ? program.session().scenes || [] : [])
+    .filter(s => s.current).map(s => ({ id: String(s.id), name: String(s.name ?? '') }));
+  let lastOnAir = JSON.stringify(onAirScenes());
+  const pushScene = () => {
+    const list = onAirScenes(), key = JSON.stringify(list);
+    if (key === lastOnAir) return;
+    lastOnAir = key;
+    bus.send('scene', list, ['widget'], 'scene');
+  };
+  program.on('session', s => { bus.send('meld', s, ['panel']); pushScene(); });
+  program.on('status', pushScene);
   // S2/S12: el panel ve qué acción de chat falló (total o parcialmente) y en qué plataforma; los éxitos no se reenvían.
   engine.on('chatResult', r => { if (!r.ok) bus.send('chatResult', r, ['panel']); });
   let startScheduleRollover = () => {}, closeScheduleStart = () => {};
@@ -1274,7 +1288,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // New snapshots are opt-in so legacy SSE/WebSocket clients keep their exact stream.
     const themeInfo = url.searchParams.get('themeInfo') === '1';
     const customTheme = kind === 'widget' && url.searchParams.get('customTheme') === '1';
-    bus.addClient(res, kind, { events: [...(themeInfo ? ['themeInfo'] : []), ...(customTheme ? ['customTheme'] : [])] });
+    const scene = kind === 'widget' && url.searchParams.get('scene') === '1';
+    bus.addClient(res, kind, { events: [...(themeInfo ? ['themeInfo'] : []), ...(customTheme ? ['customTheme'] : []), ...(scene ? ['scene'] : [])] });
     if (kind === 'dock-meters') {
       meterWatchers.add(res);
       updateMeterInterest();
@@ -1302,6 +1317,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (themeInfo) res.write(`event: activeTheme\ndata: ${JSON.stringify(activeTheme(store.config.themes))}\n\n`);
       if (customTheme) res.write(`event: customOverlayTheme\ndata: ${JSON.stringify(customOverlayThemeSnapshot())}\n\n`);
     }
+    if (scene) res.write(`event: scene\ndata: ${JSON.stringify(onAirScenes())}\n\n`);
     pushStatus();
   };
 

@@ -4,6 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
+import { fakeMeld } from './helpers/fake-meld.mjs';
 
 async function start(dataDir) {
   dataDir ??= await mkdtemp(path.join(tmpdir(), 'egdev-custom-overlays-'));
@@ -251,8 +252,8 @@ test('el SDK de los overlays se sirve como JavaScript y no lo captura la ruta de
     assert.equal(r.status, 200);
     assert.match(r.headers.get('content-type'), /^text\/javascript/);
     const src = await r.text();
-    // Declara la API pública y los seis eventos documentados en la especificación (S6).
-    for (const ev of ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme']) assert.ok(src.includes(`'${ev}'`), `el SDK documenta el evento ${ev}`);
+    // Declara la API pública, los seis eventos de la especificación (S6) y las escenas al aire.
+    for (const ev of ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme', 'scene']) assert.ok(src.includes(`'${ev}'`), `el SDK documenta el evento ${ev}`);
     // Solo habla con su shell: la petición de acción va por postMessage al padre (S11b) y el SDK
     // nunca llama a la API de antena (el marco es opaco y no tiene acceso a ella).
     assert.match(src, /win\.parent\.postMessage\(/);
@@ -345,4 +346,83 @@ test('la shell retransmite con postMessage a un origen opaco y solo atiende a su
     assert.doesNotMatch(html, /api\/overlay\/shown/);
     assert.doesNotMatch(html, /client=overlay|'overlay'/);
   } finally { await close(); }
+});
+
+test('scene: solo los widgets que lo piden reciben las escenas al aire; sin programa, lista vacía', async () => {
+  const app = await start();
+  const optIn = await sse(app.base + '/api/stream?client=widget&scene=1');
+  const legacy = await sse(app.base + '/api/stream?client=widget');
+  try {
+    assert.deepEqual(await optIn.next('scene'), [], 'sin programa conectado no hay escena al aire');
+    await assert.rejects(legacy.next('scene', () => true, 300), /no "scene"/, 'un widget que no lo pide conserva su stream de siempre');
+  } finally { optIn.close(); legacy.close(); await app.close(); }
+});
+
+test('scene: sigue a la escena al aire de Meld, sin repetir por cambios ajenos, y se vacía al desconectar', async () => {
+  const meldSrv = fakeMeld();
+  await new Promise(r => meldSrv.server.listen(0, '127.0.0.1', r));
+  const { app, base, call, close } = await start();
+  let widget, legacy;
+  try {
+    await call('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${meldSrv.server.address().port}` });
+    for (let i = 0; i < 80 && app.meld.status.state !== 'conectado'; i++) await new Promise(r => setTimeout(r, 25));
+    assert.equal(app.meld.status.state, 'conectado', 'el Meld simulado no conectó');
+    widget = await sse(base + '/api/stream?client=widget&scene=1');
+    legacy = await sse(base + '/api/stream?client=widget');
+    const first = await widget.next('scene', d => d.length > 0);
+    assert.deepEqual(first, [{ id: 's1', name: 'Cámara' }], 'solo id y nombre: ni capas, ni urls, ni la lista completa');
+
+    meldSrv.setCurrentScenes(['s2']);
+    assert.deepEqual(await widget.next('scene', d => d[0]?.id === 's2'), [{ id: 's2', name: 'Pantalla' }]);
+
+    meldSrv.addTrack('t2');   // cambia la sesión, no la escena al aire
+    await new Promise(r => setTimeout(r, 200));
+    meldSrv.setCurrentScenes(['s1', 's2']);   // horizontal + vertical al aire
+    // The very next scene frame must be the two-scene list: a duplicate sent for the track change would come first.
+    assert.deepEqual(await widget.next('scene'), [{ id: 's1', name: 'Cámara' }, { id: 's2', name: 'Pantalla' }],
+      'un cambio de sesión sin cambio de escena no se reenvía; dos escenas al aire llegan juntas');
+
+    await call('POST', '/api/meld/disconnect');
+    assert.deepEqual(await widget.next('scene', d => d.length === 0), [], 'al desconectar no queda una escena vieja');
+    await assert.rejects(legacy.next('scene', () => true, 300), /no "scene"/, 'el widget sin opt-in nunca recibe scene');
+  } finally {
+    widget?.close(); legacy?.close();
+    await close();
+    await new Promise(r => meldSrv.server.close(r));
+  }
+});
+
+test('scene: la foto de la shell también llega por WebSocket sin programa, como último frame inicial', async () => {
+  const { base, close } = await start();
+  const ws = new WebSocket(`ws://127.0.0.1:${new URL(base).port}/api/stream?client=widget&themeInfo=1&customTheme=1&scene=1`);
+  let text = '';
+  ws.onmessage = e => { text += e.data; };
+  try {
+    await new Promise(r => setTimeout(r, 400));
+    const events = [...text.matchAll(/^event: (.+)$/gm)].map(m => m[1]);
+    assert.equal(events.at(-1), 'scene', 'ready de la shell espera a scene: tiene que llegar siempre');
+    assert.match(text, /event: scene\ndata: \[\]\n\n/);
+  } finally { ws.close(); await close(); }
+});
+
+test('scene: un nombre ausente pasa a "" y el orden sigue el índice de Meld, sin capas ni urls', async () => {
+  const meldSrv = fakeMeld({
+    a: { type: 'scene', index: 2, current: true },
+    b: { type: 'scene', name: 'Uno', index: 0, current: true },
+    l: { type: 'layer', parent: 'b', name: 'L', index: 0, visible: true, url: 'http://secret' },
+    t1: { type: 'track', name: 'Micro', muted: false },
+  });
+  await new Promise(r => meldSrv.server.listen(0, '127.0.0.1', r));
+  const { app, base, call, close } = await start();
+  let widget;
+  try {
+    await call('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${meldSrv.server.address().port}` });
+    for (let i = 0; i < 80 && app.meld.status.state !== 'conectado'; i++) await new Promise(r => setTimeout(r, 25));
+    widget = await sse(base + '/api/stream?client=widget&scene=1');
+    assert.deepEqual(await widget.next('scene', d => d.length > 0), [{ id: 'b', name: 'Uno' }, { id: 'a', name: '' }]);
+  } finally {
+    widget?.close();
+    await close();
+    await new Promise(r => meldSrv.server.close(r));
+  }
 });

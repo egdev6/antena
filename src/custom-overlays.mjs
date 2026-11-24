@@ -354,7 +354,7 @@ export function shellHtml(overlay) {
   const id = ${JSON.stringify(overlay.id)};
   const frame = document.getElementById('frame');
   // Solo lo que el usuario puede ver: nada de secretos ni de la cola de alertas.
-  const SNAPSHOTS = ['widgets', 'viewers', 'interactive', 'themeSnapshot'];
+  const SNAPSHOTS = ['widgets', 'viewers', 'interactive', 'themeSnapshot', 'scene'];
   const state = {};
   let version = ${Number(overlay.updatedAt) || 0};
   let loaded = false;
@@ -366,7 +366,8 @@ export function shellHtml(overlay) {
   };
   // El SDK resuelve «ready» cuando ya tiene el estado de los widgets y el marco ha cargado.
   const sendReady = () => {
-    if (ready || !loaded || !('widgets' in state) || !('themeSnapshot' in state) || !frame.contentWindow) return;
+    // «scene» llega siempre al conectar (lista vacía sin programa), así que esperarla no puede colgar ready.
+    if (ready || !loaded || !('widgets' in state) || !('themeSnapshot' in state) || !('scene' in state) || !frame.contentWindow) return;
     ready = true;
     frame.contentWindow.postMessage({ antena: 1, ready: true }, '*');
   };
@@ -428,6 +429,8 @@ export function shellHtml(overlay) {
     widgets: relay('widgets'),
     viewers: relay('viewers'),
     interactive: relay('interactive'),
+    // Escenas al aire (lista de { id, name }); la utilidad común pide el opt-in al ver este manejador.
+    scene: relay('scene'),
     customOverlayTheme: relayTheme,
     chat: relay('chat'),
     publicAlert: data => relay('alert')(data),

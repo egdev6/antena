@@ -85,7 +85,7 @@ test('on devuelve la baja, off da de baja por función y cada suscripción es in
 
 test('state guarda el último valor de cada evento y on entrega el snapshot actual al suscribirse', () => {
   const { antena, deliver } = loadSdk();
-  assert.deepEqual(Object.keys(antena.state).sort(), ['alert', 'chat', 'interactive', 'theme', 'viewers', 'widgets']);
+  assert.deepEqual(Object.keys(antena.state).sort(), ['alert', 'chat', 'interactive', 'scene', 'theme', 'viewers', 'widgets']);
   for (const ev of Object.keys(antena.state)) assert.equal(antena.state[ev], null, `${ev} empieza a null`);
 
   deliver({ antena: 1, event: 'widgets', data: { totals: { follows: 3 } } });
@@ -196,4 +196,19 @@ test('run: pide la acción a la shell por el padre y resuelve o rechaza con su r
   await assert.rejects(antena.run('scene', 'Pantalla'), { name: 'TypeError' });
   await assert.rejects(antena.run('scene', null), { name: 'TypeError' });
   assert.equal(delivered.length, 3, 'nada mal formado cruza a la shell');
+});
+
+test('scene entrega la lista de escenas al aire y state guarda la última', () => {
+  const { antena, deliver } = loadSdk();
+  assert.equal(antena.state.scene, null, 'scene empieza a null');
+  const got = [];
+  antena.on('scene', list => got.push(list));
+  deliver({ antena: 1, event: 'scene', data: [{ id: 's1', name: 'Cámara' }] });
+  deliver({ antena: 1, event: 'scene', data: [{ id: 's2', name: 'Pantalla' }, { id: 'v1', name: 'Vertical' }] });
+  deliver({ antena: 1, event: 'scene', data: [] });
+  assert.deepEqual(got, [[{ id: 's1', name: 'Cámara' }], [{ id: 's2', name: 'Pantalla' }, { id: 'v1', name: 'Vertical' }], []]);
+  assert.deepEqual(antena.state.scene, [], 'sin programa conectado la lista queda vacía');
+  const late = [];
+  antena.on('scene', list => late.push(list));
+  assert.deepEqual(late, [[]], 'una suscripción tardía recibe la lista actual');
 });

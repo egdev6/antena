@@ -75,7 +75,8 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   `/custom/<id>/frame` (`Content-Security-Policy: sandbox allow-scripts`), es decir, en un origen
   opaco sin API ni SSE; la shell de confianza `/custom/<id>` le pasa los datos públicos por
   `postMessage` y escucha `customOverlayVersions` para recargar la capa al guardar. El SDK
-  (`public/custom/sdk.js`) expone `antena.on`, `antena.state`, `antena.ready` y
+  (`public/custom/sdk.js`) expone `antena.on`, `antena.state` (incluye `scene`, las escenas al aire
+  como `[{ id, name }]`, por opt-in `scene=1` del cliente widget), `antena.ready` y
   `antena.run(kind, params)`: las acciones solo se ejecutan si el usuario aprobó ese tipo en el
   panel (`PUT …/permissions`, que exige `Sec-Fetch-Site: same-origin`; el MCP solo las pide), con
   un tope de 10 cada 10 s por overlay (429) y aviso en el editor si el código cambió desde la

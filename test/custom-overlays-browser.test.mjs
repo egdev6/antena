@@ -311,3 +311,40 @@ test('S11b: antena.run sin aprobación rechaza la promesa y no toca Meld', { tim
       () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
 });
+
+// Overlay único para todas las escenas: el marco opaco se entera de la escena al aire y de sus cambios.
+test('un overlay propio recibe por el SDK la escena al aire y sus cambios', { timeout: 120000 }, async t => {
+  const bin = await findChrome();
+  if (!bin) return t.skip('sin Chrome local; define CHROME_PATH para ejecutar la prueba de navegador');
+  const back = await recorder();
+  const meldSrv = fakeMeld();
+  await new Promise(r => meldSrv.server.listen(0, '127.0.0.1', r));
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'egdev-custom-scene-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const api = (method, url, body) => fetch(base + url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async r => {
+    const d = await r.json(); if (!r.ok) throw new Error(d.error); return d;
+  });
+  let chrome;
+  try {
+    await api('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${meldSrv.server.address().port}` });
+    for (let i = 0; i < 40 && app.meld.status.state !== 'conectado'; i++) await sleep(25);
+    assert.equal(app.meld.status.state, 'conectado', 'el Meld simulado no conectó');
+    const overlay = (await api('POST', '/api/custom-overlays', {
+      name: 'Escenas',
+      js: "antena.ready.then(() => fetch('" + back.base + "/ready?names=' + encodeURIComponent((antena.state.scene || ['sin-dato']).map(s => s.name || s).join('|')), { mode: 'no-cors' }));"
+        + "antena.on('scene', list => fetch('" + back.base + "/scene?names=' + encodeURIComponent(list.map(s => s.name).join('|')), { mode: 'no-cors' }));",
+    })).overlay;
+    chrome = await openChromePage(bin, `${base}/custom/${overlay.id}`);
+    await back.waitFor(h => h === '/scene?names=C%C3%A1mara', 30000);
+    // ready implies the on-air scenes are already in antena.state.
+    assert.equal(await back.waitFor(h => h.startsWith('/ready'), 30000), '/ready?names=C%C3%A1mara');
+    meldSrv.setCurrentScenes(['s2']);
+    await back.waitFor(h => h === '/scene?names=Pantalla', 30000);
+  } finally {
+    await closeAll(() => chrome && closeChrome(chrome), () => back.close(), () => meldSrv.server.close(),
+      () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
+  }
+});

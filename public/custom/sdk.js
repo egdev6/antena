@@ -13,7 +13,7 @@
  *                          it, so late subscriptions start with data. Each call is independent.
  *   antena.off(event, fn)  Removes one subscription of fn for that event.
  *   antena.state           Latest value per event; every key starts as null.
- *                          { alert, chat, viewers, widgets, interactive, theme }
+ *                          { alert, chat, viewers, widgets, interactive, theme, scene }
  *   antena.ready           Promise that resolves once the shell confirms it is connected and has
  *                          pushed the current snapshots. Await it before reading antena.state.
  *   antena.run(kind, p)    Promise that resolves when the approved action ran and rejects with
@@ -31,6 +31,10 @@
  *   'interactive'  Live questions, tier list, vote and giveaway state.
  *   'theme'        Public theme (the accents and other variables of /theme.css), plus the active
  *                  saved theme's id and name. antena.state.theme is the latest snapshot.
+ *   'scene'        Scenes on air in the streaming program, in its order: [{ id, name }]. Meld can
+ *                  have two at once (horizontal and vertical). Empty list when no program is
+ *                  connected. Sent again only when the on-air scenes change, never the scene list,
+ *                  layers or URLs.
  *
  * Only messages posted by the parent window (the shell) and marked with `antena: 1` are accepted;
  * anything else in the page (another frame, a stray script, a user event) is ignored.
@@ -38,7 +42,7 @@
 (function (win) {
   'use strict';
 
-  var EVENTS = ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme'];
+  var EVENTS = ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme', 'scene'];
   var state = {};
   var handlers = {};
   var markReady;
