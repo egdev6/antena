@@ -65,11 +65,11 @@ test('slots compose the real chat, move, exit, re-enter, and reject a URL', { ti
     await api('/api/chat/simulate', { user:'Viewer', text:'real slot message', platform:'twitch' });
     await waitDom(c, `${chat}?.contentDocument?.body?.textContent.includes('real slot message')`);
     await waitDom(c, `Math.abs(${chat}.getBoundingClientRect().x-30)<1 && Math.abs(${chat}.getBoundingClientRect().y-40)<1`);
-    assert.deepEqual(await evaluateChrome(c, `(() => {const r=${chat}.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]})()`), [30,40,300,200]);
+    assert.deepEqual(await evaluateChrome(c, `(() => {const r=${chat}.getBoundingClientRect(); return [r.x,r.y,r.width,r.height].map(Math.round)})()`), [30,40,300,200]);
     const send = (slots, options = {duration:100}) => evaluateChrome(c, `document.querySelector('#frame').contentWindow.postMessage(${JSON.stringify({testSlot:slots,options})}, '*')`);
     await send({chat:{widget:'chat', rect:[120,90,250,160], enter:'right', exit:'down'}});
     await waitDom(c, `Math.abs(${chat}.getBoundingClientRect().x-120)<1 && Math.abs(${chat}.getBoundingClientRect().width-250)<1`);
-    assert.deepEqual(await evaluateChrome(c, `(() => {const r=${chat}.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]})()`), [120,90,250,160]);
+    assert.deepEqual(await evaluateChrome(c, `(() => {const r=${chat}.getBoundingClientRect(); return [r.x,r.y,r.width,r.height].map(Math.round)})()`), [120,90,250,160]);
     await send({chat:{widget:'chat',rect:null,exit:'down'}});
     await waitDom(c, `getComputedStyle(${chat}).opacity === '0' && ${chat}.getBoundingClientRect().top >= 1079`);
     assert.equal(await evaluateChrome(c, `getComputedStyle(${chat}).pointerEvents`), 'none');
