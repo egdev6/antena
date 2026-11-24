@@ -3,8 +3,8 @@
  *
  * Custom overlays run inside an opaque-origin sandbox (see /custom/<id>), so their code cannot
  * call the antena API or open the event stream: the trusted shell page owns the connection and
- * forwards the public data over postMessage. The only way out is antena.run: the SDK posts a run
- * request to the shell, which checks it and asks the server. The server runs it only when the
+ * forwards the public data over postMessage. The SDK can request validated slots or an antena.run
+ * action from the shell, which checks each request and asks the server for approved actions. The server runs it only when the
  * USER approved that action kind for this overlay in the panel; otherwise it rejects (403) and
  * nothing happens. A buggy loop cannot flood the stream: 10 actions per 10 s per overlay.
  *
@@ -16,6 +16,18 @@
  *                          { alert, chat, viewers, widgets, interactive, theme, scene, sceneSwitch }
  *   antena.ready           Promise that resolves once the shell confirms it is connected and has
  *                          pushed the current snapshots. Await it before reading antena.state.
+ *   antena.slots.place(slots, options)  Place named Antena widgets in the trusted shell.
+ *   antena.slots.clear(name?)            Remove one or all slots immediately.
+ *     Slots: {name:{widget, params?, rect:[x,y,w,h]|null, enter?, exit?, layer?, fit?, css?}}.
+ *     Options: {duration, easing, delay} in ms/CSS easing. Directions: none, fade (default),
+ *     left, right, up, down; layer: above (default) or below; fit: slot (default) or canvas.
+ *     Allowed widgets/params: chat(variant), viewers(layout=column), goal(id), latest(items,
+ *     layout=column), ticker, thanks, giveaway, question(nocount), tierlist(id,nopool),
+ *     interview(item), credits(loop,transparent), alerts, custom(id). No URLs, self-embedding
+ *     or nested custom overlays. 12 slots; 20 updates/s; invalid requests warn once. Slot CSS
+ *     rejects resource loads, escapes and comments to prevent untrusted CSS making same-origin requests.
+ *     Embedded alerts/interviews follow Page Visibility; Meld off-air visibility is unverified:
+ *     use one browser source and Duplicator layers to prevent duplicated audio.
  *   antena.run(kind, p)    Promise that resolves when the approved action ran and rejects with
  *                          the server's error otherwise. Kinds: scene, layer, hideLayer,
  *                          toggleLayer, effect, command, streamEvent, chat, say.
@@ -56,7 +68,7 @@
   var RUN_TIMEOUT_MS = 15000;
   var runs = {};        // reqId → responde la promesa de antena.run
   var runSeq = 0;
-  var themeStyle = null, pendingSnapshot = null;
+  var themeStyle = null, slotStyle = null, pendingSnapshot = null;
 
   // CSS is always installed as text, never parsed as HTML.
   function applyThemeCss(css) {
@@ -68,6 +80,14 @@
     }
     themeStyle.textContent = css;
     doc.head.appendChild(themeStyle);
+    if (slotStyle) doc.head.appendChild(slotStyle);
+  }
+  function applySlotCss(css) {
+    var doc = win.document;
+    if (!doc || !doc.head || typeof css !== 'string') return;
+    if (!slotStyle) { slotStyle = doc.createElement('style'); slotStyle.id = 'antena-slot-extra'; }
+    slotStyle.textContent = css;
+    doc.head.appendChild(slotStyle);
   }
   function applyLookCss(css) {
     var doc = win.document, node = doc && doc.getElementById('antena-look');
@@ -99,6 +119,7 @@
   if (win.document) win.document.addEventListener('DOMContentLoaded', function () {
     if (pendingSnapshot) applyThemeSnapshot(pendingSnapshot);
     else if (themeStyle) win.document.head.appendChild(themeStyle);
+    if (slotStyle) win.document.head.appendChild(slotStyle);
   });
 
   for (var i = 0; i < EVENTS.length; i++) {
@@ -164,6 +185,8 @@
     if (!msg || msg.source !== win.parent) return;                       // solo la shell
     var data = msg.data;
     if (!data || typeof data !== 'object' || data.antena !== 1) return;  // solo nuestro canal
+    if (typeof data.slotError === 'string') { if (win.console) win.console.warn(data.slotError); return; }
+    if (typeof data.slotCss === 'string') { applySlotCss(data.slotCss); return; }
     if (data.ready === true) { markReady(); return; }                    // fin del snapshot inicial
     if (data.runResult && typeof data.runResult === 'object') {
       var out = data.runResult, waiting = typeof out.reqId === 'string' ? runs[out.reqId] : null;
@@ -180,5 +203,13 @@
     emit(data.event, data.data);
   });
 
-  win.antena = { on: on, off: off, state: state, ready: ready, run: run };
+  function sendSlots(request) {
+    try { win.parent.postMessage({ antena: 1, slots: request }, '*'); }
+    catch (err) { if (win.console) win.console.warn('Slots: no se pudo enviar la petición'); }
+  }
+  var slots = {
+    place: function (value, options) { sendSlots({ op: 'place', slots: value, options: options }); },
+    clear: function (name) { sendSlots({ op: 'clear', name: name }); }
+  };
+  win.antena = { on: on, off: off, state: state, ready: ready, run: run, slots: slots };
 })(window);

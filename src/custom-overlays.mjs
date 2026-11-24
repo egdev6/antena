@@ -343,7 +343,7 @@ export function shellHtml(overlay) {
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>antena · ${escAttr(overlay.name)}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}iframe{border:0;width:100%;height:100%;display:block;background:transparent}</style>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}iframe{border:0;display:block;background:transparent}#frame{position:absolute;inset:0;width:100%;height:100%;z-index:1}.widget-slot{position:absolute;box-sizing:border-box}</style>
 </head><body>
 <iframe id="frame" title="${escAttr(overlay.name)}" sandbox="allow-scripts" allowtransparency="true" src="/custom/${id}/frame?v=${Number(overlay.updatedAt) || 0}"></iframe>
 <script>
@@ -359,6 +359,7 @@ export function shellHtml(overlay) {
   let version = ${Number(overlay.updatedAt) || 0};
   let loaded = false;
   let ready = false;
+  let inheritedSlotCss = null;
 
   const post = (event, data) => {
     if (!frame.contentWindow) return;
@@ -377,6 +378,169 @@ export function shellHtml(overlay) {
     theme: { ...data.theme, ...(data.activeTheme || {}) },
     lookCss: data.lookCss,
     extraCss: typeof data.customOverlayCss?.[id] === 'string' ? data.customOverlayCss[id] : '',
+  });
+
+  // Slots are rendered outside the opaque frame. All input, including the URL components,
+  // is validated here: the sandbox can request public pages but cannot choose an arbitrary URL.
+  const canvasWidth = ${Number(overlay.width) || 1920}, canvasHeight = ${Number(overlay.height) || 1080};
+  const widgetParams = {
+    chat: ['variant'], viewers: ['layout'], goal: ['id'], latest: ['items', 'layout'],
+    ticker: [], thanks: [], giveaway: [], question: ['nocount'], tierlist: ['id', 'nopool'],
+    interview: ['item'], credits: ['loop', 'transparent'], alerts: [], custom: ['id'],
+  };
+  const directions = ['none', 'fade', 'left', 'right', 'up', 'down'];
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
+  const only = (o, keys) => Object.keys(o).every(k => keys.includes(k));
+  const nameOK = n => typeof n === 'string' && /^[a-z0-9_-]{1,32}$/.test(n);
+  const slots = new Map(), pendingSlots = new Map();
+  let slotScheduled = false, lastSlotUpdate = -Infinity;
+  const slotError = () => frame.contentWindow?.postMessage({ antena: 1, slotError: 'Slots: petición no válida' }, '*');
+  function parseOptions(value) {
+    if (value === undefined) value = {};
+    if (!object(value) || !only(value, ['duration', 'easing', 'delay'])) return null;
+    const duration = value.duration === undefined ? 0 : value.duration;
+    const delay = value.delay === undefined ? 0 : value.delay;
+    const easing = value.easing === undefined ? 'ease' : value.easing;
+    if (![duration, delay].every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0)) return null;
+    if (typeof easing !== 'string' || !CSS.supports('transition-timing-function', easing)) return null;
+    return { duration, delay, easing };
+  }
+  function parseSlot(value) {
+    if (!object(value) || !only(value, ['widget', 'params', 'rect', 'enter', 'exit', 'layer', 'fit', 'css'])) return null;
+    const widget = value.widget;
+    if (typeof widget !== 'string' || !own(widgetParams, widget)) return null;
+    const params = value.params === undefined ? {} : value.params;
+    if (!object(params) || !only(params, widgetParams[widget])) return null;
+    for (const [key, val] of Object.entries(params)) {
+      if (!['string', 'number', 'boolean'].includes(typeof val) || (typeof val === 'number' && !Number.isFinite(val))) return null;
+      if (key === 'layout' && val !== 'column') return null;
+    }
+    if (widget === 'custom' && (typeof params.id !== 'string' || !/^[a-z0-9-]{1,40}$/.test(params.id) || params.id === id || window.parent !== window)) return null;
+    const rect = value.rect;
+    if (rect !== null && (!Array.isArray(rect) || rect.length !== 4 || !rect.every(n => typeof n === 'number' && Number.isFinite(n)) ||
+        Math.abs(rect[0]) > 2 * canvasWidth || Math.abs(rect[1]) > 2 * canvasHeight || rect[2] < 1 || rect[2] > 4320 || rect[3] < 1 || rect[3] > 4320)) return null;
+    const enter = value.enter === undefined ? 'fade' : value.enter, exit = value.exit === undefined ? 'fade' : value.exit;
+    const layer = value.layer === undefined ? 'above' : value.layer, fit = value.fit === undefined ? 'slot' : value.fit;
+    const css = value.css === undefined ? '' : value.css;
+    if (!directions.includes(enter) || !directions.includes(exit) || !['above', 'below'].includes(layer) || !['slot', 'canvas'].includes(fit) || typeof css !== 'string') return null;
+    // CSS runs on a trusted page: resource loads could otherwise call same-origin /sd actions
+    // without permission. Reject escapes/comments as well, so they cannot disguise a token.
+    const lowerCss = css.toLowerCase();
+    if (css.includes(String.fromCharCode(92)) || css.includes('/*') ||
+        ['url', 'image-set', 'image(', 'src(', '@import', '@namespace', '@font-face'].some(token => lowerCss.includes(token))) return null;
+    const query = new URLSearchParams();
+    for (const key of widgetParams[widget]) if (own(params, key)) query.set(key, String(params[key]));
+    if (widget === 'custom') { query.delete('id'); query.set('embedded', '1'); }
+    else {
+      if (fit === 'slot') query.set('slot', '1');
+      if (widget === 'alerts' || widget === 'interview') query.set('embedded', '1');
+    }
+    const path = widget === 'alerts' ? '/overlay' : widget === 'custom' ? '/custom/' + encodeURIComponent(params.id) : '/widget/' + widget;
+    const url = path + (query.toString() ? '?' + query.toString() : '');
+    return { rect, enter, exit, layer, fit, css, url };
+  }
+  function installSlotCss(entry) {
+    try {
+      const doc = entry.node.contentDocument;
+      if (!doc || !doc.head) return;
+      let style = doc.getElementById('antena-slot-extra');
+      if (!style) { style = doc.createElement('style'); style.id = 'antena-slot-extra'; }
+      style.textContent = entry.css;
+      doc.head.appendChild(style);
+      if (entry.url.startsWith('/custom/')) entry.node.contentWindow.postMessage({ antena: 1, slotCss: entry.css }, location.origin);
+    } catch { /* Navigated away from Antena: never access a foreign page. */ }
+  }
+  function offset(direction, r) {
+    if (direction === 'left') return 'translateX(' + (-r[0] - r[2]) + 'px)';
+    if (direction === 'right') return 'translateX(' + (canvasWidth - r[0]) + 'px)';
+    if (direction === 'up') return 'translateY(' + (-r[1] - r[3]) + 'px)';
+    if (direction === 'down') return 'translateY(' + (canvasHeight - r[1]) + 'px)';
+    return 'none';
+  }
+  function applySlot(name, config, options) {
+    let entry = slots.get(name);
+    if (!entry) {
+      const node = document.createElement('iframe');
+      node.className = 'widget-slot'; node.title = 'Widget: ' + name;
+      entry = { node, css: '', url: '', visible: false, rect: [0, 0, 1, 1] };
+      node.addEventListener('load', () => installSlotCss(entry));
+      document.body.appendChild(node); slots.set(name, entry);
+    }
+    const node = entry.node, style = node.style;
+    entry.css = config.css;
+    if (entry.url !== config.url) { entry.url = config.url; node.src = config.url; }
+    else installSlotCss(entry);
+    style.zIndex = config.layer === 'below' ? '0' : '2';
+    const r = config.fit === 'canvas' ? [0, 0, canvasWidth, canvasHeight] : (config.rect || entry.rect);
+    if (config.rect) entry.rect = config.rect;
+    const transition = 'all ' + options.duration + 'ms ' + options.easing + ' ' + options.delay + 'ms';
+    if (config.rect && !entry.visible) {
+      style.transition = 'none';
+      style.left = r[0] + 'px'; style.top = r[1] + 'px'; style.width = config.fit === 'canvas' ? '100%' : r[2] + 'px'; style.height = config.fit === 'canvas' ? '100%' : r[3] + 'px';
+      style.opacity = config.enter === 'none' ? '1' : '0'; style.transform = offset(config.enter, r);
+      void node.offsetWidth;
+    }
+    style.transition = transition;
+    if (config.rect) {
+      style.left = r[0] + 'px'; style.top = r[1] + 'px'; style.width = config.fit === 'canvas' ? '100%' : r[2] + 'px'; style.height = config.fit === 'canvas' ? '100%' : r[3] + 'px';
+      style.opacity = '1'; style.transform = 'none'; style.pointerEvents = 'auto'; entry.visible = true;
+    } else {
+      if (config.exit === 'none') style.transition = 'none';
+      style.opacity = '0'; style.transform = offset(config.exit, r); style.pointerEvents = 'none'; entry.visible = false;
+    }
+  }
+  function flushSlots() {
+    slotScheduled = false;
+    if (!pendingSlots.size) return;
+    const wait = 50 - (performance.now() - lastSlotUpdate);
+    if (wait > 0) { slotScheduled = true; setTimeout(() => requestAnimationFrame(flushSlots), wait); return; }
+    lastSlotUpdate = performance.now();
+    for (const [name, update] of pendingSlots) applySlot(name, update.config, update.options);
+    pendingSlots.clear();
+  }
+  function scheduleSlots() {
+    if (slotScheduled) return;
+    slotScheduled = true; requestAnimationFrame(flushSlots);
+  }
+  function clearSlot(name) {
+    pendingSlots.delete(name);
+    const entry = slots.get(name);
+    if (entry) { entry.node.remove(); slots.delete(name); }
+  }
+  function clearSlots() { for (const name of new Set([...slots.keys(), ...pendingSlots.keys()])) clearSlot(name); }
+  // A custom page inside a slot has its own opaque frame. Only its same-origin parent shell
+  // can forward the already-validated slot CSS; retain it across the child frame's load.
+  window.addEventListener('message', event => {
+    if (window.parent === window || event.source !== window.parent || event.origin !== location.origin ||
+        new URLSearchParams(location.search).get('embedded') !== '1') return;
+    if (!object(event.data) || event.data.antena !== 1 || typeof event.data.slotCss !== 'string') return;
+    inheritedSlotCss = event.data.slotCss;
+    frame.contentWindow?.postMessage({ antena: 1, slotCss: inheritedSlotCss }, '*');
+  });
+  window.addEventListener('message', event => {
+    if (!frame.contentWindow || event.source !== frame.contentWindow || event.origin !== 'null') return;
+    const data = event.data;
+    if (!object(data) || data.antena !== 1 || !own(data, 'slots')) return;
+    const request = data.slots;
+    if (!object(request)) return slotError();
+    if (request.op === 'clear') {
+      if (!only(request, ['op', 'name']) || (request.name !== undefined && !nameOK(request.name))) return slotError();
+      if (request.name === undefined) clearSlots(); else clearSlot(request.name);
+      return;
+    }
+    if (request.op !== 'place' || !only(request, ['op', 'slots', 'options']) || !object(request.slots)) return slotError();
+    const options = parseOptions(request.options);
+    if (!options) return slotError();
+    let invalid = false;
+    const names = new Set([...slots.keys(), ...pendingSlots.keys()]);
+    for (const [name, value] of Object.entries(request.slots)) {
+      const config = nameOK(name) && parseSlot(value);
+      if (!config || (!names.has(name) && names.size >= 12)) { invalid = true; continue; }
+      names.add(name); pendingSlots.set(name, { config, options });
+    }
+    if (invalid) slotError();
+    if (pendingSlots.size) scheduleSlots();
   });
 
   // Puente de acciones (S11b): el SDK del marco pide una acción y esta shell —que sí está en el
@@ -420,6 +584,7 @@ export function shellHtml(overlay) {
   // Marco nuevo (primer carga o recarga tras guardar): le llega el snapshot vigente de cada evento.
   frame.addEventListener('load', () => {
     loaded = true;
+    if (inheritedSlotCss !== null) frame.contentWindow?.postMessage({ antena: 1, slotCss: inheritedSlotCss }, '*');
     for (const event of SNAPSHOTS) if (event in state) post(event, state[event]);
     sendReady();
   });
@@ -439,6 +604,7 @@ export function shellHtml(overlay) {
     customOverlayVersions: v => {
       if (!(id in v) || v[id] === version) return;
       version = v[id];
+      clearSlots();
       frame.src = '/custom/' + id + '/frame?v=' + version;
     },
     // Prueba lanzada desde el panel o el MCP: efímera y dirigida a UNA capa (el id tiene que ser

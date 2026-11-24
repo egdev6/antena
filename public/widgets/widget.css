@@ -1,3 +1,6 @@
+/* Slot geometry must override even the widget's configured .root position. Other CSS stays intact. */
+body.slot .root{inset:0!important;width:auto!important;height:auto!important}
+
 /* Estilos de serie en una capa de prioridad baja: el CSS que escribas en el panel siempre gana. */
 @layer egdev {
 :root{

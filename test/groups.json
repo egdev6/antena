@@ -168,9 +168,9 @@
     "test/custom-overlays-browser.test.mjs",
     "test/custom-overlays-panel-browser.test.mjs",
     "test/detail-header-browser.test.mjs",
-    "test/discord-conexiones-browser.test.mjs",
     "test/directo-monitor-browser.test.mjs",
     "test/directos-metricas-browser.test.mjs",
+    "test/discord-conexiones-browser.test.mjs",
     "test/dock-custom-layout-browser.test.mjs",
     "test/dock-layout-breakpoint.test.mjs",
     "test/dock-live-control-browser.test.mjs",
@@ -236,6 +236,7 @@
     "test/viewers-widget.test.mjs",
     "test/widget-layout-browser.test.mjs",
     "test/widget-preview-save-browser.test.mjs",
+    "test/widget-slot-mode.test.mjs",
     "test/ws-layers-browser.test.mjs",
     "test/youtube-subscriber-count-browser.test.mjs",
     "test/youtube-subscriber-overlay-browser.test.mjs"

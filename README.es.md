@@ -291,6 +291,7 @@ Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un
 | `antena.state` | Último valor de cada evento (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`, `sceneSwitch`); empiezan en `null` |
 | `antena.ready` | Promesa que se resuelve cuando ya hay datos: espera antes de leer `antena.state` |
 | `antena.run(tipo, params)` | Pide una acción aprobada: resuelve si se ejecutó y se rechaza con el error del servidor si no |
+| `antena.slots.place(huecos, opciones)` / `antena.slots.clear(nombre?)` | Coloca, mueve u oculta widgets reales; borra uno o todos al momento |
 
 ```js
 const quien = document.querySelector('.quien');
@@ -310,6 +311,23 @@ El evento `scene` y `antena.state.scene` listan las escenas al aire en el progra
 
 Meld informa de la nueva escena al aire solo cuando termina su transición. Cuando es Antena quien cambia la escena (dock, atajos, Stream Deck, acciones o `antena.run('scene')`), `sceneSwitch` trae la escena destino `{ id, name }` al momento, antes de que el programa la confirme, para que el overlay se anime a la vez que la transición del programa. Si el programa rechaza el cambio, se vuelve a enviar `scene` con las escenas reales al aire. Los cambios hechos directamente en Meld u OBS solo llegan por `scene`. Ordenar la escena que ya está al aire envía `sceneSwitch` sin un `scene` detrás, y `sceneSwitch` trae la escena ordenada, que puede ser una vertical.
 
+#### Huecos de widgets
+
+```js
+antena.slots.place({
+  chat: { widget: 'chat', rect: [1500, 82, 400, 488], enter: 'right', exit: 'right' },
+  alerts: { widget: 'alerts', fit: 'canvas', rect: [0, 0, 1920, 1080], enter: 'none', exit: 'none' }
+}, { duration: 600, easing: 'cubic-bezier(0.65, 0, 0.35, 1)', delay: 0 });
+// Para ocultar con la salida, vuelve a colocar el hueco con rect: null.
+antena.slots.clear('chat'); // clear() borra todos sin animación
+```
+
+Solo cambian los huecos nombrados; los demás conservan su estado. Nombres `a-z0-9_-` (hasta 32 caracteres). Cada hueco admite `widget`, `params` opcional, `rect` (píxeles del lienzo `[x,y,w,h]` o `null`), `enter`/`exit` (`none`, `fade`, `left`, `right`, `up`, `down`; por defecto `fade`), `layer` (`above` por defecto o `below`), `fit` (`slot` por defecto o `canvas`) y `css` adicional tras el CSS propio del widget. `slot` hace que `.root` llene el rectángulo; `canvas` llena el lienzo y conserva posición y animaciones propias. Cambiar widget o parámetros recarga su página. No devuelven nada; los datos inválidos se ignoran y se avisan una vez en la consola del overlay. Por seguridad, el CSS del hueco rechaza tokens de carga de recursos (`url`, `image-set`, `image(`, `src(`, `@import`, `@namespace`, `@font-face`), escapes y comentarios: se ejecuta en una página de confianza y no debe hacer peticiones en nombre del marco aislado.
+
+Permitidos: `chat` (`variant`), `viewers` (`layout: 'column'`), `goal` (`id`), `latest` (`items`, `layout: 'column'`), `ticker`, `thanks`, `giveaway`, `question` (`nocount`), `tierlist` (`id`, `nopool`), `interview` (`item`), `credits` (`loop`, `transparent`), `alerts` y `custom` (`id` de otro overlay). Sin URLs arbitrarias, autoinclusión ni overlays propios dentro de otro incrustado. Máximo 12 huecos; rects finitos, ancho/alto 1–4320 y x/y dentro de ±2 dimensiones del lienzo. Las actualizaciones se agrupan por frame y limitan a 20/s. La shell incrusta estas páginas públicas sin permisos de acción y mantiene aislado el marco del usuario.
+
+Las alertas y entrevistas incrustadas silencian audio cuando Page Visibility indica que el overlay está oculto; el vídeo YouTube de entrevista se reinicia al volver a verse. **No se ha comprobado la visibilidad fuera de escena en Meld**: usa una sola fuente de navegador y capas Duplicator en las demás escenas para evitar audio duplicado aunque Meld no marque ocultas las fuentes.
+
 #### Permisos
 
 El agente **pide** permisos al crear o editar; solo tú los **apruebas** en el panel (interruptores de la pestaña Permisos), y solo se pueden aprobar los que el overlay pide. Tipos: `scene`, `layer`, `hideLayer`, `toggleLayer`, `effect`, `command`, `streamEvent`, `chat` y `say`.
@@ -318,7 +336,7 @@ El agente **pide** permisos al crear o editar; solo tú los **apruebas** en el p
 - Tope de **10 acciones cada 10 segundos** por overlay: por encima, 429 y no se ejecuta.
 - Cambiar el HTML, CSS o JavaScript retira los permisos aprobados. Revisa el código nuevo y vuelve a aprobarlos en el panel; cambiar otros ajustes no los retira.
 
-**Seguridad.** El código corre en un `<iframe sandbox>` con origen opaco, en una página aparte: no tiene la API de antena, no puede leer el panel ni abrir el flujo de eventos. Los datos le llegan solo por mensajes de la página que lo aloja, y lo único que puede pedir de vuelta son las acciones que apruebas.
+**Seguridad.** El código corre en un `<iframe sandbox>` con origen opaco, en una página aparte: no tiene la API de antena, no puede leer el panel ni abrir el flujo de eventos. Los datos le llegan solo por mensajes de la página que lo aloja, y solo puede pedir de vuelta acciones aprobadas o huecos validados con páginas públicas de Antena.
 
 Por MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay` y `probar_overlay` (manda un evento de ejemplo a una capa abierta).
 

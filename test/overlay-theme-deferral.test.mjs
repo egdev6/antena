@@ -22,7 +22,7 @@ class Element {
   remove() { this.removed = true; }
 }
 
-async function overlay() {
+async function overlay({ search = '', hidden = false } = {}) {
   const html = await readFile(new URL('../public/overlay.html', import.meta.url), 'utf8');
   const script = /<script type="module">\s*import \{ AntenaStream \}[^\n]*\n([\s\S]*?)<\/script>/.exec(html);
   assert.ok(script, 'módulo del overlay');
@@ -30,12 +30,12 @@ async function overlay() {
     'tpl-card': { content: { firstElementChild: new Element() } } };
   const audio = [], timers = new Map(); let now = 0, nextId = 0, stream;
   class FakeStream extends EventTarget { constructor() { super(); stream = this; } }
-  class Audio { constructor(url) { this.url = url; } play() { audio.push({ url: this.url, volume: this.volume }); return Promise.resolve(); } }
-  const document = { getElementById: id => elements[id] ?? null, createElement: tag => new Element(tag),
+  class Audio { constructor(url) { this.url = url; } play() { audio.push({ url: this.url, volume: this.volume }); return Promise.resolve(); } pause() {} addEventListener() {} }
+  const document = { hidden, addEventListener() {}, querySelectorAll: () => [], getElementById: id => elements[id] ?? null, createElement: tag => new Element(tag),
     documentElement: new Element('html'), body: new Element('body') };
   const setTimeout = (fn, ms) => { const id = ++nextId; timers.set(id, { at: now + ms, fn }); return id; };
   const clearTimeout = id => timers.delete(id);
-  runInNewContext(script[1], { document, window: {}, location: { search: '' }, URLSearchParams, EventTarget,
+  runInNewContext(script[1], { document, window: {}, location: { search }, URLSearchParams, EventTarget,
     AntenaStream: FakeStream, Audio, setTimeout, clearTimeout, requestAnimationFrame: fn => fn(),
     getComputedStyle: () => ({ fontSize: '80' }), performance: { now: () => now }, console });
   const emit = (type, data) => stream.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(data) }));
@@ -106,4 +106,19 @@ test('theme SSE waits through the current exit; queued alert uses the latest CSS
   await page.advance(700);
   assert.equal(page.stage.children[0].querySelector('.tile').children[0].textContent, '💜');
   assert.deepEqual(page.audio.map(a => a.url), ['/media/old.mp3', '/media/new.mp3']);
+});
+
+test('embedded in a hidden overlay the alert page plays no sound; standalone it still does', async () => {
+  const embedded = await overlay({ search: '?embedded=1', hidden: true });
+  embedded.emit('theme', theme('t', 'top', '🎉', 'ding.mp3'));
+  embedded.emit('alert', alert('hidden-embedded')); await embedded.advance(50);
+  assert.equal(embedded.audio.length, 0, 'an embedded page in a hidden overlay stays silent');
+  const standalone = await overlay({ hidden: true });
+  standalone.emit('theme', theme('t', 'top', '🎉', 'ding.mp3'));
+  standalone.emit('alert', alert('hidden-standalone')); await standalone.advance(50);
+  assert.equal(standalone.audio.length, 1, 'the live alert layer (not embedded) keeps its sound');
+  const visible = await overlay({ search: '?embedded=1', hidden: false });
+  visible.emit('theme', theme('t', 'top', '🎉', 'ding.mp3'));
+  visible.emit('alert', alert('visible-embedded')); await visible.advance(50);
+  assert.equal(visible.audio.length, 1, 'an embedded page in a visible overlay plays its sound');
 });

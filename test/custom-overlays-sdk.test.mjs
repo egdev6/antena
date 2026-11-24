@@ -213,6 +213,27 @@ test('scene entrega la lista de escenas al aire y state guarda la última', () =
   assert.deepEqual(late, [[]], 'una suscripción tardía recibe la lista actual');
 });
 
+test('slots: place and clear send declarative requests; errors are reported only from the shell', () => {
+  const { antena, delivered, deliver, win } = loadSdk();
+  const warnings = [];
+  win.console = { warn: message => warnings.push(message) };
+  const slots = { chat: { widget: 'chat', rect: [10, 20, 300, 200] } };
+  const options = { duration: 600, easing: 'ease', delay: 20 };
+  assert.equal(antena.slots.place(slots, options), undefined);
+  assert.equal(antena.slots.clear('chat'), undefined);
+  assert.equal(antena.slots.clear(), undefined);
+  assert.equal(delivered.length, 3);
+  assert.deepEqual(JSON.parse(JSON.stringify(delivered)), [
+    { msg: { antena: 1, slots: { op: 'place', slots, options } }, origin: '*' },
+    { msg: { antena: 1, slots: { op: 'clear', name: 'chat' } }, origin: '*' },
+    { msg: { antena: 1, slots: { op: 'clear' } }, origin: '*' },
+  ]);
+  deliver({ antena: 1, slotError: 'invalid slot' }, {});
+  deliver({ antena: 1, slotError: 'invalid slot' });
+  assert.deepEqual(warnings, ['invalid slot']);
+  assert.deepEqual(Object.keys(antena.state).sort(), ['alert', 'chat', 'interactive', 'scene', 'sceneSwitch', 'theme', 'viewers', 'widgets']);
+});
+
 test('sceneSwitch llega al manejador con la escena destino', () => {
   const { antena, deliver } = loadSdk();
   assert.equal(antena.state.sceneSwitch, null, 'sceneSwitch empieza a null');

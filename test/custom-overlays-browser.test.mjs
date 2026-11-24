@@ -9,7 +9,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
-import { closeAll, closeChrome, findChrome, openChromePage } from './helpers/react-browser.mjs';
+import { closeAll, closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { evaluateChrome } from './helpers/chrome-dom.mjs';
 import { fakeMeld } from './helpers/fake-meld.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -38,6 +39,53 @@ async function recorder() {
     close: () => new Promise(r => { server.closeAllConnections(); server.close(r); }),
   };
 }
+
+test('slots compose the real chat, move, exit, re-enter, and reject a URL', { timeout: 60000 }, async t => {
+  const bin = await findChrome();
+  if (!bin) return t.skip('sin Chrome local');
+  const meldSrv = fakeMeld();
+  await new Promise(r => meldSrv.server.listen(0, '127.0.0.1', r));
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'antena-slots-e2e-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {} });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const api = async (url, body) => { const r = await fetch(base + url, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body) }); assert.equal(r.ok, true); return r.json(); };
+  let chrome;
+  try {
+    await api('/api/meld/connect', { url:`ws://127.0.0.1:${meldSrv.server.address().port}` });
+    const overlay = (await api('/api/custom-overlays', { name:'Slots', js:`
+      addEventListener('message', e => { if (e.source !== parent || !e.data?.testSlot) return; antena.slots.place(e.data.testSlot, e.data.options); });
+      antena.slots.place({ chat:{widget:'chat', rect:[30,40,300,200], enter:'right', exit:'down'} }, {duration:100});
+    ` })).overlay;
+    chrome = await openChromePage(bin, `${base}/custom/${overlay.id}`);
+    const c = chrome.cdp;
+    const chat = `document.querySelector('iframe[src^="/widget/chat"]')`;
+    await waitDom(c, `${chat}?.contentDocument?.body?.classList.contains('slot')`);
+    await api('/api/chat/simulate', { user:'Viewer', text:'real slot message', platform:'twitch' });
+    await waitDom(c, `${chat}?.contentDocument?.body?.textContent.includes('real slot message')`);
+    await waitDom(c, `Math.abs(${chat}.getBoundingClientRect().x-30)<1 && Math.abs(${chat}.getBoundingClientRect().y-40)<1`);
+    assert.deepEqual(await evaluateChrome(c, `(() => {const r=${chat}.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]})()`), [30,40,300,200]);
+    const send = (slots, options = {duration:100}) => evaluateChrome(c, `document.querySelector('#frame').contentWindow.postMessage(${JSON.stringify({testSlot:slots,options})}, '*')`);
+    await send({chat:{widget:'chat', rect:[120,90,250,160], enter:'right', exit:'down'}});
+    await waitDom(c, `Math.abs(${chat}.getBoundingClientRect().x-120)<1 && Math.abs(${chat}.getBoundingClientRect().width-250)<1`);
+    assert.deepEqual(await evaluateChrome(c, `(() => {const r=${chat}.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]})()`), [120,90,250,160]);
+    await send({chat:{widget:'chat',rect:null,exit:'down'}});
+    await waitDom(c, `getComputedStyle(${chat}).opacity === '0' && ${chat}.getBoundingClientRect().top >= 1079`);
+    assert.equal(await evaluateChrome(c, `getComputedStyle(${chat}).pointerEvents`), 'none');
+    await send({chat:{widget:'chat',rect:[120,90,250,160],enter:'right',exit:'down'}});
+    await waitDom(c, `getComputedStyle(${chat}).opacity === '1' && Math.abs(${chat}.getBoundingClientRect().x-120)<1`);
+    const previous = await evaluateChrome(c, `${chat}.src`);
+    await send({evil:{widget:'https://example.com',rect:[0,0,100,100]}});
+    await sleep(200);
+    assert.equal(await evaluateChrome(c, `document.querySelectorAll('iframe').length`), 2);
+    assert.equal(await evaluateChrome(c, `${chat}.src`), previous);
+    assert.equal(await evaluateChrome(c, `${chat}.contentDocument.body.textContent.includes('real slot message')`), true);
+  } finally {
+    await closeAll(() => chrome && closeChrome(chrome), () => meldSrv.server.close(),
+      () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
+  }
+});
 
 test('un overlay propio recibe la alerta por el SDK dentro del marco opaco', { timeout: 120000 }, async t => {
   const bin = await findChrome();

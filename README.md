@@ -291,6 +291,7 @@ The editor's **CSS de este tema** belongs to the active saved theme. Duplicating
 | `antena.state` | Latest value per event (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`, `sceneSwitch`); they start as `null` |
 | `antena.ready` | Promise that resolves once there is data: await it before reading `antena.state` |
 | `antena.run(kind, params)` | Requests an approved action: resolves when it ran, rejects with the server error otherwise |
+| `antena.slots.place(slots, options)` / `antena.slots.clear(name?)` | Place, move or hide real widgets; remove one or all immediately |
 
 ```js
 const who = document.querySelector('.who');
@@ -310,6 +311,23 @@ The `scene` event and `antena.state.scene` list the scenes on air in the streami
 
 Meld reports the new on-air scene only after its scene transition ends. When Antena itself switches the scene (dock, shortcuts, Stream Deck, actions or `antena.run('scene')`), `sceneSwitch` carries the target `{ id, name }` right away, before the program confirms it, so an overlay can animate together with the program transition. If the program refuses the switch, `scene` is sent again with the real on-air list. Changes made directly in Meld or OBS only arrive through `scene`. Ordering the scene that is already on air sends `sceneSwitch` with no `scene` after it, and `sceneSwitch` carries the ordered scene, which may be a vertical one.
 
+#### Widget slots
+
+```js
+antena.slots.place({
+  chat: { widget: 'chat', rect: [1500, 82, 400, 488], enter: 'right', exit: 'right' },
+  alerts: { widget: 'alerts', fit: 'canvas', rect: [0, 0, 1920, 1080], enter: 'none', exit: 'none' }
+}, { duration: 600, easing: 'cubic-bezier(0.65, 0, 0.35, 1)', delay: 0 });
+// To hide with the exit animation, place the slot again with rect: null.
+antena.slots.clear('chat'); // clear() removes all without animation
+```
+
+Only named slots change; unmentioned slots keep their state. Names use `a-z0-9_-` (up to 32 characters). Each slot has `widget`, optional `params`, `rect` (canvas pixels `[x,y,w,h]` or `null`), `enter`/`exit` (`none`, `fade`, `left`, `right`, `up`, `down`; default `fade`), `layer` (`above` by default or `below`), `fit` (`slot` by default or `canvas`) and optional extra `css` applied after the widget's own CSS. `slot` makes `.root` fill the rectangle; `canvas` fills the canvas and preserves the page's own positioning and animations. A changed widget or parameters reload its page. Calls return nothing; invalid input is ignored and reported once in the overlay console. For safety, slot CSS rejects resource-loading tokens (`url`, `image-set`, `image(`, `src(`, `@import`, `@namespace`, `@font-face`), CSS escapes and comments: it runs on a trusted same-origin page and must not make requests on the sandbox's behalf.
+
+Allowed: `chat` (`variant`), `viewers` (`layout: 'column'`), `goal` (`id`), `latest` (`items`, `layout: 'column'`), `ticker`, `thanks`, `giveaway`, `question` (`nocount`), `tierlist` (`id`, `nopool`), `interview` (`item`), `credits` (`loop`, `transparent`), `alerts` and `custom` (`id` of another overlay). No arbitrary URLs, self-embedding or custom overlays nested inside another embedded overlay. Maximum 12 slots; finite rects, width/height 1–4320 and x/y within ±2 canvas dimensions. Updates are coalesced per animation frame and limited to 20/s. The shell embeds these public pages, so no action permission is needed; it keeps the user frame sandboxed.
+
+Embedded alerts and interviews suppress audio while Page Visibility reports the overlay hidden; hidden YouTube interview media restarts when visible. **Meld's off-air visibility has not been verified**: use one browser source and Duplicator layers in other scenes to prevent duplicated audio even if Meld does not mark sources hidden.
+
 #### Permissions
 
 The agent **asks** for permissions when it creates or edits; only you **approve** them in the panel (switches in the Permissions tab), and only the ones the overlay asks for can be approved. Kinds: `scene`, `layer`, `hideLayer`, `toggleLayer`, `effect`, `command`, `streamEvent`, `chat` and `say`.
@@ -318,7 +336,7 @@ The agent **asks** for permissions when it creates or edits; only you **approve*
 - Cap of **10 actions every 10 seconds** per overlay: above it, 429 and nothing runs.
 - Changing HTML, CSS or JavaScript revokes approved permissions. Review the new code and approve them again in the panel; changing other settings does not revoke them.
 
-**Security.** User code runs in a sandboxed `<iframe>` with an opaque origin, on a separate page: it has no antena API, cannot read the panel and cannot open the event stream. Data only reaches it through messages from the page hosting it, and the only thing it can ask back are the actions you approve.
+**Security.** User code runs in a sandboxed `<iframe>` with an opaque origin, on a separate page: it has no antena API, cannot read the panel and cannot open the event stream. Data only reaches it through messages from the page hosting it, and it can only ask back for approved actions or validated slots containing public Antena pages.
 
 Over MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay` and `probar_overlay` (fires a sample event at one open layer).
 
