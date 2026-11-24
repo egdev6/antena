@@ -13,6 +13,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
 
 ## Qué hace hoy
 
+- **Huecos de widgets en overlays propios (#323):** el SDK declara hasta 12 huecos animados y la shell de confianza incrusta las páginas reales de Antena; conserva su configuración y CSS, admite ajustes CSS por hueco y páginas de lienzo completo. Las alertas y entrevistas incrustadas silencian el audio con Page Visibility cuando el overlay está oculto. No está comprobado si Meld marca ocultas las fuentes fuera de escena: usa una sola fuente de navegador y Duplicator en las demás escenas para evitar audio duplicado.
 - **Capas de navegador:** overlay de alertas, y capas de chat, objetivo, últimos apoyos,
   ticker, créditos, pregunta, tier list, sorteo, espectadores y agradecimientos, servidas por URL local.
 - **Barras de objetivo (#132):** seguidores y subs de Twitch y suscriptores de YouTube muestran el total del canal informado por la plataforma, no solo los eventos del directo, y no se reinician entre directos. Se consulta al arrancar, al reconectar y cada cinco minutos; los eventos en vivo suman entre lecturas. Si la plataforma no responde se conserva el último valor conocido; antes de la primera lectura se muestra `—`. +1, −1 y «Fijar» aplican una corrección persistente (p. ej., para descontar tu propia sub). Las subs de Twitch requieren `channel:read:subscriptions`; YouTube redondea suscriptores a tres cifras significativas a partir de 1.000. Las demás métricas siguen siendo por directo.

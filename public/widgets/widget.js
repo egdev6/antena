@@ -4,6 +4,7 @@ export const qs = new URLSearchParams(location.search);
 export const DEMO = qs.has('demo');
 const THEME_DRAFT = qs.has('themeDraft');
 if (qs.has('debug') || DEMO) document.body.classList.add('debug');
+if (qs.get('slot') === '1') document.body.classList.add('slot');
 document.documentElement.style.setProperty('--scale', Number(qs.get('scale')) || 1);
 
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

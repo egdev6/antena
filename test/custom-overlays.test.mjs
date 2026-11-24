@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/server.mjs';
 import { fakeMeld } from './helpers/fake-meld.mjs';
+import { closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
+import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
 async function start(dataDir) {
   dataDir ??= await mkdtemp(path.join(tmpdir(), 'egdev-custom-overlays-'));
@@ -111,6 +113,107 @@ test('custom overlays persist across restarts', async () => {
   try {
     assert.equal((await second.call('GET', '/api/custom-overlays/' + overlay.id)).overlay.js, SAMPLE.js);
   } finally { await second.close(); }
+});
+
+test('slots: shell validates messages, limits, URLs and nesting without changing accepted slots', { timeout: 60000 }, async t => {
+  const bin = await findChrome();
+  if (!bin) return t.skip('sin Chrome local');
+  const { app, base, call, close } = await start();
+  let chrome;
+  try {
+    const inner = (await call('POST', '/api/custom-overlays', {name:'Inner', html:'<div id="inside">inner</div>', js:`
+      antena.slots.place({ nested:{widget:'custom',params:{id:'another'},rect:[0,0,100,100]} });
+      function reportColor() { top.postMessage({testInnerColor:getComputedStyle(document.getElementById('inside')).color}, '*'); }
+      new MutationObserver(reportColor).observe(document.head,{childList:true,subtree:true,characterData:true}); reportColor();
+    `})).overlay;
+    const outer = (await call('POST', '/api/custom-overlays', {name:'Outer', js:`
+      console.warn = message => parent.postMessage({testWarning:String(message)}, '*');
+      addEventListener('message', e => { if (e.source !== parent || !e.data?.test) return;
+        if (e.data.test === 'place') antena.slots.place(e.data.slots, e.data.options);
+        else if (e.data.test === 'burst') { for (let n=0;n<100;n++) antena.slots.place({rate:{widget:'chat',rect:[n,0,100,100]}}); }
+        else if (e.data.test === 'stream') { let n=0; const timer=setInterval(() => { antena.slots.place({rate:{widget:'chat',rect:[n++,0,100,100]}}); if (n===50) clearInterval(timer); }, 5); }
+        else antena.slots.clear(e.data.name);
+      });
+      parent.postMessage({testReady:true}, '*');
+    `})).overlay;
+    chrome = await openChromePage(bin, base + '/custom/' + outer.id);
+    const c = chrome.cdp;
+    await waitDom(c, "!!document.querySelector('#frame')?.contentWindow");
+    await evaluateChrome(c, `window.slotWarnings=[]; window.innerColors=[]; addEventListener('message', e => {if (e.data?.testWarning) slotWarnings.push(e.data.testWarning); if(e.data?.testInnerColor) innerColors.push(e.data.testInnerColor)});`);
+    const send = async (slots, options = {duration:0}) => {
+      await evaluateChrome(c, `document.querySelector('#frame').contentWindow.postMessage(${JSON.stringify({test:'place',slots,options})}, '*')`);
+      await new Promise(r => setTimeout(r, 120));
+    };
+    await new Promise(r => setTimeout(r, 400));
+    await send({good:{widget:'chat',params:{variant:'horizontal'},rect:[10,20,100,120],css:'.root{color:rgb(1,2,3)}'}});
+    await waitDom(c, `!!document.querySelector('iframe[src^="/widget/chat"]')?.contentDocument?.querySelector('.root')`);
+    assert.equal(await evaluateChrome(c, `new URL(document.querySelector('iframe[src^="/widget/chat"]').src).searchParams.get('variant')`), 'horizontal');
+    await waitDom(c, `getComputedStyle(document.querySelector('iframe[src^="/widget/chat"]').contentDocument.querySelector('.root')).color === 'rgb(1, 2, 3)'`);
+    const invalid = [
+      {widget:'https://evil.example/',rect:[0,0,100,100]}, {widget:'chat',params:{url:'https://evil.example'},rect:[0,0,100,100]},
+      {widget:'chat',rect:[0,0,0,100]}, {widget:'chat',rect:[0,0,4321,100]}, {widget:'chat',rect:[999999,0,100,100]},
+      {widget:'custom',params:{id:outer.id},rect:[0,0,100,100]}, {widget:'viewers',params:{layout:'row'},rect:[0,0,100,100]},
+      {widget:'chat',rect:[0,0,100,100],css:'body{background:image-set("/sd/pausa" 1x)}'},
+      {widget:'chat',rect:[0,0,100,100],css:'body{background:u\\72l("/sd/pausa")}'},
+      {widget:'chat',rect:[0,0,100,100],css:'@import "/sd/pausa";'},
+      {widget:'chat',rect:[0,0,100,100],css:'body{background:-webkit-image-set("/sd/pausa" 1x)}'},
+      {widget:'chat',rect:[0,0,100,100],css:'@font-face{font-family:x;src:url(/sd/pausa)}'},
+      {widget:'chat',rect:[0,0,100,100],css:'body{--a:url(/sd/pausa);background:var(--a)}'},
+      {widget:'chat',rect:[0,0,100,100],css:'@IMPORT "/sd/pausa";'},
+      {widget:'chat',rect:[0,0,100,100],css:'.root{&{background:image("/sd/pausa")}}'},
+      {widget:'chat',rect:[0,0,100,100],css:'@namespace s "/sd/pausa";'},
+      {widget:'chat',rect:[0,0,100,100],css:'body{background:src("/sd/pausa")}'},
+      {widget:'chat',rect:[0,0,100,100],css:'@counter-style s{system:cyclic;symbols:url(/sd/pausa)}'},
+      {widget:'custom',params:{id:'../sd'},rect:[0,0,100,100]},
+      {widget:'chat',rect:[3841,0,10,10]},
+      {widget:'chat',rect:[0,0,100,100],css:'body{background:u/**/rl("/sd/pausa")}'},
+
+    ];
+    for (const slot of invalid) await send({bad:slot});
+    assert.equal(await evaluateChrome(c, `document.querySelectorAll('iframe').length`), 2);
+    assert.equal(await evaluateChrome(c, `slotWarnings.length`), invalid.length);
+    // CSS requested by the opaque frame must not gain same-origin access to mutating /sd routes.
+    const paused = app.engine.pauseState().paused;
+    await send({attack:{widget:'chat',rect:[0,0,100,100],css:'body{background-image:url("/sd/pausa")}'}});
+    await new Promise(r => setTimeout(r, 300));
+    assert.equal(app.engine.pauseState().paused, paused, 'slot CSS cannot execute a same-origin action');
+    assert.equal(await evaluateChrome(c, `document.querySelectorAll('iframe').length`), 2);
+    assert.equal(await evaluateChrome(c, `slotWarnings.length`), invalid.length + 1);
+    await evaluateChrome(c, `dispatchEvent(new MessageEvent('message', {source:window,origin:'null',data:{antena:1,slots:{op:'place',slots:{bad:{widget:'chat',rect:[0,0,100,100]}}}}}))`);
+    await new Promise(r => setTimeout(r, 100));
+    assert.equal(await evaluateChrome(c, `document.querySelectorAll('iframe').length`), 2);
+    assert.equal(await evaluateChrome(c, `slotWarnings.length`), invalid.length + 1);
+    await send({full:{widget:'alerts',fit:'canvas',rect:[10,20,100,100],enter:'none'}});
+    await waitDom(c, `!!document.querySelector('iframe[src^="/overlay"]')`);
+    const full = await evaluateChrome(c, `(() => {const r=document.querySelector('iframe[src^="/overlay"]').getBoundingClientRect(); return [r.x,r.y,r.width,r.height,innerWidth,innerHeight]})()`);
+    assert.deepEqual(full.slice(0,4), [0,0,...full.slice(4)]);
+    await send({inner:{widget:'custom',params:{id:inner.id},fit:'canvas',rect:[0,0,100,100],css:'#inside{color:rgb(1,2,3)}'}});
+    await waitDom(c, `!!document.querySelector('iframe[src^="/custom/${inner.id}?"]')?.contentDocument?.querySelector('#frame')`);
+    await waitDom(c, `innerColors.includes('rgb(1, 2, 3)')`);
+    await new Promise(r => setTimeout(r, 300));
+    assert.equal(await evaluateChrome(c, `document.querySelector('iframe[src^="/custom/${inner.id}?"]').contentDocument.querySelectorAll('iframe').length`), 1);
+    const extra = Object.fromEntries(Array.from({length:10}, (_,i) => ['s'+i,{widget:'ticker',rect:[0,0,10,10]}]));
+    await send(extra);
+    assert.equal(await evaluateChrome(c, `document.querySelectorAll('iframe').length`), 13, '12 slots and the sandbox frame');
+    assert.equal(await evaluateChrome(c, `slotWarnings.length`), invalid.length + 2);
+    const longVariant = 'a'.repeat(257);
+    await send({good:{widget:'chat',params:{variant:longVariant},rect:[10,20,100,120]}}, {duration:60001,delay:0});
+    await waitDom(c, `new URL(document.querySelector('iframe[src^="/widget/chat"]').src).searchParams.get('variant') === ${JSON.stringify(longVariant)}`);
+    assert.equal(await evaluateChrome(c, `slotWarnings.length`), invalid.length + 2);
+    await evaluateChrome(c, `document.querySelector('#frame').contentWindow.postMessage({test:'clear',name:'good'}, '*')`);
+    await waitDom(c, `!document.querySelector('iframe[src^="/widget/chat"]')`);
+    assert.equal(await evaluateChrome(c, `document.querySelectorAll('iframe').length`), 12);
+    await evaluateChrome(c, `document.querySelector('#frame').contentWindow.postMessage({test:'clear'}, '*')`);
+    await waitDom(c, `document.querySelectorAll('iframe').length === 1`);
+    await evaluateChrome(c, `document.querySelector('#frame').contentWindow.postMessage({test:'burst'}, '*')`);
+    await waitDom(c, `document.querySelector('iframe[src^="/widget/chat"]')?.style.left === '99px'`);
+    assert.equal(await evaluateChrome(c, `document.querySelectorAll('iframe').length`), 2, 'burst is coalesced into one slot');
+    await evaluateChrome(c, `window.rateTimes=[]; window.rateObserver=new MutationObserver(records => {if (records.some(r => r.attributeName === 'style')) rateTimes.push(performance.now())}); rateObserver.observe(document.querySelector('iframe[src^="/widget/chat"]'),{attributes:true}); document.querySelector('#frame').contentWindow.postMessage({test:'stream'}, '*')`);
+    await waitDom(c, `document.querySelector('iframe[src^="/widget/chat"]')?.style.left === '49px'`);
+    const times = await evaluateChrome(c, `rateObserver.disconnect(); rateTimes`);
+    assert.ok(times.length >= 2 && times.length <= 7, `coalesced 50 requests: ${times.length} updates`);
+    assert.ok(times.every((time, index) => index === 0 || time - times[index-1] >= 45), `updates limited to 20/s: ${times}`);
+  } finally { if (chrome) await closeChrome(chrome); await close(); }
 });
 
 test('the shell page embeds user code in a sandboxed iframe and never inlines it', async () => {

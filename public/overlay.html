@@ -251,6 +251,25 @@ if (qs.has('debug') || PREVIEW) document.body.classList.add('debug');
 // se queda en su primer fotograma y solo avanza cuando el panel lo pide (al pasar el ratón).
 const STILL = qs.get('still');
 const MUTE = qs.has('mute') || !!STILL;
+// Page Visibility is inherited from the top-level page; standalone alerts are unchanged.
+const EMBEDDED = qs.get('embedded') === '1';
+const audioHidden = () => EMBEDDED && document.hidden;
+const videoMuted = new WeakMap(), sounds = new Set();
+function guardVideo(video, muted) {
+  videoMuted.set(video, muted);
+  video.muted = muted || audioHidden();
+}
+document.addEventListener('visibilitychange', () => {
+  if (!EMBEDDED) return;
+  for (const video of document.querySelectorAll('video')) {
+    if (videoMuted.has(video)) video.muted = videoMuted.get(video) || audioHidden();
+  }
+  if (!audioHidden()) return;
+  for (const sound of sounds) sound.pause();
+  sounds.clear();
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  if (ctx) { ctx.close().catch(() => {}); ctx = undefined; }
+});
 const GAP = 700;
 
 const queue = [];
@@ -365,7 +384,7 @@ function renderMedia(a) {
     el = document.createElement('video');
     el.src = src; el.playsInline = true; el.preload = 'auto';
     el.volume = MUTE ? 0 : Math.min(1, (a.volume ?? .6) * L.mediaVolume / 100);
-    el.muted = MUTE || L.mediaVolume === 0;
+    guardVideo(el, MUTE || L.mediaVolume === 0);
   } else {
     el = document.createElement('img');
     el.src = src; el.alt = '';
@@ -388,7 +407,7 @@ function renderMedia(a) {
   const ready = sized.then(() => {
     requestAnimationFrame(() => node.classList.add('on'));
     if (L.mediaKind === 'video') {
-      el.play().catch(() => { el.muted = true; el.play().catch(() => {}); });
+      el.play().catch(() => { guardVideo(el, true); el.play().catch(() => {}); });
     }
     setTimeout(() => text.classList.add('show'), L.textDelayMs);
     if (L.durationMode === 'media' && L.mediaKind === 'video' && isFinite(el.duration) && el.duration > 0) {
@@ -411,7 +430,7 @@ function renderMixed(a) {
     el = document.createElement('video');
     el.src = src; el.playsInline = true; el.preload = 'auto';
     el.volume = MUTE ? 0 : Math.min(1, (a.volume ?? .6) * L.mediaVolume / 100);
-    el.muted = MUTE || L.mediaVolume === 0;
+    guardVideo(el, MUTE || L.mediaVolume === 0);
   } else { el = document.createElement('img'); el.src = src; el.alt = ''; }
   el.className = 'alert-media';
   bg.append(el);
@@ -433,7 +452,7 @@ function renderMixed(a) {
     card.node.style.setProperty('--card-y', L.cardY + 'px');
     current.node = card.node;
     requestAnimationFrame(() => bg.classList.add('on'));
-    if (L.mediaKind === 'video') el.play().catch(() => { el.muted = true; el.play().catch(() => {}); });
+    if (L.mediaKind === 'video') el.play().catch(() => { guardVideo(el, true); el.play().catch(() => {}); });
     return ms;
   });
   return { node: document.createElement('div'), bg, ready, outMs: 560, video: L.mediaKind === 'video' ? el : null };
@@ -457,7 +476,7 @@ function show(a) {
 
 // ---------- voz (TTS del navegador; en Windows usa las voces del sistema) ----------
 function speak(t) {
-  if (MUTE || !t?.text || !('speechSynthesis' in window)) return;
+  if (MUTE || audioHidden() || !t?.text || !('speechSynthesis' in window)) return;
   const u = new SpeechSynthesisUtterance(t.text);
   const voices = speechSynthesis.getVoices();
   u.voice = voices.find(v => v.name === t.voice) || voices.find(v => /^es(-|_)ES/i.test(v.lang)) || voices.find(v => /^es/i.test(v.lang)) || null;
@@ -492,11 +511,12 @@ function playSound(a) {
   let sound = a.look?.sound ?? a.sound;
   // «de serie» = el sonido del tema (Apariencia): el tono EGDEV, ninguno o un archivo
   if (sound === 'default' && THEME.sound && THEME.sound !== 'default') sound = THEME.sound;
-  if (MUTE || !sound || sound === 'none') return;
+  if (MUTE || audioHidden() || !sound || sound === 'none') return;
   const vol = Math.min(1, (a.volume ?? 0.6) * (a.look?.soundVolume ?? 100) / 100 * (THEME.soundVolume ?? 100) / 100);
   if (sound !== 'default') {
     const au = new Audio('/media/' + encodeURIComponent(sound));
-    au.volume = vol; au.play().catch(() => {});
+    if (EMBEDDED) { sounds.add(au); au.addEventListener('ended', () => sounds.delete(au), { once: true }); }
+    au.volume = vol; au.play().catch(() => { sounds.delete(au); });
     return;
   }
   try {
