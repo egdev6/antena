@@ -219,3 +219,17 @@ test("adapter adds one listener per event and dispose restores the baseline", ()
   adapter.dispose();
   assert.deepEqual(names.map(n => meld.listenerCount(n)), base);
 });
+
+test('adapter forwards sceneSwitch events from the selected target only and dispose restores the baseline', async () => {
+  const { EventEmitter } = await import('node:events');
+  const meld = new Meld(() => {}), names = ['sceneSwitch', 'sceneSwitchFailed'];
+  const base = names.map(n => meld.listenerCount(n)), adapter = new MeldAdapter(meld);
+  assert.deepEqual(names.map(n => meld.listenerCount(n)), base.map(c => c + 1));
+  const obs = Object.assign(new EventEmitter(), { status: { state: 'x' }, capabilities: new Set() }), got = [];
+  adapter.on('sceneSwitch', s => got.push(s)); adapter.on('sceneSwitchFailed', e => got.push(['fail', e]));
+  adapter.select(obs); meld.emit('sceneSwitch', 'stale'); obs.emit('sceneSwitch', 'obs'); obs.emit('sceneSwitchFailed', 'no');
+  adapter.select(meld); obs.emit('sceneSwitch', 'stale2'); meld.emit('sceneSwitch', 'meld');
+  assert.deepEqual(got, ['obs', ['fail', 'no'], 'meld']);
+  adapter.dispose();
+  assert.deepEqual(names.map(n => meld.listenerCount(n)), base);
+});

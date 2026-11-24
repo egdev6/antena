@@ -12,7 +12,8 @@ export class MeldAdapter extends Program {
     super();
     this.#meld = meld;
     this.capabilities = new Set(MELD_CAPABILITIES);
-    for (const event of ['status', 'session', 'streaming', 'controlCommand']) {
+    // sceneSwitch/sceneSwitchFailed: the target scene announced when a switch is ordered (see showScene).
+    for (const event of ['status', 'session', 'streaming', 'controlCommand', 'sceneSwitch', 'sceneSwitchFailed']) {
       const forward = (...args) => this.emit(event, ...args);
       this.#forwarders.set(event, forward);
       meld.on(event, forward);

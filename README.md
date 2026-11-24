@@ -288,7 +288,7 @@ The editor's **CSS de este tema** belongs to the active saved theme. Duplicating
 | API | What it does |
 |---|---|
 | `antena.on(event, fn)` | Listens to an event and returns the function that unsubscribes. If a value already exists, `fn` is called with it right away |
-| `antena.state` | Latest value per event (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`); they start as `null` |
+| `antena.state` | Latest value per event (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`, `sceneSwitch`); they start as `null` |
 | `antena.ready` | Promise that resolves once there is data: await it before reading `antena.state` |
 | `antena.run(kind, params)` | Requests an approved action: resolves when it ran, rejects with the server error otherwise |
 
@@ -307,6 +307,8 @@ document.querySelector('.frame').onclick = () => antena.run('scene', { scene: 'C
 The `theme` event and `antena.state.theme` expose the existing appearance fields plus the active saved theme's `id` and `name`, for example `antena.on('theme', t => console.log(t.id, t.name, t.accent))`. They update on switching or renaming; the visual version hash is independent of the name.
 
 The `scene` event and `antena.state.scene` list the scenes on air in the streaming program (Meld or OBS), in its order: `[{ id, name }]`. Meld can have two at once (horizontal and vertical), and the list is empty when no program is connected. It only fires when the on-air scenes change, so one overlay can serve every scene and animate between layouts, for example `antena.on('scene', list => document.body.dataset.scene = list.find(s => LAYOUTS[s.name])?.name || '')`. It never carries the scene list, layers or URLs.
+
+Meld reports the new on-air scene only after its scene transition ends. When Antena itself switches the scene (dock, shortcuts, Stream Deck, actions or `antena.run('scene')`), `sceneSwitch` carries the target `{ id, name }` right away, before the program confirms it, so an overlay can animate together with the program transition. If the program refuses the switch, `scene` is sent again with the real on-air list. Changes made directly in Meld or OBS only arrive through `scene`. Ordering the scene that is already on air sends `sceneSwitch` with no `scene` after it, and `sceneSwitch` carries the ordered scene, which may be a vertical one.
 
 #### Permissions
 

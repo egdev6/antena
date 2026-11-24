@@ -565,6 +565,14 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   };
   program.on('session', s => { bus.send('meld', s, ['panel']); pushScene(); });
   program.on('status', pushScene);
+  // Target scene announced when Antena orders the switch (same opt-in); on a refused switch the real
+  // on-air list is sent again even if unchanged, so an overlay that already moved goes back.
+  program.on('sceneSwitch', s => bus.send('sceneSwitch', s, ['widget'], 'scene'));
+  program.on('sceneSwitchFailed', () => {
+    const list = onAirScenes();
+    lastOnAir = JSON.stringify(list);
+    bus.send('scene', list, ['widget'], 'scene');
+  });
   // S2/S12: el panel ve qué acción de chat falló (total o parcialmente) y en qué plataforma; los éxitos no se reenvían.
   engine.on('chatResult', r => { if (!r.ok) bus.send('chatResult', r, ['panel']); });
   let startScheduleRollover = () => {}, closeScheduleStart = () => {};

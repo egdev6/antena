@@ -26,6 +26,7 @@ async function sse(url) {
   const dec = new TextDecoder();
   let buf = '';
   const events = [];
+  const order = [];   // every event name in arrival order
   async function next(name, pred = () => true, timeoutMs = 2000) {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
@@ -41,11 +42,11 @@ async function sse(url) {
         const block = buf.slice(0, k); buf = buf.slice(k + 2);
         const ev = /^event: (.+)$/m.exec(block)?.[1];
         const data = /^data: (.+)$/m.exec(block)?.[1];
-        if (ev && data) events.push({ event: ev, data: JSON.parse(data) });
+        if (ev && data) { events.push({ event: ev, data: JSON.parse(data) }); order.push(ev); }
       }
     }
   }
-  return { next, close: () => ctrl.abort() };
+  return { next, order, close: () => ctrl.abort() };
 }
 
 const SAMPLE = { name: 'Marco cámara', html: '<div class="frame">hola</div>', css: '.frame{border:4px solid red}', js: 'document.body.dataset.ready = "1";', width: 1280, height: 720 };
@@ -425,4 +426,75 @@ test('scene: un nombre ausente pasa a "" y el orden sigue el índice de Meld, si
     await close();
     await new Promise(r => meldSrv.server.close(r));
   }
+});
+
+async function connectedToFakeMeld() {
+  const meldSrv = fakeMeld();
+  await new Promise(r => meldSrv.server.listen(0, '127.0.0.1', r));
+  const ctx = await start();
+  await ctx.call('POST', '/api/meld/connect', { url: `ws://127.0.0.1:${meldSrv.server.address().port}` });
+  for (let i = 0; i < 80 && ctx.app.meld.status.state !== 'conectado'; i++) await new Promise(r => setTimeout(r, 25));
+  assert.equal(ctx.app.meld.status.state, 'conectado', 'el Meld simulado no conectó');
+  return { ...ctx, meldSrv, stop: async () => { await ctx.close(); await new Promise(r => meldSrv.server.close(r)); } };
+}
+
+test('sceneSwitch: Antena anuncia la escena destino al ordenar el cambio, antes de que el programa la confirme', async () => {
+  const { base, call, stop } = await connectedToFakeMeld();
+  const widget = await sse(base + '/api/stream?client=widget&scene=1');
+  const legacy = await sse(base + '/api/stream?client=widget');
+  try {
+    await widget.next('scene', d => d[0]?.id === 's1');
+    await call('POST', '/api/meld/scene', { scene: 'pantalla' });   // by name, any case
+    assert.deepEqual(await widget.next('sceneSwitch'), { id: 's2', name: 'Pantalla' }, 'solo id y nombre reales de la escena destino');
+    assert.deepEqual(await widget.next('scene', d => d[0]?.id === 's2'), [{ id: 's2', name: 'Pantalla' }]);
+    const tail = widget.order.filter(e => e === 'sceneSwitch' || e === 'scene').slice(-2);
+    assert.deepEqual(tail, ['sceneSwitch', 'scene'], 'el anuncio llega antes que la confirmación del programa');
+    await assert.rejects(legacy.next('sceneSwitch', () => true, 300), /no "sceneSwitch"/, 'un widget sin opt-in nunca recibe sceneSwitch');
+  } finally { widget.close(); legacy.close(); await stop(); }
+});
+
+test('sceneSwitch: una escena que no existe no se anuncia y la orden falla', async () => {
+  const { base, raw, stop } = await connectedToFakeMeld();
+  const widget = await sse(base + '/api/stream?client=widget&scene=1');
+  try {
+    await widget.next('scene', d => d[0]?.id === 's1');
+    const r = await raw('POST', '/api/meld/scene', { scene: 'No existe' }, { 'Content-Type': 'application/json' });
+    assert.equal(r.ok, false);
+    assert.match((await r.json()).error, /No encuentro la escena «No existe»/);
+    await assert.rejects(widget.next('sceneSwitch', () => true, 300), /no "sceneSwitch"/);
+  } finally { widget.close(); await stop(); }
+});
+
+test('sceneSwitch: si el programa rechaza el cambio, Antena reenvía las escenas reales al aire', async () => {
+  const { app, base, raw, stop } = await connectedToFakeMeld();
+  const widget = await sse(base + '/api/stream?client=widget&scene=1');
+  try {
+    const realCall = app.meld.call.bind(app.meld);
+    app.meld.call = async (method, ...args) => {
+      if (method === 'showScene') throw new Error('Meld rechazó el cambio');
+      return realCall(method, ...args);
+    };
+    await widget.next('scene', d => d[0]?.id === 's1');
+    const r = await raw('POST', '/api/meld/scene', { scene: 'Pantalla' }, { 'Content-Type': 'application/json' });
+    assert.equal(r.ok, false);
+    assert.deepEqual(await widget.next('sceneSwitch'), { id: 's2', name: 'Pantalla' });
+    // Same on-air list as before, sent again on purpose so an overlay that already moved goes back.
+    assert.deepEqual(await widget.next('scene'), [{ id: 's1', name: 'Cámara' }]);
+  } finally { widget.close(); await stop(); }
+});
+
+test('sceneSwitch: an action switch is announced, and re-ordering the on-air scene is announced without a scene event', async () => {
+  const { base, call, stop } = await connectedToFakeMeld();
+  const widget = await sse(base + '/api/stream?client=widget&scene=1');
+  try {
+    await widget.next('scene', d => d[0]?.id === 's1');
+    await call('POST', '/api/meld/scene', { scene: 'Cámara' });   // already on air
+    assert.deepEqual(await widget.next('sceneSwitch'), { id: 's1', name: 'Cámara' });
+    await call('POST', '/api/actions/run', { actions: [{ kind: 'scene', scene: 'Pantalla' }] });   // shortcuts, Stream Deck, alerts
+    assert.deepEqual(await widget.next('sceneSwitch', d => d.id === 's2'), { id: 's2', name: 'Pantalla' });
+    assert.deepEqual(await widget.next('scene', d => d[0]?.id === 's2'), [{ id: 's2', name: 'Pantalla' }]);
+    // The re-ordered on-air scene produced no scene event: after the initial one, only Pantalla's.
+    const seq = widget.order.filter(e => e === 'sceneSwitch' || e === 'scene');
+    assert.deepEqual(seq, ['scene', 'sceneSwitch', 'sceneSwitch', 'scene']);
+  } finally { widget.close(); await stop(); }
 });
