@@ -333,7 +333,7 @@ const OVERLAY_HELP = `Cómo se escribe un overlay (con unas líneas basta):
 - Corre en un iframe con sandbox (origen opaco): NO tiene la API de antena ni puede leer la del panel; los recursos externos por https sí cargan (fuentes, imágenes, animaciones).
 - Fondo transparente por defecto (transparente: true): queda bien encima de la cámara o en una escena del programa de emisión. ancho y alto son el lienzo de la capa.
 - /theme.css ya está enlazado: usa sus variables CSS (var(--accent), var(--text)…) para que combine con el tema.
-- Datos en vivo por el SDK (window.antena): antena.on('alert'|'chat'|'viewers'|'widgets'|'interactive'|'theme', fn), antena.state y antena.ready (espera a tener datos).
+- Datos en vivo por el SDK (window.antena): antena.on('alert'|'chat'|'viewers'|'widgets'|'interactive'|'theme'|'scene', fn), antena.state y antena.ready (espera a tener datos). 'scene' da las escenas al aire como [{ id, name }] (vacía sin programa): sirve para un overlay único que cambia de layout según la escena.
   Ej.: antena.on('alert', a => { nombre.textContent = a.text; nombre.animate([{opacity:0},{opacity:1}], 300); });
 - Acciones (S11): antena.run(kind, params) devuelve una promesa: resuelve si la acción se ejecutó y se rechaza con el error del servidor si no.
   Tipos y params: scene {scene, returnAfterSec} · layer {scene?, layer, seconds?} · hideLayer/toggleLayer {scene?, layer} · effect {scene?, layer, effect} · command {command} · streamEvent {event, amount?} · chat {text, destination? twitch|youtube|both} · say {text}.

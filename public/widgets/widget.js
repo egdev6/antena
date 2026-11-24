@@ -39,7 +39,7 @@ export function connect(handlers, client = 'widget') {
     return es;
   }
   const es = new AntenaStream('/api/stream?client=' + encodeURIComponent(client) + '&themeInfo=1' +
-    (handlers.customOverlayTheme ? '&customTheme=1' : '') + (THEME_DRAFT ? '&themeDraft=1' : ''));
+    (handlers.customOverlayTheme ? '&customTheme=1' : '') + (handlers.scene ? '&scene=1' : '') + (THEME_DRAFT ? '&themeDraft=1' : ''));
   // Apariencia: al cambiar el tema se recarga /theme.css (sin recargar la página). Con ?themeDraft
   // (vista previa del panel) se ve también el borrador sin guardar; en Meld, solo lo guardado.
   es.addEventListener('activeTheme', e => {
