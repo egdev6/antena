@@ -168,6 +168,8 @@ In the panel, the «Fuentes del programa de emisión» page lists all of them wi
 | Thank-yous | `http://127.0.0.1:4500/widget/thanks` | 900×200 |
 | Interview | `http://127.0.0.1:4500/widget/interview` | 1920×1080 |
 
+**Preview in your broadcast program:** in **Widgets › Chat**, «Simular mensajes en Meld» makes every real chat source (the default chat, its variants and custom overlay slots) play the same sample messages as the panel preview for 2 minutes, then return to the real chat. A source loaded during the simulation joins it. Nothing is added to the chat, the history or the metrics. API: `POST /api/chat/preview` with `{ "on": true }` (optional `"seconds"`, 1–600) or `{ "on": false }`; `GET /api/chat/preview` returns `{ on, until }`. MCP: `vista_previa_chat`.
+
 **Interview.** Fullscreen layer for the active, approved item of the active interview (see `docs/entrevista-formato.md`): the question on a card at the bottom over its image, local video, YouTube player (starting at the saved minute) or social post card, with the source shown on every item that has media. Without an active item the layer is empty. In **Widgets › Se manejan en directo › Entrevista**, create or import interviews, edit and reorder rounds and questions, and press **Guardar** to save the draft. The detail header selects or stops the active interview and controls the live layer; the dock can also stop it without deleting it. `POST /api/interviews/stop` does the same and is safe to repeat. **Capa** has its URL and demo preview. Private notes never appear on the layer. Try it with `?demo`.
 
 **Offline thank-yous.** This layer rotates one pending offline follower at a time and can finish with YouTube's anonymous count. In Widgets › Agradecimientos, choose platforms, all time / since the last archived stream / a number of days, the maximum names and rotation interval. Unknown follow dates remain included; with no archived stream, the last-stream window has no cutoff. Nothing pending leaves the layer transparent. Individual and confirmed bulk thank-you actions apply immediately; bulk affects only the names and anonymous records selected for the saved widget settings, not other pending followers.
@@ -541,7 +543,7 @@ Claude Desktop (`claude_desktop_config.json`):
 | Giveaway | `estado_sorteo`, `abrir_sorteo`, `cerrar_sorteo`, `sortear`, `anadir_participante`, `quitar_participante`, `reiniciar_sorteo` |
 | Interactives | `estado_interactivos`, `configurar_interactivos` |
 | Files | `listar_archivos`, `importar_archivo` (from a path on your PC), `borrar_archivo` |
-| Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube or both), `simular_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
+| Chat | `leer_chat`, `escribir_chat` (Twitch, YouTube or both), `simular_chat`, `vista_previa_chat`, `unir_chat`, `youtube_conectar_cuenta`, `youtube_desconectar_cuenta` |
 | Widgets | `ver_widgets`, `editar_widget`, `editar_variante_chat`, `crear_objetivo`, `editar_objetivo`, `borrar_objetivo`, `crear_barra`, `editar_barra`, `borrar_barra`, `sumar_objetivo`, `fijar_objetivo`, `sumar_barra`, `fijar_barra`, `lanzar_creditos`, `parar_creditos` |
 | Custom overlays | `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay`, `probar_overlay`, `css_overlay_tema` |
 | Stream | `resumen_directo`, `metricas_directo`, `nuevo_directo`, `renombrar_directo`, `listar_directos`, `eventos_directo` |

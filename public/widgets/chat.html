@@ -267,11 +267,25 @@ function apply(w) {
 // Al cambiar el tamaño de la capa se vuelve a limitar el DOM, sin suscripción adicional.
 new ResizeObserver(() => { if (cfg.layout === 'horizontal') trim(); }).observe(root);
 let first = true;
+// Preview in the real sources (chatPreview): the page plays the demo stream and keeps the real
+// messages it receives, so it can show them again when the preview ends.
+const real = [];
+let preview = false, demoTimer = 0;
+const keep = m => { real.push(m); if (real.length > 200) real.shift(); };
+function clearRoot() { for (const el of [...root.children]) { clearTimeout(el._fade); el.remove(); } }
+function playDemo() { for (let i = 0; i < 6; i++) render(demoChat(demoN++)); demoTimer = setInterval(() => render(demoChat(demoN++)), 2200); }
+function setPreview(on) {
+  if (DEMO || on === preview) return;
+  preview = on; clearInterval(demoTimer); clearRoot();
+  if (on) playDemo();
+  else real.filter(visible).slice(-(Number(cfg.maxMessages) || 12)).forEach(render);
+}
 connect({
-  widgets: s => { apply(s.widgets); if (first && !DEMO) (s.chat || []).slice(-(Number(cfg.maxMessages) || 12)).forEach(render); first = false; },
-  chat: m => { if (!DEMO) render(m); },
-  chatDelete: ({ id }) => root.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove(),
-  chatClear: ({ login }) => [...root.children].forEach(el => { if (!login || el.dataset.login === login) el.remove(); }),
+  widgets: s => { apply(s.widgets); if (first && !DEMO) { (s.chat || []).forEach(keep); if (!preview) (s.chat || []).slice(-(Number(cfg.maxMessages) || 12)).forEach(render); } first = false; },
+  chat: m => { if (DEMO) return; keep(m); if (!preview) render(m); },
+  chatDelete: ({ id }) => { const i = real.findIndex(m => m.id === id); if (i >= 0) real.splice(i, 1); if (!preview) root.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove(); },
+  chatClear: ({ login }) => { for (let i = real.length - 1; i >= 0; i--) if (!login || real[i].login === login) real.splice(i, 1); if (!preview) [...root.children].forEach(el => { if (!login || el.dataset.login === login) el.remove(); }); },
+  chatPreview: p => setPreview(!!p?.on),
 });
 if (DEMO) { for (; demoN < 6; demoN++) render(demoChat(demoN)); setInterval(() => render(demoChat(demoN++)), 2200); }
 </script></body></html>

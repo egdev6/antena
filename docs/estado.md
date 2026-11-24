@@ -24,6 +24,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
   que el SDK de los overlays propios expone como `viewers`.
 - **Seguidores sin conexión (#128):** registro local de Twitch y de suscripciones públicas de YouTube con recuento anónimo; requiere cuenta de YouTube conectada y no dispara alertas recuperadas.
 - **Agradecimientos (#129):** `/widget/thanks` (900×200) rota un nombre pendiente sin conexión cada vez y puede mostrar al final el recuento anónimo de YouTube. Configura plataformas, ventana y máximo desde Widgets; las fechas desconocidas se incluyen y sin archivo previo no hay corte «desde el último directo». El panel marca al momento cada entrada o, con confirmación, exactamente la selección visible. La capa solo recibe nombres, plataformas y recuento anónimo.
+- **Vista previa del chat en las fuentes:** `POST /api/chat/preview` `{ on, seconds? }` (1–600, 120 por defecto) activa un estado efímero (`src/chat-preview.mjs`, sin persistir) que se emite como evento `chatPreview` `{ on, until }` a widgets y panel, también al conectar. `chat.html` reproduce entonces la demo de la vista previa y guarda los mensajes reales para volver a mostrarlos al terminar. No escribe en el chat ni en las métricas.
 - **Alertas de Twitch y YouTube:** tipos normalizados (follow, sub, resub, giftsub,
   cheer, raid, redemption; ytsub, superchat, supersticker, member, milestone, giftmember, jewels) con
   tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en el programa de emisión.

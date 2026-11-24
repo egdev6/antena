@@ -49,6 +49,7 @@ test('registra exactamente las rutas de chat', () => {
   assert.deepEqual(routes.map(r => `${r.method} ${r.pattern}`), [
     'POST /api/chat/announce',
     'GET /api/chat', 'POST /api/chat/send', 'POST /api/chat/simulate',
+    'GET /api/chat/preview', 'POST /api/chat/preview',
     'POST /api/chat/clear', 'POST /api/chat/join',
   ]);
 });

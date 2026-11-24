@@ -8,7 +8,7 @@ import { horizontalCssWarnings } from '../../lib/chat-css';
 import { live, useLive } from '../../lib/live';
 import { ManualDraft } from '../../lib/manual-draft';
 import { patchWidgets } from '../../lib/patch';
-import type { ChatVariant, WidgetSection } from '../../lib/types';
+import type { ChatPreviewState, ChatVariant, WidgetSection } from '../../lib/types';
 import { BrowserSource, codeTab, confirmDelete, Panel, Stage, Switch, toast, WidgetLayout } from '../../lib/ui';
 
 const ROUTE = '/api/widgets/chat/variants';
@@ -210,7 +210,7 @@ export function ChatWidget({ info, anims }: { info: Info; anims: Options }) {
   return <Slide crumb={<><a href="#/widgets">Widgets</a> › {info.title}</>} title={info.title} desc={info.desc} back="#/widgets" wide foot={<SaveBar />}>
     <WidgetLayout className="chat-variant-editor"
       source={<BrowserSource url={location.origin + path} size={dimensions.size} />}
-      preview={<Stage eyebrow="Vista previa" aside={<span>Datos de ejemplo</span>} src={preview} w={dimensions.w} h={dimensions.h} />}>
+      preview={<><Stage eyebrow="Vista previa" aside={<span>Datos de ejemplo</span>} src={preview} w={dimensions.w} h={dimensions.h} /><ChatPreviewInSources /></>}>
       <Panel>
         <div className="chat-variants">
           <label>Variante de chat<select value={id} disabled={!loaded || locked || mode !== null} onChange={e => changeSelection(e.target.value)}>
@@ -242,4 +242,34 @@ export function ChatWidget({ info, anims }: { info: Info; anims: Options }) {
       </Panel>
     </WidgetLayout>
   </Slide>;
+}
+
+/** Plays the preview's demo messages in every real chat source (Meld) for two minutes. */
+function ChatPreviewInSources() {
+  const [state, setState] = useState<ChatPreviewState>({ on: false, until: null });
+  const [now, setNow] = useState(Date.now());
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    get<ChatPreviewState>('/api/chat/preview').then(s => { if (alive) setState(s); }).catch(() => {});
+    const off = live.on('chatPreview', s => setState(s));
+    return () => { alive = false; off(); };
+  }, []);
+  useEffect(() => {
+    if (!state.on) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [state.on]);
+  const left = state.on && state.until ? Math.max(0, Math.round((Date.parse(state.until) - now) / 1000)) : 0;
+  const toggle = async () => {
+    setBusy(true);
+    try { setState(await post<ChatPreviewState>('/api/chat/preview', { on: !state.on })); setNow(Date.now()); }
+    catch (e) { toast(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  return <div className="chat-preview-sources" style={{ marginTop: 12 }}>
+    <button type="button" className={`eg-btn eg-btn--sm ${state.on ? 'eg-btn--primary' : 'eg-btn--secondary'}`} disabled={busy} aria-pressed={state.on} onClick={() => void toggle()}>
+      {state.on ? `Parar simulación en Meld · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'Simular mensajes en Meld'}</button>
+    <p className="hint">Tus fuentes de chat en Meld (también las variantes y los huecos de overlays) reproducen estos mensajes de ejemplo durante 2 minutos y luego vuelven al chat real. No se guardan en el chat ni cuentan en las métricas.</p>
+  </div>;
 }
