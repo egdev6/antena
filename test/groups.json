@@ -158,6 +158,7 @@
     "test/apariencia-browser.test.mjs",
     "test/apariencia-save.test.mjs",
     "test/charts-style-browser.test.mjs",
+    "test/chat-backlog-browser.test.mjs",
     "test/chat-variants-async-browser.test.mjs",
     "test/chat-variants-panel-browser.test.mjs",
     "test/chat-variants-widget-browser.test.mjs",
