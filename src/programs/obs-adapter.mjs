@@ -389,7 +389,9 @@ export class ObsAdapter extends Program {
   async showScene(ref) {
     const scene = this.findScene(ref);
     if (!scene) throw new Error(`No encuentro la escena «${ref}» en el programa de emisión`);
-    await this.requestObs('SetCurrentProgramScene', { sceneName: scene.name });
+    // Same contract as Meld: announce the target when the switch is ordered.
+    this.emit('sceneSwitch', { id: String(scene.id), name: String(scene.name ?? '') });
+    try { await this.requestObs('SetCurrentProgramScene', { sceneName: scene.name }); } catch (error) { this.emit('sceneSwitchFailed', error); throw error; }
     return scene;
   }
   async setLayer(sceneRef, layerRef, visible) {

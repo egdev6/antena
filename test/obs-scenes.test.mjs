@@ -248,3 +248,19 @@ test('HTTP aliases, timed layer hide and engine actions use the OBS facade', asy
   assert.equal(app.program.session().scenes[0].current, true);
   assert.equal(app.program.session().scenes[0].layers[0].visible, false);
 });
+
+test('OBS announces the ordered scene before switching and reports a refused switch', async t => {
+  const { fake, program } = await fixture(t);
+  const switches = [], failures = [];
+  program.on('sceneSwitch', s => switches.push(s));
+  program.on('sceneSwitchFailed', e => failures.push(e));
+  assert.equal((await program.showScene('SLIDES')).name, 'Slides');
+  assert.deepEqual(switches, [{ id: 'slides', name: 'Slides' }], 'only the id and name of the target scene');
+  assert.equal(failures.length, 0);
+  fake.failRequest('SetCurrentProgramScene');
+  await assert.rejects(program.showScene('cam'));
+  assert.deepEqual(switches.at(-1), { id: 'cam', name: 'Camera' }, 'the target is announced before OBS answers');
+  assert.equal(failures.length, 1, 'a refused switch is reported once');
+  await assert.rejects(program.showScene('missing'));
+  assert.equal(switches.length, 2, 'an unknown scene is never announced');
+});

@@ -288,7 +288,7 @@ Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un
 | API | Qué hace |
 |---|---|
 | `antena.on(evento, fn)` | Escucha un evento y devuelve la función para dejar de escuchar. Si ya hay un valor, `fn` se llama al momento con él |
-| `antena.state` | Último valor de cada evento (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`); empiezan en `null` |
+| `antena.state` | Último valor de cada evento (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`, `sceneSwitch`); empiezan en `null` |
 | `antena.ready` | Promesa que se resuelve cuando ya hay datos: espera antes de leer `antena.state` |
 | `antena.run(tipo, params)` | Pide una acción aprobada: resuelve si se ejecutó y se rechaza con el error del servidor si no |
 
@@ -307,6 +307,8 @@ document.querySelector('.marco').onclick = () => antena.run('scene', { scene: 'C
 El evento `theme` y `antena.state.theme` incluyen los campos de apariencia habituales junto con `id` y `name` del tema guardado activo; por ejemplo, `antena.on('theme', t => console.log(t.id, t.name, t.accent))`. Se actualizan al cambiar o renombrar; el hash visual es independiente del nombre.
 
 El evento `scene` y `antena.state.scene` listan las escenas al aire en el programa de emisión (Meld u OBS), en su orden: `[{ id, name }]`. Meld puede tener dos a la vez (horizontal y vertical) y la lista queda vacía si no hay programa conectado. Solo se emite cuando cambian las escenas al aire, así que un mismo overlay puede servir para todas las escenas y animarse entre layouts; por ejemplo, `antena.on('scene', lista => document.body.dataset.scene = lista.find(s => LAYOUTS[s.name])?.name || '')`. Nunca incluye la lista de escenas, las capas ni las URLs.
+
+Meld informa de la nueva escena al aire solo cuando termina su transición. Cuando es Antena quien cambia la escena (dock, atajos, Stream Deck, acciones o `antena.run('scene')`), `sceneSwitch` trae la escena destino `{ id, name }` al momento, antes de que el programa la confirme, para que el overlay se anime a la vez que la transición del programa. Si el programa rechaza el cambio, se vuelve a enviar `scene` con las escenas reales al aire. Los cambios hechos directamente en Meld u OBS solo llegan por `scene`. Ordenar la escena que ya está al aire envía `sceneSwitch` sin un `scene` detrás, y `sceneSwitch` trae la escena ordenada, que puede ser una vertical.
 
 #### Permisos
 

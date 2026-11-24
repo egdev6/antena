@@ -335,7 +335,8 @@ test('un overlay propio recibe por el SDK la escena al aire y sus cambios', { ti
     const overlay = (await api('POST', '/api/custom-overlays', {
       name: 'Escenas',
       js: "antena.ready.then(() => fetch('" + back.base + "/ready?names=' + encodeURIComponent((antena.state.scene || ['sin-dato']).map(s => s.name || s).join('|')), { mode: 'no-cors' }));"
-        + "antena.on('scene', list => fetch('" + back.base + "/scene?names=' + encodeURIComponent(list.map(s => s.name).join('|')), { mode: 'no-cors' }));",
+        + "antena.on('scene', list => fetch('" + back.base + "/scene?names=' + encodeURIComponent(list.map(s => s.name).join('|')), { mode: 'no-cors' }));"
+        + "antena.on('sceneSwitch', s => fetch('" + back.base + "/switch?name=' + encodeURIComponent(s.name), { mode: 'no-cors' }));",
     })).overlay;
     chrome = await openChromePage(bin, `${base}/custom/${overlay.id}`);
     await back.waitFor(h => h === '/scene?names=C%C3%A1mara', 30000);
@@ -343,6 +344,13 @@ test('un overlay propio recibe por el SDK la escena al aire y sus cambios', { ti
     assert.equal(await back.waitFor(h => h.startsWith('/ready'), 30000), '/ready?names=C%C3%A1mara');
     meldSrv.setCurrentScenes(['s2']);
     await back.waitFor(h => h === '/scene?names=Pantalla', 30000);
+    // Ordered by Antena: the overlay gets the target first (sceneSwitch), then the confirmation (scene).
+    const from = back.hits.length;
+    await api('POST', '/api/meld/scene', { scene: 'Cámara' });
+    for (let i = 0; i < 300 && !back.hits.slice(from).includes('/scene?names=C%C3%A1mara'); i++) await sleep(100);
+    const after = back.hits.slice(from);
+    const sw = after.indexOf('/switch?name=C%C3%A1mara'), conf = after.indexOf('/scene?names=C%C3%A1mara');
+    assert.ok(sw >= 0 && conf > sw, `sceneSwitch llega antes que scene: ${JSON.stringify(after)}`);
   } finally {
     await closeAll(() => chrome && closeChrome(chrome), () => back.close(), () => meldSrv.server.close(),
       () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });

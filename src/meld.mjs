@@ -348,7 +348,10 @@ export class Meld extends EventEmitter {
   // ---- acciones ----
   async showScene(ref) {
     const s = this.findScene(ref); if (!s) throw new Error(`No encuentro la escena «${ref}» en Meld`);
-    await this.call('showScene', s.id); return s;
+    // Meld reports the new on-air scene only after its transition ends: announce the target now.
+    this.emit('sceneSwitch', { id: String(s.id), name: String(s.name ?? '') });
+    try { await this.call('showScene', s.id); } catch (error) { this.emit('sceneSwitchFailed', error); throw error; }
+    return s;
   }
   async setLayer(sceneRef, layerRef, visible) {
     const f = this.findLayer(sceneRef, layerRef); if (!f) throw new Error(`No encuentro la capa «${layerRef}»`);

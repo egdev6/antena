@@ -85,7 +85,7 @@ test('on devuelve la baja, off da de baja por función y cada suscripción es in
 
 test('state guarda el último valor de cada evento y on entrega el snapshot actual al suscribirse', () => {
   const { antena, deliver } = loadSdk();
-  assert.deepEqual(Object.keys(antena.state).sort(), ['alert', 'chat', 'interactive', 'scene', 'theme', 'viewers', 'widgets']);
+  assert.deepEqual(Object.keys(antena.state).sort(), ['alert', 'chat', 'interactive', 'scene', 'sceneSwitch', 'theme', 'viewers', 'widgets']);
   for (const ev of Object.keys(antena.state)) assert.equal(antena.state[ev], null, `${ev} empieza a null`);
 
   deliver({ antena: 1, event: 'widgets', data: { totals: { follows: 3 } } });
@@ -211,4 +211,14 @@ test('scene entrega la lista de escenas al aire y state guarda la última', () =
   const late = [];
   antena.on('scene', list => late.push(list));
   assert.deepEqual(late, [[]], 'una suscripción tardía recibe la lista actual');
+});
+
+test('sceneSwitch llega al manejador con la escena destino', () => {
+  const { antena, deliver } = loadSdk();
+  assert.equal(antena.state.sceneSwitch, null, 'sceneSwitch empieza a null');
+  const got = [];
+  antena.on('sceneSwitch', s => got.push(s));
+  deliver({ antena: 1, event: 'sceneSwitch', data: { id: 's2', name: 'Pantalla' } });
+  assert.deepEqual(got, [{ id: 's2', name: 'Pantalla' }]);
+  assert.deepEqual(antena.state.sceneSwitch, { id: 's2', name: 'Pantalla' });
 });

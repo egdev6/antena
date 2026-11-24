@@ -431,6 +431,8 @@ export function shellHtml(overlay) {
     interactive: relay('interactive'),
     // Escenas al aire (lista de { id, name }); la utilidad común pide el opt-in al ver este manejador.
     scene: relay('scene'),
+    // Live only: the scene Antena just ordered, before the program confirms it.
+    sceneSwitch: relay('sceneSwitch'),
     customOverlayTheme: relayTheme,
     chat: relay('chat'),
     publicAlert: data => relay('alert')(data),
