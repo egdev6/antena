@@ -86,7 +86,7 @@ test('migración y protección de audio explican sus límites', () => {
   }
   source('../public/overlay.html', ['if (MUTE || audioHidden()', 'sound.pause()']);
   source('../public/widgets/interview.html', ['video.muted = audioHidden()', "if (audioHidden()) $('full').querySelector('iframe')?.remove()"]);
-  includes(line(limitaciones, 'Meld'), ['no se ha comprobado', 'una sola fuente', 'Duplicator']);
+  includes(line(limitaciones, 'Meld'), ['no marca como ocultas', 'Page Visibility', 'una sola fuente', 'Duplicator']);
   source('../public/custom/sdk.js', ['Meld off-air visibility is unverified', 'use one browser source and Duplicator']);
 });
 
