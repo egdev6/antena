@@ -229,6 +229,7 @@
     "test/thanks-129-regression.test.mjs",
     "test/thanks-panel-browser.test.mjs",
     "test/thanks-widget-browser.test.mjs",
+    "test/ticker-loop-browser.test.mjs",
     "test/tierlist-vote-text-browser.test.mjs",
     "test/tierlist-widget-browser.test.mjs",
     "test/ui-standardize-browser.test.mjs",
