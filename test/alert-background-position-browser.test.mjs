@@ -10,6 +10,7 @@ import { evaluateChrome } from './helpers/chrome-dom.mjs';
 const q = JSON.stringify;
 const input = field => `document.querySelector('[data-field="${field}"] input')`;
 const save = `[...document.querySelectorAll('.lv-sfoot button')].find(b=>b.textContent.trim()==='Guardar')`;
+const designTab = `[...document.querySelectorAll('.lv-stabs [role="tab"]')].find(b=>b.textContent.trim().startsWith('Diseño'))`;
 const closeTo = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1, `${actual} ≈ ${expected}`);
 
 test('image/video backgrounds move independently; panel saves and reloads both offsets', { timeout: 120000 }, async t => {
@@ -29,7 +30,13 @@ test('image/video backgrounds move independently; panel saves and reloads both o
     chrome = await openChromePage(bin, base + '/overlay?still=follow');
     const c = chrome.cdp, ev = expr => evaluateChrome(c, expr);
     await c.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
-    await waitDom(c, `document.readyState==='complete'`);
+    await waitDom(c, `location.href===${q(base + '/overlay?still=follow')} && document.readyState==='complete'`);
+    async function navigate(url, ready, reload = false) {
+      // CDP can acknowledge navigation while selectors still match the old document.
+      await ev(`document.__backgroundPreviousDocument = true`);
+      await c.send(reload ? 'Page.reload' : 'Page.navigate', reload ? {} : { url });
+      await waitDom(c, `location.href===${q(url)} && !document.__backgroundPreviousDocument && (${ready})`);
+    }
     // Real decodable image and VP8 video, uploaded only to this isolated test app.
     const uploads = await ev(`(async()=>{
       const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
@@ -46,8 +53,8 @@ test('image/video backgrounds move independently; panel saves and reloads both o
     let revision = 0;
     async function render(patch) {
       await api('PUT', '/api/alerts/follow', patch);
-      await c.send('Page.navigate', { url: base + '/overlay?still=follow&case=' + ++revision });
-      await waitDom(c, `!!document.querySelector('#stage .alert-mixed.on') && (()=>{const m=document.querySelector('#bg .alert-media');return m && (m.naturalWidth>0 || m.videoWidth>0)})()`);
+      await navigate(base + '/overlay?still=follow&case=' + ++revision,
+        `!!document.querySelector('#stage .alert-mixed.on') && (()=>{const m=document.querySelector('#bg .alert-media');return m && (m.naturalWidth>0 || m.videoWidth>0)})()`);
       await ev(`document.fonts.ready.then(()=>true)`);
       return ev(`(()=>{const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}};return {bg:rect('#bg .alert-media'),card:rect('#stage .card')}})()`);
     }
@@ -61,9 +68,8 @@ test('image/video backgrounds move independently; panel saves and reloads both o
       assert.deepEqual(cardMoved.bg, moved.bg);
       closeTo(cardMoved.card.x - moved.card.x, -40); closeTo(cardMoved.card.y - moved.card.y, 30);
       // Actual editor controls, not a direct API substitute for saving the UI.
-      await c.send('Page.navigate', { url: base + '/#/alertas/follow' });
-      await waitDom(c, `!!document.querySelector('.lv-stabs [role="tab"]')`);
-      await ev(`[...document.querySelectorAll('.lv-stabs [role="tab"]')].find(b=>b.textContent.trim().startsWith('Diseño')).click()`);
+      await navigate(base + '/#/alertas/follow', `!!(${designTab})`);
+      await ev(`(${designTab}).click()`);
       await waitDom(c, `!!${input('bgX')} && !!${input('bgY')}`);
       for (const [field, value] of [['bgX', -160], ['bgY', 90]]) {
         await ev(`(()=>{const i=${input(field)};Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${value});i.dispatchEvent(new Event('input',{bubbles:true}));i.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
@@ -73,16 +79,14 @@ test('image/video backgrounds move independently; panel saves and reloads both o
       await waitDom(c, `document.querySelector('.lv-sfoot .lv-dirty')?.textContent.trim()==='Todo guardado'`);
       const look = (await api('GET', '/api/alerts/follow/sample')).alert.look;
       assert.deepEqual([look.bgX, look.bgY, look.cardX, look.cardY], [-160, 90, -40, 30]);
-      await c.send('Page.reload');
-      await waitDom(c, `!!document.querySelector('.lv-stabs [role="tab"]')`);
-      await ev(`[...document.querySelectorAll('.lv-stabs [role="tab"]')].find(b=>b.textContent.trim().startsWith('Diseño')).click()`);
+      await navigate(base + '/#/alertas/follow', `!!(${designTab})`, true);
+      await ev(`(${designTab}).click()`);
       await waitDom(c, `${input('bgX')}?.value==='-160' && ${input('bgY')}?.value==='90'`);
     }
     // Other layouts do not gain or move a separate background layer.
     for (const layout of ['card', 'media']) {
       await api('PUT', '/api/alerts/follow', { layout });
-      await c.send('Page.navigate', { url: base + '/overlay?still=follow&case=' + ++revision });
-      await waitDom(c, `!!document.querySelector('#stage .alert.on')`);
+      await navigate(base + '/overlay?still=follow&case=' + ++revision, `!!document.querySelector('#stage .alert.on')`);
       assert.equal(await ev(`!!document.querySelector('#bg .alert-media')`), false);
     }
   } finally {
