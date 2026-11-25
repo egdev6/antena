@@ -48,6 +48,7 @@
     "test/interviews-mcp.test.mjs",
     "test/interviews.test.mjs",
     "test/lan-key.test.mjs",
+    "test/latest-ticker-types.test.mjs",
     "test/legacy-retirement.test.mjs",
     "test/live-load-race.test.mjs",
     "test/meld-autosession-drain.test.mjs",

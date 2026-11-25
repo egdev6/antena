@@ -30,8 +30,8 @@ function apply(s) {
   const cfg = s.widgets?.ticker || {};
   setCss(cfg.css);
   document.getElementById('label').textContent = cfg.label || 'Gracias a';
-  // Same event types as the «Últimos» block (widgets.latest.items); the groups mirror session.latest().
-  const kinds = s.widgets?.latest?.items || ['follow', 'sub', 'cheer', 'superchat'];
+  // Own event types (widgets.ticker.items); without them, the «Últimos» types. The groups mirror session.latest().
+  const kinds = cfg.items || s.widgets?.latest?.items || ['follow', 'sub', 'cheer', 'superchat'];
   const types = kinds.includes('any') ? null : new Set(kinds.flatMap(k => LATEST_TYPES[k] || []));
   const items = (s.recent || []).filter(e => !types || types.has(e.type)).slice(0, Number(cfg.count) || 15);
   const html = items.length
