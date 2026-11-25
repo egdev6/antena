@@ -123,7 +123,7 @@ body.debug{background:#1b1d22 url('data:image/svg+xml;utf8,<svg xmlns="http://ww
 
 /* animaciones de entrada y salida del diseño 2 */
 /* diseño 3: mixta (vídeo o imagen de fondo + tarjeta EGDEV encima) */
-.alert-bg{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;opacity:0;transition:opacity .35s ease-out}
+.alert-bg{position:fixed;inset:0;display:grid;place-items:center;translate:var(--bg-x,0px) var(--bg-y,0px);pointer-events:none;opacity:0;transition:opacity .35s ease-out}
 .alert-bg.on{opacity:1}
 .alert-bg.out{opacity:0;transition-duration:.45s}
 .alert-bg .alert-media{width:calc(100vw * var(--bg-size,1));height:calc(100vh * var(--bg-size,1));object-fit:contain}
@@ -424,6 +424,8 @@ function renderMixed(a) {
   const bg = document.createElement('div');
   bg.className = 'alert-bg type-' + a.type;
   bg.style.setProperty('--bg-size', Math.max(0.05, L.mediaSize / 100));
+  bg.style.setProperty('--bg-x', (L.bgX ?? 0) + 'px');
+  bg.style.setProperty('--bg-y', (L.bgY ?? 0) + 'px');
   const src = '/media/' + encodeURIComponent(L.media);
   let el;
   if (L.mediaKind === 'video') {

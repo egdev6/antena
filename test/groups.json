@@ -1,6 +1,7 @@
 {
   "unit": [
     "test/actions-shared.test.mjs",
+    "test/alert-background-position.test.mjs",
     "test/alerts.test.mjs",
     "test/bus-clock.test.mjs",
     "test/channel-totals.test.mjs",
@@ -154,6 +155,7 @@
   ],
   "browser": [
     "test/acerca-browser.test.mjs",
+    "test/alert-background-position-browser.test.mjs",
     "test/alert-thumbs-browser.test.mjs",
     "test/apariencia-browser.test.mjs",
     "test/apariencia-save.test.mjs",

@@ -63,6 +63,7 @@ export const LOOK_DEFAULTS = {
   animIn: 'pop',        // pop | fade | slide | zoom | none
   animOut: 'fade',      // fade | slide | zoom | none
   cardX: 0, cardY: 0,   // mixta: ajuste de la tarjeta sobre el fondo (px, desde la posición del tema)
+  bgX: 0, bgY: 0,       // mixta: ajuste independiente del fondo desde el centro del lienzo (px)
   css: '',
 };
 
@@ -80,7 +81,7 @@ export const ALERT_FIELDS = {
   layout: ['card', 'media', 'mixed'], media: 'string', mediaSize: 'number', mediaVolume: 'number',
   sound: 'string', soundVolume: 'number', durationMode: ['fixed', 'media'], textDelayMs: 'number',
   textX: 'number', textY: 'number', textWidth: 'number', textAlign: ['left', 'center', 'right'], fontSize: 'number',
-  textColor: 'string', accentColor: 'string', cardX: 'number', cardY: 'number', animIn: ['pop', 'fade', 'slide', 'zoom', 'none'], animOut: ['fade', 'slide', 'zoom', 'none'],
+  textColor: 'string', accentColor: 'string', cardX: 'number', cardY: 'number', bgX: 'number', bgY: 'number', animIn: ['pop', 'fade', 'slide', 'zoom', 'none'], animOut: ['fade', 'slide', 'zoom', 'none'],
   css: 'string', ttsEnabled: 'boolean', ttsTemplate: 'string', ttsMinAmount: 'number', actions: 'array',
 };
 
@@ -287,7 +288,7 @@ function pickLook(cfg) {
   // sin archivo, «vídeo» y «mixta» caen a la tarjeta
   out.layout = ['media', 'mixed'].includes(out.layout) && out.media ? out.layout : 'card';
   out.mediaKind = out.media ? mediaKind(out.media) : null;
-  for (const k of ['mediaSize', 'mediaVolume', 'soundVolume', 'textDelayMs', 'textX', 'textY', 'textWidth', 'fontSize', 'cardX', 'cardY']) out[k] = Number(out[k]) || 0;
+  for (const k of ['mediaSize', 'mediaVolume', 'soundVolume', 'textDelayMs', 'textX', 'textY', 'textWidth', 'fontSize', 'cardX', 'cardY', 'bgX', 'bgY']) out[k] = Number(out[k]) || 0;
   return out;
 }
 

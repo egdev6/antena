@@ -133,7 +133,7 @@ const FIELD_TAB: Record<string, string> = {
   actions: 'actions', css: 'css', name: 'head', enabled: 'head',
 };
 export const fieldTab = (f: string) => FIELD_TAB[f] || 'design';
-const FIELD_LABEL: Record<string, string> = { media: 'vídeo o imagen', layout: 'diseño', sound: 'sonido', soundVolume: 'volumen', title: 'antetítulo', text: 'texto', sub: 'línea de apoyo', actions: 'acciones', css: 'CSS', ttsEnabled: 'voz', ttsTemplate: 'voz', durationMs: 'duración', accentColor: 'color', textColor: 'color', cardX: 'posición', cardY: 'posición', textDelayMs: 'retraso' };
+const FIELD_LABEL: Record<string, string> = { media: 'vídeo o imagen', layout: 'diseño', sound: 'sonido', soundVolume: 'volumen', title: 'antetítulo', text: 'texto', sub: 'línea de apoyo', actions: 'acciones', css: 'CSS', ttsEnabled: 'voz', ttsTemplate: 'voz', durationMs: 'duración', accentColor: 'color', textColor: 'color', cardX: 'posición', cardY: 'posición', bgX: 'posición del fondo', bgY: 'posición del fondo', textDelayMs: 'retraso' };
 function replaceTarget(s: any, t: Target, value: any) {
   const cfg = { ...s.config };
   const mapList = (list: any[], id: string) => list.map(x => (x.id === id ? value : x));
@@ -478,9 +478,13 @@ export function Editor({ target }: { target: Target }) {
               {when.mixed && R('textDelayMs', 'Retraso de la tarjeta', 0, 6, 0.1, 's', true)}
             </div>
             {when.card && <p className="hint">La tarjeta 3D de la marca: icono, antetítulo, nombre y línea de apoyo. Cambia su aspecto en la pestaña CSS.</p>}
+            {when.mixed && box('Posición del fondo', <>
+              <div className="row2">{R('bgX', 'Horizontal (X)', -1920, 1920, 10, 'px')}{R('bgY', 'Vertical (Y)', -1080, 1080, 10, 'px')}</div>
+              <p className="hint">Mueve solo el vídeo o la imagen, sin desplazar la tarjeta. 0/0 = fondo centrado; valores positivos hacia la derecha y abajo, negativos hacia la izquierda y arriba.</p>
+            </>)}
             {when.mixed && box('Posición de la tarjeta', <>
               <div className="row2">{R('cardX', 'Ajuste horizontal', -900, 900, 10, 'px')}{R('cardY', 'Ajuste vertical', -500, 500, 10, 'px')}</div>
-              <p className="hint">Parte de la posición del tema (Apariencia › Forma y posición) y la mueve sobre el fondo. 0/0 = donde sale la tarjeta normal. El fondo ocupa toda la capa de 1920×1080: un webm con transparencia deja ver la escena.</p>
+              <p className="hint">Parte de la posición del tema (Apariencia › Forma y posición) y la mueve sobre el fondo. 0/0 = donde sale la tarjeta normal. El tamaño y la posición del fondo se ajustan por separado; un webm con transparencia deja ver la escena.</p>
             </>)}
             {when.media && box('Posición y estilo del texto', <>
               <div className="row3">{R('textX', 'X', 0, 100, 1, '%')}{R('textY', 'Y', 0, 100, 1, '%')}{R('textWidth', 'Ancho', 20, 140, 1, '%')}</div>

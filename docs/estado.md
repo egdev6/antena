@@ -27,7 +27,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
 - **Mensajes en pantalla:** `/widget/rotator` (1200×120) rota una lista ordenada de mensajes propios, distinta de los mensajes programados del chat: `widgets.rotator` con `label`, `messages` ([{ id, text }], máx. 50), `intervalSec` (5–3600, de un inicio al siguiente), `durationSec` (visible, recortado al intervalo) y `order` (`sequential` o `random`: cada ronda muestra todos una vez y nunca repite el mismo dos veces seguidas). Lógica pura en `public/widgets/rotator-core.js`; la vista previa rota cada 5 s. Se puede incrustar como hueco `rotator` en overlays propios.
 - **Alertas de Twitch y YouTube:** tipos normalizados (follow, sub, resub, giftsub,
   cheer, raid, redemption; ytsub, superchat, supersticker, member, milestone, giftmember, jewels) con
-  tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en el programa de emisión.
+  tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en el programa de emisión. En el diseño mixto, el fondo de imagen o vídeo tiene posición X/Y independiente de la tarjeta (0/0 centrado).
   Los regalos Jewels se agrupan por combo; cuentan como eventos, no como euros de Super Chat.
 - **Suscriptores de YouTube (#134):** alerta `ytsub` para suscripciones públicas detectadas durante la escucha, con intervalo configurable y parada por cuota.
 - **Bienvenida (#289):** alerta pequeña y editable en el primer mensaje por persona y plataforma, con variación para quien ya habló en directos archivados. Activada de serie, sin mensajes propios ni usuarios bloqueados; el máximo de cinco alertas pendientes evita inundar la cola.
