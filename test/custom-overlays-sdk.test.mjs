@@ -85,7 +85,7 @@ test('on devuelve la baja, off da de baja por función y cada suscripción es in
 
 test('state guarda el último valor de cada evento y on entrega el snapshot actual al suscribirse', () => {
   const { antena, deliver } = loadSdk();
-  assert.deepEqual(Object.keys(antena.state).sort(), ['alert', 'chat', 'interactive', 'scene', 'sceneSwitch', 'theme', 'viewers', 'widgets']);
+  assert.deepEqual(Object.keys(antena.state).sort(), ['alert', 'chat', 'interactive', 'scene', 'sceneSwitch', 'settings', 'theme', 'viewers', 'widgets']);
   for (const ev of Object.keys(antena.state)) assert.equal(antena.state[ev], null, `${ev} empieza a null`);
 
   deliver({ antena: 1, event: 'widgets', data: { totals: { follows: 3 } } });
@@ -231,7 +231,7 @@ test('slots: place and clear send declarative requests; errors are reported only
   deliver({ antena: 1, slotError: 'invalid slot' }, {});
   deliver({ antena: 1, slotError: 'invalid slot' });
   assert.deepEqual(warnings, ['invalid slot']);
-  assert.deepEqual(Object.keys(antena.state).sort(), ['alert', 'chat', 'interactive', 'scene', 'sceneSwitch', 'theme', 'viewers', 'widgets']);
+  assert.deepEqual(Object.keys(antena.state).sort(), ['alert', 'chat', 'interactive', 'scene', 'sceneSwitch', 'settings', 'theme', 'viewers', 'widgets']);
 });
 
 test('sceneSwitch llega al manejador con la escena destino', () => {

@@ -503,8 +503,8 @@ test('extended stream snapshots follow all legacy frames in their original order
     ['client=overlay&themeInfo=1', ['pause', 'theme', 'activeTheme']],
     ['client=preview&themeInfo=1', ['theme', 'activeTheme']],
     ['client=teleprompter&themeInfo=1', ['teleprompter', 'theme', 'activeTheme']],
-    ['client=widget&themeInfo=1', ['widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'theme', 'activeTheme']],
-    ['client=widget&themeInfo=1&customTheme=1', ['widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'theme', 'activeTheme', 'customOverlayTheme']],
+    ['client=widget&themeInfo=1', ['widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'customOverlaySettings', 'theme', 'activeTheme']],
+    ['client=widget&themeInfo=1&customTheme=1', ['widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'customOverlaySettings', 'theme', 'activeTheme', 'customOverlayTheme']],
   ]) {
     const ctrl = new AbortController(); t.after(() => ctrl.abort());
     const res = await fetch(`${f.base}/api/stream?${query}`, { signal: ctrl.signal });

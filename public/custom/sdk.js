@@ -13,9 +13,12 @@
  *                          it, so late subscriptions start with data. Each call is independent.
  *   antena.off(event, fn)  Removes one subscription of fn for that event.
  *   antena.state           Latest value per event; every key starts as null.
- *                          { alert, chat, viewers, widgets, interactive, theme, scene, sceneSwitch }
+ *                          { alert, chat, viewers, widgets, interactive, theme, scene, sceneSwitch, settings }
  *   antena.ready           Promise that resolves once the shell confirms it is connected and has
  *                          pushed the current snapshots. Await it before reading antena.state.
+ *   antena.settings        This overlay's settings: { key: value } for each declared field (the
+ *                          value edited in the panel, else the field default). Media fields are an
+ *                          absolute /media/<file> URL ('' when empty). Same as antena.state.settings.
  *   antena.slots.place(slots, options)  Place named Antena widgets in the trusted shell.
  *   antena.slots.clear(name?)            Remove one or all slots immediately.
  *     Slots: {name:{widget, params?, rect:[x,y,w,h]|null, enter?, exit?, layer?, fit?, css?}}.
@@ -53,6 +56,9 @@
  *                  'scene' is sent again with the real on-air list. Live only; changes made
  *                  directly in Meld or OBS only arrive through 'scene'. Re-ordering the scene already
  *                  on air sends no 'scene' after it; the ordered scene may be a vertical one.
+ *   'settings'     The overlay's settings (see antena.settings), again whenever a value changes:
+ *                  values are applied live, without reloading the page. Changing the declared
+ *                  fields reloads the page.
  *
  * Only messages posted by the parent window (the shell) and marked with `antena: 1` are accepted;
  * anything else in the page (another frame, a stray script, a user event) is ignored.
@@ -60,7 +66,7 @@
 (function (win) {
   'use strict';
 
-  var EVENTS = ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme', 'scene', 'sceneSwitch'];
+  var EVENTS = ['alert', 'chat', 'viewers', 'widgets', 'interactive', 'theme', 'scene', 'sceneSwitch', 'settings'];
   var state = {};
   var handlers = {};
   var markReady;
@@ -211,5 +217,8 @@
     place: function (value, options) { sendSlots({ op: 'place', slots: value, options: options }); },
     clear: function (name) { sendSlots({ op: 'clear', name: name }); }
   };
-  win.antena = { on: on, off: off, state: state, ready: ready, run: run, slots: slots };
+  var antena = { on: on, off: off, state: state, ready: ready, run: run, slots: slots };
+  // The overlay's own settings (declared fields, values edited in the panel); null until they arrive.
+  Object.defineProperty(antena, 'settings', { enumerable: true, get: function () { return state.settings; } });
+  win.antena = antena;
 })(window);

@@ -439,6 +439,12 @@ export interface CustomOverlay {
   // porque un overlay guardado antes de S11 no los trae (el servidor los normaliza al leerlo).
   requestedPermissions?: string[]; permissions?: string[];
   approvedAt?: number; approvedUpdatedAt?: number;
+  // #344: declared settings fields and their values (the server normalizes old overlays to [] / {}).
+  fields?: CustomOverlayField[]; values?: Record<string, unknown>;
+}
+export interface CustomOverlayField {
+  key: string; label: string; type: 'text' | 'number' | 'toggle' | 'select' | 'color' | 'list' | 'media';
+  default?: unknown; options?: string[]; min?: number; max?: number; step?: number;
 }
 
 // ---------- récord de espectadores (src/viewers.mjs) ----------

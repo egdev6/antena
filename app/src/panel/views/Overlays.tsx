@@ -3,7 +3,7 @@
 // cambios sin guardar, el editor no los pisa: avisa y deja cargar la versión nueva a mano.
 import { useEffect, useRef, useState } from 'react';
 import { OVERLAY_ACTION_LABELS } from '../../../../src/actions.mjs';
-import { del, enc, post, put } from '../../lib/api';
+import { del, enc, get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { ManualDraft } from '../../lib/manual-draft';
 import { isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
@@ -12,12 +12,13 @@ import { Card, CardGroup, PageHead, SaveBar, Slide, Tabs } from '../../lib/layou
 import { IC } from '../../lib/icons';
 import { go } from '../router';
 import { origin } from './Widgets';
-import type { CustomOverlay as BaseCustomOverlay } from '../../lib/types';
+import type { CustomOverlay as BaseCustomOverlay, CustomOverlayField, MediaItem } from '../../lib/types';
 
 type CustomOverlay = BaseCustomOverlay & { reapprovalRequired?: boolean };
 
 type OverlayDraft = Omit<CustomOverlay, 'id' | 'updatedAt'>;
-const CODE_TABS = [{ id: 'html', label: 'HTML' }, { id: 'css', label: 'CSS' }, { id: 'js', label: 'JavaScript' }];
+const CODE_TABS = [{ id: 'html', label: 'HTML' }, { id: 'css', label: 'CSS' }, { id: 'js', label: 'JavaScript' }, { id: 'fields', label: 'Campos' }];
+const FIELDS_TIP = '[\n  { "key": "titulo", "label": "Título", "type": "text", "default": "Sígueme" },\n  { "key": "color", "label": "Color", "type": "color", "default": "#ff0036" }\n]';
 const CODE_TIP: Record<string, string> = {
   html: '<div class="marco">\n  <span class="quien">EGDEV</span>\n</div>',
   css: '.marco {\n  position: absolute;\n  inset: 40px;\n  border: 3px solid #00E0FF;\n  border-radius: 18px;\n}',
@@ -32,6 +33,8 @@ const PERMISOS: Record<string, string> = OVERLAY_ACTION_LABELS;
 const approvalsOf = (o: CustomOverlay | null | undefined) => o
   ? `${o.approvedAt ?? 0}|${!!o.reapprovalRequired}|${(o.requestedPermissions ?? []).join(',')}|${(o.permissions ?? []).join(',')}`
   : '';
+/** Firma de los valores: cambiarlos (p. ej. por MCP) tampoco cambia updatedAt. */
+const valuesOf = (o: CustomOverlay | null | undefined) => JSON.stringify(o?.values ?? {});
 
 /** Catálogo de overlays propios. Lo que crea el agente por MCP aparece aquí sin recargar. */
 export function Overlays({ parts }: { parts: string[] }) {
@@ -44,12 +47,12 @@ export function Overlays({ parts }: { parts: string[] }) {
   });
   const nuevo = <button type="button" className="eg-btn eg-btn--primary eg-btn--sm" onClick={create}><Icon d={IC.plus} className="eg-btn__icon" />Nuevo overlay</button>;
   return <>
-    <PageHead crumb={`Configurar · ${list.length === 1 ? '1 overlay' : `${list.length} overlays`}`} title="Overlays"
-      desc="Capas de HTML, CSS y JavaScript para el programa de emisión: un marco para la cámara, un título animado, lo que imagines. El agente las crea por MCP; aquí las ajustas, las pruebas y las ves en vivo."
+    <PageHead crumb={`Configurar · ${list.length === 1 ? '1 personalizado' : `${list.length} personalizados`}`} title="Personalizados"
+      desc="Overlays y widgets de HTML, CSS y JavaScript para el programa de emisión: un marco para la cámara, un título animado, lo que imagines. El agente los crea por MCP; aquí los ajustas, los pruebas y los ves en vivo. Si declaran campos, se configuran con un formulario sin tocar el código."
       actions={nuevo} />
     {list.length
       ? <div className="lv-groups">
-        <CardGroup title="Tus overlays" count={list.length} note="Cada uno es una capa de navegador: su dirección está también en Fuentes del programa de emisión" wide>
+        <CardGroup title="Tus personalizados" count={list.length} note="Cada uno es una capa de navegador: su dirección está también en Fuentes del programa de emisión" wide>
           {list.map(o => <Card key={o.id} href={`#/overlays/${enc(o.id)}`} label={`Abrir ${o.name}`} open={open === o.id}
             title={o.name} aside={<span className="lv-cmeta">{size(o)}</span>}
             thumb={<div className="lv-coverlay"><i /><b>HTML</b></div>}
@@ -121,6 +124,7 @@ function OverlaySlide({ id }: { id: string }) {
   // con cambios locales solo se anuncia, para no perder lo que el usuario estaba escribiendo.
   const remoteAt = remote?.updatedAt;
   const remoteApprovals = approvalsOf(remote);
+  const remoteValues = valuesOf(remote);
   useEffect(() => {
     if (!remote) return;
     const cur = savedRef.current;
@@ -129,6 +133,13 @@ function OverlaySlide({ id }: { id: string }) {
       // Misma versión de código: si cambió la aprobación (otra ventana, el propio PUT), se
       // fusiona sin anunciar cambios ni pisar el borrador.
       if (approvalsOf(remote) !== approvalsOf(cur)) applyApprovals(remote);
+      // Valores cambiados fuera (agente, otra ventana): entran si no hay cambios sin guardar.
+      if (valuesOf(remote) !== valuesOf(cur)) {
+        if (buffer.dirty()) { setPending(remote); return; }
+        const next = { ...(savedRef.current as CustomOverlay), values: remote.values ?? {} };
+        savedRef.current = next;
+        setSaved(next);
+      }
       return;
     }
     if (buffer.dirty()) { setPending(remote); return; }
@@ -136,8 +147,8 @@ function OverlaySlide({ id }: { id: string }) {
     setSaved(remote);
     setDraft(null);
     setPending(null);
-  }, [remote, remoteAt, remoteApprovals, buffer]);
-  if (!saved) return <Slide crumb={<a href="#/overlays">Overlays</a>} title="Overlay" back="#/overlays">
+  }, [remote, remoteAt, remoteApprovals, remoteValues, buffer]);
+  if (!saved) return <Slide crumb={<a href="#/overlays">Personalizados</a>} title="Overlay" back="#/overlays">
     <p className="hint">No existe ese overlay: puede que se haya borrado.</p>
   </Slide>;
 
@@ -159,11 +170,12 @@ function OverlaySlide({ id }: { id: string }) {
     go('#/overlays');
   });
   const field = (['html', 'css', 'js'].includes(tab) ? tab : 'html') as 'html' | 'css' | 'js';
+  const fields = cur.fields ?? [];
   const requested = saved.requestedPermissions ?? [];
   const approved = saved.permissions ?? [];
   // El servidor retira los permisos si cambia el código; los ajustes no disparan el aviso.
   const codeChanged = !!saved.reapprovalRequired;
-  return <Slide crumb={<><a href="#/overlays">Overlays</a> › {saved.name}</>} back="#/overlays" wide
+  return <Slide crumb={<><a href="#/overlays">Personalizados</a> › {saved.name}</>} back="#/overlays" wide
     title={<input className="lv-title-input" aria-label="Nombre del overlay" value={cur.name} onChange={e => set({ name: e.target.value })} />}
     head={<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm danger" disabled={isSaving()} onClick={remove}>Borrar overlay…</button>}
     foot={<SaveBar />}>
@@ -187,11 +199,17 @@ function OverlaySlide({ id }: { id: string }) {
         </div>
         <p className="hint">Las pruebas mandan datos de ejemplo a las capas abiertas de este overlay: no tocan el directo, la cola de alertas ni los totales.</p>
       </Panel>
+      {fields.length ? <Panel title="Valores" aside={<span className="hint">{fields.length === 1 ? '1 campo' : `${fields.length} campos`}</span>}>
+        <SettingsForm fields={fields} values={cur.values ?? {}} onChange={(key, value) => set({ values: { ...(cur.values ?? {}), [key]: value } })} />
+        <p className="hint">Los valores llegan a la capa en vivo al guardar, sin recargarla. «Por defecto» vuelve al valor que trae el campo.</p>
+      </Panel> : null}
       <Panel title="Código" aside={<span className="hint">{CODE_TABS.find(t => t.id === tab)?.label}</span>}>
-        <Tabs tabs={CODE_TABS} tab={field} onTab={setTab} label="Código" />
-        <textarea className="code" data-code={field} aria-label={`${CODE_TABS.find(t => t.id === tab)?.label} del overlay`}
-          spellCheck={false} placeholder={CODE_TIP[field]} value={String(cur[field])} onKeyDown={codeTab}
-          onChange={e => set(field === 'html' ? { html: e.target.value } : field === 'css' ? { css: e.target.value } : { js: e.target.value })} />
+        <Tabs tabs={CODE_TABS} tab={tab === 'fields' ? 'fields' : field} onTab={setTab} label="Código" />
+        {tab === 'fields'
+          ? <FieldsEditor key={JSON.stringify(saved.fields ?? [])} fields={fields} onChange={next => set({ fields: next })} />
+          : <textarea className="code" data-code={field} aria-label={`${CODE_TABS.find(t => t.id === tab)?.label} del overlay`}
+            spellCheck={false} placeholder={CODE_TIP[field]} value={String(cur[field])} onKeyDown={codeTab}
+            onChange={e => set(field === 'html' ? { html: e.target.value } : field === 'css' ? { css: e.target.value } : { js: e.target.value })} />}
       </Panel>
       <Panel title="CSS de este tema">
         <p className="hint">Este CSS pertenece al tema activo y se guarda en él. Cambiarlo no modifica el código ni las aprobaciones del overlay.</p>
@@ -217,4 +235,75 @@ function OverlaySlide({ id }: { id: string }) {
       </Panel>
     </WidgetLayout>
   </Slide>;
+}
+
+/** Default value of a field when nothing is stored (same rule as the server's overlaySettings). */
+function fieldDefault(field: CustomOverlayField): unknown {
+  if (field.default !== undefined) return field.default;
+  if (field.type === 'select') return field.options?.[0] ?? '';
+  if (field.type === 'number') return field.min ?? 0;
+  return ({ text: '', toggle: false, color: '#000000', list: [], media: '' } as Record<string, unknown>)[field.type];
+}
+const hex6 = (v: string) => (/^#[0-9a-f]{6}$/i.test(v) ? v : /^#[0-9a-f]{3}$/i.test(v) ? '#' + [...v.slice(1)].map(c => c + c).join('') : /^#[0-9a-f]{8}$/i.test(v) ? v.slice(0, 7) : '#000000');
+
+/** Form generated from the declared fields: one control per type. null = back to the default. */
+function SettingsForm({ fields, values, onChange }: { fields: CustomOverlayField[]; values: Record<string, unknown>; onChange: (key: string, value: unknown) => void }) {
+  const media = useLive(s => (s.media || []) as MediaItem[]);
+  const needsMedia = fields.some(f => f.type === 'media');
+  useEffect(() => {
+    if (needsMedia) get<MediaItem[]>('/api/media').then(result => live.update(() => ({ media: result }))).catch(() => {});
+  }, [needsMedia]);
+  return <div className="lv-settings" data-settings>
+    {fields.map(field => {
+      const has = values[field.key] !== undefined && values[field.key] !== null;
+      const value = has ? values[field.key] : fieldDefault(field);
+      const id = 'ajuste-' + field.key;
+      const reset = has && field.type !== 'toggle'
+        ? <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => onChange(field.key, null)}>Por defecto</button> : null;
+      if (field.type === 'toggle') return <div key={field.key} data-field={field.key}>
+        <Switch checked={value === true} onChange={v => onChange(field.key, v)}>{field.label}</Switch>
+      </div>;
+      let control;
+      if (field.type === 'number') control = <input id={id} type="number" min={field.min} max={field.max} step={field.step} value={String(value)} onChange={e => onChange(field.key, e.target.value === '' ? null : Number(e.target.value))} />;
+      else if (field.type === 'select') control = <select id={id} value={String(value)} onChange={e => onChange(field.key, e.target.value)}>{(field.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}</select>;
+      else if (field.type === 'color') control = <div className="row tight" style={{ flexWrap: 'nowrap', alignItems: 'center' }}>
+        <input type="color" style={{ flex: 'none', width: 48, padding: 2 }} aria-label={`${field.label}: selector`} value={hex6(String(value))} onChange={e => onChange(field.key, e.target.value)} />
+        <input id={id} style={{ flex: 1, minWidth: 0 }} value={String(value)} maxLength={9} onChange={e => onChange(field.key, e.target.value)} />
+      </div>;
+      else if (field.type === 'list') control = <textarea id={id} rows={4} value={(Array.isArray(value) ? value : []).join('\n')} placeholder="Un elemento por línea"
+        onChange={e => onChange(field.key, e.target.value.split('\n').slice(0, 50))} />;
+      else if (field.type === 'media') control = <select id={id} value={String(value)} onChange={e => onChange(field.key, e.target.value)}>
+        <option value="">Sin archivo</option>
+        {value && !media.some(m => m.name === value) ? <option value={String(value)}>{String(value)} (no está en Archivos)</option> : null}
+        {media.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+      </select>;
+      else control = <input id={id} value={String(value)} maxLength={2000} onChange={e => onChange(field.key, e.target.value)} />;
+      return <div key={field.key} className="lbl" data-field={field.key}>
+        <label htmlFor={id}>{field.label}</label>
+        <div className="row tight" style={{ flexWrap: 'nowrap', alignItems: 'center' }}><div style={{ flex: 1, minWidth: 0 }}>{control}</div>{reset}</div>
+      </div>;
+    })}
+  </div>;
+}
+
+/** The declared fields as JSON. Only a valid JSON list reaches the draft; the server validates the rest on save. */
+function FieldsEditor({ fields, onChange }: { fields: CustomOverlayField[]; onChange: (next: CustomOverlayField[]) => void }) {
+  const [text, setText] = useState(() => (fields.length ? JSON.stringify(fields, null, 2) : ''));
+  const [error, setError] = useState('');
+  return <>
+    <textarea className="code" data-code="fields" aria-label="Campos del overlay (JSON)" spellCheck={false} placeholder={FIELDS_TIP} value={text} onKeyDown={codeTab}
+      onChange={e => {
+        const next = e.target.value;
+        setText(next);
+        if (!next.trim()) { setError(''); onChange([]); return; }
+        try {
+          const parsed = JSON.parse(next);
+          if (!Array.isArray(parsed)) throw new Error('lista');
+          setError('');
+          onChange(parsed);
+        } catch { setError('JSON no válido: tiene que ser una lista de campos. Los cambios no se guardan hasta corregirlo.'); }
+      }} />
+    {error ? <p className="hint" role="alert" data-fields-error>{error}</p> : null}
+    <p className="hint">Tipos: text, number (min, max, step), toggle, select (options), color, list y media. Cada campo: key, label, type y default opcional. En el código: <code>antena.settings</code> o <code>antena.on('settings', fn)</code>.</p>
+  </>;
 }

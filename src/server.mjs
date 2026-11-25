@@ -319,6 +319,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       // versiones para recargar su capa sin tocar Meld.
       bus.send('customOverlays', list.map(publicOverlay), ['panel']);
       bus.send('customOverlayVersions', customOverlays.versions(), ['widget']);
+      bus.send('customOverlaySettings', customOverlays.settings(), ['widget']);
     },
   });
   await mkdir(mediaDir, { recursive: true });
@@ -543,6 +544,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (patch.customOverlays || patch.all) {
       bus.send('customOverlays', customOverlays.list(), ['panel']);
       bus.send('customOverlayVersions', customOverlays.versions(), ['widget']);
+      bus.send('customOverlaySettings', customOverlays.settings(), ['widget']);
     }
     // El Bus sustituye config por tipo: cada envío debe conservar todas sus secciones.
     // Incluye alertas editadas fuera de este panel (MCP, otra ventana, el móvil).
@@ -1318,6 +1320,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     if (kind === 'widget') res.write(`event: viewers\ndata: ${JSON.stringify(publicViewers(viewers.snapshot()))}\n\n`);
     // Versiones de los overlays propios: la shell recarga su iframe al cambiar la suya.
     if (kind === 'widget') res.write(`event: customOverlayVersions\ndata: ${JSON.stringify(customOverlays.versions())}\n\n`);
+    // Valores de los campos de cada overlay propio (#344): la shell entrega los suyos al marco.
+    if (kind === 'widget') res.write(`event: customOverlaySettings\ndata: ${JSON.stringify(customOverlays.settings())}\n\n`);
     if (kind === 'teleprompter') res.write(`event: teleprompter\ndata: ${JSON.stringify(teleprompter.snapshot())}\n\n`);
     if (kind === 'overlay') res.write(`event: pause\ndata: ${JSON.stringify(engine.pauseState())}\n\n`);
     if (kind !== 'panel' && kind !== 'dock-meters') {

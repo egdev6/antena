@@ -274,11 +274,11 @@ Los botones de **fragmentos** insertan recetas listas: otro color, sin inclinaci
 
 ### Overlays propios
 
-Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un marco para la cámara, un título animado, un cartel para una escena. Los escribes tú en **Overlays** o se los pides a Claude por MCP (`crear_overlay`); lo que hace el agente aparece en el panel sin recargar.
+Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un marco para la cámara, un título animado, un cartel para una escena. Los escribes tú en **Personalizados** (antes «Overlays»; las URL, la API y las herramientas MCP conservan sus nombres) o se los pides a Claude por MCP (`crear_overlay`); lo que hace el agente aparece en el panel sin recargar. Con campos de ajustes funcionan como widgets propios: un formulario en el panel, sin tocar el código.
 
 | Dónde | Qué hay |
 |---|---|
-| Panel › **Overlays** | Lista en tarjetas, editor con pestañas HTML, CSS y JavaScript, CSS por tema, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
+| Panel › **Personalizados** | Lista en tarjetas, editor con pestañas HTML, CSS, JavaScript y Campos (los campos en JSON), formulario «Valores» generado a partir de los campos, CSS por tema, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
 | Programa de emisión | Añade una fuente de navegador con `http://127.0.0.1:4500/custom/<id>` y el tamaño del overlay (también está en la página «Fuentes del programa de emisión», como «Overlay · nombre») |
 | Al guardar | El código del overlay recarga las capas abiertas; el CSS del tema y los cambios de tema se aplican en vivo sin recargar el marco |
 
@@ -293,8 +293,9 @@ Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un
 | API | Qué hace |
 |---|---|
 | `antena.on(evento, fn)` | Escucha un evento y devuelve la función para dejar de escuchar. Si ya hay un valor, `fn` se llama al momento con él |
-| `antena.state` | Último valor de cada evento (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`, `sceneSwitch`); empiezan en `null` |
+| `antena.state` | Último valor de cada evento (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`, `sceneSwitch`, `settings`); empiezan en `null` |
 | `antena.ready` | Promesa que se resuelve cuando ya hay datos: espera antes de leer `antena.state` |
+| `antena.settings` | Los ajustes de este overlay (ver «Campos de ajustes» más abajo) |
 | `antena.run(tipo, params)` | Pide una acción aprobada: resuelve si se ejecutó y se rechaza con el error del servidor si no |
 | `antena.slots.place(huecos, opciones)` / `antena.slots.clear(nombre?)` | Coloca, mueve u oculta widgets reales; borra uno o todos al momento |
 
@@ -342,6 +343,12 @@ El agente **pide** permisos al crear o editar; solo tú los **apruebas** en el p
 - Cambiar el HTML, CSS o JavaScript retira los permisos aprobados. Revisa el código nuevo y vuelve a aprobarlos en el panel; cambiar otros ajustes no los retira.
 
 **Seguridad.** El código corre en un `<iframe sandbox>` con origen opaco, en una página aparte: no tiene la API de antena, no puede leer el panel ni abrir el flujo de eventos. Los datos le llegan solo por mensajes de la página que lo aloja, y solo puede pedir de vuelta acciones aprobadas o huecos validados con páginas públicas de Antena.
+
+#### Campos de ajustes
+
+Un overlay puede declarar **campos** para que sus ajustes se editen en un formulario en vez de en el código: `fields` = `[{ key, label, type, default?, options?, min?, max?, step? }]` (hasta 30; `key`: minúsculas, números y `_`, empezando por letra). Tipos: `text` (hasta 2000 caracteres), `number` (`min`/`max`/`step`), `toggle`, `select` (`options`), `color` (`#rgb`, `#rrggbb`, `#rrggbbaa`), `list` (hasta 50 textos) y `media` (el nombre de un archivo de Antena).
+
+La página lee `antena.settings` (`{ key: valor }`, con el valor por defecto del campo si no hay valor; un campo media es la URL absoluta `/media/<archivo>`) o escucha con `antena.on('settings', fn)`. Cambiar valores los aplica en vivo, sin recargar la capa; cambiar los campos la recarga y conserva los valores cuya clave sigue existiendo y encaja. Los valores viajan con la exportación de configuración, no con los temas guardados, y nunca obligan a volver a aprobar las acciones. API: `fields` y `values` en `/api/custom-overlays` (los valores se fusionan con los guardados; `null` borra uno). MCP: `campos` y `valores` en `crear_overlay` y `editar_overlay`.
 
 Por MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay` y `probar_overlay` (manda un evento de ejemplo a una capa abierta).
 

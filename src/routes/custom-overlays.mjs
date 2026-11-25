@@ -56,7 +56,7 @@ export function registerCustomOverlayRoutes({ route, customOverlays, bus, engine
   route('PUT', '/api/custom-overlays/:id/permissions', async ({ id }, body = {}, _url, req) => {
     if (req?.headers?.['sec-fetch-site'] !== 'same-origin') {
       log('[overlays]', String(id).slice(0, 40), 'aprobación rechazada: no viene del panel');
-      throw httpError(403, 'Los permisos de un overlay se aprueban desde el panel de antena: abre «Overlays» en el navegador y aprueba ahí. El agente solo puede pedirlos.');
+      throw httpError(403, 'Los permisos de un overlay se aprueban desde el panel de antena: abre «Personalizados» en el navegador y aprueba ahí. El agente solo puede pedirlos.');
     }
     const overlay = await customOverlays.approve(customOverlayId(id), body?.permissions);
     log('[overlays]', overlay.id, 'permisos aprobados:', overlay.permissions.join(', ') || 'ninguno');

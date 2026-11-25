@@ -275,11 +275,11 @@ The **snippets** buttons insert ready-made recipes: another color, no tilt, smal
 
 ### Custom overlays
 
-A new layer for the broadcast program made of HTML, CSS and JavaScript: a frame for the camera, an animated title, a card for a scene. You write them in **Overlays**, or ask Claude via MCP (`crear_overlay`); whatever the agent does shows up in the panel without reloading.
+A new layer for the broadcast program made of HTML, CSS and JavaScript: a frame for the camera, an animated title, a card for a scene. You write them in **Personalizados** (formerly «Overlays»; URLs, API and MCP tools keep their names), or ask Claude via MCP (`crear_overlay`); whatever the agent does shows up in the panel without reloading. With settings fields they work as custom widgets: a form in the panel, no code changes.
 
 | Where | What you get |
 |---|---|
-| Panel › **Overlays** | Card list, editor with HTML, CSS and JavaScript tabs, theme-specific CSS, live preview, width and height, transparent background, permissions, copy URL and delete |
+| Panel › **Personalizados** | Card list, editor with HTML, CSS, JavaScript and Campos (fields as JSON) tabs, a «Valores» form generated from the fields, theme-specific CSS, live preview, width and height, transparent background, permissions, copy URL and delete |
 | Broadcast program | Add a browser source with `http://127.0.0.1:4500/custom/<id>` and the overlay size (it is also on the «Fuentes del programa de emisión» page, as «Overlay · name») |
 | On save | Saving overlay code reloads open layers; saving theme-specific CSS or switching themes updates them live without a frame reload |
 
@@ -294,8 +294,9 @@ The editor's **CSS de este tema** belongs to the active saved theme. Duplicating
 | API | What it does |
 |---|---|
 | `antena.on(event, fn)` | Listens to an event and returns the function that unsubscribes. If a value already exists, `fn` is called with it right away |
-| `antena.state` | Latest value per event (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`, `sceneSwitch`); they start as `null` |
+| `antena.state` | Latest value per event (`alert`, `chat`, `viewers`, `widgets`, `interactive`, `theme`, `scene`, `sceneSwitch`, `settings`); they start as `null` |
 | `antena.ready` | Promise that resolves once there is data: await it before reading `antena.state` |
+| `antena.settings` | This overlay's settings (see «Settings fields» below) |
 | `antena.run(kind, params)` | Requests an approved action: resolves when it ran, rejects with the server error otherwise |
 | `antena.slots.place(slots, options)` / `antena.slots.clear(name?)` | Place, move or hide real widgets; remove one or all immediately |
 
@@ -343,6 +344,12 @@ The agent **asks** for permissions when it creates or edits; only you **approve*
 - Changing HTML, CSS or JavaScript revokes approved permissions. Review the new code and approve them again in the panel; changing other settings does not revoke them.
 
 **Security.** User code runs in a sandboxed `<iframe>` with an opaque origin, on a separate page: it has no antena API, cannot read the panel and cannot open the event stream. Data only reaches it through messages from the page hosting it, and it can only ask back for approved actions or validated slots containing public Antena pages.
+
+#### Settings fields
+
+An overlay can declare **fields** so its settings are edited in a form instead of in code: `fields` = `[{ key, label, type, default?, options?, min?, max?, step? }]` (up to 30; `key`: lowercase letters, digits and `_`, starting with a letter). Types: `text` (up to 2000 characters), `number` (`min`/`max`/`step`), `toggle`, `select` (`options`), `color` (`#rgb`, `#rrggbb`, `#rrggbbaa`), `list` (up to 50 texts) and `media` (the name of an Antena file).
+
+The page reads `antena.settings` (`{ key: value }`, with the field default when there is no value; a media field is the absolute `/media/<file>` URL) or listens with `antena.on('settings', fn)`. Changing values applies them live, without reloading the layer; changing the fields reloads it and keeps the values whose key still exists and still fits. Values travel with the configuration export, not with saved themes, and never require approving the actions again. API: `fields` and `values` on `/api/custom-overlays` (values merge with the stored ones; `null` removes one). MCP: `campos` and `valores` in `crear_overlay` and `editar_overlay`.
 
 Over MCP: `listar_overlays`, `ver_overlay`, `crear_overlay`, `editar_overlay`, `borrar_overlay` and `probar_overlay` (fires a sample event at one open layer).
 

@@ -1,4 +1,4 @@
-// S3/S10: la sección «Overlays» del panel. Catálogo en tarjetas con el estado vacío que explica
+// S3/S10: la sección «Personalizados» (antes «Overlays», #344) del panel. Catálogo en tarjetas con el estado vacío que explica
 // que el agente los crea por MCP, editor en slide con HTML/CSS/JS, vista previa en vivo, pruebas,
 // borrado y cambios del agente por SSE que nunca pisan el borrador local. Todo por las interfaces
 // públicas (panel, HTTP y SSE): la prueba no lee el estado interno de la vista.
@@ -113,14 +113,14 @@ test('panel: Overlays en el grupo de Widgets, estado vacío que habla del agente
     chrome = await openChromePage(bin, `${base}/#/overlays`);
     const c = chrome.cdp;
     await waitDom(c, `location.hash === '#/overlays' && !!document.querySelector('main .view-head h1')`, { timeoutMs: 15000 });
-    assert.equal(await dom(c, `document.querySelector('main .view-head h1').textContent.trim()`), 'Overlays');
+    assert.equal(await dom(c, `document.querySelector('main .view-head h1').textContent.trim()`), 'Personalizados');
 
     // la entrada cuelga del mismo grupo que Widgets
     const nav = JSON.parse(await dom(c, `JSON.stringify(Array.from(document.querySelectorAll('#nav .nav-grp')).map(g => [g.querySelector('.grp-l').textContent.trim(), Array.from(g.querySelectorAll('a.eg-menu__item')).map(a => [a.getAttribute('href'), a.querySelector('.eg-menu__label').textContent.trim()])]))`));
     const configurar = nav.find(([label]) => label === 'Configurar');
     assert.ok(configurar, 'el grupo Configurar existe');
     assert.ok(configurar[1].some(([href]) => href === '#/widgets'), 'Widgets sigue en ese grupo');
-    assert.ok(configurar[1].some(([href, label]) => href === '#/overlays' && label === 'Overlays'), 'Overlays cuelga del grupo de Widgets');
+    assert.ok(configurar[1].some(([href, label]) => href === '#/overlays' && label === 'Personalizados'), 'Personalizados cuelga del grupo de Widgets (misma ruta #/overlays)');
 
     // estado vacío: el agente puede crearlos por MCP
     const empty = await dom(c, `document.querySelector('main .empty-state')?.textContent || ''`);
