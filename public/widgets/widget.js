@@ -1,5 +1,5 @@
 // Utilidades comunes de los widgets: conexión, modo demo y CSS propio.
-import { AntenaStream } from '../stream-client.js';
+import { AntenaStream, reloadOnNewBuild } from '../stream-client.js';
 export const qs = new URLSearchParams(location.search);
 export const DEMO = qs.has('demo');
 const THEME_DRAFT = qs.has('themeDraft');
@@ -40,7 +40,8 @@ export function connect(handlers, client = 'widget') {
     return es;
   }
   const es = new AntenaStream('/api/stream?client=' + encodeURIComponent(client) + '&themeInfo=1' +
-    (handlers.customOverlayTheme ? '&customTheme=1' : '') + (handlers.scene ? '&scene=1' : '') + (THEME_DRAFT ? '&themeDraft=1' : ''));
+    (handlers.customOverlayTheme ? '&customTheme=1' : '') + (handlers.scene ? '&scene=1' : '') + (THEME_DRAFT ? '&themeDraft=1' : '') + '&build=1');
+  reloadOnNewBuild(es);
   // Apariencia: al cambiar el tema se recarga /theme.css (sin recargar la página). Con ?themeDraft
   // (vista previa del panel) se ve también el borrador sin guardar; en Meld, solo lo guardado.
   es.addEventListener('activeTheme', e => {
@@ -55,7 +56,7 @@ export function connect(handlers, client = 'widget') {
     if (link && !link.href.endsWith(href)) link.href = href;
     handlers.theme?.(t);
   });
-  for (const [ev, fn] of Object.entries(handlers)) if (ev !== 'theme' && ev !== 'activeTheme') es.addEventListener(ev, e => fn(JSON.parse(e.data)));
+  for (const [ev, fn] of Object.entries(handlers)) if (ev !== 'theme' && ev !== 'activeTheme' && ev !== 'build') es.addEventListener(ev, e => fn(JSON.parse(e.data)));
   return es;
 }
 

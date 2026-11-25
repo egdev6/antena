@@ -165,6 +165,7 @@
     "test/alert-thumbs-browser.test.mjs",
     "test/apariencia-browser.test.mjs",
     "test/apariencia-save.test.mjs",
+    "test/build-reload.test.mjs",
     "test/charts-style-browser.test.mjs",
     "test/chat-backlog-browser.test.mjs",
     "test/chat-preview-browser.test.mjs",
