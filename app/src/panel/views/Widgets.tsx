@@ -62,6 +62,7 @@ export function Widget({ name }: { name: string }) {
   let form: ReactNode = null;
   if (name === 'latest') form = <>
     <WField w="latest" f="label" label="Etiqueta" placeholder="Últimos (vacía = sin etiqueta)" />
+    <LatestScope />
     <div className="lbl">Tipos de apoyo<div className="row field-ctl"><ListChecks w="latest" f="items" items={SUPPORT_TYPES} /></div></div>
     <WField w="latest" f="css" label="CSS de «últimos»" type="css" placeholder=".item .big { font-size: 34px; }" />
     <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.label</code> <code>.item</code> <code>.item-{'<tipo>'}</code> <code>.item.empty</code> <code>.item.flash</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p></>;
@@ -160,6 +161,16 @@ function SocialsSettings() {
     <WField w="socials" f="css" label="CSS personalizado" type="css" placeholder=".item .handle { font-size: 32px; }" />
     <p className="css-help">Clases: <code>.root</code> <code>.label</code> <code>.item</code> <code>.item-{'<plataforma>'}</code> <code>.ico</code> <code>.handle</code></p>
     <p className="hint mt">Las redes sin nick no se muestran. Los cambios se aplican al guardarlos.</p>
+  </>;
+}
+
+function LatestScope() {
+  const scope = String(useLive(s => s.config.widgets.latest?.scope) || 'stream');
+  return <>
+    <label>Mostrar <select value={scope} onChange={e => patchWidgets({ latest: { scope: e.target.value } })}>
+      <option value="stream">Este directo</option><option value="all">Histórico</option>
+    </select></label>
+    <p className="hint">«Este directo» empieza vacío en cada directo. «Histórico» muestra el último apoyo de cada tipo de todos tus directos; las alertas simuladas no cuentan.</p>
   </>;
 }
 

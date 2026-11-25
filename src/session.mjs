@@ -9,6 +9,7 @@ import { writeJson, serialize } from './json-file.mjs';
 import { ALERT_TYPES, isSystemType } from './alerts.mjs';
 import { splitEventsOffsets, platformValue } from './goals.mjs';
 import { isTotalMetric } from './channel-totals.mjs';
+import { latestOf } from './latest-history.mjs';
 
 // El resumen conserva su zona histórica; solo se fija el formato visible (#126).
 const summaryDateFormat = new Intl.DateTimeFormat('en-GB', {
@@ -455,9 +456,10 @@ export class Session extends EventEmitter {
   }
 
   /** Registra una alerta real (no pruebas). */
-  record(alert) {
+  record(alert, { simulated = false } = {}) {
     const ev = { id: alert.id, type: alert.type, at: alert.at, user: alert.vars?.user || alert.text, vars: alert.vars || {}, text: alert.text, sub: alert.sub, variation: alert.variation?.name || null };
     if (isSystemType(alert.type)) ev.thanked = true;   // un récord no se agradece a nadie
+    if (simulated) ev.simulated = true;   // #357: a test, never part of the historical «Últimos»
     this.data.events.push(ev);
     this.save();
     this.emit('change', { event: ev });
@@ -1007,13 +1009,7 @@ export class Session extends EventEmitter {
     t.superchats = Math.round(t.superchats * 100) / 100;
     return t;
   }
-  latest(data = this.data) {
-    const last = types => [...data.events].reverse().find(e => types.includes(e.type)) || null;
-    return {
-      follow: last(['follow', 'ytsub']), sub: last(['sub', 'resub', 'giftsub']), cheer: last(['cheer']), raid: last(['raid']),
-      superchat: last(['superchat', 'supersticker']), member: last(['member', 'milestone', 'giftmember']), any: [...data.events].reverse().find(e => !isSystemType(e.type)) || null,
-    };
-  }
+  latest(data = this.data) { return latestOf(data.events); }
   goalValue(metric, platform) {
     // Barras con total del canal (#132): el valor lo da src/channel-totals.mjs (total de la
     // plataforma + corrección persistente); los goalOffsets de sesión ya no se aplican a ellas.

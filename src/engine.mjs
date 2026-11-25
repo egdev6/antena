@@ -95,7 +95,7 @@ export class Engine extends EventEmitter {
     const clean = cleanVars(vars, this.config.filters);
     const a = buildAlert(type, clean, this.config);
     if (!a) return null;
-    this.session.record(a);
+    this.session.record(a, { simulated: String(externalId || '').startsWith('sim:') });
     this.log(`[alerta] ${type}${a.variation ? ' (' + a.variation.name + ')' : ''} · ${a.text}`);
     return this.deliver(a);
   }
@@ -614,7 +614,8 @@ export class Engine extends EventEmitter {
       bars: (g.bars || []).map(b => ({ ...b, value: s.goalValue(b.metric, b.platform), source: isTotalMetric(b.metric, b.platform) ? 'channel' : 'session' })),
     }));
     return {
-      totals: s.totals(), latest: s.latest(), goals,
+      // #357: latestAll = last supporters of every stream; latest stays per stream for every consumer.
+      totals: s.totals(), latest: s.latest(), latestAll: this.latestHistory ? this.latestHistory.snapshot() : s.latest(), goals,
       recent: s.data.events.filter(e => !ALERT_TYPES[e.type]?.system).slice(-30).reverse().map(e => ({ type: e.type, label: ALERT_TYPES[e.type]?.label || e.type, user: e.user, sub: e.sub, at: e.at })),
       credits: s.credits(), session: { id: s.data.id, title: s.data.title, startedAt: s.data.startedAt },
       thanks: this.thanksState?.() ?? { names: [], anonymous: 0 },
