@@ -43,7 +43,9 @@ const viewPatch = { chat: { sendTo: 'both' }, prompter: { fontSize: 30 } };
 const alertsPatch = { alerts: { follow: { title: 'Updated synthetic alert' } } };
 const snapshot = store => ({ prompter: store.config.prompter, chat: store.config.chat, alerts: store.publicConfig().alerts });
 
-function verify({ store, slow, healthy, outsiders }) {
+// #351: after a full change (import), the snapshot also carries the other panel-edited sections.
+const PANEL_SECTIONS = ['overlay', 'commands', 'timers', 'filters', 'tts', 'meld', 'youtube', 'twitch', 'panel', 'sessions'];
+function verify({ store, slow, healthy, outsiders }, { all = false } = {}) {
   assert.equal(slow.configs().length, 1, 'queued config must wait for drain');
   slow.emit('drain');
   const delivered = slow.configs();
@@ -52,11 +54,13 @@ function verify({ store, slow, healthy, outsiders }) {
   assert.equal(merged.chat.sendTo, 'both', 'drain must not leave chat at its old value');
   assert.equal(merged.prompter.fontSize, 30, 'drain must not leave prompter at its old value');
   assert.equal(merged.alerts.follow.title, alertsPatch.alerts.follow.title);
-  assert.deepEqual(delivered.at(-1), snapshot(store), 'retained config is self-contained');
+  const expected = all ? { ...snapshot(store), ...Object.fromEntries(PANEL_SECTIONS.map(k => [k, store.publicConfig()[k]])) } : snapshot(store);
+  assert.deepEqual(delivered.at(-1), expected, 'retained config is self-contained');
   for (const config of healthy.configs()) {
-    assert.deepEqual(Object.keys(config).sort(), ['alerts', 'chat', 'prompter'], 'no extra config sections or credentials');
+    assert.deepEqual(Object.keys(config).filter(k => !(all && PANEL_SECTIONS.includes(k))).sort(), ['alerts', 'chat', 'prompter'], 'no extra config sections or credentials');
+    assert.doesNotMatch(JSON.stringify(config), /SYNTHETIC_TEST_ACCESS/, 'the access key never reaches the panel snapshot');
   }
-  assert.deepEqual(healthy.configs().at(-1), snapshot(store));
+  assert.deepEqual(healthy.configs().at(-1), expected);
   for (const res of outsiders) assert.equal(res.configs().length, 0, 'config remains panel-only');
 }
 
@@ -85,15 +89,16 @@ test('patch.all emits exactly one complete panel snapshot', async t => {
   const before = app.healthy.configs().length;
   app.store.emit('change', { all: true });
   assert.equal(app.healthy.configs().length, before + 1);
-  verify(app);
+  verify(app, { all: true });
 });
 
-test('unrelated config changes do not publish a config snapshot', async t => {
+test('global alert settings changed outside the panel publish a config snapshot that keeps them (#351)', async t => {
   const app = await fixture(t);
   await app.store.patchConfig({ overlay: { volume: 0.5 } });
-  app.slow.emit('drain');
-  assert.equal(app.slow.configs().length, 1);
-  assert.equal(app.healthy.configs().length, 1);
+  assert.equal(app.healthy.configs().length, 2, 'the overlay change reaches the panel');
+  assert.equal(app.healthy.configs().at(-1).overlay.volume, 0.5);
+  await app.store.patchConfig(viewPatch);
+  assert.equal(app.healthy.configs().at(-1).overlay.volume, 0.5, 'later config events keep carrying overlay');
   for (const res of app.outsiders) assert.equal(res.configs().length, 0);
 });
 

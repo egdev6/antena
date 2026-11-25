@@ -192,7 +192,9 @@ test('un cambio por alias publica program en el SSE y conserva ese estado en el 
   let event = await nextConfig();
   assert.deepEqual(event.program, { kind: 'meld', autoSession: false, recordOnStart: true });
   assert.equal((await f.call('PUT', '/api/config', { chat: { sendTo: 'youtube' } })).status, 200);
-  event = await nextConfig();
+  // #351: a program write may publish twice (store change, then after the OBS password is
+  // stored); wait for the event that carries the chat change.
+  do event = await nextConfig(); while (event.chat.sendTo !== 'youtube');
   assert.equal(event.chat.sendTo, 'youtube'); assert.deepEqual(event.program, { kind: 'meld', autoSession: false, recordOnStart: true });
   await reader.cancel(); ctrl.abort();
 });

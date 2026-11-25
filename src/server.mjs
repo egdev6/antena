@@ -514,10 +514,16 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // #39: an open dock follows saved layout/module and shortcut changes without reloading.
   let includeDockConfig = false;
   let includeThemesConfig = false;
+  // #351: sections the panel edits that only reach it through this event. Once one changes
+  // outside the panel (MCP, another window, generic config API, import), it travels in every
+  // later config event too, so an open form never keeps a stale value to save back.
+  const PANEL_CONFIG_SECTIONS = ['overlay', 'commands', 'timers', 'filters', 'tts', 'meld', 'youtube', 'twitch', 'panel', 'sessions'];
+  const includedSections = new Set();
   const pushPanelConfig = () => {
     const config = store.publicConfig();
     bus.send('config', {
       prompter: store.config.prompter, chat: store.config.chat, alerts: config.alerts,
+      ...Object.fromEntries([...includedSections].map(key => [key, config[key]])),
       ...(includeProgramConfig ? { program: config.program, obs: config.obs } : {}),
       ...(includeDiscordConfig ? { discord: config.discord } : {}),
       ...(includeScheduleConfig ? { scheduleCalendar: config.scheduleCalendar } : {}),
@@ -537,8 +543,16 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       bus.send('theme', { ...publicTheme(store.config.theme), alertPreviews: alertPreviews() }, ['panel']);
     }
     if (patch.widgets || patch.all) engine.pushWidgets();
-    if (patch.themes && patch.interactive) pushInteractive();
-    if (patch.themes && patch.timers) bus.send('timers', timers.snapshot(), ['panel']);
+    // #351: settings written through the generic config API (or import) reach the panel too;
+    // these modules read their settings from the store, so the snapshot is current.
+    if (patch.interactive || patch.all) pushInteractive();
+    if (patch.teleprompter || patch.all) bus.send('teleprompter', teleprompter.snapshot(), ['teleprompter', 'panel']);
+    if (patch.viewers || patch.all) {
+      const snap = viewers.snapshot();
+      bus.send('viewers', snap, ['panel']);
+      bus.send('viewers', publicViewers(snap), ['widget']);
+    }
+    if (patch.timers || patch.all) bus.send('timers', timers.snapshot(), ['panel']);
     // Overlays editados fuera de sus rutas (PUT /api/config, config/set o el MCP genérico):
     // mismo par de eventos que onChange, para que la vista previa y las capas se recarguen.
     if (patch.customOverlays || patch.all) {
@@ -550,7 +564,12 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // Incluye alertas editadas fuera de este panel (MCP, otra ventana, el móvil).
     if (patch.dock || patch.shortcuts) includeDockConfig = true;
     if (patch.themes) includeThemesConfig = true;
-    if (patch.prompter || patch.chat || patch.alerts || patch.dock || patch.shortcuts || patch.themes || patch.all) pushPanelConfig();
+    // meld is the legacy alias of program: publish program/obs from this single event.
+    const programChanged = !!(patch.meld || patch.program || patch.obs);
+    if (programChanged) includeProgramConfig = true;
+    const panelSections = PANEL_CONFIG_SECTIONS.filter(key => patch[key] || patch.all);
+    for (const key of panelSections) includedSections.add(key);
+    if (patch.prompter || patch.chat || patch.alerts || patch.dock || patch.shortcuts || patch.themes || programChanged || panelSections.length || patch.all) pushPanelConfig();
   });
   // la persistencia puede fallar sin emitir 'change' (o estar en vuelo): el panel necesita su propio canal
   store.on('persistence', state => bus.send('persistence', state, ['panel']));
@@ -1154,7 +1173,9 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     // A config import may replace the interviews and the active item.
     if (patch.interviews) { bus.send('interview', { item: interviews.activeItem() }, ['widget']); bus.send('interviewControl', interviews.control(), ['panel']); }
     // Publish only after password changes have completed; publicConfig masks the value.
-    if (patch.program || patch.obs) { includeProgramConfig = true; pushPanelConfig(); }
+    // Published again here (#351): the store 'change' listener already sent program/obs/meld, but
+    // only now is the OBS password stored, so this snapshot carries the final passwordSet.
+    if (patch.program || patch.obs || patch.meld) { includeProgramConfig = true; pushPanelConfig(); }
     if (patch.scheduleCalendar || patch.all) {
       if (!store.config.scheduleCalendar?.enabled && scheduleIdentityPending) {
         scheduleEpoch++; scheduleIdentityPending = false;

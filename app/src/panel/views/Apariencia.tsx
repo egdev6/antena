@@ -49,7 +49,11 @@ export function Apariencia({ parts }: { parts: string[] }) {
     publish: (saved, newer) => { info.current = saved; live.update(() => ({ theme: deepMerge(saved.theme, newer) })); },
     restore: saved => { info.current = saved; live.update(() => ({ theme: saved.theme })); },
     protect: (state, intent) => ({ ...state, theme: deepMerge(state.theme, intent) }),
+    // #351: Discard restores the theme as last saved, even when saved elsewhere (MCP, another window).
+    rebase: (server, saved) => (server.theme ? { ...saved, theme: server.theme } : undefined),
   }));
+  // Without a draft the live theme is the saved one: keep the next draft's baseline current too.
+  useEffect(() => { if (info.current && t && !buffer.dirty()) info.current = { ...info.current, theme: t }; }, [t, buffer]);
   const load = guard(async () => {
     const loaded = await get<ThemeInfo>('/api/theme');
     if (!active.current) return;
@@ -70,7 +74,7 @@ export function Apariencia({ parts }: { parts: string[] }) {
   useEffect(() => {
     load();
     const unregister = registerDraft('theme', {
-      dirty: buffer.dirty, stale: buffer.stale, keys: buffer.keys, protect: buffer.protect,
+      dirty: buffer.dirty, stale: buffer.stale, keys: buffer.keys, protect: buffer.protect, rebase: buffer.rebase,
       prepareSave: () => { clearTimeout(timer.current); return buffer.prepareSave(); }, discard,
     });
     return () => { active.current = false; clearTimeout(timer.current); clearTimeout(sampleTimer.current); unregister(); buffer.dispose(); };

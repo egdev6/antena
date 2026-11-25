@@ -5,7 +5,7 @@ import { warnUnknownClientEvent } from '../../../src/events.mjs'; // contrato ú
 import { LOOK_SECTIONS } from '../../../src/theme-looks.mjs';
 import { mergeChat } from './chat-merge.mjs';
 import { api, withKey } from './api';
-import { holding, isStale, observeActiveTheme, onStaleDiscard, protectDrafts, registerDraft, type DraftSource } from './draft';
+import { holding, isStale, observeActiveTheme, onStaleDiscard, protectDrafts, rebaseDrafts, registerDraft, type DraftSource } from './draft';
 import { ManualDraft } from './manual-draft';
 import type { AppState, ChatMessage, Config, LiveEventName, InterviewControl, LiveEvents, PrompterState, Timeline } from './types';
 
@@ -111,11 +111,12 @@ class Live {
       restore: (saved, discarded) => this.update(s => ({ config: { ...s.config,
         ...Object.fromEntries(Object.entries(saved).filter(([key]) => Object.hasOwn(discarded, key))) } })),
       protect: (state, intent) => ({ ...state, config: deepMerge(state.config, intent) }),
+      rebase: (server, saved) => (server.config ? { ...saved, ...server.config } as Config : undefined),
     });
     this.configSource = {
       dirty: this.configDraft.dirty, stale: this.configDraft.stale, keys: this.configDraft.keys,
       prepareSave: () => { clearTimeout(this.cfgTimer); return this.configDraft.prepareSave(); },
-      discard: () => this.discardConfig(), protect: this.configDraft.protect,
+      discard: () => this.discardConfig(), protect: this.configDraft.protect, rebase: this.configDraft.rebase,
     };
     registerDraft('config', this.configSource);
     onStaleDiscard(() => { void this.load().catch(() => {}); });
@@ -134,6 +135,7 @@ class Live {
       restore: (saved, discarded) => this.update(s => ({ config: { ...s.config,
         ...Object.fromEntries(Object.entries(saved).filter(([key]) => Object.hasOwn(discarded, key))) } })),
       protect: (state, intent) => ({ ...state, config: deepMerge(state.config, intent) }),
+      rebase: (server, saved) => (server.config ? { ...saved, ...server.config } as Config : undefined),
     });
     this.programSource = this.programDraft;
     registerDraft('program', this.programSource);
@@ -302,17 +304,17 @@ class Live {
     on('persistence', p => { this.touchStatus({ persistence: p }); this.update(s => ({ status: { ...s.status, persistence: p } })); });
     on('pause', p => { this.touchStatus({ pause: p }); this.update(s => ({ status: { ...s.status, pause: p } })); });
     on('history', h => this.update(() => ({ history: h })));
-    on('interactive', i => this.update(() => ({ interactive: i })));
+    on('interactive', i => { rebaseDrafts({ interactive: i }); this.update(() => ({ interactive: i })); });
     on('viewers', v => this.update(() => ({ viewers: v })));
     on('teleprompter', t => this.update(() => ({ teleprompter: t })));
-    on('theme', ({ alertPreviews, ...theme }) => this.update(() => ({
+    on('theme', ({ alertPreviews, ...theme }) => (rebaseDrafts({ theme }), this.update(() => ({
       theme,
       // Preserve confirmed fingerprints outside protectDrafts' editable theme/config.
       ...(alertPreviews ? { alertPreviews } : {}),
-    })));
+    }))));
     on('timers', t => this.update(() => ({ timers: t })));
     // Overlays propios: la lista completa en cada cambio (panel, MCP o API).
-    on('customOverlays', list => this.update(() => ({ customOverlays: list })));
+    on('customOverlays', list => { rebaseDrafts({ customOverlays: list }); this.update(() => ({ customOverlays: list })); });
     on('customOverlayCss', css => this.update(s => ({ config: { ...s.config, customOverlayCss: css } })));
     on('meld', m => this.update(s => ({ meld: { ...s.meld, session: m } })));
     // El evento 'widgets' trae la ventana corta del overlay (50): el panel conserva SU
@@ -320,7 +322,15 @@ class Live {
     // limpiezas llegan por chatDelete/chatClear y el snapshot de load() manda al reconectar.
     on('widgets', w => {
       this.widgetsTouch++;
-      this.update(s => ({ widgets: { ...w, chat: s.widgets?.chat ?? w.chat } }));
+      // #351: the event also carries the saved widget settings (engine.widgetState()). Keep
+      // config.widgets current so open forms see changes made outside the panel (MCP, another
+      // window); draft protection puts any unsaved local edit back on top in update().
+      const saved = (w as { widgets?: unknown }).widgets as AppState['config']['widgets'] | undefined;
+      if (saved) rebaseDrafts({ config: { widgets: saved } });
+      this.update(s => ({
+        widgets: { ...w, chat: s.widgets?.chat ?? w.chat },
+        ...(saved && s.config && !sameContent(s.config.widgets, saved) ? { config: { ...s.config, widgets: saved } } : {}),
+      }));
     });
     on('chat', m => {
       for (const ids of this.inflightChat) ids.add(m.id);
@@ -341,6 +351,8 @@ class Live {
     on('prompter', p => { this.prompter = { ...this.prompter, ...p }; this.emit(); });
     on('config', c => {
       const changed = observeActiveTheme(c.themes?.activeId);
+      // A theme switch sends another theme's values: those drafts become stale, never rebased.
+      if (!changed) rebaseDrafts({ config: c });
       this.update(s => ({ config: { ...s.config, ...c } }));
       // Keep stale edits visible until Discard; otherwise synchronize all swapped sections.
       if (changed && !isStale()) void this.load().catch(() => {});

@@ -59,8 +59,8 @@ function VariantFields({ id, initial, anims, refresh }: { id: string; initial: C
     keys: () => ['chat'],
     persist: async (changes, themeId) => {
       await put<{ variant: ChatVariant }>(`${ROUTE}/${enc(id)}`, changes, { themeId });
-      // A PUT reply only describes this id and widgets events do not update config.widgets.
-      // Re-read before publishing so a concurrent change to another variant is not overwritten.
+      // A PUT reply only describes this id. Re-read before publishing so a concurrent change to
+      // another variant is not overwritten (widgets events also refresh config.widgets, #351).
       let variants: ChatVariant[];
       try { variants = await refresh(); }
       catch { throw new Error('Se guardó el cambio, pero no se pudo actualizar la lista. Reintenta antes de cambiar de variante.'); }
@@ -70,6 +70,8 @@ function VariantFields({ id, initial, anims, refresh }: { id: string; initial: C
     },
     publish: (result, newer) => { savedRef.current = result; setSaved(result); setDraft(newer); },
     restore: result => { savedRef.current = result; setSaved(result); setDraft({}); },
+    // #351: Discard restores this variant as last saved, even when saved elsewhere.
+    rebase: server => server.config?.widgets?.chatVariants?.find(v => v.id === id),
   }));
   useEffect(() => {
     const unregister = registerDraft('chat-variant:' + id, buffer);

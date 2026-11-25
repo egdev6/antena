@@ -76,6 +76,7 @@
     "test/overlay-queue-cap.test.mjs",
     "test/overlay-queue-protected-types.test.mjs",
     "test/overlay-theme-deferral.test.mjs",
+    "test/panel-config-sync.test.mjs",
     "test/panel-tokens.test.mjs",
     "test/platform-icons.test.mjs",
     "test/program-boundary.test.mjs",
@@ -254,6 +255,7 @@
     "test/widget-layout-browser.test.mjs",
     "test/widget-preview-save-browser.test.mjs",
     "test/widget-slot-mode.test.mjs",
+    "test/widgets-remote-sync-browser.test.mjs",
     "test/ws-layers-browser.test.mjs",
     "test/youtube-subscriber-count-browser.test.mjs",
     "test/youtube-subscriber-overlay-browser.test.mjs"
