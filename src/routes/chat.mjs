@@ -7,11 +7,12 @@
 // chat), el helper id8 y la lista CHAT_TO de destinos. httpError se
 // importa de src/http-util.mjs (se acepta por ctx por compatibilidad con los tests).
 import { httpError as httpErrorBase, id8 as id8Base } from '../http-util.mjs';
+import { CHAT_PREVIEW_MAX_SEC } from '../chat-preview.mjs';
 
 // escribir en Twitch, YouTube o los dos (to: twitch | youtube | both; por defecto chat.sendTo)
 const CHAT_TO = ['twitch', 'youtube', 'both'];
 
-export function registerChatRoutes({ route, store, engine, twitch, youtube, chat, id8 = id8Base, httpError = httpErrorBase }) {
+export function registerChatRoutes({ route, store, engine, twitch, youtube, chat, chatPreview, id8 = id8Base, httpError = httpErrorBase }) {
   route('POST', '/api/chat/announce', async ({ text, color }) => ({ sent: await twitch.sendAnnouncement(text, color) }));
 
   route('GET', '/api/chat', async (_, __, url) => engine.chat.slice(-(Number(url.searchParams.get('limit')) || 50)));
@@ -42,6 +43,15 @@ export function registerChatRoutes({ route, store, engine, twitch, youtube, chat
   route('POST', '/api/chat/simulate', async ({ user = 'espectador', text = '', platform = 'twitch', mod = false, owner = false, member = false, highlighted = false }) => {
     engine.handleChat({ id: 'sim:' + id8(), platform, user, login: String(user).toLowerCase(), text, parts: [{ t: text }], mod, owner, member, highlighted: !!highlighted, at: new Date().toISOString() });
     return { ok: true };
+  });
+  // Preview in the real sources: they play the demo stream for `seconds` (default 120); nothing is stored.
+  route('GET', '/api/chat/preview', async () => chatPreview.snapshot());
+  route('POST', '/api/chat/preview', async ({ on, seconds } = {}) => {
+    if (typeof on !== 'boolean') throw httpError(400, 'vista previa: «on» debe ser true o false');
+    if (!on) return chatPreview.stop();
+    if (seconds !== undefined && (!Number.isInteger(seconds) || seconds < 1 || seconds > CHAT_PREVIEW_MAX_SEC))
+      throw httpError(400, `vista previa: «seconds» debe ser un entero entre 1 y ${CHAT_PREVIEW_MAX_SEC}`);
+    return chatPreview.start(seconds);
   });
   route('POST', '/api/chat/clear', async () => { engine.clearChatUser(null); return { ok: true }; });
   route('POST', '/api/chat/join', async ({ channel }) => { await store.patchConfig({ chat: { twitchChannel: channel || '' } }); chat.join(channel || twitch.status.user); return chat.status; });

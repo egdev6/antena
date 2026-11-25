@@ -330,6 +330,7 @@ class Live {
       for (const r of this.inflightRemoved) r.ids.add(id);
       this.update(s => ({ widgets: { ...s.widgets, chat: (s.widgets?.chat || []).filter(m => m.id !== id) } }));
     });
+    on('chatPreview', () => {});   // views listen with live.on('chatPreview')
     on('chatResult', () => {});   // only partial failures arrive; the panel shows them as a toast
     on('chatClear', ({ login }) => {
       for (const r of this.inflightRemoved) r.logins.add(login || null);

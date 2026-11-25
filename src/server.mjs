@@ -33,6 +33,7 @@ import { createScheduleCalendar, validScheduleCalendarToken } from './schedule-c
 import { registerMediaRoutes, MAX_UPLOAD } from './routes/media.mjs';
 import { registerInteractiveRoutes } from './routes/interactive.mjs';
 import { registerChatRoutes } from './routes/chat.mjs';
+import { createChatPreview } from './chat-preview.mjs';
 import { registerGoalsRoutes } from './routes/goals.mjs';
 import { registerFollowersRoutes } from './routes/followers.mjs';
 import { registerChatVariantsRoutes } from './routes/chat-variants.mjs';
@@ -257,6 +258,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   };
   session._applyRetention().catch(() => {});   // unclassified archives stay protected until reconciliation
   const engine = new Engine({ store, bus, session, meld: program, twitch, youtube, log });
+  const chatPreview = createChatPreview(bus);   // demo stream in the real chat sources (ephemeral)
   // #132: barras de objetivo con el total real del canal (persisten entre directos)
   const channelTotals = await new ChannelTotals({ dir: store.dir, twitch, youtube, log }).load();
   const followers = await new FollowerRegistry({ dir: store.dir, twitch, youtube, log }).load();
@@ -1023,7 +1025,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // estaban sus rutas: los patrones son coincidencia exacta, así que el orden relativo
   // del resto de rutas se conserva. /api/chat/announce estaba antes de los interactivos
   // y las rutas de Meld después de las de sesión: el orden de resolución no cambia.
-  registerChatRoutes({ route, store, engine, twitch, youtube, chat, id8 });
+  registerChatRoutes({ route, store, engine, twitch, youtube, chat, id8, chatPreview });
   registerInteractiveRoutes({ route, store, interactive, isProjection });
   registerViewersRoutes({ route, store, viewers });
   registerTeleprompterRoutes({ route, teleprompter });
@@ -1326,6 +1328,8 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (customTheme) res.write(`event: customOverlayTheme\ndata: ${JSON.stringify(customOverlayThemeSnapshot())}\n\n`);
     }
     if (scene) res.write(`event: scene\ndata: ${JSON.stringify(onAirScenes())}\n\n`);
+    // A chat source or panel that connects during a chat preview joins it.
+    if ((kind === 'widget' || kind === 'panel') && chatPreview.snapshot().on) res.write(`event: chatPreview\ndata: ${JSON.stringify(chatPreview.snapshot())}\n\n`);
     pushStatus();
   };
 

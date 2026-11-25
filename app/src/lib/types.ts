@@ -183,6 +183,8 @@ export interface AnonymousFollowers { at: string | null; count: number; thanked:
 export interface FollowerSelection { entries: FollowerEntry[]; anonymous: AnonymousFollowers[] }
 export interface FollowersList extends FollowerSelection { shown: FollowerSelection }
 export interface ThanksSnapshot { names: { name: string; platform: Platform }[]; anonymous: number }
+/** Chat preview in the real sources (GET/POST /api/chat/preview, SSE chatPreview). */
+export interface ChatPreviewState { on: boolean; until: string | null }
 export interface WidgetsConfig {
   goals?: GoalConfig[];
   chat?: WidgetSection;
@@ -528,6 +530,7 @@ export interface LiveEvents {
   chat: ChatMessage;
   chatDelete: { id: string };
   chatResult: ChatResult;
+  chatPreview: ChatPreviewState;
   chatClear: { login: string };
   timeline: Timeline;
   prompter: PrompterState;
