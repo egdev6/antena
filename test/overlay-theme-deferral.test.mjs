@@ -24,7 +24,7 @@ class Element {
 
 async function overlay({ search = '', hidden = false } = {}) {
   const html = await readFile(new URL('../public/overlay.html', import.meta.url), 'utf8');
-  const script = /<script type="module">\s*import \{ AntenaStream \}[^\n]*\n([\s\S]*?)<\/script>/.exec(html);
+  const script = /<script type="module">\s*import \{ AntenaStream(?:, reloadOnNewBuild)? \}[^\n]*\n([\s\S]*?)<\/script>/.exec(html);
   assert.ok(script, 'módulo del overlay');
   const elements = { stage: new Element(), bg: new Element(), 'custom-css': new Element(), 'eg-theme': new Element('link'),
     'tpl-card': { content: { firstElementChild: new Element() } } };
@@ -36,7 +36,7 @@ async function overlay({ search = '', hidden = false } = {}) {
   const setTimeout = (fn, ms) => { const id = ++nextId; timers.set(id, { at: now + ms, fn }); return id; };
   const clearTimeout = id => timers.delete(id);
   runInNewContext(script[1], { document, window: {}, location: { search }, URLSearchParams, EventTarget,
-    AntenaStream: FakeStream, Audio, setTimeout, clearTimeout, requestAnimationFrame: fn => fn(),
+    AntenaStream: FakeStream, reloadOnNewBuild: () => {}, Audio, setTimeout, clearTimeout, requestAnimationFrame: fn => fn(),
     getComputedStyle: () => ({ fontSize: '80' }), performance: { now: () => now }, console });
   const emit = (type, data) => stream.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(data) }));
   const advance = async ms => {

@@ -158,3 +158,18 @@ export class AntenaStream extends EventTarget {
     this.source?.close();
   }
 }
+
+/** Reloads the page once when the stream reconnects to a different Antena version (#355).
+ *  The page's own code (overlay shell, widget, alerts) is otherwise kept from before an update
+ *  until OBS/Meld refreshes the browser source. Needs `build=1` in the stream URL. */
+export function reloadOnNewBuild(stream, reload = () => location.reload()) {
+  let first = null, reloading = false;
+  stream.addEventListener('build', e => {
+    let version;
+    try { version = JSON.parse(e.data).version; } catch { return; }
+    if (typeof version !== 'string' || !version) return;
+    if (first === null) { first = version; return; }
+    if (version !== first && !reloading) { reloading = true; reload(); }
+  });
+  return stream;
+}

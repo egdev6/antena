@@ -154,7 +154,9 @@ function sdRequestAllowed(req) {
 
 export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA || path.join(ROOT, 'media'), log = console.log, heldRecoveryWindows, heldRecoveryIO, appDist, recordingTimers,
   push = { url: process.env.ANTENA_PUSH_URL, token: process.env.ANTENA_PUSH_TOKEN }, pushTimers, pushNow, pushTimeoutMs, configTransferIO, zipUploadLimit, zipExportLimit,
-  discordFetch, discordRetryDelayMs, discordTimeoutMs, scheduleCalendarTimeoutMs } = {}) {
+  discordFetch, discordRetryDelayMs, discordTimeoutMs, scheduleCalendarTimeoutMs, appVersion } = {}) {
+  // Version announced to overlay pages (#355): a page that reconnects to another version reloads once.
+  const buildVersion = appVersion ?? JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
   let notifyPushStatus = () => {}, requestPushReconciliation = () => {}, notifyPushCheckpoint = () => {}, notifyDiscordStatus = () => {}, notifyScheduleStatus = () => {};
   // Validate private process settings before loading or changing any application state.
   const pushExport = createPushExport({ config: push, timers: pushTimers, now: pushNow, timeoutMs: pushTimeoutMs,
@@ -1322,6 +1324,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     const themeInfo = url.searchParams.get('themeInfo') === '1';
     const customTheme = kind === 'widget' && url.searchParams.get('customTheme') === '1';
     const scene = kind === 'widget' && url.searchParams.get('scene') === '1';
+    const build = url.searchParams.get('build') === '1';
     bus.addClient(res, kind, { events: [...(themeInfo ? ['themeInfo'] : []), ...(customTheme ? ['customTheme'] : []), ...(scene ? ['scene'] : [])] });
     if (kind === 'dock-meters') {
       meterWatchers.add(res);
@@ -1353,6 +1356,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
       if (customTheme) res.write(`event: customOverlayTheme\ndata: ${JSON.stringify(customOverlayThemeSnapshot())}\n\n`);
     }
     if (scene) res.write(`event: scene\ndata: ${JSON.stringify(onAirScenes())}\n\n`);
+    if (build) res.write(`event: build\ndata: ${JSON.stringify({ version: buildVersion })}\n\n`);
     // A chat source or panel that connects during a chat preview joins it.
     if ((kind === 'widget' || kind === 'panel') && chatPreview.snapshot().on) res.write(`event: chatPreview\ndata: ${JSON.stringify(chatPreview.snapshot())}\n\n`);
     pushStatus();
