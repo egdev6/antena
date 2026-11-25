@@ -320,7 +320,14 @@ class Live {
     // limpiezas llegan por chatDelete/chatClear y el snapshot de load() manda al reconectar.
     on('widgets', w => {
       this.widgetsTouch++;
-      this.update(s => ({ widgets: { ...w, chat: s.widgets?.chat ?? w.chat } }));
+      // #351: the event also carries the saved widget settings (engine.widgetState()). Keep
+      // config.widgets current so open forms see changes made outside the panel (MCP, another
+      // window); draft protection puts any unsaved local edit back on top in update().
+      const saved = (w as { widgets?: unknown }).widgets as AppState['config']['widgets'] | undefined;
+      this.update(s => ({
+        widgets: { ...w, chat: s.widgets?.chat ?? w.chat },
+        ...(saved && s.config && !sameContent(s.config.widgets, saved) ? { config: { ...s.config, widgets: saved } } : {}),
+      }));
     });
     on('chat', m => {
       for (const ids of this.inflightChat) ids.add(m.id);

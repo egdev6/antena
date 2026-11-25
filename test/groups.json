@@ -254,6 +254,7 @@
     "test/widget-layout-browser.test.mjs",
     "test/widget-preview-save-browser.test.mjs",
     "test/widget-slot-mode.test.mjs",
+    "test/widgets-remote-sync-browser.test.mjs",
     "test/ws-layers-browser.test.mjs",
     "test/youtube-subscriber-count-browser.test.mjs",
     "test/youtube-subscriber-overlay-browser.test.mjs"
