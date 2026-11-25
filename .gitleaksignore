@@ -11,3 +11,6 @@ a264f9bd666e25d9da346d8a0457fd817e275203:test/security-247.test.mjs:generic-api-
 a264f9bd666e25d9da346d8a0457fd817e275203:test/security-247.test.mjs:generic-api-key:175
 a264f9bd666e25d9da346d8a0457fd817e275203:test/security-247.test.mjs:generic-api-key:176
 a264f9bd666e25d9da346d8a0457fd817e275203:test/security-247.test.mjs:generic-api-key:177
+# False positives: a synthetic YouTube key in the #351 panel sync test (commit d24bf88); later commits build it at runtime.
+d24bf8853ccdca8c1be5f6850e634a398cecab73:test/panel-config-sync.test.mjs:generic-api-key:56
+d24bf8853ccdca8c1be5f6850e634a398cecab73:test/panel-config-sync.test.mjs:generic-api-key:59

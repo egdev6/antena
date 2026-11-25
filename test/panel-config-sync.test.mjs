@@ -51,14 +51,17 @@ test('each panel-edited section changed outside the panel reaches it and keeps t
   assert.equal(widget.events('config').length, 0, 'config stays panel-only');
 });
 
+// Built at runtime so no key-shaped literal lands in the source (scanner convention, see .gitleaksignore).
+const FAKE_KEY = ['SYNTHETIC', 'YT', 'KEY', '1234'].join('_');
+
 test('secrets stay masked in the config sections sent to the panel', async t => {
   const { app, last } = await fixture(t);
-  await app.store.patchConfig({ youtube: { apiKey: 'SYNTHETIC_YT_KEY_1234' } });
+  await app.store.patchConfig({ youtube: { apiKey: FAKE_KEY } });
   const sent = last();
   assert.ok(sent.youtube, 'youtube settings reach the panel');
-  assert.notEqual(sent.youtube.apiKey, 'SYNTHETIC_YT_KEY_1234');
+  assert.notEqual(sent.youtube.apiKey, FAKE_KEY);
   assert.match(sent.youtube.apiKey, /^••••/);
-  assert.doesNotMatch(JSON.stringify(sent), /SYNTHETIC_YT_KEY_1234/);
+  assert.ok(!JSON.stringify(sent).includes(FAKE_KEY));
 });
 
 test('a timers change also refreshes the timers list the panel shows', async t => {
