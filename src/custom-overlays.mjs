@@ -37,7 +37,7 @@ const FIELD_KEY = /^[a-z][a-z0-9_]{0,31}$/;
 const FIELD_PROPS = ['key', 'label', 'type', 'default', 'options', 'min', 'max', 'step'];
 const COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 // A file name inside media/ (served at /media/<name>): never a path, a URL or a control character.
-const MEDIA_NAME = /^[^/\\\u0000-\u001f]{1,200}$/;
+const MEDIA_NAME = /^[^/\\\u0000-\u001f\u007f-\u009f\u2028\u2029]{1,200}$/;
 const isObject = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const finite = n => typeof n === 'number' && Number.isFinite(n);
 
@@ -97,17 +97,26 @@ function cleanFields(value) {
   });
 }
 
-/** Values for the given fields: stored values that still fit their field stay (others are dropped,
- *  owner decision for #344), then the incoming ones are merged strictly: an unknown key or a value
- *  that does not fit is a 400, and null removes a value so its default applies again. */
-function mergeValues(fields, stored, incoming) {
+/** Values for the given fields. Owner decision for #344: when the fields change, stored values that
+ *  still fit their field stay and the rest are dropped. A value identical to the stored one is
+ *  carried (config round-trips, /api/config/set, a panel draft) and follows that same drop rule; a
+ *  new value is explicit and strict: an unknown key or a value that does not fit is a 400, and null
+ *  removes a value so its default applies again. `replace`: incoming is the whole map (generic
+ *  config and import); otherwise it merges over the stored values (API, MCP, panel). */
+function mergeValues(fields, stored, incoming, { replace = false } = {}) {
   const byKey = new Map(fields.map(field => [field.key, field]));
+  const previous = isObject(stored) ? stored : {};
   const out = {};
-  if (isObject(stored)) for (const [k, v] of Object.entries(stored)) { const field = byKey.get(k); if (field && !valueError(field, v)) out[k] = v; }
+  if (!replace) for (const [k, v] of Object.entries(previous)) { const field = byKey.get(k); if (field && !valueError(field, v)) out[k] = v; }
   if (incoming === undefined) return out;
   if (!isObject(incoming)) throw httpError(400, 'Los valores del overlay tienen que ser un objeto');
   for (const [k, v] of Object.entries(incoming)) {
     const field = byKey.get(k);
+    if (Object.hasOwn(previous, k) && JSON.stringify(previous[k]) === JSON.stringify(v)) {
+      if (field && !valueError(field, v)) out[k] = Array.isArray(v) ? [...v] : v;
+      else delete out[k];
+      continue;
+    }
     if (!field) throw httpError(400, `El overlay no tiene el campo «${k.slice(0, 40)}»`);
     if (v === null) { delete out[k]; continue; }
     const error = valueError(field, v);
@@ -388,8 +397,8 @@ export class CustomOverlays {
       seen.add(id);
       const cleaned = clean(item, { partial: false });
       const overlay = { id, ...DEFAULT_CUSTOM_OVERLAY, fields: [], requestedPermissions: [], ...cleaned };
-      overlay.values = mergeValues(overlay.fields, {}, cleaned.values);
       const old = prev.get(id);
+      overlay.values = mergeValues(overlay.fields, old?.values, cleaned.values, { replace: true });
       // Config genérica e importaciones siguen exactamente la misma regla que update.
       Object.assign(overlay, permissionState(old, overlay));
       // Cambiar solo lo PEDIDO (no el código) no versiona el overlay: las capas abiertas no recargan.

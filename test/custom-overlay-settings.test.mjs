@@ -154,3 +154,32 @@ test('an overlay stored before settings existed reads as no fields and no values
   const { overlay } = (await call('POST', '/api/custom-overlays', { name: 'Antiguo' })).body;
   assert.deepEqual([overlay.fields, overlay.values], [[], {}]);
 });
+
+test('every write path drops carried values whose field disappeared instead of rejecting them (independent verification probe)', async t => {
+  const { call } = await start(t);
+  const { overlay } = (await call('POST', '/api/custom-overlays', { name: 'Barra', fields: FIELDS, values: { title: 'Sígueme', side: 'right' } })).body;
+  const keep = [FIELDS[0]];
+  const set = await call('POST', '/api/config/set', { path: 'customOverlays.0.fields', value: [FIELDS[1]] });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+  assert.deepEqual((await call('GET', '/api/custom-overlays/' + overlay.id)).body.overlay.values, {});
+  await call('PUT', '/api/custom-overlays/' + overlay.id, { fields: FIELDS, values: { title: 'Sígueme', side: 'right' } });
+  const list = (await call('GET', '/api/custom-overlays')).body.overlays;
+  const cfg = await call('PUT', '/api/config', { customOverlays: list.map(o => ({ ...o, fields: keep })) });
+  assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
+  assert.deepEqual((await call('GET', '/api/custom-overlays/' + overlay.id)).body.overlay.values, { title: 'Sígueme' });
+  await call('PUT', '/api/custom-overlays/' + overlay.id, { fields: FIELDS, values: { side: 'right' } });
+  const mixed = await call('PUT', '/api/custom-overlays/' + overlay.id, { fields: keep, values: { title: 'Nuevo', side: 'right' } });
+  assert.equal(mixed.status, 200, JSON.stringify(mixed.body));
+  assert.deepEqual(mixed.body.overlay.values, { title: 'Nuevo' }, 'the new value is applied; the carried one of a removed field is dropped');
+  const typo = await call('PUT', '/api/custom-overlays/' + overlay.id, { fields: keep, values: { titel: 'x' } });
+  assert.equal(typo.status, 400, 'a new value for a field that does not exist is still an error');
+});
+
+test('media names reject control and line-separator characters', async t => {
+  const { call } = await start(t);
+  const { overlay } = (await call('POST', '/api/custom-overlays', { name: 'Media', fields: [{ key: 'image', type: 'media' }] })).body;
+  for (const name of ['a\u007fb', 'a\u0085b', 'a\u2028b']) {
+    const r = await call('PUT', '/api/custom-overlays/' + overlay.id, { values: { image: name } });
+    assert.equal(r.status, 400, JSON.stringify(name));
+  }
+});
