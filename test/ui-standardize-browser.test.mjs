@@ -250,9 +250,10 @@ test('O3.2 css-help: cada campo de CSS lista las clases de su widget', { timeout
     chrome = await openChromePage(bin, `${base}/#/widgets/latest`);
     const helps = `Array.from(document.querySelectorAll('main .css-help')).map(h => h.textContent)`;
     const has = (i, classes) => `(${helps}[${i}] || '').length > 0 && ${JSON.stringify(classes)}.every(c => ${helps}[${i}].includes(c))`;
-    await waitDom(chrome.cdp, `${helps}.length === 2`, { timeoutMs: 12000 });
-    eq(await dom(chrome, has(0, ['.root', '.item', '.kick', '.big', '.extra', '.flash'])), true);
-    eq(await dom(chrome, has(1, ['.band', '.label', '.track', '.run', '.it', '.k'])), true);
+    await waitDom(chrome.cdp, `${helps}.length === 1`, { timeoutMs: 12000 });
+    eq(await dom(chrome, has(0, ['.root', '.label', '.item', '.kick', '.big', '.extra', '.flash'])), true);
+    await dom(chrome, `location.hash = '#/widgets/ticker'`);
+    await waitDom(chrome.cdp, `${helps}.length === 1 && ${has(0, ['.band', '.label', '.track', '.run', '.it', '.k'])}`, { timeoutMs: 12000 });
     await dom(chrome, `location.hash = '#/widgets/credits'`);
     await waitDom(chrome.cdp, `${helps}.length === 1 && ${has(0, ['.roll', '.head', '.grp', '.end', '.kick', '.big', '.sub', '.hl'])}`, { timeoutMs: 12000 });
     // el editor de alertas (slide) tiene su pestaña CSS con la ayuda de clases

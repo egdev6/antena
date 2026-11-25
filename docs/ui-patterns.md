@@ -158,7 +158,7 @@ Objetivos, Últimos y ticker, Créditos) uses one layout, `WidgetLayout`, below 
 - A section's introduction is the first child: `p.hint.lead`. Hints about a single field go right after
   that field as `p.hint`.
 - Use `.sub-h` headings only to name a group of content that has no section of its own (for example
-  «Últimos» and «Ticker» inside one form).
+  two related groups of settings inside one form).
 
 ## Forms
 

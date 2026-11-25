@@ -169,7 +169,7 @@ In the panel, the «Fuentes del programa de emisión» page lists all of them wi
 | Interview | `http://127.0.0.1:4500/widget/interview` | 1920×1080 |
 | On-screen messages | `http://127.0.0.1:4500/widget/rotator` | 1200×120 |
 
-**Latest and ticker.** «Latest» shows the last supporter of each selected type (follower, sub, bits, raid, Super Chat, member or any event). The ticker scrolls the most recent events of its types instead, so several subs can appear at once. It uses the «Latest» types until you pick its own (`widgets.ticker.items`, same values).
+**Latest and ticker.** They are separate widgets in **Widgets**. «Latest» shows the last supporter of each selected type (follower, sub, bits, raid, Super Chat, member or any event), with an optional label (`widgets.latest.label`; empty shows none, class `.label`). The ticker scrolls the most recent events of its types instead, so several subs can appear at once. It uses the «Latest» types until you pick its own (`widgets.ticker.items`, same values).
 
 **Preview in your broadcast program:** in **Widgets › Chat**, «Simular mensajes en Meld» makes every real chat source (the default chat, its variants and custom overlay slots) play the same sample messages as the panel preview for 2 minutes, then return to the real chat. A source loaded during the simulation joins it. Nothing is added to the chat, the history or the metrics. API: `POST /api/chat/preview` with `{ "on": true }` (optional `"seconds"`, 1–600) or `{ "on": false }`; `GET /api/chat/preview` returns `{ on, until }`. MCP: `vista_previa_chat`.
 
