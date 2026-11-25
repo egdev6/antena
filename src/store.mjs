@@ -60,7 +60,7 @@ export const DEFAULT_CONFIG = {
     chat: { platforms: ['twitch', 'youtube'], maxMessages: 12, fadeAfterSec: 0, fontSize: 26, hideCommands: true, hideOwner: true, showPlatform: true, reverse: false, animIn: 'slide', animOut: 'slide', layout: 'vertical', css: '' },  // hideOwner: tus mensajes no salen en pantalla; animIn/animOut #130
     chatVariants: [],
     goals: [{ id: 'principal', title: 'Objetivo de seguidores', visible: true, showMetric: true, css: '', bars: [{ id: 'principal-1', platform: 'twitch', metric: 'follows', target: 20, visible: true }] }],
-    latest: { items: ['follow', 'sub', 'cheer', 'superchat'], label: '', css: '' },
+    latest: { items: ['follow', 'sub', 'cheer', 'superchat'], label: '', scope: 'stream', css: '' },
     ticker: { label: 'Gracias a', count: 15, speed: 70, css: '' },
     viewers: { platforms: ['twitch', 'youtube'], showTotal: true, showPeak: false, css: '' },  // espectadores a la vez por plataforma
     thanks: { title: 'Gracias por seguir', platforms: ['twitch', 'youtube'], window: 'lastStream', days: 30, maxNames: 20, intervalSec: 5, showAnonymous: true, css: '' },

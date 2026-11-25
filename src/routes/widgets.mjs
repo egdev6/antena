@@ -13,7 +13,7 @@ export function registerWidgetRoutes({ route, store, engine }) {
       if (error) throw httpError(400, error.message);
     }
     // Support types and the «Últimos» label are new fields: validate only them, keep the legacy merge for the rest.
-    for (const [name, field] of [['latest', 'items'], ['latest', 'label'], ['ticker', 'items']]) {
+    for (const [name, field] of [['latest', 'items'], ['latest', 'label'], ['latest', 'scope'], ['ticker', 'items']]) {
       if (!patch[name] || typeof patch[name] !== 'object' || !Object.hasOwn(patch[name], field)) continue;
       const [error] = validatePath(`widgets.${name}.${field}`, patch[name][field]);
       if (error) throw httpError(400, error.message);

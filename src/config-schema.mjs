@@ -309,7 +309,8 @@ export const CONFIG_SCHEMA = {
     chat: CHAT_FIELDS,
     chatVariants: CHAT_VARIANTS,
     goals: list(GOAL_BOX),
-    latest: { items: arrStr(SUPPORT_TYPES), label: str, css: str },
+    // scope (#357): «stream» = this stream's last supporters; «all» = the last ones of every stream.
+    latest: { items: arrStr(SUPPORT_TYPES), label: str, scope: en(['stream', 'all']), css: str },
     // items is optional: without it the ticker shows the «Últimos» types.
     ticker: { label: str, items: arrStr(SUPPORT_TYPES), count: num({ int: true, min: 1, max: 100 }), speed: num({ int: true, min: 10, max: 500 }), css: str },
     credits: { title: str, subtitle: str, speed: num({ int: true, min: 10, max: 500 }), css: str },

@@ -54,6 +54,7 @@ import { activeTheme, applyLook, extractLook, isThemedWrite, isThemeTargetReques
 import { ViewerWatch } from './viewers.mjs';
 import { ChannelTotals } from './channel-totals.mjs';
 import { FollowerRegistry } from './followers.mjs';
+import { LatestHistory } from './latest-history.mjs';
 import { registerTeleprompterRoutes } from './routes/teleprompter.mjs';
 import { registerInterviewRoutes } from './routes/interviews.mjs';
 import { Interviews } from './interviews.mjs';
@@ -264,6 +265,18 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // #132: barras de objetivo con el total real del canal (persisten entre directos)
   const channelTotals = await new ChannelTotals({ dir: store.dir, twitch, youtube, log }).load();
   const followers = await new FollowerRegistry({ dir: store.dir, twitch, youtube, log }).load();
+  // #357: last supporters of every stream, apart from sessions; rebuilt from the archives when missing.
+  const latestHistory = await new LatestHistory({ dir: store.dir, log }).load();
+  const backfillLatest = async () => {
+    const events = [];
+    for (const meta of await session.list({ limit: Infinity })) {
+      try { events.push(...((await session.getArchived(meta.id)).events || [])); } catch { /* unreadable archive: skipped */ }
+    }
+    events.push(...(session.data.events || []));
+    await latestHistory.merge(events);
+  };
+  if (latestHistory.needsBackfill) await backfillLatest();
+  engine.latestHistory = latestHistory;
   // Session.list is asynchronous; snapshots stay synchronous and only use this cached cutoff.
   let lastStreamCutoff = null, cutoffGeneration = 0;
   const refreshLastStream = async () => {
@@ -360,6 +373,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   chat.on('delete', ({ id }) => engine.deleteChat(id));
   chat.on('clearUser', ({ login }) => engine.clearChatUser(login));
   session.on('change', change => {
+    if (change?.event) latestHistory.observe(change.event);
     engine.pushWidgets(); pushTimeline();
     if (change?.reset) refreshLastStream().then(() => engine.pushWidgets()).catch(() => {});
   });
@@ -1028,7 +1042,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
   // Export v1 excludes credentials; import previews the same strict schema before a local backup.
   const configTransfer = registerConfigTransferRoutes({ route, store, customOverlays, afterConfig, mediaDir, configTransferIO, zipUploadLimit, zipExportLimit,
     session, retention: () => Number(store.config.sessions?.retention) || 0,
-    afterSessions: () => refreshLastStream().then(() => engine.pushWidgets()).catch(() => {}) });
+    afterSessions: () => Promise.all([refreshLastStream(), backfillLatest()]).then(() => engine.pushWidgets()).catch(() => {}) });
   let mediaQueue = Promise.resolve();
   const withMediaLock = async fn => {
     const previous = mediaQueue; let release; mediaQueue = new Promise(resolve => { release = resolve; });
@@ -1607,7 +1621,7 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return httpClosePromise;
   };
 
-  const app = { server, store, bus, twitch, youtube, chat, meld, program, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, interviews, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics };
+  const app = { latestHistory, server, store, bus, twitch, youtube, chat, meld, program, session, engine, timers, interactive, viewers, channelTotals, followers, refreshFollowers, teleprompter, interviews, customOverlays, mediaDir, port: null, stopAdmission, closeHttp, isHttpClosing, closeUpgradedConnections, beginAckWindow, captureAckWindow, closeAckWindow, ackWindowPhase, waitIdle: whenIdle, beginLayerHideDrain, drainLayerHides, beginAutoSessionDrain, drainAutoSession, drainChatMetrics, settleChatMetrics };
   return app;
 }
 

@@ -27,14 +27,16 @@ let prev = {};
 function apply(s) {
   const cfg = s.widgets?.latest || {};
   setCss(cfg.css);
+  // scope «all» (#357): the last supporters of every stream; otherwise only this stream's.
+  const latest = cfg.scope === 'all' && s.latestAll ? s.latestAll : s.latest;
   const items = (qs.get('items')?.split(',') || cfg.items || ['follow', 'sub', 'cheer', 'superchat']).filter(k => LABELS[k]);
   // Optional label (widgets.latest.label): empty shows nothing.
   root.innerHTML = (cfg.label ? `<p class="label">${esc(cfg.label)}</p>` : '') + items.map(k => {
-    const e = s.latest?.[k];
+    const e = latest?.[k];
     const changed = e && prev[k] && prev[k] !== e.user + e.at;
     return `<div class="item eg-card soft ${e ? '' : 'empty'} ${changed ? 'flash' : ''} item-${k}"><p class="kick">${LABELS[k]}</p><p class="big">${e ? esc(e.user) : '—'}</p>${e && extra(k, e) ? `<p class="extra">${esc(extra(k, e))}</p>` : ''}</div>`;
   }).join('');
-  prev = Object.fromEntries(items.map(k => [k, s.latest?.[k] ? s.latest[k].user + s.latest[k].at : null]));
+  prev = Object.fromEntries(items.map(k => [k, latest?.[k] ? latest[k].user + latest[k].at : null]));
 }
 connect({ widgets: s => apply(DEMO ? { ...demoState(), widgets: s.widgets } : s) });
 if (DEMO) apply(demoState());
