@@ -28,7 +28,7 @@ Alertas, chat y widgets de directo para tu **programa de emisión (Meld u OBS)**
 antena se queda entera en tu PC y le da a tu directo una capa completa de alertas e interacción:
 
 - **Alertas** de Twitch (seguidores, subs, resubs, subs regaladas, bits y Power-ups, raids, recompensas) y YouTube (suscriptores nuevos, Super Chats, Super Stickers, miembros, hitos y membresías regaladas), más una bienvenida editable al primer mensaje y alertas de racha (oficial de Twitch; local de YouTube). Tabla evento → alerta: [docs/eventos.md](docs/eventos.md).
-- **Tres diseños por alerta:** la tarjeta 3D EGDEV; tu vídeo o imagen (webm con transparencia) con el mensaje encima, colocado donde quieras; o **vídeo + tarjeta**: tu vídeo o imagen de fondo a pantalla completa y encima la tarjeta 3D, con retraso de entrada y ajuste de posición. Todos con CSS propio.
+- **Tres diseños por alerta:** la tarjeta 3D EGDEV; tu vídeo o imagen (webm con transparencia) con el mensaje encima, colocado donde quieras; o **vídeo + tarjeta**: tu vídeo o imagen de fondo a pantalla completa y encima la tarjeta 3D, con retraso de entrada y posiciones independientes para fondo y tarjeta. En **Diseño › Posición del fondo**, X/Y desplazan la imagen o el vídeo en píxeles (X −1920…1920, Y −1080…1080); 0/0 mantiene el fondo centrado y los valores positivos mueven a la derecha/abajo. La tarjeta no se mueve. Todos con CSS propio.
 - **Variaciones:** otra versión de la alerta según la cantidad, el tier, el usuario, el mensaje o una probabilidad.
 - **Voz (TTS)** de los mensajes, **filtro** de palabras, enlaces y usuarios, y **pausa** con cola.
 - **Acciones en el programa de emisión** al salir una alerta: cambiar de escena (y volver), mostrar u ocultar capas, efectos, escribir en el chat, hablar…

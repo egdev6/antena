@@ -73,6 +73,7 @@ export interface AlertConfig {
   enabled?: boolean;
   layout?: 'card' | 'media' | 'mixed';
   cardX?: number; cardY?: number;
+  bgX?: number; bgY?: number;
   media?: string;
   sound?: string;
   soundVolume?: number;

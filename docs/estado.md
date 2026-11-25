@@ -28,7 +28,7 @@ sigue sin dependencias (Node ≥ 24); React, esbuild y Tauri son solo de compila
 - **Vista previa del chat en las fuentes:** `POST /api/chat/preview` `{ on, seconds? }` (1–600, 120 por defecto) activa un estado efímero (`src/chat-preview.mjs`, sin persistir) que se emite como evento `chatPreview` `{ on, until }` a widgets y panel, también al conectar. `chat.html` reproduce entonces la demo de la vista previa y guarda los mensajes reales para volver a mostrarlos al terminar. No escribe en el chat ni en las métricas.
 - **Alertas de Twitch y YouTube:** tipos normalizados (follow, sub, resub, giftsub,
   cheer, raid, redemption; ytsub, superchat, supersticker, member, milestone, giftmember, jewels) con
-  tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en el programa de emisión.
+  tres diseños (tarjeta, vídeo con texto y vídeo de fondo + tarjeta), variaciones, voz y acciones en el programa de emisión. En el diseño mixto, el fondo de imagen o vídeo tiene posición X/Y independiente de la tarjeta (0/0 centrado).
   Los regalos Jewels se agrupan por combo; cuentan como eventos, no como euros de Super Chat.
 - **Suscriptores de YouTube (#134):** alerta `ytsub` para suscripciones públicas detectadas durante la escucha, con intervalo configurable y parada por cuota.
 - **Bienvenida (#289):** alerta pequeña y editable en el primer mensaje por persona y plataforma, con variación para quien ya habló en directos archivados. Activada de serie, sin mensajes propios ni usuarios bloqueados; el máximo de cinco alertas pendientes evita inundar la cola.
