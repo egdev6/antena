@@ -183,3 +183,23 @@ test('media names reject control and line-separator characters', async t => {
     assert.equal(r.status, 400, JSON.stringify(name));
   }
 });
+
+test('generic config replaces the values map while update merges; carried values that no longer fit are dropped', async t => {
+  const { call } = await start(t);
+  const all = { title: 'Sígueme', size: 30, side: 'right', lines: ['a', 'b'] };
+  const { overlay } = (await call('POST', '/api/custom-overlays', { name: 'B', fields: FIELDS, values: all })).body;
+  const narrowed = FIELDS.filter(field => field.key !== 'lines').map(field => (field.key === 'size' ? { ...field, max: 25 } : field));
+  const set = await call('POST', '/api/config/set', { path: 'customOverlays.0.fields', value: narrowed });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+  assert.deepEqual((await call('GET', '/api/custom-overlays/' + overlay.id)).body.overlay.values, { title: 'Sígueme', side: 'right' });
+  const r = await call('POST', '/api/config/set', { path: 'customOverlays.0.values', value: { title: 'Sígueme' } });
+  assert.equal(r.status, 200);
+  assert.deepEqual((await call('GET', '/api/custom-overlays/' + overlay.id)).body.overlay.values, { title: 'Sígueme' });
+  const m = await call('PUT', '/api/custom-overlays/' + overlay.id, { values: { size: 20 } });
+  assert.deepEqual(m.body.overlay.values, { title: 'Sígueme', size: 20 });
+  for (const value of [{ title: 'x', ghost: 1 }, { title: 'x', size: 5 }]) {
+    const bad = await call('POST', '/api/config/set', { path: 'customOverlays.0.values', value });
+    assert.equal(bad.status, 400);
+  }
+  assert.deepEqual((await call('GET', '/api/custom-overlays/' + overlay.id)).body.overlay.values, { title: 'Sígueme', size: 20 });
+});
