@@ -343,7 +343,9 @@ const OVERLAY_HELP = `Cómo se escribe un overlay (con unas líneas basta):
 - Acciones (S11): antena.run(kind, params) devuelve una promesa: resuelve si la acción se ejecutó y se rechaza con el error del servidor si no.
   Tipos y params: scene {scene, returnAfterSec} · layer {scene?, layer, seconds?} · hideLayer/toggleLayer {scene?, layer} · effect {scene?, layer, effect} · command {command} · streamEvent {event, amount?} · chat {text, destination? twitch|youtube|both} · say {text}.
   En el código: antena.run('scene', { scene: 'Cámara' }).catch(e => console.warn(e.message));
-- El agente SOLO PIDE permisos con «permisos» (al crear o editar): el usuario los aprueba (o revoca) en el panel, en la sección Overlays. Aquí no hay forma de aprobarlos y editar el código nunca cambia lo aprobado. Sin aprobación, antena.run se rechaza y no pasa nada.
+- Ajustes editables (campos): declara «campos» y la persona rellena un formulario en el panel (sección Personalizados) sin tocar código. Cada campo: { key (minúsculas, números y _), label, type: text|number|toggle|select|color|list|media, default?, options (select), min/max/step (number) }; máx. 30. En el código: antena.settings (o antena.on('settings', fn)) da { key: valor } con el default si no hay valor; media es la URL absoluta del archivo de antena. «valores» fija valores (se fusionan; null borra uno). Cambiar valores no recarga la capa: llegan en vivo por 'settings'. Cambiar campos sí la recarga, y conserva los valores cuya clave sigue existiendo y encaja.
+  Ej.: campos [{ key: 'titulo', label: 'Título', type: 'text', default: 'Sígueme' }] y en JS antena.on('settings', s => { el.textContent = s.titulo; });
+- El agente SOLO PIDE permisos con «permisos» (al crear o editar): el usuario los aprueba (o revoca) en el panel, en la sección Personalizados. Aquí no hay forma de aprobarlos y editar el código nunca cambia lo aprobado. Sin aprobación, antena.run se rechaza y no pasa nada.
 - Límite por overlay: 10 acciones cada 10 s (por encima, 429 y no se ejecuta). Aprovecha una acción por evento, no bucles.
 - Añade una fuente de navegador con la URL /custom/<id> (la devuelven crear_overlay y ver_overlay). Al guardar, las capas abiertas se recargan solas.`;
 const localBase = async () => `http://127.0.0.1:${(await get('/api/config?path=port')).value || 4500}`;
@@ -356,21 +358,23 @@ tool('listar_overlays', 'Lista los overlays propios (páginas HTML/CSS/JS que se
     permisosSolicitados: o.requestedPermissions || [], permisosAprobados: o.permissions || [],
   }));
 });
-tool('ver_overlay', 'Un overlay propio completo: nombre, html, css, js, ancho, alto, fondo transparente, su URL para el programa de emisión (/custom/<id>) y los permisos de acción pedidos (permisosSolicitados) y aprobados por el usuario (permisosAprobados).', { id: S.str('Id del overlay') }, async ({ id }) => {
+tool('ver_overlay', 'Un overlay propio completo: nombre, html, css, js, ancho, alto, fondo transparente, campos editables (fields) y sus valores (values), su URL para el programa de emisión (/custom/<id>) y los permisos de acción pedidos (permisosSolicitados) y aprobados por el usuario (permisosAprobados).', { id: S.str('Id del overlay') }, async ({ id }) => {
   const { overlay } = await get('/api/custom-overlays/' + enc(id));
   return { ...overlay, url: await overlayUrl(overlay), permisosSolicitados: overlay.requestedPermissions || [], permisosAprobados: overlay.permissions || [] };
 }, ['id']);
+const OVERLAY_CAMPOS = S.arr('Campos editables del overlay: [{ key, label, type: text|number|toggle|select|color|list|media, default?, options? (select), min?/max?/step? (number) }], máx. 30. Sustituye la lista entera.', { type: 'object' });
+const OVERLAY_VALORES = S.obj('Valores de los campos { key: valor }; se fusionan con los guardados y null borra uno (vuelve el default). No recarga la capa.');
 const OVERLAY_PERMISOS = S.arr('Tipos de acción que el overlay PIDE (no aprueba: el usuario los aprueba en el panel y sin aprobación antena.run se rechaza): scene, layer, hideLayer, toggleLayer, effect, command, streamEvent, chat, say.', { type: 'string', enum: CUSTOM_OVERLAY_ACTION_KINDS });
 tool('crear_overlay', 'Crea un overlay propio: una página HTML/CSS/JS que se añade como fuente de navegador en el programa de emisión. Solo hace falta el nombre; el resto tiene valores por defecto. Devuelve el id y la URL /custom/<id>. ' + OVERLAY_HELP,
-  { nombre: S.str('Nombre, p. ej. «Marco de cámara»'), html: S.str('HTML del cuerpo'), css: S.str('CSS propio (se aplica después de /theme.css)'), js: S.str('JavaScript del overlay'), ancho: S.num('Ancho del lienzo en px (16–7680, por defecto 1920)'), alto: S.num('Alto del lienzo en px (16–4320, por defecto 1080)'), transparente: S.bool('Fondo transparente (por defecto sí)'), permisos: OVERLAY_PERMISOS },
-  async ({ nombre, html, css, js, ancho, alto, transparente, permisos }) => {
-    const { overlay } = await post('/api/custom-overlays', { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente, requestedPermissions: permisos });
+  { nombre: S.str('Nombre, p. ej. «Marco de cámara»'), html: S.str('HTML del cuerpo'), css: S.str('CSS propio (se aplica después de /theme.css)'), js: S.str('JavaScript del overlay'), ancho: S.num('Ancho del lienzo en px (16–7680, por defecto 1920)'), alto: S.num('Alto del lienzo en px (16–4320, por defecto 1080)'), transparente: S.bool('Fondo transparente (por defecto sí)'), permisos: OVERLAY_PERMISOS, campos: OVERLAY_CAMPOS, valores: OVERLAY_VALORES },
+  async ({ nombre, html, css, js, ancho, alto, transparente, permisos, campos, valores }) => {
+    const { overlay } = await post('/api/custom-overlays', { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente, requestedPermissions: permisos, fields: campos, values: valores });
     return { ...overlay, url: await overlayUrl(overlay), permisosSolicitados: overlay.requestedPermissions || [], permisosAprobados: overlay.permissions || [] };
   }, ['nombre']);
-tool('editar_overlay', 'Cambia lo que pases de un overlay (actualización parcial: lo que no mandes se queda como está). Al guardar, todas las capas abiertas se recargan solas. Pedir permisos nuevos no los aprueba: eso es del panel, y las aprobaciones que el overlay deje de pedir se retiran. ' + OVERLAY_HELP,
-  { id: S.str('Id del overlay'), nombre: S.str('Nombre nuevo'), html: S.str('HTML nuevo (sustituye al actual)'), css: S.str('CSS nuevo (sustituye al actual)'), js: S.str('JavaScript nuevo (sustituye al actual)'), ancho: S.num('Ancho del lienzo en px (16–7680)'), alto: S.num('Alto del lienzo en px (16–4320)'), transparente: S.bool('Fondo transparente'), permisos: OVERLAY_PERMISOS },
-  async ({ id, nombre, html, css, js, ancho, alto, transparente, permisos }) => {
-    const { overlay } = await put('/api/custom-overlays/' + enc(id), { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente, requestedPermissions: permisos });
+tool('editar_overlay', 'Cambia lo que pases de un overlay (actualización parcial: lo que no mandes se queda como está). Al guardar, todas las capas abiertas se recargan solas, salvo si solo cambias «valores» (llegan en vivo). Pedir permisos nuevos no los aprueba: eso es del panel, y las aprobaciones que el overlay deje de pedir se retiran. ' + OVERLAY_HELP,
+  { id: S.str('Id del overlay'), nombre: S.str('Nombre nuevo'), html: S.str('HTML nuevo (sustituye al actual)'), css: S.str('CSS nuevo (sustituye al actual)'), js: S.str('JavaScript nuevo (sustituye al actual)'), ancho: S.num('Ancho del lienzo en px (16–7680)'), alto: S.num('Alto del lienzo en px (16–4320)'), transparente: S.bool('Fondo transparente'), permisos: OVERLAY_PERMISOS, campos: OVERLAY_CAMPOS, valores: OVERLAY_VALORES },
+  async ({ id, nombre, html, css, js, ancho, alto, transparente, permisos, campos, valores }) => {
+    const { overlay } = await put('/api/custom-overlays/' + enc(id), { name: nombre, html, css, js, width: ancho, height: alto, transparent: transparente, requestedPermissions: permisos, fields: campos, values: valores });
     return { ...overlay, url: await overlayUrl(overlay), permisosSolicitados: overlay.requestedPermissions || [], permisosAprobados: overlay.permissions || [] };
   }, ['id']);
 tool('css_overlay_tema', 'Lee o sustituye el CSS adicional de un overlay propio para el tema, sin cambiar su código ni permisos. Sin css solo lo lee.',

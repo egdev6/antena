@@ -26,7 +26,112 @@ export const CUSTOM_OVERLAY_RATE = { max: 10, windowMs: 10_000 };
 
 const SIZE = { width: ['ancho', 7680], height: ['alto', 4320] };
 const MAX_KIND_LABEL = 60;
-export const DEFAULT_CUSTOM_OVERLAY = { name: '', html: '', css: '', js: '', width: 1920, height: 1080, transparent: true };
+export const DEFAULT_CUSTOM_OVERLAY = { name: '', html: '', css: '', js: '', width: 1920, height: 1080, transparent: true, fields: [] };
+
+// Settings fields (#344): the overlay declares them, the panel renders the form and the sandboxed
+// page reads the values through the SDK (antena.settings). Declarative only: no panel code from
+// the overlay. `fields` versions the overlay (the layer reloads); `values` never does.
+export const CUSTOM_OVERLAY_FIELD_TYPES = ['text', 'number', 'toggle', 'select', 'color', 'list', 'media'];
+export const CUSTOM_OVERLAY_MAX_FIELDS = 30;
+const FIELD_KEY = /^[a-z][a-z0-9_]{0,31}$/;
+const FIELD_PROPS = ['key', 'label', 'type', 'default', 'options', 'min', 'max', 'step'];
+const COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+// A file name inside media/ (served at /media/<name>): never a path, a URL or a control character.
+const MEDIA_NAME = /^[^/\\\u0000-\u001f]{1,200}$/;
+const isObject = x => x !== null && typeof x === 'object' && !Array.isArray(x);
+const finite = n => typeof n === 'number' && Number.isFinite(n);
+
+/** Why a value does not fit its field (Spanish, UI language), or null when it fits. */
+function valueError(field, v) {
+  switch (field.type) {
+    case 'text': return typeof v === 'string' && v.length <= 2000 ? null : 'texto de hasta 2000 caracteres';
+    case 'number':
+      if (!finite(v)) return 'un número';
+      if (field.min !== undefined && v < field.min) return `un número desde ${field.min}`;
+      if (field.max !== undefined && v > field.max) return `un número hasta ${field.max}`;
+      return null;
+    case 'toggle': return typeof v === 'boolean' ? null : 'verdadero o falso';
+    case 'select': return field.options.includes(v) ? null : `una de: ${field.options.join(', ')}`;
+    case 'color': return typeof v === 'string' && COLOR.test(v) ? null : 'un color #rgb, #rrggbb o #rrggbbaa';
+    case 'list': return Array.isArray(v) && v.length <= 50 && v.every(x => typeof x === 'string' && x.length <= 500) ? null : 'una lista de hasta 50 textos (500 caracteres cada uno)';
+    case 'media': return v === '' || (typeof v === 'string' && MEDIA_NAME.test(v) && v !== '.' && v !== '..') ? null : 'el nombre de un archivo de antena';
+    default: return 'un tipo conocido';
+  }
+}
+
+/** Validates the declared fields and returns them normalized. 400 in Spanish. */
+function cleanFields(value) {
+  if (!Array.isArray(value)) throw httpError(400, 'Los campos del overlay tienen que ser una lista');
+  if (value.length > CUSTOM_OVERLAY_MAX_FIELDS) throw httpError(400, `Como mucho ${CUSTOM_OVERLAY_MAX_FIELDS} campos por overlay`);
+  const seen = new Set();
+  return value.map(input => {
+    if (!isObject(input)) throw httpError(400, 'Cada campo del overlay tiene que ser un objeto');
+    const unknown = Object.keys(input).find(k => !FIELD_PROPS.includes(k));
+    if (unknown) throw httpError(400, `Propiedad de campo desconocida: ${unknown.slice(0, 40)}. Usa ${FIELD_PROPS.join(', ')}.`);
+    const key = input.key;
+    if (typeof key !== 'string' || !FIELD_KEY.test(key)) throw httpError(400, `La clave del campo ${JSON.stringify(key ?? null).slice(0, 40)} no es válida: minúsculas, números y _, empezando por una letra (máx. 32)`);
+    if (seen.has(key)) throw httpError(400, `Campo repetido: ${key}`);
+    seen.add(key);
+    if (!CUSTOM_OVERLAY_FIELD_TYPES.includes(input.type)) throw httpError(400, `El campo «${key}» tiene un tipo no válido: ${JSON.stringify(input.type ?? null).slice(0, 40)}. Usa ${CUSTOM_OVERLAY_FIELD_TYPES.join(', ')}.`);
+    if (input.label !== undefined && typeof input.label !== 'string') throw httpError(400, `La etiqueta del campo «${key}» tiene que ser texto`);
+    const field = { key, label: (input.label || '').trim().slice(0, 80) || key, type: input.type };
+    if (field.type === 'select') {
+      const o = input.options;
+      if (!Array.isArray(o) || !o.length || o.length > 50 || !o.every(x => typeof x === 'string' && x && x.length <= 80) || new Set(o).size !== o.length) {
+        throw httpError(400, `El campo «${key}» necesita «options»: de 1 a 50 textos distintos`);
+      }
+      field.options = [...o];
+    } else if (input.options !== undefined) throw httpError(400, `«options» solo vale para campos select («${key}»)`);
+    for (const p of ['min', 'max', 'step']) {
+      if (input[p] === undefined) continue;
+      if (field.type !== 'number' || !finite(input[p]) || (p === 'step' && input[p] <= 0)) throw httpError(400, `«${p}» del campo «${key}» solo vale para números y tiene que ser un número${p === 'step' ? ' mayor que 0' : ''}`);
+      field[p] = input[p];
+    }
+    if (field.min !== undefined && field.max !== undefined && field.min > field.max) throw httpError(400, `El campo «${key}» tiene min mayor que max`);
+    if (input.default !== undefined) {
+      const error = valueError(field, input.default);
+      if (error) throw httpError(400, `El valor por defecto del campo «${key}» tiene que ser ${error}`);
+      field.default = Array.isArray(input.default) ? [...input.default] : input.default;
+    }
+    return field;
+  });
+}
+
+/** Values for the given fields: stored values that still fit their field stay (others are dropped,
+ *  owner decision for #344), then the incoming ones are merged strictly: an unknown key or a value
+ *  that does not fit is a 400, and null removes a value so its default applies again. */
+function mergeValues(fields, stored, incoming) {
+  const byKey = new Map(fields.map(field => [field.key, field]));
+  const out = {};
+  if (isObject(stored)) for (const [k, v] of Object.entries(stored)) { const field = byKey.get(k); if (field && !valueError(field, v)) out[k] = v; }
+  if (incoming === undefined) return out;
+  if (!isObject(incoming)) throw httpError(400, 'Los valores del overlay tienen que ser un objeto');
+  for (const [k, v] of Object.entries(incoming)) {
+    const field = byKey.get(k);
+    if (!field) throw httpError(400, `El overlay no tiene el campo «${k.slice(0, 40)}»`);
+    if (v === null) { delete out[k]; continue; }
+    const error = valueError(field, v);
+    if (error) throw httpError(400, `El valor de «${k}» tiene que ser ${error}`);
+    out[k] = Array.isArray(v) ? [...v] : v;
+  }
+  return out;
+}
+
+const FIELD_FALLBACK = { text: '', toggle: false, color: '#000000', list: [], media: '' };
+/** Values the page receives: stored value, else the field default, else the type's empty value.
+ *  Media goes as { $media: name } so the shell (same origin) turns it into an absolute URL. */
+export function overlaySettings(overlay) {
+  const values = isObject(overlay.values) ? overlay.values : {};
+  const out = {};
+  for (const field of Array.isArray(overlay.fields) ? overlay.fields : []) {
+    let v = Object.hasOwn(values, field.key) ? values[field.key]
+      : field.default !== undefined ? field.default
+        : field.type === 'select' ? field.options[0] : field.type === 'number' ? (field.min ?? 0) : FIELD_FALLBACK[field.type];
+    if (field.type === 'media') v = v ? { $media: v } : '';
+    out[field.key] = Array.isArray(v) ? [...v] : v;
+  }
+  return out;
+}
 
 /** Approved kinds limited to the requested ones, in canonical order (dedupes too). Approvals can
  *  never exceed what the overlay asked for, so every write path runs new approvals through here. */
@@ -58,6 +163,8 @@ export function publicOverlay(o) {
     approvedAt: Number(o.approvedAt) || 0,
     approvedUpdatedAt: Number(o.approvedUpdatedAt) || 0,
     reapprovalRequired: !!o.reapprovalRequired,
+    fields: Array.isArray(o.fields) ? o.fields : [],
+    values: isObject(o.values) ? o.values : {},
   };
 }
 
@@ -142,6 +249,9 @@ function clean(input, { partial }) {
     if (!Number.isInteger(n) || n < 16 || n > max) throw httpError(400, `El ${label} tiene que ser un número entero entre 16 y ${max}`);
     out[f] = n;
   }
+  if ('fields' in input && input.fields !== undefined) out.fields = cleanFields(input.fields);
+  // Values are checked against the final fields by the caller (mergeValues).
+  if ('values' in input && input.values !== undefined) out.values = input.values;
   if ('transparent' in input && input.transparent !== undefined) {
     if (typeof input.transparent !== 'boolean') throw httpError(400, 'El campo transparent tiene que ser verdadero o falso');
     out.transparent = input.transparent;
@@ -220,6 +330,8 @@ export class CustomOverlays {
     return o;
   }
   versions() { return Object.fromEntries(this.list().map(o => [o.id, o.updatedAt || 0])); }
+  /** Resolved settings per overlay, for the shells (event customOverlaySettings). */
+  settings() { return Object.fromEntries(this.list().map(o => [o.id, overlaySettings(o)])); }
   notify(next) { this.onChange(next); }
   async #commit(next) {
     this.store.config.customOverlays = next;
@@ -228,11 +340,13 @@ export class CustomOverlays {
   }
   #stamp(prev) { return Math.max(Date.now(), (prev || 0) + 1); }
   async create(input) {
+    const cleaned = clean(input, { partial: false });
     const overlay = {
-      id: '', ...DEFAULT_CUSTOM_OVERLAY, requestedPermissions: [], ...clean(input, { partial: false }),
+      id: '', ...DEFAULT_CUSTOM_OVERLAY, fields: [], requestedPermissions: [], ...cleaned,
       // Un overlay nuevo no trae aprobaciones: el usuario las da después, en el panel.
       permissions: [], approvedAt: 0, approvedUpdatedAt: 0, reapprovalRequired: false,
     };
+    overlay.values = mergeValues(overlay.fields, {}, cleaned.values);
     const taken = new Set(this.list().map(o => o.id));
     do overlay.id = id8(); while (taken.has(overlay.id));
     overlay.updatedAt = this.#stamp();
@@ -245,10 +359,15 @@ export class CustomOverlays {
     const prev = this.get(id);
     const patch = clean(input, { partial: true });
     const requestedPermissions = patch.requestedPermissions ?? prev.requestedPermissions ?? [];
+    const fields = patch.fields ?? (Array.isArray(prev.fields) ? prev.fields : []);
+    // Only values changed: the open layers get them live (customOverlaySettings), no reload.
+    const valuesOnly = Object.keys(patch).length > 0 && Object.keys(patch).every(k => k === 'values');
     const overlay = {
       ...prev, ...patch,
       id,
-      updatedAt: this.#stamp(prev.updatedAt),
+      fields,
+      values: mergeValues(fields, prev.values, patch.values),
+      updatedAt: valuesOnly ? prev.updatedAt : this.#stamp(prev.updatedAt),
       requestedPermissions,
       ...permissionState(prev, { ...prev, ...patch, requestedPermissions }),
     };
@@ -267,12 +386,14 @@ export class CustomOverlays {
       if (typeof id !== 'string' || !CUSTOM_OVERLAY_ID.test(id)) throw httpError(400, `Id de overlay no válido: ${JSON.stringify(id ?? null).slice(0, 60)} (solo minúsculas, números y guiones)`);
       if (seen.has(id)) throw httpError(400, `Id de overlay repetido: ${id}`);
       seen.add(id);
-      const overlay = { id, ...DEFAULT_CUSTOM_OVERLAY, requestedPermissions: [], ...clean(item, { partial: false }) };
+      const cleaned = clean(item, { partial: false });
+      const overlay = { id, ...DEFAULT_CUSTOM_OVERLAY, fields: [], requestedPermissions: [], ...cleaned };
+      overlay.values = mergeValues(overlay.fields, {}, cleaned.values);
       const old = prev.get(id);
       // Config genérica e importaciones siguen exactamente la misma regla que update.
       Object.assign(overlay, permissionState(old, overlay));
       // Cambiar solo lo PEDIDO (no el código) no versiona el overlay: las capas abiertas no recargan.
-      const same = old && Object.keys(DEFAULT_CUSTOM_OVERLAY).every(k => old[k] === overlay[k]);
+      const same = old && Object.keys(DEFAULT_CUSTOM_OVERLAY).every(k => JSON.stringify(old[k] ?? DEFAULT_CUSTOM_OVERLAY[k]) === JSON.stringify(overlay[k]));
       overlay.updatedAt = same ? old.updatedAt : this.#stamp(old?.updatedAt);
       return overlay;
     });
@@ -354,7 +475,7 @@ export function shellHtml(overlay) {
   const id = ${JSON.stringify(overlay.id)};
   const frame = document.getElementById('frame');
   // Solo lo que el usuario puede ver: nada de secretos ni de la cola de alertas.
-  const SNAPSHOTS = ['widgets', 'viewers', 'interactive', 'themeSnapshot', 'scene'];
+  const SNAPSHOTS = ['widgets', 'viewers', 'interactive', 'themeSnapshot', 'scene', 'settings'];
   const state = {};
   let version = ${Number(overlay.updatedAt) || 0};
   let loaded = false;
@@ -368,7 +489,8 @@ export function shellHtml(overlay) {
   // El SDK resuelve «ready» cuando ya tiene el estado de los widgets y el marco ha cargado.
   const sendReady = () => {
     // «scene» llega siempre al conectar (lista vacía sin programa), así que esperarla no puede colgar ready.
-    if (ready || !loaded || !('widgets' in state) || !('themeSnapshot' in state) || !('scene' in state) || !frame.contentWindow) return;
+    // «settings» también llega siempre al conectar (mapa de todos los overlays), así que tampoco cuelga.
+    if (ready || !loaded || !('widgets' in state) || !('themeSnapshot' in state) || !('scene' in state) || !('settings' in state) || !frame.contentWindow) return;
     ready = true;
     frame.contentWindow.postMessage({ antena: 1, ready: true }, '*');
   };
@@ -601,10 +723,23 @@ export function shellHtml(overlay) {
     customOverlayTheme: relayTheme,
     chat: relay('chat'),
     publicAlert: data => relay('alert')(data),
+    // Settings (#344): the server sends every overlay's values; this shell keeps its own. Media
+    // references become absolute URLs here (the frame is an opaque origin: relative paths break).
+    customOverlaySettings: map => {
+      if (!object(map) || !own(map, id) || !object(map[id])) return;
+      const settings = {};
+      for (const [key, value] of Object.entries(map[id])) {
+        settings[key] = object(value) && typeof value.$media === 'string' ? location.origin + '/media/' + encodeURIComponent(value.$media) : value;
+      }
+      if ('settings' in state && JSON.stringify(state.settings) === JSON.stringify(settings)) return;
+      relay('settings')(settings);
+    },
     customOverlayVersions: v => {
       if (!(id in v) || v[id] === version) return;
       version = v[id];
       clearSlots();
+      // The reloaded page has a new SDK waiting for «ready»: send it again once it loads.
+      loaded = false; ready = false;
       frame.src = '/custom/' + id + '/frame?v=' + version;
     },
     // Prueba lanzada desde el panel o el MCP: efímera y dirigida a UNA capa (el id tiene que ser

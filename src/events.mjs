@@ -16,7 +16,7 @@
 export const REPLACEABLE_EVENTS = new Set([
   'status', 'persistence', 'interactive', 'widgets', 'pause',
   'meld', 'meters', 'timeline', 'config', 'prompter', 'timers', 'history', 'viewers', 'teleprompter', 'theme', 'interview', 'interviewControl',
-  'customOverlays', 'customOverlayVersions', 'activeTheme', 'customOverlayCss', 'customOverlayTheme', 'scene',
+  'customOverlays', 'customOverlayVersions', 'customOverlaySettings', 'activeTheme', 'customOverlayCss', 'customOverlayTheme', 'scene',
 ]);
 
 // Eventos efímeros: sin persistencia y sin replay prometido.

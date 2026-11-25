@@ -127,12 +127,15 @@ test('handshake validates key and version before adding a bus client', async t =
   assert.equal(app.bus.clients.size, 1); ws.socket.destroy(); await ws.closed;
 });
 
+// Initial frames of a widget stream: retry + 7 snapshots (#344 added customOverlaySettings).
+const WIDGET_SNAPSHOTS = 8;
+
 test('widget snapshots and broadcasts are identical to SSE, including retry and frame lengths', async t => {
   const { app, port } = await fixture(t);
   const stream = await sse(port); t.after(stream.close);
   assert.equal(stream.status, 200); assert.match(stream.headers['content-type'], /^text\/event-stream/);
-  const expected = []; for (let i = 0; i < 7; i++) expected.push(await stream.next());
-  assert.deepEqual(expected.map(v => v.match(/^(?:event: (\w+)|retry:)/)?.[1] || 'retry'), ['retry', 'widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'theme']);
+  const expected = []; for (let i = 0; i < WIDGET_SNAPSHOTS; i++) expected.push(await stream.next());
+  assert.deepEqual(expected.map(v => v.match(/^(?:event: (\w+)|retry:)/)?.[1] || 'retry'), ['retry', 'widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'customOverlaySettings', 'theme']);
   const ws = await connect(port); assert.equal(ws.status, 101);
   for (const frame of expected) assert.equal(await text(ws), frame);
   for (const size of [1, 200, 70000]) {
@@ -223,7 +226,7 @@ test('custom-overlay tests stay on widgets and websocket overlays preserve alert
   const { variation } = await post('/api/alerts/raid/variations', { name: 'WS', overrides: { actions: [{ kind: 'scene', scene: 'WS' }] } });
   const widget = await connect(port), layer = await connect(port, { target: '/api/stream?client=overlay' });
   assert.equal(widget.status, 101); assert.equal(layer.status, 101);
-  for (let i = 0; i < 7; i++) await text(widget);
+  for (let i = 0; i < WIDGET_SNAPSHOTS; i++) await text(widget);
   for (let i = 0; i < 3; i++) await text(layer);
   const data = { text: 'only this overlay id' };
   await post(`/api/custom-overlays/${overlay.id}/test`, { event: 'chat', data });
@@ -241,7 +244,7 @@ test('custom-overlay tests stay on widgets and websocket overlays preserve alert
 test('eight websocket layers receive the same broadcast', async t => {
   const { app, port } = await fixture(t);
   const clients = await Promise.all(Array.from({ length: 8 }, () => connect(port)));
-  for (const ws of clients) { assert.equal(ws.status, 101); for (let i = 0; i < 7; i++) await text(ws); }
+  for (const ws of clients) { assert.equal(ws.status, 101); for (let i = 0; i < WIDGET_SNAPSHOTS; i++) await text(ws); }
   assert.equal(app.bus.clients.size, 8);
   app.bus.send('chat', { text: 'eight' }, ['widget']);
   for (const ws of clients) { assert.equal(await text(ws), 'event: chat\ndata: {"text":"eight"}\n\n'); ws.socket.destroy(); }
@@ -250,7 +253,7 @@ test('eight websocket layers receive the same broadcast', async t => {
 test('head, split and coalesced masked frames, ping/pong, close and protocol errors', async t => {
   const { app, port } = await fixture(t);
   const ws = await connect(port, { head: clientFrame(9, 'head') }); assert.equal(ws.status, 101);
-  for (let i = 0; i < 7; i++) await text(ws);
+  for (let i = 0; i < WIDGET_SNAPSHOTS; i++) await text(ws);
   let frame = await ws.next(); assert.equal(frame.opcode, 10); assert.equal(frame.data.toString(), 'head');
   const first = clientFrame(9, 'split'); ws.socket.write(first.subarray(0, 1));
   await delay(10); ws.socket.write(Buffer.concat([first.subarray(1), clientFrame(1, 'ignored'), clientFrame(9, 'joined')]));
@@ -259,7 +262,7 @@ test('head, split and coalesced masked frames, ping/pong, close and protocol err
   frame = await ws.next(); assert.equal(frame.opcode, 8); assert.equal(frame.data.readUInt16BE(), 1000);
   await ws.closed; await until(() => app.bus.clients.size === 0);
   for (const [bad, code] of [[clientFrame(1, 'bad', false), 1002], [Buffer.from([0x82, 0xff, 0, 0, 0, 0, 0, 1, 0, 1]), 1009]]) {
-    const other = await connect(port); assert.equal(other.status, 101); for (let i = 0; i < 7; i++) await text(other);
+    const other = await connect(port); assert.equal(other.status, 101); for (let i = 0; i < WIDGET_SNAPSHOTS; i++) await text(other);
     other.socket.write(bad); frame = await other.next(); assert.equal(frame.opcode, 8); assert.equal(frame.data.readUInt16BE(), code);
     await other.closed; await until(() => app.bus.clients.size === 0);
   }
@@ -268,7 +271,7 @@ test('head, split and coalesced masked frames, ping/pong, close and protocol err
 test('a slow websocket receives the bus gap before closing', async t => {
   const { app, port, sockets } = await fixture(t);
   app.bus.byteBudget = 1024; app.bus.backlogGraceMs = 20; app.bus.backlogStallMs = 40; app.bus.backlogMaxMs = 100;
-  const ws = await connect(port); assert.equal(ws.status, 101); for (let i = 0; i < 7; i++) await text(ws);
+  const ws = await connect(port); assert.equal(ws.status, 101); for (let i = 0; i < WIDGET_SNAPSHOTS; i++) await text(ws);
   const serverSocket = [...sockets][0], response = [...app.bus.clients][0].res; ws.socket.pause(); serverSocket.cork();
   for (let i = 0; i < 20; i++) app.bus.send('chat', { i, text: 'x'.repeat(8192) }, ['widget']);
   await until(() => response.writableEnded); serverSocket.uncork(); ws.socket.resume();
@@ -326,7 +329,7 @@ test('non-reading websocket is cut', async t => {
   Object.assign(app.bus, { byteBudget: 1024, backlogGraceMs: 20, backlogStallMs: 40, backlogMaxMs: 100 });
   const ws = await connect(port);
   assert.equal(ws.status, 101);
-  for (let i = 0; i < 7; i++) await text(ws);
+  for (let i = 0; i < WIDGET_SNAPSHOTS; i++) await text(ws);
   const server = [...sockets][0], response = [...app.bus.clients][0].res;
   response.closeStallMs = 200; response.closeMaxMs = 2000;
   let closes = 0, gap, gapBytes = 0; server.on('close', () => closes++);
@@ -362,7 +365,7 @@ test('keyed LAN widget upgrades and unkeyed LAN rejection matches HTTP', async t
   await denied.closed; assert.equal(app.bus.clients.size, 0);
   const ws = await connect(port, { target: `/api/stream?client=widget&key=${encodeURIComponent(app.store.config.access.key)}` });
   assert.equal(ws.status, 101); assert.match(ws.headers['set-cookie'], /^egk=.*HttpOnly/);
-  for (const name of ['retry', 'widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'theme']) {
+  for (const name of ['retry', 'widgets', 'interactive', 'interview', 'viewers', 'customOverlayVersions', 'customOverlaySettings', 'theme']) {
     assert.match(await text(ws), new RegExp(`^${name === 'retry' ? 'retry:' : `event: ${name}\\n`}`));
   }
   ws.socket.destroy(); await ws.closed; await until(() => app.bus.clients.size === 0);
@@ -389,7 +392,7 @@ test('UTF-8 validation works across frames on a real connection', async t => {
   const { app, port } = await fixture(t);
   for (const fragmented of [false, true]) {
     const ws = await connect(port); assert.equal(ws.status, 101);
-    for (let i = 0; i < 7; i++) await text(ws);
+    for (let i = 0; i < WIDGET_SNAPSHOTS; i++) await text(ws);
     const start = clientFrame(1, Buffer.from([0xe2])); start[0] &= 0x7f;
     ws.socket.write(Buffer.concat([start, clientFrame(9, 'ok'), clientFrame(0, Buffer.from([0x82, 0xac]))]));
     const pong = await ws.next(); assert.equal(pong.opcode, 10); assert.equal(pong.data.toString(), 'ok');

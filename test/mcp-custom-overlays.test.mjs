@@ -225,3 +225,24 @@ test('MCP: pide permisos de acción pero no puede aprobarlos ni ampliarlos', { t
     void call;
   } finally { c.close(); await close(); }
 });
+
+test('MCP: crear_overlay and editar_overlay declare fields (campos) and set values (valores)', async () => {
+  const s = await start();
+  const m = mcp(s.base);
+  try {
+    await m.init();
+    const tools = await m.list();
+    for (const name of ['crear_overlay', 'editar_overlay']) {
+      const props = tools.find(x => x.name === name).inputSchema.properties;
+      assert.ok(props.campos && props.valores, `${name} accepts campos and valores`);
+    }
+    const made = await m.call('crear_overlay', { nombre: 'Barra', campos: [{ key: 'title', label: 'Título', type: 'text', default: 'Hola' }], valores: { title: 'Sígueme' } });
+    assert.deepEqual([made.fields.map(field => field.key), made.values], [['title'], { title: 'Sígueme' }]);
+    const edited = await m.call('editar_overlay', { id: made.id, valores: { title: 'Nuevo' } });
+    assert.deepEqual(edited.values, { title: 'Nuevo' });
+    assert.equal(edited.updatedAt, made.updatedAt, 'values alone do not reload the layer');
+    const bad = await m.callRaw('editar_overlay', { id: made.id, valores: { nope: 1 } });
+    assert.equal(bad.result.isError, true);
+    assert.match(bad.result.content[0].text, /nope/);
+  } finally { m.close(); await s.close(); }
+});
