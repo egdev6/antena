@@ -75,3 +75,24 @@ test('an unsaved local edit survives a remote change to another field', { timeou
     await closeAll(() => chrome && closeChrome(chrome), stop);
   }
 });
+
+test('the global alert CSS changed outside the panel reaches the open alert editor (#351)', { timeout: 120000 }, async t => {
+  const bin = await skipIfNoBrowserOrUi(t);
+  if (!bin) return;
+  const { app, base, put, stop } = await start(t);
+  let chrome;
+  try {
+    chrome = await openChromePage(bin, base + '/#/alertas/follow/css');
+    const c = chrome.cdp, ev = s => evaluateChrome(c, s);
+    const tab = `[...document.querySelectorAll('main button, main [role=radio]')].find(b => b.textContent.trim() === 'Todas las alertas')`;
+    const GLOBAL = `[...document.querySelectorAll('main textarea')].find(x => (x.placeholder || '').startsWith('/* Se aplica a TODAS las alertas'))`;
+    await waitDom(c, `!!(${tab})`, { timeoutMs: 15000 });
+    await ev(`${tab}.click(); true`);
+    await waitDom(c, `!!(${GLOBAL})`, { timeoutMs: 5000 });
+    await put('/api/config', { overlay: { css: '.alert { --accent: #00E0FF; }' } });   // MCP css_global / another window
+    await waitDom(c, `${GLOBAL}.value === '.alert { --accent: #00E0FF; }'`, { timeoutMs: 8000 });
+    assert.equal(app.store.config.overlay.css, '.alert { --accent: #00E0FF; }');
+  } finally {
+    await closeAll(() => chrome && closeChrome(chrome), stop);
+  }
+});
