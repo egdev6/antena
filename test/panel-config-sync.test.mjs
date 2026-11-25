@@ -87,3 +87,28 @@ test('interactive, teleprompter and viewers settings written through the generic
     assert.ok(panel.events(event).length > before, `${section}: the panel gets a fresh ${event} snapshot`);
   }
 });
+
+test('meld connect/disconnect and OBS password writes reach the panel with correct passwordSet and no secret in any client', async t => {
+  const { app, panel, widget } = await fixture(t);
+  for (const o of [app.meld, app.program, app.obs].filter(Boolean)) o.start = () => {};   // never touch a real Meld/OBS
+  await new Promise((r, j) => { app.server.once('error', j); app.server.listen(0, '127.0.0.1', r); });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const call = (m, u, b) => fetch(base + u, { method: m, headers: { 'content-type': 'application/json' }, body: JSON.stringify(b ?? {}) });
+  const last = () => panel.events('config').at(-1);
+  assert.equal((await call('PUT', '/api/config', { obs: { password: 'SYNTH_OBS_PW_1' } })).status, 200);
+  assert.equal(last().obs.passwordSet, true);
+  assert.equal((await call('POST', '/api/config/set', { path: 'obs.password', value: '' })).status, 200);
+  assert.equal(last().obs.passwordSet, false);
+  assert.equal((await call('POST', '/api/meld/connect')).status, 200);
+  assert.equal(last().meld.enabled, true);
+  assert.equal((await call('POST', '/api/meld/disconnect')).status, 200);
+  assert.equal(last().meld.enabled, false);
+  for (const f of [...panel.frames, ...widget.frames]) assert.doesNotMatch(f, /SYNTH_OBS_PW_1/);
+});
+
+test('viewers written through the generic config send only the public projection to widgets', async t => {
+  const { app, panel, widget } = await fixture(t);
+  await app.store.patchConfig({ viewers: {} });
+  assert.deepEqual(Object.keys(widget.events('viewers').at(-1)).sort(), ['twitch', 'youtube']);
+  assert.ok(Object.hasOwn(panel.events('viewers').at(-1), 'settings'));
+});
