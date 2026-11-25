@@ -186,6 +186,9 @@ export interface FollowersList extends FollowerSelection { shown: FollowerSelect
 export interface ThanksSnapshot { names: { name: string; platform: Platform }[]; anonymous: number }
 /** Chat preview in the real sources (GET/POST /api/chat/preview, SSE chatPreview). */
 export interface ChatPreviewState { on: boolean; until: string | null }
+/** Social bar profile (widgets.socials.items). */
+export interface SocialProfile { id: string; platform: string; handle: string }
+export interface SocialsConfig { label?: string; items?: SocialProfile[]; css?: string }
 export interface WidgetsConfig {
   goals?: GoalConfig[];
   chat?: WidgetSection;
@@ -195,6 +198,7 @@ export interface WidgetsConfig {
   credits?: WidgetSection;
   thanks?: ThanksConfig;
   rotator?: RotatorConfig;
+  socials?: SocialsConfig;
   [k: string]: unknown;
 }
 /** Estado que consumen los widgets (engine.widgetState()). */

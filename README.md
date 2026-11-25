@@ -35,7 +35,7 @@ antena runs entirely on your PC and gives your stream a full alert and interacti
 - **Chat commands** (`!engram`, `!web`…) that trigger their own alerts, with permissions and cooldowns.
 - **Scheduled messages:** texts that post themselves to chat every X minutes (also as a highlighted announcement) and, if you want, also appear on screen as an alert.
 - **Interactives:** chat question queue, a tier list the chat votes on, and giveaways with an on-screen roulette.
-- **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker, live concurrent viewers, offline follower thank-yous, rotating on-screen messages and end credits.
+- **Widgets:** on-screen chat (Twitch + YouTube), goals, latest supporters, ticker, live concurrent viewers, offline follower thank-yous, rotating on-screen messages, a social bar and end credits.
 - **Custom overlays:** HTML, CSS and JavaScript layers for a scene or to frame the camera, written by you or by Claude via MCP, with live data and actions you approve.
 - **Stream recap:** totals, who to thank and a timeline with the minute of each event, in Markdown.
 - **Offline followers:** records Twitch followers gained while antena was closed, and YouTube's public subscribers plus an anonymous count; YouTube requires a connected account.
@@ -168,6 +168,7 @@ In the panel, the «Fuentes del programa de emisión» page lists all of them wi
 | Thank-yous | `http://127.0.0.1:4500/widget/thanks` | 900×200 |
 | Interview | `http://127.0.0.1:4500/widget/interview` | 1920×1080 |
 | On-screen messages | `http://127.0.0.1:4500/widget/rotator` | 1200×120 |
+| Social bar | `http://127.0.0.1:4500/widget/socials` | 1600×80 |
 
 **Latest and ticker.** They are separate widgets in **Widgets**. «Latest» shows the last supporter of each selected type (follower, sub, bits, raid, Super Chat, member or any event), with an optional label (`widgets.latest.label`; empty shows none, class `.label`). The ticker scrolls the most recent events of its types instead, so several subs can appear at once. It uses the «Latest» types until you pick its own (`widgets.ticker.items`, same values).
 
@@ -329,7 +330,7 @@ antena.slots.clear('chat'); // clear() removes all without animation
 
 Only named slots change; unmentioned slots keep their state. Names use `a-z0-9_-` (up to 32 characters). Each slot has `widget`, optional `params`, `rect` (canvas pixels `[x,y,w,h]` or `null`), `enter`/`exit` (`none`, `fade`, `left`, `right`, `up`, `down`; default `fade`), `layer` (`above` by default or `below`), `fit` (`slot` by default or `canvas`) and optional extra `css` applied after the widget's own CSS. `slot` makes `.root` fill the rectangle; `canvas` fills the canvas and preserves the page's own positioning and animations. A changed widget or parameters reload its page. Calls return nothing; invalid input is ignored and reported once in the overlay console. For safety, slot CSS rejects resource-loading tokens (`url`, `image-set`, `image(`, `src(`, `@import`, `@namespace`, `@font-face`), CSS escapes and comments: it runs on a trusted same-origin page and must not make requests on the sandbox's behalf.
 
-Allowed: `chat` (`variant`), `viewers` (`layout: 'column'`), `goal` (`id`), `latest` (`items`, `layout: 'column'`), `ticker`, `thanks`, `giveaway`, `question` (`nocount`), `tierlist` (`id`, `nopool`), `interview` (`item`), `credits` (`loop`, `transparent`), `rotator`, `alerts` and `custom` (`id` of another overlay). No arbitrary URLs, self-embedding or custom overlays nested inside another embedded overlay. Maximum 12 slots; finite rects, width/height 1–4320 and x/y within ±2 canvas dimensions. Updates are coalesced per animation frame and limited to 20/s. The shell embeds these public pages, so no action permission is needed; it keeps the user frame sandboxed.
+Allowed: `chat` (`variant`), `viewers` (`layout: 'column'`), `goal` (`id`), `latest` (`items`, `layout: 'column'`), `ticker`, `thanks`, `giveaway`, `question` (`nocount`), `tierlist` (`id`, `nopool`), `interview` (`item`), `credits` (`loop`, `transparent`), `rotator`, `socials`, `alerts` and `custom` (`id` of another overlay). No arbitrary URLs, self-embedding or custom overlays nested inside another embedded overlay. Maximum 12 slots; finite rects, width/height 1–4320 and x/y within ±2 canvas dimensions. Updates are coalesced per animation frame and limited to 20/s. The shell embeds these public pages, so no action permission is needed; it keeps the user frame sandboxed.
 
 Embedded alerts and interviews suppress audio while Page Visibility reports the overlay hidden; hidden YouTube interview media restarts when visible. **Meld's off-air visibility has not been verified**: use one browser source and Duplicator layers in other scenes to prevent duplicated audio even if Meld does not mark sources hidden.
 
@@ -383,6 +384,15 @@ The pause button also stops scheduled messages, automatic ones and «Send now».
 - **Label** (default «Mensaje»; empty hides it) and **custom CSS** with the classes `.root`, `.item`, `.item.on`, `.label` and `.text`.
 
 The preview rotates every 5 s with your messages so you can check all of them. Custom overlays can embed it as the `rotator` slot. Via MCP: `editar_widget` with `widget: "rotator"`; the message list is replaced as a whole.
+
+### Social bar
+
+**Widgets › Redes sociales** (`/widget/socials`, 1600×80) shows your social profiles in a row: each platform's icon with your nick.
+
+- **Networks:** add, edit, remove and reorder up to 12. Platforms: Twitch, YouTube, X, Instagram, TikTok, GitHub, Discord, Kick, LinkedIn and Web. A network without a nick is not shown; with no networks the layer stays empty.
+- **Label** (for example «Sígueme»; empty hides it) and **custom CSS** with the classes `.root`, `.label`, `.item`, `.item-<platform>`, `.ico` and `.handle`.
+
+Nicks are shown as text, never as markup. The brand icons come from Simple Icons (CC0); X, TikTok and GitHub use a white glyph so they stay visible on dark backgrounds (`.item-x .ico path { fill: … }` changes it). The profiles live in `widgets.socials`, so, like the other widget settings, they travel with saved themes. Custom overlays can embed it as the `socials` slot. Via MCP: `editar_widget` with `widget: "socials"`; the list is replaced as a whole.
 
 ### Questions, tier list and giveaway
 

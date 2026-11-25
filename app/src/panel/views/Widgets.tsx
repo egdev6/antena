@@ -11,8 +11,9 @@ import { useManualSave } from '../../lib/draft';
 import { Box, Card, CardGroup, Dot, ListPanel, NameCell, PageHead, SaveBar, Slide, Tags } from '../../lib/layout';
 import { go } from '../router';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { FollowerEntry, FollowersList, GoalBar, GoalConfig, GoalValue, RotatorMessage, WidgetSection } from '../../lib/types';
+import type { FollowerEntry, FollowersList, GoalBar, GoalConfig, GoalValue, RotatorMessage, SocialProfile, WidgetSection } from '../../lib/types';
 import { CHAT_ANIMS, type ChatAnim } from '../../../../public/widgets/chat-anims.js';
+import { SOCIAL_NAMES } from '../../../../public/social-icons.js';
 import { ChatWidget } from './ChatWidget';
 import { InterviewSettings } from './InterviewWidget';
 
@@ -23,6 +24,7 @@ const INFO: Record<string, { title: string; path: string; size: string; w: numbe
   ticker: { title: 'Ticker', path: '/widget/ticker', size: '1920×64', w: 1920, h: 120, desc: 'Una banda que recorre los apoyos más recientes de los tipos que elijas.' },
   viewers: { title: 'Espectadores', path: '/widget/viewers', size: '900×160', w: 900, h: 160, desc: 'Espectadores a la vez en Twitch y YouTube, por separado y en total. Se actualiza solo mientras emites.' },
   rotator: { title: 'Mensajes en pantalla', path: '/widget/rotator', size: '1200×120', w: 1200, h: 120, desc: 'Una lista de mensajes que van rotando en pantalla cada cierto tiempo, en orden o al azar. Son distintos de los mensajes programados del chat.' },
+  socials: { title: 'Redes sociales', path: '/widget/socials', size: '1600×80', w: 1600, h: 80, desc: 'Tus redes sociales en una barra: el icono de cada plataforma con tu nick.' },
   thanks: { title: 'Agradecimientos', path: '/widget/thanks', size: '900×200', w: 900, h: 200, desc: 'Agradece a quienes te siguieron mientras antena estaba cerrada.' },
   interview: { title: 'Entrevista', path: '/widget/interview', size: '1920×1080', w: 1920, h: 1080, desc: 'La pregunta de la entrevista a pantalla completa, con su imagen, vídeo, YouTube o post y la fuente.' },
   credits: { title: 'Créditos', path: '/widget/credits', size: '1920×1080', w: 1920, h: 1080, desc: 'Créditos finales con todos los que han apoyado en el directo.' },
@@ -82,6 +84,7 @@ export function Widget({ name }: { name: string }) {
     <p className="hint mt">Parámetros: <code>?platforms=twitch</code> · <code>?layout=column</code> · <code>?total=0</code> · <code>?peak=1</code>. La cifra se refresca cada «pollSec» de la alerta de récord.</p></>;
   if (name === 'thanks') form = <ThanksSettings />;
   if (name === 'rotator') form = <RotatorSettings />;
+  if (name === 'socials') form = <SocialsSettings />;
   if (name === 'interview') form = <InterviewSettings />;
   if (name === 'credits') form = <>
     <div className="row2"><WField w="credits" f="title" label="Título" /><WField w="credits" f="speed" label="Velocidad (px/s)" type="number" min={10} max={300} /></div>
@@ -131,6 +134,32 @@ function RotatorSettings() {
     <WField w="rotator" f="css" label="CSS personalizado" type="css" placeholder=".item .text { font-size: 32px; }" />
     <p className="css-help">Clases: <code>.root</code> <code>.item</code> <code>.item.on</code> <code>.label</code> <code>.text</code></p>
     <p className="hint mt">La vista previa rota cada 5 s para que veas todos los mensajes. Los cambios se aplican al guardarlos.</p>
+  </>;
+}
+
+/** Social bar: ordered list of profiles (platform + nick), optional label. */
+function SocialsSettings() {
+  const items = useLive(s => (s.config.widgets.socials?.items || []) as SocialProfile[]);
+  const setItems = (next: SocialProfile[]) => patchWidgets({ socials: { items: next } });
+  const edit = (i: number, change: Partial<SocialProfile>) => setItems(items.map((x, j) => (j === i ? { ...x, ...change } : x)));
+  const move = (i: number, d: number) => { const next = [...items]; const [x] = next.splice(i, 1); next.splice(i + d, 0, x); setItems(next); };
+  return <>
+    <WField w="socials" f="label" label="Etiqueta" placeholder="Sígueme (vacía = sin etiqueta)" />
+    <h3 className="sub-h">Redes</h3>
+    {!items.length && <p className="hint">Añade al menos una red para que el widget muestre algo.</p>}
+    {items.map((x, i) => <div className="row tight" key={x.id} style={{ flexWrap: 'nowrap', alignItems: 'center', marginBottom: 8 }}>
+      <select style={{ flex: 'none', width: 150 }} aria-label={`Red ${i + 1}`} value={x.platform} onChange={e => edit(i, { platform: e.target.value })}>
+        {Object.entries(SOCIAL_NAMES).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+      </select>
+      <input style={{ flex: 1, minWidth: 0 }} aria-label={`Nick ${i + 1}`} value={x.handle} maxLength={60} placeholder="@tu_nick o tu web" onChange={e => edit(i, { handle: e.target.value })} />
+      <IconBtn icon={IC.up} label="Subir" disabled={i === 0} onClick={() => move(i, -1)} />
+      <IconBtn icon={IC.down} label="Bajar" disabled={i === items.length - 1} onClick={() => move(i, 1)} />
+      <IconBtn icon={IC.x} label="Quitar red" onClick={() => setItems(items.filter((_, j) => j !== i))} />
+    </div>)}
+    <div><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={items.length >= 12} onClick={() => setItems([...items, { id: 's' + Date.now().toString(36), platform: 'twitch', handle: '' }])}><Icon d={IC.plus} className="eg-btn__icon" />Añadir red</button></div>
+    <WField w="socials" f="css" label="CSS personalizado" type="css" placeholder=".item .handle { font-size: 32px; }" />
+    <p className="css-help">Clases: <code>.root</code> <code>.label</code> <code>.item</code> <code>.item-{'<plataforma>'}</code> <code>.ico</code> <code>.handle</code></p>
+    <p className="hint mt">Las redes sin nick no se muestran. Los cambios se aplican al guardarlos.</p>
   </>;
 }
 
@@ -221,7 +250,7 @@ export function Widgets({ parts }: { parts: string[] }) {
     <PageHead crumb={`Configurar · ${Object.keys(INFO).length + 5} widgets`} title="Widgets"
       desc="Cada uno es una fuente de navegador para el programa de emisión (sus URL también están en Fuentes del programa de emisión). Cuando la app trae un widget nuevo, aparece aquí como una tarjeta más." />
     <div className="lv-groups">
-      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={8} note="Se ajustan aquí y se dejan puestas en el programa de emisión" wide>
+      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={9} note="Se ajustan aquí y se dejan puestas en el programa de emisión" wide>
         {fixed('chat', <div className="lv-wchat"><i style={{ width: '62%' }} /><i style={{ width: '80%' }} /><i style={{ width: '48%' }} /><i style={{ width: '72%' }} /><i style={{ width: '56%' }} /></div>,
           [...((w.chat?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.chat?.css)])}
         <Card href="#/widgets/objetivos" label="Abrir Objetivos" open={open === 'objetivos'} title="Objetivos" aside={<span className="lv-cmeta">1 capa por objetivo</span>}
@@ -240,6 +269,8 @@ export function Widgets({ parts }: { parts: string[] }) {
         {fixed('rotator', <div className="lv-wbar"><i /></div>,
           [{ t: (w.rotator?.messages || []).length ? `${(w.rotator.messages as unknown[]).length} mensajes` : 'Sin mensajes todavía', on: !!(w.rotator?.messages || []).length },
             { t: w.rotator?.order === 'random' ? 'Aleatorio' : 'En orden' }, ...css(w.rotator?.css)])}
+        {fixed('socials', <div className="lv-wbar"><i /><i /><i /><i /></div>,
+          [{ t: (w.socials?.items || []).length ? `${(w.socials.items as unknown[]).length} redes` : 'Sin redes todavía', on: !!(w.socials?.items || []).length }, ...css(w.socials?.css)])}
         {fixed('credits', <div className="lv-wcred"><b>GRACIAS</b><i /><i /><i /><i /></div>, [{ t: w.credits?.title || 'Créditos del directo' }, ...css(w.credits?.css)],
           <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={guard(() => post('/api/credits/play'), 'Créditos en marcha')}>Lanzar créditos</button>)}
       </CardGroup>

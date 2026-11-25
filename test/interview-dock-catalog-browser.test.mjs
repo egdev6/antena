@@ -90,12 +90,12 @@ test('interview card is a live-managed widget with accurate counts and live stat
   const card = `${liveGroup}.querySelector('a.lv-hit[href="#/entrevista"]')?.closest('.lv-card')`;
   assert.ok(await dom(c, `!!(${card})`), 'the live-managed interview card links to its own page');
   assert.equal(await dom(c, `${layerGroup}.querySelectorAll('a.lv-hit[href="#/widgets/interview"]').length`), 0);
-  assert.equal(await dom(c, `${layerGroup}.querySelectorAll('.lv-card').length`), 8);
-  assert.equal(await dom(c, `${layerGroup}.querySelector('.lv-group-h .n').textContent`), '8');
+  assert.equal(await dom(c, `${layerGroup}.querySelectorAll('.lv-card').length`), 9);
+  assert.equal(await dom(c, `${layerGroup}.querySelector('.lv-group-h .n').textContent`), '9');
   assert.equal(await dom(c, `${liveGroup}.querySelectorAll('.lv-card').length`), 5);
   assert.equal(await dom(c, `${liveGroup}.querySelector('.lv-group-h .n').textContent`), '5');
-  assert.match(await dom(c, `document.querySelector('main .view-head .crumb').textContent`), /13 widgets/);
-  assert.equal(await dom(c, `document.querySelector('#nav a[href="#/widgets"] .nav-n').textContent`), '13');
+  assert.match(await dom(c, `document.querySelector('main .view-head .crumb').textContent`), /14 widgets/);
+  assert.equal(await dom(c, `document.querySelector('#nav a[href="#/widgets"] .nav-n').textContent`), '14');
   await waitDom(c, `(${card})?.querySelector('.lv-dot')?.textContent.includes('Sin entrevista activa')`, { timeoutMs: 9000 });
   assert.ok(await dom(c, `!!${liveGroup}.querySelector('a.lv-hit[href="#/preguntas"]')`), 'existing live cards remain');
   await ctx.call('POST', '/api/interviews/import', PACK);

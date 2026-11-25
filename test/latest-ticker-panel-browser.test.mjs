@@ -39,7 +39,9 @@ test('the ticker is its own widget and «Últimos» shows its own label', { time
     await waitDom(c, `!!(${save})`, { timeoutMs: 5000 });
     await ev(`${save}.click(); true`);
     await until(async () => JSON.stringify((await widgets()).ticker?.items) === JSON.stringify(['follow', 'sub', 'cheer']), 'the ticker types were not saved');
-    await waitDom(c, `!(${save})`, { timeoutMs: 8000 });   // the panel has no pending changes before leaving the page
+    // The router blocks leaving while a save is in flight: wait until the panel itself finished saving.
+    // (both buttons are disabled while saving too, so wait for the save bar status itself)
+    await waitDom(c, `document.querySelector('.lv-dirty')?.textContent === 'Todo guardado'`, { timeoutMs: 8000 });
     assert.deepEqual((await widgets()).latest.items, ['follow', 'sub'], '«Últimos» keeps its own types');
 
     // «Últimos» page: its own label field.
