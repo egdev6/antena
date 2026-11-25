@@ -274,11 +274,11 @@ Los botones de **fragmentos** insertan recetas listas: otro color, sin inclinaci
 
 ### Overlays propios
 
-Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un marco para la cámara, un título animado, un cartel para una escena. Los escribes tú en **Overlays** o se los pides a Claude por MCP (`crear_overlay`); lo que hace el agente aparece en el panel sin recargar.
+Una capa nueva para el programa de emisión hecha con HTML, CSS y JavaScript: un marco para la cámara, un título animado, un cartel para una escena. Los escribes tú en **Personalizados** (antes «Overlays»; las URL, la API y las herramientas MCP conservan sus nombres) o se los pides a Claude por MCP (`crear_overlay`); lo que hace el agente aparece en el panel sin recargar. Con campos de ajustes funcionan como widgets propios: un formulario en el panel, sin tocar el código.
 
 | Dónde | Qué hay |
 |---|---|
-| Panel › **Overlays** | Lista en tarjetas, editor con pestañas HTML, CSS y JavaScript, CSS por tema, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
+| Panel › **Personalizados** | Lista en tarjetas, editor con pestañas HTML, CSS, JavaScript y Campos (los campos en JSON), formulario «Valores» generado a partir de los campos, CSS por tema, vista previa en vivo, ancho y alto, fondo transparente, permisos, copiar URL y borrar |
 | Programa de emisión | Añade una fuente de navegador con `http://127.0.0.1:4500/custom/<id>` y el tamaño del overlay (también está en la página «Fuentes del programa de emisión», como «Overlay · nombre») |
 | Al guardar | El código del overlay recarga las capas abiertas; el CSS del tema y los cambios de tema se aplican en vivo sin recargar el marco |
 

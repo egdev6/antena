@@ -275,11 +275,11 @@ The **snippets** buttons insert ready-made recipes: another color, no tilt, smal
 
 ### Custom overlays
 
-A new layer for the broadcast program made of HTML, CSS and JavaScript: a frame for the camera, an animated title, a card for a scene. You write them in **Overlays**, or ask Claude via MCP (`crear_overlay`); whatever the agent does shows up in the panel without reloading.
+A new layer for the broadcast program made of HTML, CSS and JavaScript: a frame for the camera, an animated title, a card for a scene. You write them in **Personalizados** (formerly «Overlays»; URLs, API and MCP tools keep their names), or ask Claude via MCP (`crear_overlay`); whatever the agent does shows up in the panel without reloading. With settings fields they work as custom widgets: a form in the panel, no code changes.
 
 | Where | What you get |
 |---|---|
-| Panel › **Overlays** | Card list, editor with HTML, CSS and JavaScript tabs, theme-specific CSS, live preview, width and height, transparent background, permissions, copy URL and delete |
+| Panel › **Personalizados** | Card list, editor with HTML, CSS, JavaScript and Campos (fields as JSON) tabs, a «Valores» form generated from the fields, theme-specific CSS, live preview, width and height, transparent background, permissions, copy URL and delete |
 | Broadcast program | Add a browser source with `http://127.0.0.1:4500/custom/<id>` and the overlay size (it is also on the «Fuentes del programa de emisión» page, as «Overlay · name») |
 | On save | Saving overlay code reloads open layers; saving theme-specific CSS or switching themes updates them live without a frame reload |
 

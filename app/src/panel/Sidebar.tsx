@@ -53,7 +53,7 @@ export function Sidebar({ current }: { current: string }) {
       { href: '#/comandos', label: 'Comandos de chat', tail: num(s.config.commands?.length) },
       { href: '#/mensajes', label: 'Mensajes programados', tail: num(s.config.timers?.length) },
       { href: '#/widgets', label: 'Widgets', tail: widgetTail },
-      { href: '#/overlays', label: 'Overlays', tail: num((s.customOverlays || []).length) },
+      { href: '#/overlays', label: 'Personalizados', tail: num((s.customOverlays || []).length) },
       { href: '#/atajos', label: 'Atajos y Stream Deck', tail: num(s.config.shortcuts?.length) },
     ]],
     ['produccion', 'Producción', [

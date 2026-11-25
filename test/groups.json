@@ -176,6 +176,7 @@
     "test/conexiones-obs-browser.test.mjs",
     "test/config-transfer-browser.test.mjs",
     "test/custom-overlay-settings-browser.test.mjs",
+    "test/custom-overlay-settings-panel-browser.test.mjs",
     "test/custom-overlays-browser.test.mjs",
     "test/custom-overlays-panel-browser.test.mjs",
     "test/detail-header-browser.test.mjs",
