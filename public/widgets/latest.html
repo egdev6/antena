@@ -13,6 +13,7 @@
 .item.flash{animation:flash 1.2s ease-out}
 @keyframes flash{0%{box-shadow:0 0 0 1px color-mix(in srgb,var(--red-2) calc(90% * var(--glow,1)),transparent),0 0 60px var(--red)}100%{}}
 .empty{opacity:.45}
+.root>.label{flex-basis:100%;margin:0;font:800 18px/1 var(--f-cond);letter-spacing:.14em;text-transform:uppercase;color:var(--red)}
 }
 </style></head>
 <body><div class="root" id="root"></div>
@@ -27,7 +28,8 @@ function apply(s) {
   const cfg = s.widgets?.latest || {};
   setCss(cfg.css);
   const items = (qs.get('items')?.split(',') || cfg.items || ['follow', 'sub', 'cheer', 'superchat']).filter(k => LABELS[k]);
-  root.innerHTML = items.map(k => {
+  // Optional label (widgets.latest.label): empty shows nothing.
+  root.innerHTML = (cfg.label ? `<p class="label">${esc(cfg.label)}</p>` : '') + items.map(k => {
     const e = s.latest?.[k];
     const changed = e && prev[k] && prev[k] !== e.user + e.at;
     return `<div class="item eg-card soft ${e ? '' : 'empty'} ${changed ? 'flash' : ''} item-${k}"><p class="kick">${LABELS[k]}</p><p class="big">${e ? esc(e.user) : '—'}</p>${e && extra(k, e) ? `<p class="extra">${esc(extra(k, e))}</p>` : ''}</div>`;

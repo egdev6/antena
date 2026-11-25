@@ -125,7 +125,8 @@ test('#161: page-style headers preserve descriptions and navigation on detail pa
   await wait(c, `!!document.querySelector('main > .view-head h1')`);
   const cases = [
     { name: 'chat', hash: '#/widgets/chat', selector: '.lv-slide .chat-variant-editor', back: '#/widgets', close: '#/widgets', label: 'Chat en pantalla', description: 'El chat de Twitch y YouTube juntos, con tu estilo. Ideal para la escena de solo cámara.' },
-    { name: 'últimos y ticker', hash: '#/widgets/latest', selector: '.lv-slide iframe[src="/widget/ticker?demo"]', back: '#/widgets', close: '#/widgets', label: 'Últimos y ticker', description: 'Último seguidor, sub, bits… y una banda que recorre los últimos apoyos.' },
+    { name: 'últimos', hash: '#/widgets/latest', selector: '.lv-slide iframe[src="/widget/latest?demo"]', back: '#/widgets', close: '#/widgets', label: 'Últimos', description: 'El último seguidor, sub, bits… de cada tipo que marques.' },
+    { name: 'ticker', hash: '#/widgets/ticker', selector: '.lv-slide iframe[src="/widget/ticker?demo"]', back: '#/widgets', close: '#/widgets', label: 'Ticker', description: 'Una banda que recorre los apoyos más recientes de los tipos que elijas.' },
     { name: 'overlay', hash: `#/overlays/${encodeURIComponent(overlay.id)}`, selector: '.lv-slide input[aria-label="Nombre del overlay"]', back: '#/overlays', close: '#/overlays', label: 'Detalle', editable: true },
     { name: 'comando', hash: `#/comandos/${encodeURIComponent(command.id)}`, selector: '.lv-slide input[aria-label="Disparador"]', back: '#/comandos', close: '#/comandos', label: 'Detalle', editable: true },
     { name: 'espectadores', hash: '#/widgets/viewers', selector: '.lv-slide iframe[src="/widget/viewers?demo"]', back: '#/widgets', close: '#/widgets', label: 'Espectadores', description: 'Espectadores a la vez en Twitch y YouTube, por separado y en total. Se actualiza solo mientras emites.' },

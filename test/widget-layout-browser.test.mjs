@@ -66,6 +66,7 @@ test('O3.3 páginas de widgets: fuente de navegador primero a la izquierda y vis
       ['#/widgets/chat', '/widget/chat'],
       [`#/widgets/objetivos/${encodeURIComponent(goal.id)}`, `/widget/goal?id=${encodeURIComponent(goal.id)}`],
       ['#/widgets/latest', '/widget/latest'],
+      ['#/widgets/ticker', '/widget/ticker'],
       ['#/widgets/credits', '/widget/credits'],
     ];
     for (const [hash, url] of pages) {
@@ -89,11 +90,13 @@ test('O3.3 páginas de widgets: fuente de navegador primero a la izquierda y vis
       assert.equal(await dom(chrome, `window.__copied[0]`), base + url, `${hash}: copia la URL`);
     }
 
-    // Últimos y ticker: dos fuentes en el mismo bloque y dos vistas previas a la derecha
-    await dom(chrome, `location.hash = '#/widgets/latest'`);
-    await waitDom(chrome.cdp, `!!document.querySelector('main .browser-source')`, { timeoutMs: 12000 });
-    assert.equal(await dom(chrome, `Array.from(document.querySelectorAll('main .browser-source .overlay-url code')).map(c => c.textContent).join(' ')`), `${base}/widget/latest ${base}/widget/ticker`);
-    assert.equal(await dom(chrome, `document.querySelectorAll('main .preview-col iframe').length`), 2);
+    // Últimos and Ticker are separate widgets: one source and one preview each
+    for (const [hash, url] of [['#/widgets/latest', '/widget/latest'], ['#/widgets/ticker', '/widget/ticker']]) {
+      await dom(chrome, `location.hash = ${JSON.stringify(hash)}`);
+      await waitDom(chrome.cdp, `location.hash === ${JSON.stringify(hash)} && !!document.querySelector('main .browser-source')`, { timeoutMs: 12000 });
+      assert.equal(await dom(chrome, `Array.from(document.querySelectorAll('main .browser-source .overlay-url code')).map(c => c.textContent).join(' ')`), base + url);
+      assert.equal(await dom(chrome, `document.querySelectorAll('main .preview-col iframe').length`), 1);
+    }
 
     // Tier list sin ninguna en pantalla: la vista previa de ajustes enseña datos de ejemplo;
     // al poner una lista en pantalla, enseña esa

@@ -1,4 +1,4 @@
-// Ticker: it shows the same event types as the «Últimos» block (widgets.latest.items).
+// Ticker: it follows the «Últimos» types (widgets.latest.items) until it has its own (widgets.ticker.items).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -8,7 +8,7 @@ import { createApp } from '../src/server.mjs';
 import { closeAll, closeChrome, findChrome, openChromePage, waitDom } from './helpers/react-browser.mjs';
 import { evaluateChrome } from './helpers/chrome-dom.mjs';
 
-test('the ticker follows the types selected for «Últimos»', { timeout: 60000 }, async t => {
+test('the ticker follows «Últimos» until it gets its own types', { timeout: 60000 }, async t => {
   const bin = await findChrome();
   if (!bin) return t.skip('sin Chrome local');
   const dataDir = await mkdtemp(path.join(tmpdir(), 'antena-ticker-types-'));
@@ -34,6 +34,13 @@ test('the ticker follows the types selected for «Últimos»', { timeout: 60000 
     await call('PUT', '/api/widgets', { latest: { items: ['superchat'] } });   // nothing matches: the placeholder text
     await waitDom(c, `${users}.length === 1 && ${users}[0] === 'egdev.es'`, { timeoutMs: 8000 });
     assert.deepEqual(await evaluateChrome(c, users), ['egdev.es']);
+
+    // Own selection: the ticker stops following «Últimos».
+    await call('PUT', '/api/widgets', { ticker: { items: ['cheer', 'raid'] } });
+    await waitDom(c, `JSON.stringify(${users}) === JSON.stringify(['u_cheer', 'u_raid'])`, { timeoutMs: 8000 });
+    await call('PUT', '/api/widgets', { latest: { items: ['follow'] } });
+    await new Promise(r => setTimeout(r, 600));
+    assert.deepEqual(await evaluateChrome(c, users), ['u_cheer', 'u_raid']);
   } finally {
     await closeAll(() => chrome && closeChrome(chrome), () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
   }

@@ -34,6 +34,8 @@ const str = { kind: 'str' };
 const bool = { kind: 'bool' };
 const en = values => ({ kind: 'enum', values });
 const arrStr = values => ({ kind: 'arrStr', values });
+// Support types offered by «Últimos» and the ticker (the groups mirror session.latest()).
+const SUPPORT_TYPES = ['follow', 'sub', 'cheer', 'raid', 'superchat', 'member', 'any'];
 const list = (item, o = {}) => ({ kind: 'list', item, ...o });   // lista de objetos con esquema por elemento
 
 // Objetivos por plataforma (#128): cada objetivo es una caja con barras. La métrica válida
@@ -301,8 +303,9 @@ export const CONFIG_SCHEMA = {
     chat: CHAT_FIELDS,
     chatVariants: CHAT_VARIANTS,
     goals: list(GOAL_BOX),
-    latest: { items: arrStr(['follow', 'sub', 'cheer', 'superchat']), css: str },
-    ticker: { label: str, count: num({ int: true, min: 1, max: 100 }), speed: num({ int: true, min: 10, max: 500 }), css: str },
+    latest: { items: arrStr(SUPPORT_TYPES), label: str, css: str },
+    // items is optional: without it the ticker shows the «Últimos» types.
+    ticker: { label: str, items: arrStr(SUPPORT_TYPES), count: num({ int: true, min: 1, max: 100 }), speed: num({ int: true, min: 10, max: 500 }), css: str },
     credits: { title: str, subtitle: str, speed: num({ int: true, min: 10, max: 500 }), css: str },
     viewers: { platforms: arrStr(['twitch', 'youtube']), showTotal: bool, showPeak: bool, css: str },
     thanks: THANKS_FIELDS,

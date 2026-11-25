@@ -12,6 +12,12 @@ export function registerWidgetRoutes({ route, store, engine }) {
       const [error] = validatePath('widgets.chat.layout', patch.chat.layout ?? false);
       if (error) throw httpError(400, error.message);
     }
+    // Support types and the «Últimos» label are new fields: validate only them, keep the legacy merge for the rest.
+    for (const [name, field] of [['latest', 'items'], ['latest', 'label'], ['ticker', 'items']]) {
+      if (!patch[name] || typeof patch[name] !== 'object' || !Object.hasOwn(patch[name], field)) continue;
+      const [error] = validatePath(`widgets.${name}.${field}`, patch[name][field]);
+      if (error) throw httpError(400, error.message);
+    }
     if (Object.hasOwn(patch, 'thanks')) {
       const [error] = validatePath('widgets.thanks', patch.thanks);
       if (error) throw httpError(400, error.message);

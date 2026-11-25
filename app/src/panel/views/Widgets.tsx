@@ -19,13 +19,15 @@ import { InterviewSettings } from './InterviewWidget';
 export const origin = () => location.origin;
 const INFO: Record<string, { title: string; path: string; size: string; w: number; h: number; desc: string }> = {
   chat: { title: 'Chat en pantalla', path: '/widget/chat', size: '600×900', w: 600, h: 900, desc: 'El chat de Twitch y YouTube juntos, con tu estilo. Ideal para la escena de solo cámara.' },
-  latest: { title: 'Últimos y ticker', path: '/widget/latest', size: '1400×200', w: 1400, h: 260, desc: 'Último seguidor, sub, bits… y una banda que recorre los últimos apoyos.' },
+  latest: { title: 'Últimos', path: '/widget/latest', size: '1400×200', w: 1400, h: 260, desc: 'El último seguidor, sub, bits… de cada tipo que marques.' },
+  ticker: { title: 'Ticker', path: '/widget/ticker', size: '1920×64', w: 1920, h: 120, desc: 'Una banda que recorre los apoyos más recientes de los tipos que elijas.' },
   viewers: { title: 'Espectadores', path: '/widget/viewers', size: '900×160', w: 900, h: 160, desc: 'Espectadores a la vez en Twitch y YouTube, por separado y en total. Se actualiza solo mientras emites.' },
   rotator: { title: 'Mensajes en pantalla', path: '/widget/rotator', size: '1200×120', w: 1200, h: 120, desc: 'Una lista de mensajes que van rotando en pantalla cada cierto tiempo, en orden o al azar. Son distintos de los mensajes programados del chat.' },
   thanks: { title: 'Agradecimientos', path: '/widget/thanks', size: '900×200', w: 900, h: 200, desc: 'Agradece a quienes te siguieron mientras antena estaba cerrada.' },
   interview: { title: 'Entrevista', path: '/widget/interview', size: '1920×1080', w: 1920, h: 1080, desc: 'La pregunta de la entrevista a pantalla completa, con su imagen, vídeo, YouTube o post y la fuente.' },
   credits: { title: 'Créditos', path: '/widget/credits', size: '1920×1080', w: 1920, h: 1080, desc: 'Créditos finales con todos los que han apoyado en el directo.' },
 };
+const SUPPORT_TYPES: [string, string][] = [['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['member', 'Miembro'], ['any', 'Cualquier evento']];
 const q = (p: string, mode: string) => `${p}${p.includes('?') ? '&' : '?'}${mode}`;
 
 function WField({ w, f, label, type = 'text', ...rest }: { w: string; f: string; label: ReactNode; type?: string; [k: string]: unknown }) {
@@ -35,8 +37,13 @@ function WField({ w, f, label, type = 'text', ...rest }: { w: string; f: string;
   if (type === 'css') return <label>{label}<textarea className="code" spellCheck={false} value={val === undefined ? '' : String(val)} onKeyDown={codeTab} {...rest} onChange={e => patchWidgets({ [w]: { [f]: e.target.value } })} /></label>;
   return <label>{label}<input value={val === undefined ? '' : String(val)} {...rest} onChange={e => patchWidgets({ [w]: { [f]: e.target.value } })} /></label>;
 }
-function ListChecks({ w, f, items }: { w: string; f: string; items: [string, string][] }) {
-  const cur = useLive(s => ((((s.config.widgets as WidgetSection | undefined)?.[w] as WidgetSection | undefined)?.[f]) as string[] | undefined) || []);
+/** Checkboxes for a list field. With `fallback`, an unset field shows that other field's values;
+ *  the first change saves the whole list into this field. */
+function ListChecks({ w, f, items, fallback }: { w: string; f: string; items: [string, string][]; fallback?: [string, string] }) {
+  const field = (s: any, ww: string, ff: string) => ((s.config.widgets as WidgetSection | undefined)?.[ww] as WidgetSection | undefined)?.[ff] as string[] | undefined;
+  const own = useLive(s => field(s, w, f));
+  const inherited = useLive(s => (fallback ? field(s, fallback[0], fallback[1]) : undefined));
+  const cur = own || inherited || [];
   return <>{items.map(([k, l]) => <label className="check" key={k}><input type="checkbox" checked={cur.includes(k)} onChange={e => patchWidgets({ [w]: { [f]: e.target.checked ? [...cur, k] : cur.filter(x => x !== k) } })} /> {l}</label>)}</>;
 }
 
@@ -52,12 +59,13 @@ export function Widget({ name }: { name: string }) {
   if (name === 'chat') return <ChatWidget info={info} anims={CHAT_ANIM_OPTIONS} />;
   let form: ReactNode = null;
   if (name === 'latest') form = <>
-    <h3 className="sub-h">Últimos</h3>
-    <div className="row lead"><ListChecks w="latest" f="items" items={[['follow', 'Seguidor'], ['sub', 'Suscripción'], ['cheer', 'Bits'], ['raid', 'Raid'], ['superchat', 'Super Chat'], ['member', 'Miembro'], ['any', 'Cualquier evento']]} /></div>
+    <WField w="latest" f="label" label="Etiqueta" placeholder="Últimos (vacía = sin etiqueta)" />
+    <div className="lbl">Tipos de apoyo<div className="row field-ctl"><ListChecks w="latest" f="items" items={SUPPORT_TYPES} /></div></div>
     <WField w="latest" f="css" label="CSS de «últimos»" type="css" placeholder=".item .big { font-size: 34px; }" />
-    <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.item</code> <code>.item-{'<tipo>'}</code> <code>.item.empty</code> <code>.item.flash</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p>
-    <h3 className="sub-h">Ticker</h3>
-    <p className="hint">Muestra los mismos tipos de apoyo que marcas arriba para «Últimos».</p>
+    <p className="css-help">Clases: <code>.root</code> <code>.root.col</code> <code>.label</code> <code>.item</code> <code>.item-{'<tipo>'}</code> <code>.item.empty</code> <code>.item.flash</code> <code>.kick</code> <code>.big</code> <code>.extra</code></p></>;
+  if (name === 'ticker') form = <>
+    <div className="lbl">Tipos de apoyo<div className="row field-ctl"><ListChecks w="ticker" f="items" items={SUPPORT_TYPES} fallback={['latest', 'items']} /></div></div>
+    <p className="hint">Hasta que los cambies, usa los mismos tipos que «Últimos». Recorre los eventos más recientes de esos tipos.</p>
     <div className="row3">
       <WField w="ticker" f="label" label="Etiqueta" />
       <WField w="ticker" f="count" label="Eventos" type="number" min={1} max={30} />
@@ -85,11 +93,8 @@ export function Widget({ name }: { name: string }) {
   return <Slide crumb={<><a href="#/widgets">Widgets</a> › {info.title}</>} title={info.title} desc={info.desc} back="#/widgets" wide
     foot={<SaveBar />}>
     <WidgetLayout
-      source={<BrowserSource url={origin() + info.path} size={info.size} label={name === 'latest' ? 'Últimos' : undefined} also={name === 'latest' ? [{ url: origin() + '/widget/ticker', size: '1920×64', label: 'Ticker' }] : []} />}
-      preview={<>
-        <Stage eyebrow={name === 'latest' ? 'Vista previa · Últimos' : 'Vista previa'} aside={<span>Datos de ejemplo</span>} src={q(info.path, 'demo')} w={info.w} h={info.h} />
-        {name === 'latest' && <Stage eyebrow="Vista previa · Ticker" aside={<span>Datos de ejemplo</span>} src="/widget/ticker?demo" w={1920} h={120} />}
-      </>}>
+      source={<BrowserSource url={origin() + info.path} size={info.size} />}
+      preview={<Stage eyebrow="Vista previa" aside={<span>Datos de ejemplo</span>} src={q(info.path, 'demo')} w={info.w} h={info.h} />}>
       <Panel>{form}</Panel>
     </WidgetLayout>
   </Slide>;
@@ -216,7 +221,7 @@ export function Widgets({ parts }: { parts: string[] }) {
     <PageHead crumb={`Configurar · ${Object.keys(INFO).length + 5} widgets`} title="Widgets"
       desc="Cada uno es una fuente de navegador para el programa de emisión (sus URL también están en Fuentes del programa de emisión). Cuando la app trae un widget nuevo, aparece aquí como una tarjeta más." />
     <div className="lv-groups">
-      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={7} note="Se ajustan aquí y se dejan puestas en el programa de emisión" wide>
+      <CardGroup tour="widgets-catalog" title="Capas de pantalla" count={8} note="Se ajustan aquí y se dejan puestas en el programa de emisión" wide>
         {fixed('chat', <div className="lv-wchat"><i style={{ width: '62%' }} /><i style={{ width: '80%' }} /><i style={{ width: '48%' }} /><i style={{ width: '72%' }} /><i style={{ width: '56%' }} /></div>,
           [...((w.chat?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...css(w.chat?.css)])}
         <Card href="#/widgets/objetivos" label="Abrir Objetivos" open={open === 'objetivos'} title="Objetivos" aside={<span className="lv-cmeta">1 capa por objetivo</span>}
@@ -224,8 +229,10 @@ export function Widgets({ parts }: { parts: string[] }) {
           foot={<>{url('/widget/goal?id=…')}<span className="sp" /><a className="eg-btn eg-btn--ghost eg-btn--sm" href="#/widgets/objetivos">{goals.length ? 'Ver objetivos' : 'Crear el primero'}</a></>}>
           <Tags items={goals.length ? [{ t: goals.length === 1 ? '1 objetivo' : `${goals.length} objetivos`, on: true }, { t: `${shownGoals} en pantalla` }, { t: bars === 1 ? '1 barra' : `${bars} barras` }] : [{ t: 'Sin objetivos todavía' }]} />
         </Card>
-        {fixed('latest', <><div className="lv-wbar"><i /><i /><i /></div><div className="lv-wtick" /></>,
-          [{ t: (w.latest?.items || []).length ? `${(w.latest.items as string[]).length} tipos de apoyo` : 'Últimos apoyos' }, { t: 'con ticker' }, ...css(w.latest?.css || w.ticker?.css)])}
+        {fixed('latest', <div className="lv-wbar"><i /><i /><i /></div>,
+          [{ t: (w.latest?.items || []).length ? `${(w.latest.items as string[]).length} tipos de apoyo` : 'Últimos apoyos' }, ...css(w.latest?.css)])}
+        {fixed('ticker', <div className="lv-wtick" />,
+          [{ t: w.ticker?.items ? `${(w.ticker.items as string[]).length} tipos propios` : 'Tipos de «Últimos»' }, ...css(w.ticker?.css)])}
         {fixed('viewers', <div className="lv-wbar"><i /><i /></div>,
           [...((w.viewers?.platforms || ['twitch', 'youtube']) as string[]).map(p => ({ t: p === 'youtube' ? 'YouTube' : 'Twitch' })), ...(w.viewers?.showTotal === false ? [] : [{ t: 'con total' }]), ...css(w.viewers?.css)])}
         {fixed('thanks', <div className="lv-wcred"><b>GRACIAS</b><i /><i /></div>,
