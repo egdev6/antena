@@ -96,3 +96,53 @@ test('the global alert CSS changed outside the panel reaches the open alert edit
     await closeAll(() => chrome && closeChrome(chrome), stop);
   }
 });
+
+test('Discard after a remote change restores the latest saved values, not older ones (#351)', { timeout: 120000 }, async t => {
+  const bin = await skipIfNoBrowserOrUi(t);
+  if (!bin) return;
+  const { app, base, put, stop } = await start(t);
+  let chrome;
+  try {
+    await put('/api/widgets', { latest: { css: '.saved { color: green; }' } });
+    chrome = await openChromePage(bin, base + '/#/widgets/latest');
+    const c = chrome.cdp, ev = s => evaluateChrome(c, s);
+    await waitDom(c, `!!(${CSS}) && ${CSS}.value === '.saved { color: green; }' && !!(${LABEL})`, { timeoutMs: 15000 });
+    await ev(type(CSS, '.mine { color: blue; }'));
+    await waitDom(c, `!!(${SAVE})`, { timeoutMs: 5000 });
+    await put('/api/widgets', { latest: { label: 'Remoto' } });   // saved elsewhere while editing
+    await waitDom(c, `${LABEL}.value === 'Remoto'`, { timeoutMs: 8000 });
+    const discard = `[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Descartar' && !b.disabled)`;
+    await ev(`${discard}.click(); true`);
+    await waitDom(c, `${CSS}.value === '.saved { color: green; }'`, { timeoutMs: 5000 });
+    assert.equal(await ev(`${LABEL}.value`), 'Remoto', 'the remote label is not rolled back to the value before it');
+    assert.equal(app.store.config.widgets.latest.label, 'Remoto');
+    assert.equal(app.store.config.widgets.latest.css, '.saved { color: green; }');
+  } finally {
+    await closeAll(() => chrome && closeChrome(chrome), stop);
+  }
+});
+
+test('Discard in the alert editor restores the alert CSS saved elsewhere meanwhile (#351)', { timeout: 120000 }, async t => {
+  const bin = await skipIfNoBrowserOrUi(t);
+  if (!bin) return;
+  const { app, base, put, stop } = await start(t);
+  let chrome;
+  try {
+    await put('/api/alerts/follow', { css: '.alert { --accent: #111111; }' });
+    chrome = await openChromePage(bin, base + '/#/alertas/follow/css');
+    const c = chrome.cdp, ev = s => evaluateChrome(c, s);
+    const OWN = `[...document.querySelectorAll('main textarea')].find(x => (x.placeholder || '').startsWith('/* Tu CSS gana'))`;
+    await waitDom(c, `!!(${OWN}) && ${OWN}.value === '.alert { --accent: #111111; }'`, { timeoutMs: 15000 });
+    await ev(type(OWN, '.alert { --accent: #222222; }'));
+    await waitDom(c, `!!(${SAVE})`, { timeoutMs: 5000 });
+    await put('/api/alerts/follow', { css: '.alert { --accent: #333333; }' });   // another window saves this alert
+    await new Promise(r => setTimeout(r, 600));
+    assert.equal(await ev(`${OWN}.value`), '.alert { --accent: #222222; }', 'the local edit stays while it is unsaved');
+    const discard = `[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Descartar' && !b.disabled)`;
+    await ev(`${discard}.click(); true`);
+    await waitDom(c, `${OWN}.value === '.alert { --accent: #333333; }'`, { timeoutMs: 5000 });
+    assert.equal(app.store.config.alerts.follow.css, '.alert { --accent: #333333; }');
+  } finally {
+    await closeAll(() => chrome && closeChrome(chrome), stop);
+  }
+});

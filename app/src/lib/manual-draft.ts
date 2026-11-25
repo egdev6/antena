@@ -1,6 +1,6 @@
 // One manual source: prepared intent is separate from edits made after the click.
 // Adapters supply domain snapshots/merging; this buffer never schedules an autosave.
-import { draftChanged, saveSources, themeIdentity, type DraftSource, type PreparedSave } from './draft';
+import { draftChanged, saveSources, themeIdentity, type DraftSource, type PreparedSave, type ServerSnapshot } from './draft';
 import type { AppState } from './types';
 
 type Options<P extends object, B> = {
@@ -13,6 +13,8 @@ type Options<P extends object, B> = {
   restore: (saved: B, discarded: P) => void;
   keys?: (patch: P) => string[];
   protect?: (state: AppState, intent: P) => AppState;
+  /** #351: the baseline matching what the server just sent, or undefined when it does not apply. */
+  rebase?: (server: ServerSnapshot, saved: B) => B | undefined;
 };
 
 export class ManualDraft<P extends object, B> implements DraftSource {
@@ -78,6 +80,13 @@ export class ManualDraft<P extends object, B> implements DraftSource {
     this.theme = undefined;
     if (saved && this.active) this.options.restore(saved.value, discarded);
     draftChanged();
+  };
+  /** #351: Discard restores the latest saved value. Never during a save (run() resets the
+   *  baseline) nor for a draft of another theme (its baseline belongs to that theme). */
+  rebase = (server: ServerSnapshot) => {
+    if (!this.baseline || this.intent || this.stale() || !this.options.rebase) return;
+    const next = this.options.rebase(server, this.baseline.value);
+    if (next !== undefined) this.baseline = { value: structuredClone(next) };
   };
   updateBaseline(update: (saved: B) => B) {
     if (this.baseline) this.baseline = { value: update(this.baseline.value) };

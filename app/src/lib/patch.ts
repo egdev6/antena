@@ -3,7 +3,7 @@
 import { api } from './api';
 import { deepMerge, live } from './live';
 import { toast } from './ui';
-import { flushSources, holding, registerDraft, type DraftSource } from './draft';
+import { flushSources, holding, registerDraft, type DraftSource, type ServerSnapshot } from './draft';
 import { ManualDraft } from './manual-draft';
 import type { AppState, WidgetsConfig } from './types';
 
@@ -13,6 +13,8 @@ type Snapshot<B extends object> = {
   restore: (saved: B) => void;
   persist?: (sent: Patch, themeId?: string) => Promise<B>;
   protect: (state: AppState, intent: Patch) => AppState;
+  /** #351: this source's saved value inside a server snapshot, if it carries one. */
+  rebase?: (server: ServerSnapshot) => B | undefined;
 };
 export function patcher<B extends object>(method: string, url: string, snap: Snapshot<B>, ms = 400) {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -27,6 +29,7 @@ export function patcher<B extends object>(method: string, url: string, snap: Sna
     },
     publish: (saved, newer) => snap.restore(deepMerge(saved, newer)),
     restore: snap.restore, protect: snap.protect,
+    rebase: snap.rebase ? server => snap.rebase!(server) : undefined,
   });
   const sendAutomatic = async () => {
     clearTimeout(timer);
@@ -49,7 +52,7 @@ export function patcher<B extends object>(method: string, url: string, snap: Sna
   };
   const discard = () => { clearTimeout(timer); buffer.discard(); };
   const source: DraftSource = {
-    dirty: buffer.dirty, stale: buffer.stale, keys: buffer.keys, protect: buffer.protect,
+    dirty: buffer.dirty, stale: buffer.stale, keys: buffer.keys, protect: buffer.protect, rebase: buffer.rebase,
     prepareSave: () => { clearTimeout(timer); return buffer.prepareSave(); }, discard,
   };
   registerDraft(url, source);
@@ -61,6 +64,7 @@ const W = patcher('PUT', '/api/widgets', {
   restore: saved => live.update(s => ({ config: { ...s.config, widgets: saved } })),
   persist: async (sent, themeId) => (await api<{ widgets: WidgetsConfig }>('PUT', '/api/widgets', sent, { themeId })).widgets,
   protect: (state, intent) => ({ ...state, config: { ...state.config, widgets: deepMerge(state.config.widgets, intent) } }),
+  rebase: server => server.config?.widgets,
 });
 export function patchWidgets(patch: Patch) {
   W.push(patch); // captures the original before mutating live; later edits keep that copy
@@ -71,6 +75,7 @@ const IX = patcher('PUT', '/api/interactive/config', {
   take: () => live.state!.interactive.config,
   restore: saved => live.update(s => ({ interactive: { ...s.interactive, config: saved } })),
   protect: (state, intent) => ({ ...state, interactive: { ...state.interactive, config: deepMerge(state.interactive.config, intent) } }),
+  rebase: server => server.interactive?.config,
 });
 export function patchIx(section: string, patch: Patch) {
   IX.push({ [section]: patch }); // capture before the first optimistic edit (S1)

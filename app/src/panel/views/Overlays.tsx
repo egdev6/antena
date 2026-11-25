@@ -94,6 +94,8 @@ function OverlaySlide({ id }: { id: string }) {
       live.update(s => ({ customOverlays: (s.customOverlays || []).map(o => (o.id === baseline.id ? baseline : o)) }));
     },
     restore: baseline => { savedRef.current = baseline; setSaved(baseline); setDraft(null); setPending(null); },
+    // #351: Discard restores the overlay as last saved, even when the agent changed it meanwhile.
+    rebase: server => server.customOverlays?.find(o => o.id === id),
   }));
   useEffect(() => {
     const unregister = registerDraft('overlay:' + id, buffer);

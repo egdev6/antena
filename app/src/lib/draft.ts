@@ -21,6 +21,16 @@ export type DraftSource = {
   prepareSave: () => PreparedSave | undefined;
   discard: () => void;
   protect?: (state: AppState) => AppState;
+  /** #351: saved values just received from the server; Discard must restore these, not older ones. */
+  rebase?: (server: ServerSnapshot) => void;
+};
+
+/** Saved values the server just sent (config sections, theme, interactive, custom overlays). */
+export type ServerSnapshot = {
+  config?: Partial<AppState['config']>;
+  theme?: AppState['theme'];
+  interactive?: AppState['interactive'];
+  customOverlays?: AppState['customOverlays'];
 };
 
 const sources = new Map<string, DraftSource>();
@@ -55,6 +65,10 @@ export const dirtyKeys = () => [...new Set([...sources.values()].flatMap(s => (s
 let busy = false;
 let operation: Promise<unknown> | undefined;
 export const isSaving = () => busy;
+/** Open drafts move their Discard baseline to the values the server just sent (#351). */
+export function rebaseDrafts(server: ServerSnapshot) {
+  for (const source of sources.values()) source.rebase?.(server);
+}
 export function protectDrafts(state: AppState) {
   for (const source of sources.values()) state = source.protect?.(state) ?? state;
   return state;

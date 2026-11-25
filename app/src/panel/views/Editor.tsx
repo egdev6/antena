@@ -174,6 +174,12 @@ function useEditor(t: Target) {
       publish: (saved, newer) => live.update(s => ({ config: overlay({ ...s, ...replaceTarget(s, t, saved) }, newer).config })),
       restore: saved => live.update(s => replaceTarget(s, t, saved)),
       protect: overlay,
+      // #351: Discard restores this alert/command/timer as last saved, even if saved elsewhere.
+      rebase: server => {
+        const section = t.kind === 'command' ? 'commands' : t.kind === 'timer' ? 'timers' : 'alerts';
+        if (!server.config || !Object.hasOwn(server.config, section)) return undefined;
+        return findTarget({ config: server.config }, t);   // undefined when deleted remotely: keep the baseline
+      },
     });
   });
   const preview = async () => {
@@ -199,7 +205,7 @@ function useEditor(t: Target) {
   };
   useEffect(() => {
     const unregister = registerDraft('editor:' + JSON.stringify(t), {
-      dirty: buffer.dirty, stale: buffer.stale, keys: buffer.keys, protect: buffer.protect,
+      dirty: buffer.dirty, stale: buffer.stale, keys: buffer.keys, protect: buffer.protect, rebase: buffer.rebase,
       prepareSave: () => { clearTimeout(timer.current); return buffer.prepareSave(); }, discard,
     });
     return () => { active.current = false; clearTimeout(timer.current); unregister(); buffer.dispose(); };
