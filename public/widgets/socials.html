@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>antena · redes sociales</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="/fonts.css" rel="stylesheet"><link href="/widgets/widget.css" rel="stylesheet"><link href="/theme.css" rel="stylesheet" id="eg-theme">
+<style>
+@layer egdev {
+.root{display:flex;flex-wrap:wrap;align-items:center;gap:14px 34px;padding:18px}
+.label{margin:0;font:800 20px/1 var(--f-cond);letter-spacing:.14em;text-transform:uppercase;color:var(--red)}
+.item{display:flex;align-items:center;gap:12px;min-width:0}
+.item .ico{flex:none;width:30px;height:30px}
+.item .handle{min-width:0;font:700 26px/1.1 var(--f-cond);color:var(--white,#fff);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.slot .root{padding:0;flex-wrap:nowrap;height:100%;box-sizing:border-box}
+}
+</style></head>
+<body><div class="root" id="root"></div>
+<script type="module">
+import { connect, DEMO, setCss } from '/widgets/widget.js';
+import { socialSvg } from '/social-icons.js';
+const root = document.getElementById('root');
+const DEMO_ITEMS = [
+  { id: 'd1', platform: 'twitch', handle: 'egdev6' }, { id: 'd2', platform: 'youtube', handle: '@egdev6' },
+  { id: 'd3', platform: 'x', handle: '@egdev6' }, { id: 'd4', platform: 'github', handle: 'egdev6' },
+  { id: 'd5', platform: 'discord', handle: 'discord.gg/egdev' }, { id: 'd6', platform: 'web', handle: 'egdev.es' },
+];
+let key = '';
+function apply(state) {
+  const cfg = state.widgets?.socials || {};
+  setCss(cfg.css);
+  let items = (Array.isArray(cfg.items) ? cfg.items : []).filter(x => x && String(x.handle || '').trim());
+  if (DEMO && !items.length) items = DEMO_ITEMS;
+  const label = items.length ? String(cfg.label || '') : '';
+  const nextKey = JSON.stringify([label, items.map(x => [x.platform, x.handle])]);
+  if (nextKey === key) return;
+  key = nextKey;
+  // Built by DOM: the label and nicks are text, never markup.
+  const nodes = [];
+  if (label) { const p = document.createElement('p'); p.className = 'label'; p.textContent = label; nodes.push(p); }
+  for (const x of items) {
+    const item = document.createElement('div');
+    item.className = 'item item-' + x.platform;
+    const icon = socialSvg(x.platform);
+    if (icon) item.appendChild(icon);
+    const handle = document.createElement('span');
+    handle.className = 'handle';
+    handle.textContent = String(x.handle).trim();
+    item.appendChild(handle);
+    nodes.push(item);
+  }
+  root.replaceChildren(...nodes);
+}
+connect({ widgets: apply });
+if (DEMO) apply({ widgets: {} });
+</script></body></html>

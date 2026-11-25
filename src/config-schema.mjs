@@ -27,6 +27,7 @@ import { validScheduleCalendarUrl, SCHEDULE_CALENDAR_URL_ERROR } from './schedul
 // #130: animaciones de los mensajes del chat en pantalla, las mismas para entrar y para salir;
 // fuente única compartida con el widget y el panel.
 import { CHAT_ANIMS } from '../public/widgets/chat-anims.js';
+import { SOCIAL_LOGOS } from '../public/social-icons.js';
 
 // ---------- constructores de nodos ----------
 const num = o => ({ kind: 'num', ...o });
@@ -77,6 +78,11 @@ const THANKS_FIELDS = {
   title: str, platforms: arrStr(['twitch', 'youtube']), window: en(['all', 'lastStream', 'days']),
   days: num({ int: true, min: 1, max: 3650 }), maxNames: num({ int: true, min: 1, max: 1000 }),
   intervalSec: num({ int: true, min: 1, max: 3600 }), showAnonymous: bool, css: str,
+};
+
+// Social bar: ordered profiles (brand icon + nick), optional label. Platforms = the logo set.
+const SOCIALS_FIELDS = {
+  label: str, items: list({ id: str, platform: en(Object.keys(SOCIAL_LOGOS)), handle: str }, { maxItems: 12 }), css: str,
 };
 
 // Rotating on-screen messages: ordered list, cadence (start to start) and visible time.
@@ -310,6 +316,7 @@ export const CONFIG_SCHEMA = {
     viewers: { platforms: arrStr(['twitch', 'youtube']), showTotal: bool, showPeak: bool, css: str },
     thanks: THANKS_FIELDS,
     rotator: ROTATOR_FIELDS,
+    socials: SOCIALS_FIELDS,
   },
 };
 

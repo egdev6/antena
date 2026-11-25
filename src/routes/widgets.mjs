@@ -22,6 +22,10 @@ export function registerWidgetRoutes({ route, store, engine }) {
       const [error] = validatePath('widgets.thanks', patch.thanks);
       if (error) throw httpError(400, error.message);
     }
+    if (Object.hasOwn(patch, 'socials')) {
+      const [error] = validatePath('widgets.socials', patch.socials);
+      if (error) throw httpError(400, error.message);
+    }
     if (Object.hasOwn(patch, 'rotator')) {
       const [error] = validatePath('widgets.rotator', patch.rotator);
       if (error) throw httpError(400, error.message);

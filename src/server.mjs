@@ -95,7 +95,7 @@ const MIME = {
   '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
   '.webm': 'video/webm', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
 };
-export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter', 'viewers', 'thanks', 'interview', 'rotator'];
+export const WIDGETS = ['chat', 'goal', 'latest', 'ticker', 'credits', 'question', 'tierlist', 'giveaway', 'teleprompter', 'viewers', 'thanks', 'interview', 'rotator', 'socials'];
 
 /** Viewer counts for on-screen widgets: only what the widget shows, never settings or errors. */
 export function publicViewers(snap) {

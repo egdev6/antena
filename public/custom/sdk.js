@@ -22,7 +22,7 @@
  *     Options: {duration, easing, delay} in ms/CSS easing. Directions: none, fade (default),
  *     left, right, up, down; layer: above (default) or below; fit: slot (default) or canvas.
  *     Allowed widgets/params: chat(variant), viewers(layout=column), goal(id), latest(items,
- *     layout=column), ticker, thanks, rotator, giveaway, question(nocount), tierlist(id,nopool),
+ *     layout=column), ticker, thanks, rotator, socials, giveaway, question(nocount), tierlist(id,nopool),
  *     interview(item), credits(loop,transparent), alerts, custom(id). No URLs, self-embedding
  *     or nested custom overlays. 12 slots; 20 updates/s; invalid requests warn once. Slot CSS
  *     rejects resource loads, escapes and comments to prevent untrusted CSS making same-origin requests.
