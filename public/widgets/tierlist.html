@@ -36,7 +36,9 @@
 .bars{display:grid;gap:7px}
 .bar{display:grid;grid-template-columns:44px 1fr 60px;align-items:center;gap:12px;font:800 24px var(--f-cond)}
 .bar i{display:block;height:24px;border-radius:8px;background:rgba(255,255,255,.07);overflow:hidden}
-.bar i b{display:block;height:100%;width:0;border-radius:8px;transition:width .5s cubic-bezier(.2,1,.3,1)}
+/* #364: only transform animates. The bar is full width and slides in by --p (votes / top votes, 0..1, set inline per bar);
+   while empty it sits 24px further left, so its glow does not leak onto the track. */
+.bar i b{display:block;height:100%;border-radius:8px;transform:translateX(calc((var(--p,0) - 1) * 100% - (1 - min(1,var(--p,0) * 1000)) * 24px));transition:transform .5s cubic-bezier(.2,1,.3,1)}
 .bar .n{text-align:right;color:var(--grey);font-variant-numeric:tabular-nums}
 .bar.win .n{color:var(--white)}
 .timer{font:700 18px var(--f-mono);color:var(--pink);font-variant-numeric:tabular-nums}
@@ -76,7 +78,7 @@ function apply(s) {
   const descriptions = l.tiers.filter(t => t.voteText).map(t => `<b>${esc(t.label)}</b>: ${esc(t.voteText)}`).join(' · ');
   $('how').innerHTML = `Escribe ${cfg.acceptBare !== false ? labels + ' o ' : ''}<b>${esc(cfg.command || '!tier')} S</b>${cfg.acceptBare === false && descriptions ? ' · ' + descriptions : ''} · ${v.total} ${v.total === 1 ? 'voto' : 'votos'}`;
   const max = Math.max(1, ...Object.values(v.counts));
-  $('bars').innerHTML = l.tiers.map(t => `<div class="bar ${v.winner === t.id ? 'win' : ''}"><span style="color:${esc(t.color)}">${esc(t.voteText || t.label)}</span><i><b style="width:${(v.counts[t.id] || 0) / max * 100}%;background:${esc(t.color)};box-shadow:0 0 12px ${esc(t.color)}"></b></i><span class="n">${v.counts[t.id] || 0}</span></div>`).join('');
+  $('bars').innerHTML = l.tiers.map(t => `<div class="bar ${v.winner === t.id ? 'win' : ''}"><span style="color:${esc(t.color)}">${esc(t.voteText || t.label)}</span><i><b style="--p:${(v.counts[t.id] || 0) / max};background:${esc(t.color)};box-shadow:0 0 12px ${esc(t.color)}"></b></i><span class="n">${v.counts[t.id] || 0}</span></div>`).join('');
   const upd = () => { if (!v.endsAt) { $('timer').textContent = ''; return; } const left = Math.max(0, Math.ceil((new Date(v.endsAt) - Date.now()) / 1000)); $('timer').textContent = `· ${left}s`; };
   upd(); if (v.endsAt) tick = setInterval(upd, 500);
 }
