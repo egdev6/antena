@@ -122,18 +122,6 @@ async function fixture(t, bin) {
   return { app, c, gate, base, theme, display, shown, settle };
 }
 
-const visibleAvatar = `(() => {
-  const img = document.querySelector('#stage img.ytsub-avatar');
-  if (!img || !img.complete || !img.naturalWidth || img.hidden) return false;
-  const r = img.getBoundingClientRect();
-  if (r.width <= 0 || r.height <= 0 || r.right <= 0 || r.bottom <= 0 || r.left >= innerWidth || r.top >= innerHeight) return false;
-  for (let node = img; node instanceof Element; node = node.parentElement) {
-    const style = getComputedStyle(node);
-    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
-  }
-  return true;
-})()`;
-
 test('CDP automatic actions drain and retain method, request ID and exact error', async t => {
   const dir = await mkdtemp(path.join(tmpdir(), 'ytsub-cdp-'));
   await writeFile(path.join(dir, 'DevToolsActivePort'), '1234\n');
@@ -174,46 +162,21 @@ test('CDP automatic actions drain and retain method, request ID and exact error'
     code: -32602, message: 'Invalid InterceptionId' })));
 });
 
-test('S2: real overlay avatar, safe URL fallback and independent icons', { timeout: 60000 }, async t => {
+test('S2: YouTube subscriber alerts never show or request the viewer avatar, keeping icons and media', { timeout: 60000 }, async t => {
   const bin = await findChrome();
   if (!bin) return t.skip('Chrome unavailable: set CHROME_PATH to run the real overlay proof');
   const f = await fixture(t, bin), { c, gate } = f;
-  for (const layout of ['card', 'media', 'mixed']) await t.test(`${layout}: synthetic CDN avatar decodes without replacing icon or media`, async () => {
+  for (const layout of ['card', 'media', 'mixed']) await t.test(`${layout}: a safe CDN avatar is ignored; icon and media stay`, async () => {
     const user = `Avatar ${layout}`, url = `${CDN}/${layout}.svg`;
     await f.display('ytsub', layout, user, url); await f.shown(user);
-    await waitDom(c, visibleAvatar, { timeoutMs: 2500 });
-    const view = await evaluateChrome(c, `(() => {
-      const image = document.querySelector('#stage .ytsub-avatar');
-      return { src: image.src, policy: image.referrerPolicy, naturalWidth: image.naturalWidth,
-        separate: !image.closest('.tile'), icon: document.querySelector('#stage .tile .emoji')?.textContent || null,
-        media: document.querySelector('#stage .alert-media')?.getAttribute('src') || document.querySelector('#bg .alert-media')?.getAttribute('src') || null };
-    })()`);
-    assert.equal(view.src, url); assert.equal(view.policy, 'no-referrer'); assert.ok(view.naturalWidth > 0); assert.equal(view.separate, true);
-    assert.equal(await evaluateChrome(c, `document.querySelector('#stage .ytsub-avatar').decode().then(() => true)`, { timeoutMs: 2500 }), true);
+    await evaluateChrome(c, `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
+    const view = await evaluateChrome(c, `({ avatar: !!document.querySelector('#stage .ytsub-avatar'),
+      icon: document.querySelector('#stage .tile .emoji')?.textContent || null,
+      media: document.querySelector('#stage .alert-media')?.getAttribute('src') || document.querySelector('#bg .alert-media')?.getAttribute('src') || null })`);
+    assert.equal(view.avatar, false);
     if (layout !== 'media') assert.equal(view.icon, '⭐');
     if (layout !== 'card') assert.equal(view.media, '/media/background.svg');
-    assert.ok(gate.imageRequests.includes(url));
-  });
-  await t.test('broken avatar removes only the avatar, retaining the configured icon and name', async () => {
-    const url = CDN + '/broken.svg'; await f.display('ytsub', 'card', 'Broken avatar', url); await f.shown('Broken avatar');
-    await until(() => gate.imageRequests.includes(url), 'missing broken-image request');
-    await waitDom(c, `!document.querySelector('#stage .ytsub-avatar')`, { timeoutMs: 2500 });
-    assert.equal(await evaluateChrome(c, `document.querySelector('#stage .tile .emoji')?.textContent`), '⭐');
-    assert.equal(await evaluateChrome(c, `document.querySelector('#stage .alert-name')?.textContent`), 'Broken avatar');
-  });
-  await t.test('a delayed old response and late image events cannot alter its replacement', async () => {
-    await f.display('ytsub', 'card', 'Old delayed', CDN + '/delayed.svg'); await f.shown('Old delayed');
-    await until(() => gate.delayed.length === 1, 'missing delayed avatar request');
-    await waitDom(c, `!!document.querySelector('#stage .ytsub-avatar')`, { timeoutMs: 2500 });
-    await evaluateChrome(c, `window.__oldSubscriberAvatar = document.querySelector('#stage .ytsub-avatar'); true`);
-    await f.display('follow', 'card', 'Replacement', CDN + '/ignored.svg'); await f.shown('Replacement');
-    const requestId = gate.delayed.shift(); await gate.fulfill(requestId);
-    await evaluateChrome(c, `window.__oldSubscriberAvatar.dispatchEvent(new Event('load')); window.__oldSubscriberAvatar.dispatchEvent(new Event('error')); true`);
-    await evaluateChrome(c, `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
-    assert.deepEqual(await evaluateChrome(c, `({ name: document.querySelector('#stage .alert-name')?.textContent,
-      icon: document.querySelector('#stage .tile .emoji')?.textContent, avatar: !!document.querySelector('#stage .ytsub-avatar') })`),
-      { name: 'Replacement', icon: '💜', avatar: false });
-    assert.ok(!gate.imageRequests.includes(CDN + '/ignored.svg'));
+    assert.ok(!gate.imageRequests.includes(url), 'the avatar must not be requested');
   });
   await t.test('unsafe avatar URLs never create an image or request', async () => {
     const unsafe = ['http://ggpht.com/x', 'https://user:pass@ggpht.com/x', 'https://@ggpht.com/x', 'https://ggpht.com:444/x',
@@ -229,11 +192,13 @@ test('S2: real overlay avatar, safe URL fallback and independent icons', { timeo
     }
     assert.deepEqual(gate.imageRequests.slice(before), []);
   });
-  await t.test('icons.ytsub=none hides the icon but leaves the separate avatar visible', async () => {
+  await t.test('icons.ytsub=none hides the icon and still shows no avatar', async () => {
     await f.theme({ ytsub: 'none', follow: 'emoji:💜' }, 'fixture-none');
-    await f.display('ytsub', 'card', 'No icon', CDN + '/no-icon.svg'); await f.shown('No icon');
-    await waitDom(c, visibleAvatar, { timeoutMs: 2500 });
+    const url = CDN + '/no-icon.svg';
+    await f.display('ytsub', 'card', 'No icon', url); await f.shown('No icon');
     assert.equal(await evaluateChrome(c, `!!document.querySelector('#stage .tile')`), false);
+    assert.equal(await evaluateChrome(c, `!!document.querySelector('#stage .ytsub-avatar')`), false);
+    assert.ok(!gate.imageRequests.includes(url));
   });
   await t.test('PRESERVE: a non-ytsub alert keeps its local icon and ignores an avatar input', async () => {
     await f.theme({ ytsub: 'none', follow: 'media:background.svg' }, 'fixture-local-icon');

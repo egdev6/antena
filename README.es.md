@@ -663,7 +663,7 @@ Cuota: 10.000 unidades al día. Cada lectura del chat cuesta unas 5, así que co
 
 Si el total crece más que los nombres detectados en una consulta, la alerta genérica `ytsubcount` muestra «+N suscriptores». El total viene de la lectura `channels.list` de la misma cuenta OAuth conectada que proporciona los nombres, no del sondeo separado del objetivo. La estimación neta puede incluir suscripciones privadas o nombres que la API no devolvió, y las bajas pueden cancelar crecimiento. Solo se comparan totales exactos por debajo de 1.000 en ambos extremos: con cifras ocultas, ausentes o redondeadas desde 1.000 no hay alerta. Recuperar un máximo anterior durante el mismo periodo de escucha tampoco vuelve a alertar. Se puede desactivar en **Conexiones › YouTube › Avisar de suscriptores sin nombre**; viene activada y no cambia los objetivos ni las métricas de seguidores, ni añade registros extra de agradecimiento.
 
-Cuando está disponible, la miniatura del suscriptor aparece junto a la alerta sin sustituir su icono ni su recurso. El overlay solo acepta URL iniciales HTTPS de `ggpht.com` o `googleusercontent.com` y sus subdominios; el navegador las carga sin enviar referrer y puede seguir redirecciones. Los demás dominios se rechazan de forma conservadora. Si falta la imagen, se rechaza o no carga, la alerta conserva el nombre, el icono y el recurso sin avatar.
+La alerta no muestra la miniatura del suscriptor: el overlay ni la muestra ni la descarga, y la alerta conserva su nombre, su icono y su recurso. La variable `{avatar}` sigue llevando la URL de la miniatura cuando YouTube la facilita (solo se aceptan URL HTTPS de `ggpht.com` o `googleusercontent.com` y sus subdominios).
 
 **Escribir en el chat de YouTube** necesita tu cuenta (una vez):
 
