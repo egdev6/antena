@@ -4,6 +4,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, enc, get, post, put } from '../lib/api';
 import { live, makeChatLoader, useLive } from '../lib/live';
+import { countRender } from '../lib/render-count';
 import { mergeChat } from '../lib/chat-merge.mjs';
 import { ConnPill, cx, EmptyState, fmtTime, guard, Icon, mmss, PfIcon, PLATFORM_NAMES, toast, Toaster } from '../lib/ui';
 import { IC, type IconData } from '../lib/icons';
@@ -22,6 +23,7 @@ function useNow(ms = 1000) {
   return now;
 }
 function Top() {
+  countRender('prompter/Top');
   const s = useLive(x => x);
   const tl = live.timeline;
   const now = useNow();
@@ -54,6 +56,7 @@ function bright(c?: string) { // colores de Twitch demasiado oscuros para el cri
 const Parts = ({ m }: { m: ChatMessage }) => <>{(m.parts?.length ? m.parts : [{ t: m.text }]).map((p: any, i: number) => (p.e ? <img key={i} src={p.e} alt={p.alt} /> : <span key={i}>{p.t}</span>))}</>;
 
 function Chat() {
+  countRender('prompter/Chat');
   const [list, setList] = useState<ChatMessage[]>([]);
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [text, setText] = useState('');
@@ -239,6 +242,7 @@ function Destacados({ items, types }: { items: TimelineItem[]; types: Types }) {
 }
 
 function Eventos() {
+  countRender('prompter/Eventos');
   useLive(s => s);   // tipos de alerta, cronología y gracias pendientes llegan por SSE
   const types = (live.state?.types || {}) as Types;
   const items = live.timeline.items || [];

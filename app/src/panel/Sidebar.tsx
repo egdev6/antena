@@ -1,4 +1,5 @@
 import { useLive } from '../lib/live';
+import { countRender } from '../lib/render-count';
 import { Icon, cx } from '../lib/ui';
 import type { IconData } from '../lib/icons';
 import { alertWarnings } from './views/Alertas';
@@ -32,6 +33,7 @@ const ICONS = {
 type Item = { href: string; label: string; tail?: any };
 
 export function Sidebar({ current }: { current: string }) {
+  countRender('panel/Sidebar');
   const s = useLive(x => x);
   const { themes, activeId, looks } = useThemes();
   const activeTheme = themes.find(theme => theme.id === activeId);

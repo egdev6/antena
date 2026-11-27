@@ -2,16 +2,23 @@
 // Compila la app React (panel, prompter y dock) en app/dist con esbuild.
 //   node scripts/build-app.mjs           → build de producción
 //   node scripts/build-app.mjs --watch   → recompila al guardar (con `pnpm start` en otra terminal)
+//   node scripts/build-app.mjs --dist <dir> [--render-count]
+//        → builds into another directory (new or empty; app/dist is untouched). --render-count adds the
+//          render counter of the performance baseline (#360): tests only, never shipped.
 // El servidor sirve app/dist en /, /prompter y /dock; si no existe, sirve el panel clásico de public/.
 import { build, context } from 'esbuild';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'app', 'src');
-const DIST = path.join(ROOT, 'app', 'dist');
+const distAt = process.argv.indexOf('--dist');
+const distArg = distAt >= 0 ? process.argv[distAt + 1] : undefined;
+if (distAt >= 0 && (!distArg || distArg.startsWith('--'))) { console.error('--dist necesita un directorio'); process.exit(1); }
+const DIST = distArg ? path.resolve(distArg) : path.join(ROOT, 'app', 'dist');
 const watch = process.argv.includes('--watch');
+const renderCount = process.argv.includes('--render-count');
 
 const PAGES = {
   index: { entry: 'panel/main.tsx', title: 'antena', body: '' },
@@ -48,7 +55,9 @@ const options = {
   minify: !watch, sourcemap: watch ? 'inline' : false,
   target: ['chrome110', 'edge110', 'safari16'],
   jsx: 'automatic', loader: { '.tsx': 'tsx', '.ts': 'ts' },
-  define: { 'process.env.NODE_ENV': JSON.stringify(watch ? 'development' : 'production') },
+  // __RENDER_COUNT__ (app/src/lib/render-count.ts): when false, esbuild drops the render counter and its
+  // calls, so the production bundle carries no trace of it (#360).
+  define: { 'process.env.NODE_ENV': JSON.stringify(watch ? 'development' : 'production'), __RENDER_COUNT__: String(renderCount) },
   // las fuentes y los tokens se sirven aparte desde public/: no se empaquetan
   external: ['/fonts/*', '/ds/*'],
   metafile: true, logLevel: 'info',
@@ -64,7 +73,11 @@ async function writeHtml(meta) {
   }
 }
 
-await rm(DIST, { recursive: true, force: true });
+if (distArg) {
+  // A directory chosen by the caller is never wiped: it must be new or empty.
+  const present = await readdir(DIST).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
+  if (present.length) { console.error(`--dist ${DIST} no está vacío`); process.exit(1); }
+} else await rm(DIST, { recursive: true, force: true });
 await mkdir(path.join(DIST, 'assets'), { recursive: true });
 if (watch) {
   const ctx = await context({ ...options, plugins: [{ name: 'html', setup(b) { b.onEnd(r => { if (r.metafile) writeHtml(r.metafile).catch(e => console.error(e)); }); } }] });
@@ -73,5 +86,5 @@ if (watch) {
 } else {
   const r = await build(options);
   await writeHtml(r.metafile);
-  console.log('App compilada en app/dist');
+  console.log(`App compilada en ${distArg ? DIST : 'app/dist'}`);
 }
