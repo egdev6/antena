@@ -685,7 +685,7 @@ Quota: 10,000 units per day. Each chat read costs about 5, so with 8 s between r
 
 If the total grows by more than the named subscribers found in a poll, the generic `ytsubcount` alert shows «+N suscriptores». Its total comes from the same connected OAuth account's `channels.list` read as the subscriber names, not the separate goal-total poll. The net estimate may include private subscribers or names the API did not return, and unsubscribes can cancel growth. Only exact totals below 1,000 on both sides qualify: hidden, missing and rounded counts at or above 1,000 do not alert. Recovering a previous high during the same listening period does not alert again. Turn it off with **Connections › YouTube › Avisar de suscriptores sin nombre**; it is on by default and does not change subscriber goals or follower metrics, or add extra thanks records.
 
-When available, the subscriber's thumbnail appears beside the alert without replacing its icon or media. The overlay accepts only initial HTTPS avatar URLs on `ggpht.com` or `googleusercontent.com` and their subdomains; the browser loads them without a referrer and may follow redirects. Other hosts are conservatively rejected. If the image is missing, rejected or fails to load, the alert keeps its name, icon and media without an avatar.
+The alert does not show the subscriber's thumbnail: the overlay neither displays nor requests it, and the alert keeps its name, icon and media. The `{avatar}` variable still carries the thumbnail URL when YouTube provides one (only HTTPS URLs on `ggpht.com` or `googleusercontent.com` and their subdomains are accepted).
 
 **Writing in the YouTube chat** needs your account (once):
 
