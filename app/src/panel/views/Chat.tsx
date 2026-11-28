@@ -2,27 +2,9 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type U
 import { post } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
 import { countRender } from '../../lib/render-count';
-import { cx, EmptyState, fmtTime, guard, PfIcon, PLATFORM_NAMES, toast, ViewHead } from '../../lib/ui';
+import { cx, EmptyState, fmtTime, guard, PfIcon, toast, ViewHead } from '../../lib/ui';
 import type { ChatMessage, ChatSendResult } from '../../lib/types';
-
-export function sendResultText(r: any) {
-  const errs = Object.entries<string>(r.errors || {});
-  return `Enviado a ${Object.keys(r.sent || {}).map(k => PLATFORM_NAMES[k]).join(' y ')}${errs.length ? ' · ' + errs.map(([k, v]) => PLATFORM_NAMES[k] + ': ' + v).join(' · ') : ''}`;
-}
-
-export function SendTo({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const opts: [string, React.ReactNode, string][] = [['twitch', <PfIcon platform="twitch" />, 'Solo Twitch'], ['youtube', <PfIcon platform="youtube" />, 'Solo YouTube'], ['both', 'Ambos', 'Twitch y YouTube']];
-  return <div className="eg-tabs send-to" role="radiogroup" aria-label="Escribir en">
-    {opts.map(([v, l, t]) => <button key={v} type="button" role="radio" className="eg-tabs__item" aria-checked={v === value} aria-selected={v === value} title={t} aria-label={t} onClick={() => onChange(v)}>{l}</button>)}
-  </div>;
-}
-
-export function readPreviewPreference(key: string) {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-export function writePreviewPreference(key: string, value: string) {
-  try { localStorage.setItem(key, value); } catch { /* el panel funciona sin almacenamiento */ }
-}
+import { SendTo, sendResultText } from '../components/chat';
 
 const ChatRow = memo(function ChatRow({ message: m }: { message: ChatMessage }) {
   countRender('panel/ChatRow');
