@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useLive } from '../lib/live';
 import { countRender } from '../lib/render-count';
 import { Icon, cx } from '../lib/ui';
@@ -34,29 +35,34 @@ type Item = { href: string; label: string; tail?: any };
 
 export function Sidebar({ current }: { current: string }) {
   countRender('panel/Sidebar');
-  const s = useLive(x => x);
+  const s = useLive(x => ({
+    alerts: x.config.alerts, types: x.types, lookDefaults: x.lookDefaults, media: x.media,
+    commands: x.config.commands?.length, timers: x.config.timers?.length,
+    shortcuts: x.config.shortcuts?.length, overlays: x.customOverlays?.length,
+    voting: !!x.interactive?.vote, giveawayOpen: !!x.interactive?.giveaway?.open,
+    streaming: !!x.status?.meld?.streaming, meldOn: x.status?.meld?.state === 'conectado',
+  }));
   const { themes, activeId, looks } = useThemes();
-  const activeTheme = themes.find(theme => theme.id === activeId);
-  const I = s.interactive || {};
-  const meldOn = s.status?.meld?.state === 'conectado';
+  const activeTheme = useMemo(() => themes.find(theme => theme.id === activeId), [themes, activeId]);
+  const { alerts, types, lookDefaults, media, meldOn } = s;
+  const warns = useMemo(() => alertWarnings({ alerts, types, lookDefaults, media }).length, [alerts, types, lookDefaults, media]);
   // a la derecha de cada entrada, como en el lienzo: un número (en rojo si es algo en marcha) o un punto de aviso
   const num = (v: number | undefined) => (v ? <span className="nav-n">{v}</span> : null);
   const live = (t: string, label?: string) => <span className="nav-n is-live" aria-label={label}>{t}</span>;
-  const warns = alertWarnings(s).length;
-  const widgetTail = I.vote && I.giveaway?.open ? live('2 activos', 'votación en curso y sorteo abierto')
-    : I.vote ? live('votando', 'votación en curso') : I.giveaway?.open ? live('sorteo', 'sorteo abierto') : num(14);
+  const widgetTail = s.voting && s.giveawayOpen ? live('2 activos', 'votación en curso y sorteo abierto')
+    : s.voting ? live('votando', 'votación en curso') : s.giveawayOpen ? live('sorteo', 'sorteo abierto') : num(14);
   const groups: [string, string, Item[]][] = [
     ['directo', 'En directo', [
-      { href: '#/directo', label: 'Directo', tail: s.status?.meld?.streaming ? live('●', 'en directo') : null },
+      { href: '#/directo', label: 'Directo', tail: s.streaming ? live('●', 'en directo') : null },
       { href: '#/chat', label: 'Chat' },
     ]],
     ['configurar', 'Configurar', [
       { href: '#/alertas', label: 'Alertas', tail: warns ? <span className="nav-w" role="img" aria-label={warns === 1 ? '1 aviso' : `${warns} avisos`} title="Alertas con avisos" /> : null },
-      { href: '#/comandos', label: 'Comandos de chat', tail: num(s.config.commands?.length) },
-      { href: '#/mensajes', label: 'Mensajes programados', tail: num(s.config.timers?.length) },
+      { href: '#/comandos', label: 'Comandos de chat', tail: num(s.commands) },
+      { href: '#/mensajes', label: 'Mensajes programados', tail: num(s.timers) },
       { href: '#/widgets', label: 'Widgets', tail: widgetTail },
-      { href: '#/overlays', label: 'Personalizados', tail: num((s.customOverlays || []).length) },
-      { href: '#/atajos', label: 'Atajos y Stream Deck', tail: num(s.config.shortcuts?.length) },
+      { href: '#/overlays', label: 'Personalizados', tail: num(s.overlays) },
+      { href: '#/atajos', label: 'Atajos y Stream Deck', tail: num(s.shortcuts) },
     ]],
     ['produccion', 'Producción', [
       { href: '#/fuentes', label: 'Fuentes' },

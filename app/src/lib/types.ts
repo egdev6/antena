@@ -410,6 +410,7 @@ export interface Timeline {
   pending: number;
   startedAt?: string | number | null;
   title?: string;
+  endedAt?: string;
   limit?: number;
   capped?: boolean;
 }

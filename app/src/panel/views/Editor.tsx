@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ACTION_LABELS, OBS_COMMANDS as SHARED_OBS_COMMANDS } from '../../../../src/actions.mjs';
 import { del, enc, post, put, get } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
+import { countRender } from '../../lib/render-count';
 import { ManualDraft } from '../../lib/manual-draft';
 import type { AlertConfig, AlertVariation, AppState, CommandConfig, Config, SendResult, TimerConfig } from '../../lib/types';
 import { codeTab, confirmDelete, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, SegField, Switch, toast, fmtTime } from '../../lib/ui';
@@ -94,11 +95,15 @@ function findTarget(s: any, t: Target) {
   if (t.kind === 'command') return (s.config.commands || []).find((c: any) => c.id === t.id);
   return (s.config.timers || []).find((x: any) => x.id === t.id);
 }
-function editorCfg(s: any, t: Target) {
-  if (t.kind === 'alert') return { ...s.lookDefaults, ...s.config.alerts[t.type] };
-  if (t.kind === 'variation') return { ...s.lookDefaults, ...s.config.alerts[t.type], ...(findTarget(s, t)?.overrides || {}) };
-  if (t.kind === 'timer') return { ...s.timerDefaults, ...findTarget(s, t) };
-  return { ...s.commandDefaults, ...findTarget(s, t) };
+function editorSource(s: AppState, t: Target) {
+  return {
+    item: findTarget(s, t),
+    defaults: t.kind === 'timer' ? s.timerDefaults : t.kind === 'command' ? s.commandDefaults : s.lookDefaults,
+    inherited: t.kind === 'variation' ? s.config.alerts[t.type] : undefined,
+  };
+}
+function editorCfg({ item, defaults, inherited }: ReturnType<typeof editorSource>, t: Target) {
+  return { ...defaults, ...inherited, ...(t.kind === 'variation' ? item?.overrides : item) };
 }
 function applyLocal(s: any, t: Target, f: string, v: any) {
   const cfg = { ...s.config };
@@ -183,8 +188,9 @@ function useEditor(t: Target) {
     });
   });
   const preview = async () => {
-    const cfg = editorCfg(live.state, t);
-    if (!active.current || (t.kind === 'timer' && !cfg.showAlert) || (t.kind === 'command' && cfg.outputMode === 'chat')) return;
+    if (!active.current || !live.state) return;
+    const cfg = editorCfg(editorSource(live.state, t), t);
+    if ((t.kind === 'timer' && !cfg.showAlert) || (t.kind === 'command' && cfg.outputMode === 'chat')) return;
     // el CSS común también va como está en pantalla (se edita en la pestaña CSS con guardado manual)
     await post('/api/test', { ...testBody(t, 'preview'), draft: buffer.dirty() ? findTarget(live.state, t) : undefined, globalCss: live.state?.config.overlay?.css ?? '' });
   };
@@ -255,7 +261,17 @@ export function ActionsEditor({ list, onChange }: { list: any[]; onChange: (l: a
 
 // ---------- editor ----------
 export function Editor({ target }: { target: Target }) {
-  const s = useLive(x => x);
+  countRender('panel/Editor');
+  const kind = target.kind, type = 'type' in target ? target.type : '';
+  const s = useLive(x => ({
+    ...editorSource(x, target),
+    metadata: type ? x.types[type] : undefined,
+    sample: kind === 'timer' ? undefined : x.samples[kind === 'command' ? 'command' : type],
+    conditionDefaults: kind === 'variation' ? x.conditionDefaults : undefined,
+    media: x.media,
+    programConnected: x.status.meld?.state === 'conectado',
+    overlayCss: x.config.overlay?.css,
+  }));
   useManualSave();
   useDraftVersion();
   const ed = useEditor(target);
@@ -274,7 +290,7 @@ export function Editor({ target }: { target: Target }) {
       if (el.isConnected && el.contentDocument === doc) ed.queuePreview(300);
     };
   }, []);
-  const item = findTarget(s, target);
+  const { item } = s;
   // timers: refresca el estado (cuenta atrás) cada 5 s
   useEffect(() => {
     if (target.kind !== 'timer') return;
@@ -285,12 +301,10 @@ export function Editor({ target }: { target: Target }) {
   if (!item) return <p className="hint">No existe. <a href="#/directo">Volver</a></p>;
 
   const a = editorCfg(s, target);
-  const kind = target.kind;
-  const type = 'type' in target ? target.type : '';
-  const t = kind === 'command' ? { label: 'Comando de chat', platform: 'chat' } : kind === 'timer' ? { label: 'Mensaje programado', platform: 'chat' } : s.types[type];
+  const t = kind === 'command' ? { label: 'Comando de chat', platform: 'chat' } : kind === 'timer' ? { label: 'Mensaje programado', platform: 'chat' } : s.metadata!;
   const visuals = (s.media || []).filter(m => m.kind === 'video' || m.kind === 'image');
   const audios = (s.media || []).filter(m => m.kind === 'audio');
-  const vars = kind === 'timer' ? TIMER_VARS : Object.keys(s.samples[kind === 'command' ? 'command' : type] || {});
+  const vars = kind === 'timer' ? TIMER_VARS : Object.keys(s.sample || {});
   const v = kind === 'variation' ? item : null;
   const amountType = (kind === 'alert' || kind === 'variation') && AMOUNT_TYPES.includes(type);
   const overrides = v?.overrides || {};
@@ -338,7 +352,7 @@ export function Editor({ target }: { target: Target }) {
     const d = await up.run(files as File[]);
     if (!d) return;
     set(f, d.name);
-    if (f === 'media') { if (live.state && editorCfg(live.state, target).layout !== 'mixed') set('layout', 'media'); if ((live.state?.media || []).find(m => m.name === d.name)?.kind === 'video') set('durationMode', 'media'); }
+    if (f === 'media') { if (live.state && editorCfg(editorSource(live.state, target), target).layout !== 'mixed') set('layout', 'media'); if ((live.state?.media || []).find(m => m.name === d.name)?.kind === 'video') set('durationMode', 'media'); }
   });
 
   // ---------- slide: cabecera y pie (guardado manual) ----------
@@ -530,7 +544,7 @@ export function Editor({ target }: { target: Target }) {
 
           {pane('actions', <>
             <div className="row middle">
-              <p className="hint grow">Se ejecutan cuando la alerta aparece en pantalla: cambiar de escena en el programa de emisión, mostrar una capa, lanzar confeti, escribir en el chat…{s.status.meld?.state !== 'conectado' && <> <b>El programa de emisión no está conectado</b>: puedes prepararlas igualmente.</>}</p>
+              <p className="hint grow">Se ejecutan cuando la alerta aparece en pantalla: cambiar de escena en el programa de emisión, mostrar una capa, lanzar confeti, escribir en el chat…{!s.programConnected && <> <b>El programa de emisión no está conectado</b>: puedes prepararlas igualmente.</>}</p>
               <button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={() => set('actions', [...structuredClone(a.actions || []), { kind: 'layer', scene: '', layer: '', seconds: 8, delaySec: 0 }])}><Icon d={IC.plus} className="eg-btn__icon" />Añadir acción</button>
             </div>
             <ActionsEditor list={a.actions || []} onChange={l => set('actions', l)} />
@@ -580,7 +594,7 @@ export function Editor({ target }: { target: Target }) {
             {cssTab === 'own'
               ? <div className={cx('lbl', kind === 'variation' && 'css' in overrides && 'ovr')} data-field="css">{unset('css')}
                 <textarea ref={cssRef} className="code" spellCheck={false} value={a.css || ''} onKeyDown={codeTab} onChange={e => set('css', e.target.value)} placeholder={'/* Tu CSS gana a los estilos de serie: no hace falta !important */\n.alert { --accent: #00E0FF; }'} /></div>
-              : <><textarea ref={gcssRef} className="code" spellCheck={false} value={s.config.overlay?.css || ''} onKeyDown={codeTab} onChange={e => saveGlobalCss(e.target.value)} placeholder={"/* Se aplica a TODAS las alertas, antes que el CSS de cada una */\n.alert { --font-name: 'Barlow Condensed', sans-serif; }"} />
+              : <><textarea ref={gcssRef} className="code" spellCheck={false} value={s.overlayCss || ''} onKeyDown={codeTab} onChange={e => saveGlobalCss(e.target.value)} placeholder={"/* Se aplica a TODAS las alertas, antes que el CSS de cada una */\n.alert { --font-name: 'Barlow Condensed', sans-serif; }"} />
                 <p className="hint">Se aplica a todas las alertas, comandos y mensajes. El CSS de cada alerta va después y puede pisarlo.</p></>}
             <div className="snippets"><span className="hint">Insertar:</span>{CSS_SNIPPETS.map(([l, code]) => <button key={l} type="button" className="eg-chip" onClick={() => insertSnippet(code)}>{l}</button>)}</div>
             <p className="css-help">Clases: <code>.alert</code> (raíz; también <code>.type-{kind === 'command' ? 'command' : kind === 'timer' ? 'custom' : type}</code>, <code>.alert-card</code> o <code>.alert-media-layout</code>) <code>.alert-box</code> <code>.alert-text</code> <code>.alert-title</code> <code>.alert-name</code> <code>.alert-sub</code> <code>.alert-sub b</code></p>

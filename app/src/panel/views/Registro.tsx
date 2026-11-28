@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { enc, get, post, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
+import { countRender } from '../../lib/render-count';
 import { confirmDelete, copy, guard } from '../../lib/ui';
 import { Box, Dot, Kpis, ListPanel, NameCell, PageHead, Slide, Tags, useListFilter } from '../../lib/layout';
 import { go } from '../router';
@@ -12,7 +13,8 @@ import { dateTime, duration, plural, type Past, type Summary } from './directos/
 
 // ---------- directos anteriores ----------
 function DirectoSlide({ id, tab, summary, retry }: { id: string; tab: string; summary: SummaryState; retry: () => void }) {
-  const s = useLive(x => x);
+  countRender('panel/DirectoSlide');
+  const { metrics, types } = useLive(s => ({ metrics: s.metrics, types: s.types }));
   const d = summary.id === id ? summary.data : null;
   const error = summary.id === id && summary.error;
   const [markdown, setMarkdown] = useState<{ text: string; error: boolean }>({ text: '', error: false });
@@ -37,19 +39,20 @@ function DirectoSlide({ id, tab, summary, retry }: { id: string; tab: string; su
     foot={<footer className="lv-sfoot sticky"><span className="lv-dirty">Solo lectura: es un directo archivado.</span><span className="sp" /><a className="eg-btn eg-btn--ghost eg-btn--sm" href={`/api/session/summary.md?id=${enc(id)}`} target="_blank" rel="noreferrer">Abrir resumen (.md)</a><button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" disabled={!md} onClick={() => copy(md)}>Copiar resumen</button></footer>}>
     {error ? <div role="alert">No se pudo cargar el resumen de este directo. <button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={retry}>Reintentar</button></div> : !d ? <p className="hint">Cargando…</p> : tab === 'resumen' ? <div className="lv-cols aside">
       <div className="lv-col">
-        <Kpis items={Object.entries(s.metrics || {}).filter(([k]) => k !== 'events').slice(0, 4).map(([k, m]) => ({ value: (d.totals?.[k] ?? 0).toLocaleString('es-ES'), label: m.label }))} />
+        <Kpis items={Object.entries(metrics || {}).filter(([k]) => k !== 'events').slice(0, 4).map(([k, m]) => ({ value: (d.totals?.[k] ?? 0).toLocaleString('es-ES'), label: m.label }))} />
         <Box title="Gracias a">{(d.credits || []).length ? d.credits!.map(g => <p key={g.title}><b>{g.title}:</b> {g.names.join(', ')}</p>) : <p className="hint">Nadie apoyó en este directo.</p>}</Box>
       </div>
       <aside className="lv-col"><Box title="Datos"><p className="hint">Empezó: {dateTime(d.startedAt)}<br />{d.endedAt ? <>Duración: {duration(d.startedAt, d.endedAt)}<br /></> : null}{plural(events.length, 'evento', 'eventos')} · {plural(markers.length, 'marca', 'marcas')}</p></Box></aside>
     </div> : tab === 'cronologia' ? <ListPanel title="Eventos" cols={[{ key: 'at', label: 'Minuto' }, { key: 'type', label: 'Tipo' }, { key: 'user', label: 'Quién' }, { key: 'sub', label: 'Detalle', hide: true }]}
-      rows={events.map((e, i) => ({ id: e.id || String(i), cells: { at: <span className="lv-mono">{at(e.at || e.ts)}</span>, type: s.types?.[e.type]?.label || e.type, user: <b>{e.user || '—'}</b>, sub: e.sub || '' } }))} empty="Sin eventos." />
+      rows={events.map((e, i) => ({ id: e.id || String(i), cells: { at: <span className="lv-mono">{at(e.at || e.ts)}</span>, type: types?.[e.type]?.label || e.type, user: <b>{e.user || '—'}</b>, sub: e.sub || '' } }))} empty="Sin eventos." />
       : tab === 'marcas' ? <ListPanel title="Marcas para shorts" cols={[{ key: 'at', label: 'Minuto' }, { key: 'label', label: 'Marca' }]}
         rows={markers.map((n, i) => ({ id: n.id || String(i), cells: { at: <span className="lv-mono">{at(n.at)}</span>, label: n.label || 'Sin nombre' } }))} empty="No se marcó ningún momento." />
       : <Box title="Resumen en Markdown">{markdown.error ? <p role="alert">No se pudo cargar el resumen en Markdown.</p> : <pre className="lv-pre">{md}</pre>}</Box>}
   </Slide>;
 }
 export function Directos({ parts }: { parts: string[] }) {
-  const state = useLive(x => x);
+  countRender('panel/Directos');
+  const types = useLive(s => s.types);
   const [past, setPast] = useState<Past[]>([]);
   const [listState, setListState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [listAttempt, setListAttempt] = useState(0);
@@ -94,7 +97,7 @@ export function Directos({ parts }: { parts: string[] }) {
     <div className="dx-explorer">
       <SessionList past={past} filtered={past.filter(p => f.match(p.title, dateTime(p.startedAt)))} query={f.q} onQuery={f.setQ}
         selected={selected} onSelect={setSelected} loading={listState === 'loading'} error={listState === 'error'} retry={() => setListAttempt(n => n + 1)} />
-      <SessionDetail selected={selected} session={past.find(p => p.id === selected)} summary={summary} retry={retrySummary} types={state.types} onRename={rename} />
+      <SessionDetail selected={selected} session={past.find(p => p.id === selected)} summary={summary} retry={retrySummary} types={types} onRename={rename} />
     </div>
     <p className="dx-foot">Cobertura: tiempo con muestras de espectadores sobre la duración. Las plataformas no se suman; un dato ausente no es cero.</p>
     {open ? <DirectoSlide key={open} id={open} summary={summary} retry={retrySummary} tab={['resumen', 'cronologia', 'marcas', 'exportar'].includes(parts[2]) ? parts[2] : 'resumen'} /> : null}
@@ -109,24 +112,30 @@ function formatBytes(n?: number | null) {
   do { v /= 1024; i++; } while (v >= 1024 && i < u.length - 1);
   return `${v >= 100 ? Math.round(v) : v.toFixed(1).replace('.', ',')} ${u[i]}`;
 }
+type MediaUsesSource = Pick<AppState, 'types' | 'theme'> & Pick<AppState['config'], 'alerts' | 'commands' | 'timers'>;
+
 /** Dónde se usa cada archivo: alertas (y sus variaciones), comandos, mensajes y tema. */
-export function mediaUses(s: AppState): Record<string, { t: string; href: string }[]> {
+export function mediaUses(s: MediaUsesSource): Record<string, { t: string; href: string }[]> {
   const out: Record<string, { t: string; href: string }[]> = {};
   const add = (name: any, t: string, href: string) => { if (typeof name === 'string' && name && !['default', 'none'].includes(name)) (out[name] ||= []).push({ t, href }); };
-  for (const [type, a] of Object.entries<any>(s.config.alerts || {})) {
+  for (const [type, a] of Object.entries<any>(s.alerts || {})) {
     const label = s.types?.[type]?.label || type;
     add(a.media, label, `#/alertas/${type}`); add(a.sound, label, `#/alertas/${type}`);
     for (const v of a.variations || []) { add(v.overrides?.media, `${label} › ${v.name}`, `#/alertas/${type}/v/${v.id}`); add(v.overrides?.sound, `${label} › ${v.name}`, `#/alertas/${type}/v/${v.id}`); }
   }
-  for (const c of s.config.commands || []) { add((c as any).media, c.trigger, `#/comandos/${enc(c.id)}`); add((c as any).sound, c.trigger, `#/comandos/${enc(c.id)}`); }
-  for (const t of s.config.timers || []) { add((t as any).media, t.name, `#/mensajes/${enc(t.id)}`); add((t as any).sound, t.name, `#/mensajes/${enc(t.id)}`); }
+  for (const c of s.commands || []) { add((c as any).media, c.trigger, `#/comandos/${enc(c.id)}`); add((c as any).sound, c.trigger, `#/comandos/${enc(c.id)}`); }
+  for (const t of s.timers || []) { add((t as any).media, t.name, `#/mensajes/${enc(t.id)}`); add((t as any).sound, t.name, `#/mensajes/${enc(t.id)}`); }
   const th = (s as any).theme || {};
   for (const k of ['font', 'fontFile', 'headFont', 'bodyFont']) add(th[k], 'Tema', '#/apariencia');
   return out;
 }
 const KIND: Record<string, string> = { video: 'Vídeo', image: 'Imagen', audio: 'Sonido', font: 'Fuente' };
 export function Archivos({ parts }: { parts: string[] }) {
-  const s = useLive(x => x);
+  countRender('panel/Archivos');
+  const s = useLive(x => ({
+    alerts: x.config.alerts, commands: x.config.commands, timers: x.config.timers,
+    types: x.types, theme: x.theme, media: x.media,
+  }));
   const media: MediaItem[] = s.media || [];
   const f = useListFilter();
   const up = useUploader();

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, put } from '../../lib/api';
 import { ViewerChart, type ViewerSeries } from '../../lib/charts';
 import { IC } from '../../lib/icons';
@@ -6,7 +6,8 @@ import { live, useLive } from '../../lib/live';
 import { countRender } from '../../lib/render-count';
 import { goalMetricLabel } from '../../lib/goal';
 import { ConnPill, copy, cx, EmptyState, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, ScaledFrame, Sec, Status, toast, type Tone } from '../../lib/ui';
-import type { AlertType, AppState, ChatSendResult, Platform, SessionList, SessionSummary, TimelineItem, ViewerPlatform, ViewerSettings } from '../../lib/types';
+import type { AlertType, ChatSendResult, Platform, SessionList, SessionSummary, TimelineItem, ViewerPlatform, ViewerSettings } from '../../lib/types';
+import { Clock, ClockValue } from '../components/Clock';
 import { readPreviewPreference, SendTo, sendResultText, writePreviewPreference } from './Chat';
 import { formatCoverage, formatNumber, platformNames, platforms, type ChatMetric, type Summary, type ViewerMetric } from './directos/model';
 
@@ -70,21 +71,31 @@ function Connections() {
   </div>;
 }
 
-function Health({ state, session, idleSeconds, endSession }: { state: AppState; session: LiveSession; idleSeconds: number | null; endSession: () => void }) {
-  const st = state.status, warnings: string[] = [];
-  const isLive = (p: Platform) => !!state.viewers?.platforms?.[p]?.live || (p === 'youtube' && st.youtube?.state === 'escuchando') ||
-    (!!st.meld?.streaming && !session.endedAt && !!(p === 'twitch' ? session.platforms?.twitch?.streamId : session.platforms?.youtube?.videoId));
-  if (isLive('twitch') && st.chat?.state !== 'conectado') warnings.push('Twitch: chat no conectado');
-  if (isLive('youtube') && !['escuchando', 'conectado'].includes(st.youtube?.state || '')) warnings.push('YouTube: chat no conectado');
+function Health({ session, idleFrom, endSession }: { session: LiveSession; idleFrom: number | null; endSession: () => void }) {
+  const st = useLive(s => ({
+    twitchLive: s.viewers?.platforms?.twitch?.live,
+    youtubeLive: s.viewers?.platforms?.youtube?.live,
+    chat: s.status.chat?.state,
+    youtube: s.status.youtube?.state,
+    streaming: s.status.meld?.streaming,
+    overlays: s.status.overlays,
+    paused: s.status.pause?.paused,
+    held: s.status.pause?.held,
+  }));
+  const warnings: string[] = [];
+  const isLive = (p: Platform) => (p === 'twitch' ? st.twitchLive : st.youtubeLive || st.youtube === 'escuchando') ||
+    (!!st.streaming && !session.endedAt && !!(p === 'twitch' ? session.platforms?.twitch?.streamId : session.platforms?.youtube?.videoId));
+  if (isLive('twitch') && st.chat !== 'conectado') warnings.push('Twitch: chat no conectado');
+  if (isLive('youtube') && !['escuchando', 'conectado'].includes(st.youtube || '')) warnings.push('YouTube: chat no conectado');
   for (const p of platforms) if (!session.endedAt && session.viewers?.[p]?.openGap) warnings.push(`${platformNames[p]}: hueco abierto en espectadores`);
-  if (st.pause?.paused) warnings.push('Alertas pausadas');
-  if (st.pause?.held) warnings.push(`${st.pause.held} ${st.pause.held === 1 ? 'alerta retenida' : 'alertas retenidas'}`);
+  if (st.paused) warnings.push('Alertas pausadas');
+  if (st.held) warnings.push(`${st.held} ${st.held === 1 ? 'alerta retenida' : 'alertas retenidas'}`);
   if (!st.overlays) warnings.push('0 overlays conectados');
-  const count = warnings.length + (idleSeconds !== null ? 1 : 0);
+  const count = warnings.length + (idleFrom !== null ? 1 : 0);
   return <section className="dir-health" aria-label="Salud y conexiones del directo">
     <div className={cx('dir-health-line', count > 0 && 'is-warning')} role="status">
       {count ? <><strong>{count} {count === 1 ? 'aviso' : 'avisos'}</strong>{warnings.length > 0 && <span>{warnings.join(' · ')}</span>}
-        {idleSeconds !== null && <span className="dir-health-idle">Sesión abierta sin emisión · empezó hace {mmss(idleSeconds)}<button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={endSession}>Cerrarla</button></span>}</> : <strong>Todo en orden</strong>}
+        {idleFrom !== null && <span className="dir-health-idle">Sesión abierta sin emisión · empezó hace <ClockValue>{now => mmss((now - idleFrom) / 1000)}</ClockValue><button type="button" className="eg-btn eg-btn--ghost eg-btn--sm" onClick={endSession}>Cerrarla</button></span>}</> : <strong>Todo en orden</strong>}
     </div>
     <Connections />
   </section>;
@@ -118,7 +129,22 @@ function recentChat(metric: ChatMetric | undefined, start: number, now: number) 
   return total / 5;
 }
 
-function PulseCard({ platform, start, end, now, series, viewers, chat, watcher, settings, disconnected }: { platform: Platform; start: string; end?: string; now: number; series?: ViewerSeries; viewers?: ViewerMetric; chat?: ChatMetric; watcher?: ViewerPlatform; settings?: ViewerSettings; disconnected: boolean }) {
+type PulseProps = { platform: Platform; start: string; end?: string; series?: ViewerSeries; viewers?: ViewerMetric; chat?: ChatMetric };
+
+function PulseCard(props: PulseProps) {
+  const { platform, series, chat } = props;
+  const { watcher, settings, disconnected } = useLive(s => ({
+    watcher: s.viewers?.platforms?.[platform],
+    settings: s.viewers?.settings,
+    disconnected: platform === 'twitch' ? s.status.twitch?.state === 'desconectado' && s.status.chat?.state !== 'conectado'
+      : ['desconectado', 'parado'].includes(s.status.youtube?.state || ''),
+  }));
+  const render = (now: number) => <PulseCardContent {...props} now={now} watcher={watcher} settings={settings} disconnected={disconnected} />;
+  // Live charts, sample expiry and rolling chat buckets need time; empty cards do not.
+  return series || chat?.minutes || (settings?.enabled && watcher?.live) ? <ClockValue>{render}</ClockValue> : render(Date.now());
+}
+
+function PulseCardContent({ platform, start, end, now, series, viewers, chat, watcher, settings, disconnected }: PulseProps & { now: number; watcher?: ViewerPlatform; settings?: ViewerSettings; disconnected: boolean }) {
   const current = formatNumber(currentViewers(series, now, watcher, settings));
   const average = formatNumber(viewers?.average, 1), peak = formatNumber(viewers?.peak);
   const rate = formatNumber(recentChat(chat, Date.parse(start), now), 1);
@@ -132,7 +158,7 @@ function PulseCard({ platform, start, end, now, series, viewers, chat, watcher, 
         <div className="dir-number"><b>{average ?? 'no disponible'}</b><span>media</span></div>
         <div className="dir-number"><b>{peak ?? 'no disponible'}</b><span>pico</span></div>
       </div>
-      {series && Number.isFinite(Date.parse(start)) ? <figure className="dx-figure"><ViewerChart start={start} end={end} series={{ [platform]: series }} /></figure> : <p className="hint">Curva de espectadores no disponible.</p>}
+      {series && Number.isFinite(Date.parse(start)) ? <figure className="dx-figure"><ViewerChart start={start} end={end || new Date(now).toISOString()} series={{ [platform]: series }} /></figure> : <p className="hint">Curva de espectadores no disponible.</p>}
       <div className="dir-pulse-foot"><span>Chat · <b>{rate === null ? 'no disponible' : `${rate} msg/min`}</b> últimos 5 min · <b>{unique ?? 'no disponible'}</b> personas únicas</span>
         <span className={cx(series?.openGap && 'dx-warn')}>Cobertura <b>{coverage ?? 'no disponible'}</b>{series?.openGap ? ' · hueco abierto' : ''}</span></div>
     </>}
@@ -156,10 +182,10 @@ function AlertsCard() {
   </div>;
 }
 
-function ChatBox() {
-  const chat = useLive(s => s.widgets?.chat || []), to = useLive(s => s.config.chat?.sendTo || 'twitch');
+const ChatBox = memo(function ChatBox() {
+  countRender('panel/ChatBox');
+  const list = useLive(s => s.widgets?.chat?.slice(-5) || []), to = useLive(s => s.config.chat?.sendTo || 'twitch');
   const [text, setText] = useState('');
-  const list = chat.slice(-5);
   const send = guard(async (e: React.FormEvent) => {
     e.preventDefault();
     const v = text.trim(); if (!v) return;
@@ -180,7 +206,7 @@ function ChatBox() {
       <button type="submit" className="eg-btn eg-btn--secondary eg-btn--sm">Enviar</button>
     </form>
   </div>;
-}
+});
 
 const THANKS_PREVIEW_VISIBLE = 'egdev.panel.directo.thanks-preview.visible';
 
@@ -204,38 +230,45 @@ function ThanksPreview() {
 
 export function Directo() {
   countRender('panel/Directo');
-  const s = useLive(x => x), tl = live.timeline;
+  const { streaming, monitoring, metrics, types } = useLive(s => {
+    const streaming = s.status?.meld?.state === 'conectado' && !!s.status.meld.streaming;
+    return {
+      streaming,
+      monitoring: streaming || platforms.some(p => !!s.viewers?.platforms?.[p]?.live) || s.status?.youtube?.state === 'escuchando',
+      metrics: s.metrics,
+      types: s.types,
+    };
+  });
+  const tl = useLive(() => live.timeline);
+  // A snapshot may carry new objects for the same items; goal values have their own subscription.
+  const itemsKey = useMemo(() => tl.items.map(item => item.id).join('\0'), [tl.items]);
   const [ses, setSes] = useState<LiveSession | null>(null);
   const [endRetryId, setEndRetryId] = useState<string | null>(null);
   const [past, setPast] = useState<SessionList['past']>([]);
-  const [now, setNow] = useState(Date.now());
-  const sequence = useRef(0), goalsKey = JSON.stringify(s.widgets?.goals || []);
+  // The archive list is ordered by id; the footer needs the most recent start.
+  const last = useMemo(() => [...(past || [])].sort((x, y) => (Date.parse(String(y?.startedAt ?? '')) || 0) - (Date.parse(String(x?.startedAt ?? '')) || 0))[0], [past]);
+  const sequence = useRef(0);
   // Only measure the time without a signal that this view has actually observed.
   const idleSince = useRef<{ id: string; at: number } | null>(null);
-  const streaming = s.status?.meld?.state === 'conectado' && !!s.status.meld.streaming;
-  const monitoring = streaming || platforms.some(p => !!s.viewers?.platforms?.[p]?.live) || s.status?.youtube?.state === 'escuchando';
   const load = guard(async () => {
     const generation = ++sequence.current;
     const [a, b] = await Promise.all([get<LiveSession>('/api/session'), get<SessionList>('/api/sessions')]);
     if (generation === sequence.current) { setSes(a); setPast(b.past || []); }
   });
-  useEffect(() => { load(); }, [tl, goalsKey]);
+  useEffect(() => { load(); }, [itemsKey, tl.startedAt, tl.endedAt, tl.title]);
   useEffect(() => { if (!monitoring) return; const h = setInterval(load, 30000); return () => clearInterval(h); }, [monitoring]);
-  useEffect(() => { const h = setInterval(() => setNow(Date.now()), 1000); return () => { clearInterval(h); sequence.current++; }; }, []);
+  useEffect(() => () => { sequence.current++; }, []);
   if (!ses) return null;
   const open = !!ses.startedAt && !ses.endedAt;
   const idle = open && !monitoring;
   if (!idle) idleSince.current = null;
-  else if (idleSince.current?.id !== ses.id) idleSince.current = { id: ses.id, at: now };
+  else if (idleSince.current?.id !== ses.id) idleSince.current = { id: ses.id, at: Date.now() };
   // We cannot know when broadcasting stopped, so the warning reports the session age.
   const startedMs = Date.parse(String(ses.startedAt ?? ''));
-  const idleSeconds = idle && idleSince.current ? (now - (Number.isFinite(startedMs) ? startedMs : idleSince.current.at)) / 1000 : null;
+  const idleFrom = idleSince.current ? (Number.isFinite(startedMs) ? startedMs : idleSince.current.at) : null;
   const started = ses.startedAt ? +new Date(ses.startedAt) : 0;
   const start = started ? new Date(started).toISOString() : '';
-  const end = ses.endedAt || new Date(now).toISOString();
-  const totals = Object.entries(s.metrics || {}).filter(([key]) => key !== 'events' && typeof ses.totals?.[key] === 'number' && ses.totals[key] !== 0);
-  // The archive list is ordered by id; the footer needs the most recent start.
-  const last = [...(past || [])].sort((x, y) => (Date.parse(String(y?.startedAt ?? '')) || 0) - (Date.parse(String(x?.startedAt ?? '')) || 0))[0];
+  const totals = Object.entries(metrics || {}).filter(([key]) => key !== 'events' && typeof ses.totals?.[key] === 'number' && ses.totals[key] !== 0);
   const mark = guard(async () => { const { marker } = await post<{ marker: { twitchError?: string } }>('/api/markers', {}); toast(marker?.twitchError ? `Marca guardada (Twitch: ${marker.twitchError})` : 'Momento marcado'); });
   const endSession = guard(async () => {
     if (!confirm('¿Terminar el directo? Se marcará la hora de fin; el archivado y la puesta a cero ocurrirán al empezar el siguiente.')) return;
@@ -246,9 +279,9 @@ export function Directo() {
     if (!confirm('Se archiva el directo actual y vuelven a cero las métricas por directo, los créditos y los últimos. Los totales del canal se conservan. ¿Seguir?')) return;
     await post('/api/session/new', { title: '' }); await load();
   });
-  return <>
+  return <Clock>
     <header className="view-head" data-tour="directo-head" data-tour-view-ready="directo"><div>
-      <span className={cx('crumb', streaming && 'onair')}>{streaming ? <span className="eg-live-dot is-active" aria-hidden="true" /> : null}{streaming ? 'En directo' : 'Sesión'} · desde las {fmtTime(started)}{started ? ` · ${mmss((now - started) / 1000)}` : ''}</span>
+      <span className={cx('crumb', streaming && 'onair')}>{streaming ? <span className="eg-live-dot is-active" aria-hidden="true" /> : null}{streaming ? 'En directo' : 'Sesión'} · desde las {fmtTime(started)}{started ? <ClockValue>{now => ` · ${mmss((now - started) / 1000)}`}</ClockValue> : ''}</span>
       <LazyInput className="title-input" value={ses.title ?? ''} placeholder="Título del directo" aria-label="Título del directo" onCommit={guard((v: string) => put('/api/session', { title: v }))} /></div>
       <div className="actions">
         <a className="eg-btn eg-btn--ghost eg-btn--sm" href="/api/session/summary.md" target="_blank">Resumen (.md)</a>
@@ -258,10 +291,9 @@ export function Directo() {
           : streaming ? <Status tone="success">{ses.meldAutoSession ? 'En directo · automático con el programa de emisión' : 'En directo · programa de emisión emitiendo'}</Status>
           : <button className="eg-btn eg-btn--secondary eg-btn--sm" onClick={endSession}>Terminar directo</button>}
       </div></header>
-    <Health state={s} session={ses} idleSeconds={idleSeconds} endSession={endSession} />
+    <Health session={ses} idleFrom={idleFrom} endSession={endSession} />
     <section className="dir-pulse" aria-labelledby="dir-pulse-title"><div className="dir-section-head"><h2 id="dir-pulse-title">Pulso del directo</h2><span className="hint">Desde el inicio · plataformas separadas · escala independiente</span></div>
-      <div className="dir-pulse-grid">{platforms.map(p => <PulseCard key={p} platform={p} start={start} end={end} now={now} series={ses.viewers?.[p]} viewers={ses.viewerMetrics?.[p]} chat={ses.chatMetrics?.[p]} watcher={s.viewers?.platforms?.[p]} settings={s.viewers?.settings}
-        disconnected={p === 'twitch' ? s.status.twitch?.state === 'desconectado' && s.status.chat?.state !== 'conectado' : ['desconectado', 'parado'].includes(s.status.youtube?.state || '')} />)}</div>
+      <div className="dir-pulse-grid">{platforms.map(p => <PulseCard key={p} platform={p} start={start} end={ses.endedAt} series={ses.viewers?.[p]} viewers={ses.viewerMetrics?.[p]} chat={ses.chatMetrics?.[p]} />)}</div>
     </section>
     <div className="cols dir-lower">
       <Sec title="Cronología" id="h-crono" tour="directo-timeline" className="dir-timeline" aside={<span className="hint">La historia del directo</span>}>
@@ -269,7 +301,7 @@ export function Directo() {
           const value = ses.totals![key], label = TOTAL_LABELS[key]?.[value === 1 ? 0 : 1] ?? metric.label.toLocaleLowerCase('es-ES');
           return `${value.toLocaleString('es-ES')} ${label}`;
         }).join(' · ') : 'Todavía no hay totales.'}</span>{' '}<strong>{tl.pending || 0} por agradecer</strong></div>
-        <Timeline items={tl.items} types={s.types} />
+        <Timeline items={tl.items} types={types} />
       </Sec>
       <Sec title="Control de respaldo" id="h-backup" aside={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={mark}><Icon d={IC.bookmark} className="eg-btn__icon" />Marcar momento</button>}>
         <AlertsCard /><ChatBox /><ThanksPreview />
@@ -278,5 +310,5 @@ export function Directo() {
     <div className="dir-extras"><GoalBars />
       <section className="dir-past"><span id="h-past">Último directo: </span>{last ? <><b>{fmtDateTime(last.startedAt)} · {last.title || 'Sin título'}</b> — </> : <>Todavía no hay directos archivados. </>}<a href="#/directos">ver historial</a></section>
     </div>
-  </>;
+  </Clock>;
 }
