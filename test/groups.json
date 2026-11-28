@@ -221,6 +221,7 @@
     "test/panel-dock-editor-browser.test.mjs",
     "test/panel-mvp-bot.test.mjs",
     "test/panel-preview-races-browser.test.mjs",
+    "test/panel-selectors-browser.test.mjs",
     "test/paneles-browser.test.mjs",
     "test/patcher-retry-browser.test.mjs",
     "test/platform-warning-browser.test.mjs",

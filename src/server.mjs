@@ -495,7 +495,10 @@ export async function createApp({ dataDir, mediaDir = process.env.ANTENA_MEDIA |
     return prompter;
   };
   // #68: tope común de cronología (TIMELINE_MAX, importado de routes/sessions.mjs), también al filtrar por kinds.
-  const timelinePayload = () => ({ items: session.timeline().slice(-TIMELINE_MAX), pending: session.pendingThanks(), startedAt: session.data.startedAt, title: session.data.title });
+  const timelinePayload = () => ({
+    items: session.timeline().slice(-TIMELINE_MAX), pending: session.pendingThanks(),
+    startedAt: session.data.startedAt, title: session.data.title, endedAt: session.data.endedAt,
+  });
   // #65: mismo patrón que history/widgets/interactive (debounce 120 ms + techo de 500 ms).
   const pushTimeline = burstCoalesce(SNAPSHOT_COALESCE_MS, () => bus.send('timeline', timelinePayload(), ['panel']), SNAPSHOT_MAX_WAIT_MS);
 
