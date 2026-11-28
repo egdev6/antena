@@ -147,6 +147,45 @@ chunks de producción servidos en `/assets/` por el servidor local, con HTTPS ex
 Tauri empaqueta ese mismo `app/dist` para el sidecar; queda pendiente probar el instalador y WebView2 en
 Windows real.
 
+## Polling de timers y emisión por frame (#367)
+
+Dos propuestas revisadas con la ráfaga de arriba sobre el código con #361 y #362 (28-11-2026). Ninguna se
+implementa.
+
+**Polling de `/api/timers` cada 5 s (`Editor.tsx`, `Comandos.tsx`): se mantiene.** El servidor solo envía el
+evento `timers` cuando un mensaje programado se dispara o cambia su configuración (`src/timers.mjs`,
+`src/server.mjs`). Lo que muestra la lista cambia con el tiempo sin ningún evento: `nextInSec` (la cuenta
+atrás de «Sale en …»), `lines`, `blockedBy` («Esperando: …») y `pausedOffStream`. Sin el polling, la cuenta
+atrás se congela. Es una petición cada 5 s y solo con esas vistas abiertas; quitarla exigiría que el servidor
+empujara la cuenta atrás, y cambiar el protocolo queda fuera de alcance.
+
+**Agrupar `emit()` por frame en `live.ts`: no compensa.** Cada evento del flujo llega en su propia tarea y
+React no junta notificaciones de tareas distintas, así que agrupar por microtarea no cambia nada. Renders
+durante la ráfaga (100 mensajes y 10 lecturas de espectadores):
+
+| Componente | Línea base (`02ec843`) | Con #361 y #362, 5 ms | Con #361 y #362, sin espera |
+| --- | ---: | ---: | ---: |
+| panel `Sidebar` | 110 | 0 | 0 |
+| panel `Directo` | 110 | 1 | 1 |
+| panel `Chat` | 100 | 100 | 100 |
+| dock `Status` | 110 | 0 | 0 |
+| prompter `Top` | 110 | 0 | 0 |
+| prompter `Eventos` | 110 | 0 | 0 |
+| prompter `Chat` | 200 | 47 | 13 |
+
+Los selectores angostos ya dejan en cero los componentes que no muestran el chat. Solo el chat del panel
+renderiza una vez por mensaje, y desde #363 cada render pinta una fila nueva y deja quietas las demás.
+Agruparlo por `requestAnimationFrame` ahorraría poco, añadiría un frame de retraso a acciones como cambiar de
+pestaña en el prompter, necesitaría otro camino cuando la página está oculta (Meld y OBS no ejecutan rAF en
+fuentes ocultas) y obligaría a reescribir `test/live-selectors.test.mjs` y `test/live-load-race.test.mjs`, que
+esperan la notificación síncrona.
+
+Para repetir la columna sin espera:
+
+```sh
+node -e "import('./test/render-scenario.mjs').then(m=>m.runRenderScenario({gapMs:0})).then(r=>console.log(JSON.stringify(r)))"
+```
+
 ## Límites
 
 - La ráfaga está espaciada (5 ms entre mensajes) para no saturar el flujo. Se cuentan las ejecuciones de cada
