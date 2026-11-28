@@ -170,6 +170,7 @@
     "test/build-reload.test.mjs",
     "test/charts-style-browser.test.mjs",
     "test/chat-backlog-browser.test.mjs",
+    "test/chat-memo-browser.test.mjs",
     "test/chat-preview-browser.test.mjs",
     "test/chat-variants-async-browser.test.mjs",
     "test/chat-variants-panel-browser.test.mjs",
