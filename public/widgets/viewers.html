@@ -18,31 +18,56 @@
 <body><div class="root" id="root"></div>
 <script type="module">
 // Concurrent viewers per platform. Query: ?platforms=twitch,youtube · ?layout=column · ?total=0|1 · ?peak=0|1
-import { connect, DEMO, qs, esc, setCss } from '/widgets/widget.js';
+import { connect, DEMO, qs, setCss } from '/widgets/widget.js';
 const root = document.getElementById('root');
 if (qs.get('layout') === 'column') root.classList.add('col');
 const LABELS = { twitch: 'Twitch', youtube: 'YouTube' };
 const fmt = n => Number(n || 0).toLocaleString('es-ES');
 const flag = (k, def) => qs.has(k) ? qs.get(k) !== '0' : def;
-let cfg = {}, data = {}, prev = {};
+let cfg = {}, data = {}, prev = {}, css = null;
+// One card per platform (and the total), created once and edited in place (#365): an event rewrites
+// only the text and classes that changed, so the other cards keep their nodes and their animations.
+const cards = new Map();
+const make = (tag, cls) => Object.assign(document.createElement(tag), { className: cls });
+const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
+// Plays the .up bump again, also when the previous one is still running.
+function bump(box) {
+  if (box.classList.contains('up')) { box.classList.remove('up'); void box.offsetWidth; }
+  box.classList.add('up');
+}
+// .up marks a card only while its bump plays.
+root.addEventListener('animationend', e => { if (e.animationName === 'up') e.target.closest('.item')?.classList.remove('up'); });
 function render() {
-  setCss(cfg.css);
+  if ((cfg.css || '') !== css) setCss(css = cfg.css || '');
   const platforms = (qs.get('platforms')?.split(',') || cfg.platforms || ['twitch', 'youtube']).filter(p => LABELS[p]);
   const showTotal = flag('total', cfg.showTotal ?? true) && platforms.length > 1;
   const showPeak = flag('peak', cfg.showPeak ?? false);
   const card = (id, label, d) => {
     const up = prev[id] != null && d.current > prev[id];
     prev[id] = d.current;
-    // pf-<platform>: the platform color from Apariencia paints the card, like the goal bars (#64).
-    const pf = LABELS[id] ? 'pf-' + id : '';
-    return `<div class="item eg-card soft item-${id} ${pf} ${d.live ? '' : 'off'} ${up ? 'up' : ''}"><p class="kick">${esc(label)}</p><p class="big">${d.live ? fmt(d.current) : '—'}</p>${showPeak && d.live ? `<p class="extra">Pico ${fmt(d.peak)}</p>` : ''}</div>`;
+    let c = cards.get(id);
+    if (!c) {
+      // pf-<platform>: the platform color from Apariencia paints the card, like the goal bars (#64).
+      c = { box: make('div', `item eg-card soft item-${id}${LABELS[id] ? ' pf-' + id : ''}`), big: make('p', 'big'), extra: null };
+      c.box.append(Object.assign(make('p', 'kick'), { textContent: label }), c.big);
+      cards.set(id, c);
+    }
+    setText(c.big, d.live ? fmt(d.current) : '—');
+    c.box.classList.toggle('off', !d.live);
+    if (showPeak && d.live) {
+      c.extra ||= c.box.appendChild(make('p', 'extra'));
+      setText(c.extra, `Pico ${fmt(d.peak)}`);
+    } else if (c.extra) { c.extra.remove(); c.extra = null; }
+    if (up) bump(c.box);
+    return c.box;
   };
   const items = platforms.map(p => card(p, LABELS[p], data[p] || {}));
   if (showTotal) {
     const live = platforms.filter(p => data[p]?.live);
     items.push(card('total', 'Total', { live: live.length > 0, current: live.reduce((a, p) => a + (data[p].current || 0), 0), peak: live.reduce((a, p) => a + (data[p].peak || 0), 0) }));
   }
-  root.innerHTML = items.join('');
+  for (const [id, c] of cards) if (!items.includes(c.box)) { c.box.remove(); cards.delete(id); }
+  items.forEach((box, i) => { if (root.children[i] !== box) root.insertBefore(box, root.children[i] || null); });
 }
 const demo = { twitch: { live: true, current: 132, peak: 158, record: 240 }, youtube: { live: true, current: 47, peak: 61, record: 90 } };
 connect({

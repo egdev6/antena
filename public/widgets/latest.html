@@ -22,25 +22,62 @@
 </style></head>
 <body><div class="root" id="root"></div>
 <script type="module">
-import { connect, DEMO, demoState, qs, esc, setCss } from '/widgets/widget.js';
+import { connect, DEMO, demoState, qs, setCss } from '/widgets/widget.js';
 const root = document.getElementById('root');
 if (qs.get('layout') === 'column') root.classList.add('col');
 const LABELS = { follow: 'Último seguidor', sub: 'Última suscripción', cheer: 'Últimos bits', raid: 'Último raid', superchat: 'Último Super Chat', member: 'Último miembro', any: 'Último evento' };
 const extra = (k, e) => k === 'cheer' ? `${e.vars?.amount ?? ''} bits` : k === 'raid' ? `${e.vars?.amount ?? ''} personas` : k === 'superchat' ? (e.vars?.amountText || '') : '';
-let prev = {};
+const make = (tag, cls, text = '') => Object.assign(document.createElement(tag), { className: cls, textContent: text });
+const setText = (node, text) => { const value = String(text ?? ''); if (node.textContent !== value) node.textContent = value; };
+const label = make('p', 'label');
+let cards = new Map(), css = '';
+function makeCard(k) {
+  const box = make('div', `item eg-card soft item-${k}`), big = make('p', 'big');
+  box.append(make('p', 'kick', LABELS[k]), big);
+  return { box, big, extra: null, prev: null };
+}
+function flash(box) {
+  // A second change can arrive before the first flash ends.
+  if (box.classList.contains('flash')) {
+    box.classList.remove('flash');
+    void getComputedStyle(box, '::after').animationName;
+  }
+  box.classList.add('flash');
+}
+root.addEventListener('animationend', e => {
+  if (e.animationName === 'flash' && e.pseudoElement === '::after' && e.target.classList.contains('item')) e.target.classList.remove('flash');
+});
 function apply(s) {
   const cfg = s.widgets?.latest || {};
-  setCss(cfg.css);
+  if ((cfg.css || '') !== css) setCss(css = cfg.css || '');
   // scope «all» (#357): the last supporters of every stream; otherwise only this stream's.
   const latest = cfg.scope === 'all' && s.latestAll ? s.latestAll : s.latest;
-  const items = (qs.get('items')?.split(',') || cfg.items || ['follow', 'sub', 'cheer', 'superchat']).filter(k => LABELS[k]);
+  const items = (qs.get('items')?.split(',') || cfg.items || ['follow', 'sub', 'cheer', 'superchat']).filter(k => Object.hasOwn(LABELS, k));
+  const next = new Map(), occurrences = {}, flashing = [];
+  const order = items.map(k => {
+    const key = `${k}:${occurrences[k] = (occurrences[k] || 0) + 1}`;
+    const card = cards.get(key) || makeCard(k);
+    const e = latest?.[k], stamp = e ? e.user + e.at : null;
+    if (e && card.prev && card.prev !== stamp) flashing.push(card.box);
+    card.prev = stamp;
+    card.box.classList.toggle('empty', !e);
+    if (!e) card.box.classList.toggle('flash', false);
+    setText(card.big, e ? e.user : '—');
+    const detail = e && extra(k, e);
+    if (detail) {
+      card.extra ||= card.box.appendChild(make('p', 'extra'));
+      setText(card.extra, detail);
+    } else if (card.extra) { card.extra.remove(); card.extra = null; }
+    next.set(key, card);
+    return card.box;
+  });
   // Optional label (widgets.latest.label): empty shows nothing.
-  root.innerHTML = (cfg.label ? `<p class="label">${esc(cfg.label)}</p>` : '') + items.map(k => {
-    const e = latest?.[k];
-    const changed = e && prev[k] && prev[k] !== e.user + e.at;
-    return `<div class="item eg-card soft ${e ? '' : 'empty'} ${changed ? 'flash' : ''} item-${k}"><p class="kick">${LABELS[k]}</p><p class="big">${e ? esc(e.user) : '—'}</p>${e && extra(k, e) ? `<p class="extra">${esc(extra(k, e))}</p>` : ''}</div>`;
-  }).join('');
-  prev = Object.fromEntries(items.map(k => [k, latest?.[k] ? latest[k].user + latest[k].at : null]));
+  if (cfg.label) { setText(label, cfg.label); order.unshift(label); }
+  else if (label.isConnected) label.remove();
+  for (const [key, card] of cards) if (!next.has(key)) card.box.remove();
+  cards = next;
+  order.forEach((box, i) => { if (root.children[i] !== box) root.insertBefore(box, root.children[i] || null); });
+  flashing.forEach(flash);
 }
 connect({ widgets: s => apply(DEMO ? { ...demoState(), widgets: s.widgets } : s) });
 if (DEMO) apply(demoState());

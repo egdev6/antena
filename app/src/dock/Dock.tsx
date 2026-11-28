@@ -1,5 +1,5 @@
 // Dock del directo: módulos y zonas configurables, sin chat ni vídeo.
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { normalizeDock, visibleDockZones } from '../../../src/dock-layout.mjs';
 import { post, withKey } from '../lib/api';
 import { IC } from '../lib/icons';
@@ -53,32 +53,50 @@ function useMedia(query: string) {
   return matches;
 }
 
-function Status({ active, look }: { active?: SavedThemeSummary; look?: ThemeLook }) {
-  countRender('dock/Status');
-  const s = useLive(x => x);
+function ElapsedClock() {
+  countRender('dock/ElapsedClock');
+  const startedAt = useLive(() => live.timeline.startedAt);
   const now = useNow();
-  const tl = live.timeline;
-  const st = s.status, meldOn = st.meld?.state === 'conectado' && !live.failed;
-  const known = meldOn && st.meld?.streamingKnown === true;
-  const streaming = known && st.meld?.streaming === true;
-  const tracks = s.meld?.session?.tracks || [];
-  const want = (s.config.prompter?.micTrack || '').toLowerCase();
+  return <b>{startedAt ? mmss((now - +new Date(startedAt)) / 1000) : ''}</b>;
+}
+
+const Status = memo(function Status({ active, look }: { active?: SavedThemeSummary; look?: ThemeLook }) {
+  countRender('dock/Status');
+  const s = useLive(({ status: st, meld, config }) => ({
+    offline: live.failed,
+    meldState: st.meld?.state,
+    streamingKnown: st.meld?.streamingKnown === true,
+    streaming: st.meld?.streaming === true,
+    recordingWarning: st.meld?.recordingWarning,
+    tracks: meld?.session?.tracks,
+    micTrack: config.prompter?.micTrack,
+    paused: st.pause?.paused,
+    held: st.pause?.held,
+    noOverlay: st.overlays === 0,
+    twitchState: st.twitch ? (st.twitch.state ?? 'desconectado') : null,
+    youtubeWaiting: st.youtube?.state === 'en espera',
+    youtubeNotice: st.youtube?.state === 'en espera' ? st.youtube.notice : undefined,
+  }));
+  const meldOn = s.meldState === 'conectado' && !s.offline;
+  const known = meldOn && s.streamingKnown;
+  const streaming = known && s.streaming;
+  const tracks = s.tracks || [];
+  const want = (s.micTrack || '').toLowerCase();
   const mic = want ? tracks.find(t => t.name.toLowerCase() === want) : tracks.find(t => /mic/i.test(t.name));
-  const pause = st.pause || {};
   return <header className="d-top">
-    <div className={cx('d-live', streaming && 'on')}><i />{streaming ? 'En directo' : known ? 'Sin emitir' : 'Sesión'}<b>{tl.startedAt ? mmss((now - +new Date(tl.startedAt)) / 1000) : ''}</b></div>
+    <div className={cx('d-live', streaming && 'on')}><i />{streaming ? 'En directo' : known ? 'Sin emitir' : 'Sesión'}<ElapsedClock /></div>
     <div className="d-warns">
-      {st.meld?.recordingWarning && <span className="d-warn soft" role="status">{st.meld.recordingWarning}</span>}
+      {s.recordingWarning && <span className="d-warn soft" role="status">{s.recordingWarning}</span>}
       {mic?.muted && <span className="d-warn big">🎙 Micro silenciado</span>}
-      {pause.paused && <span className="d-warn">Alertas en pausa{pause.held ? ` · ${pause.held}` : ''}</span>}
-      {!meldOn && !live.failed && <ConnPill platform="meld" state={st.meld?.state} />}
-      {st.overlays === 0 && <span className="d-warn soft">Sin overlay</span>}
-      {st.twitch && st.twitch.state !== 'conectado' && <ConnPill platform="twitch" state={st.twitch.state} />}
-      {st.youtube?.state === 'en espera' && <ConnPill platform="youtube" state="en espera" label={st.youtube.notice || undefined} />}
+      {s.paused && <span className="d-warn">Alertas en pausa{s.held ? ` · ${s.held}` : ''}</span>}
+      {!meldOn && !s.offline && <ConnPill platform="meld" state={s.meldState} />}
+      {s.noOverlay && <span className="d-warn soft">Sin overlay</span>}
+      {s.twitchState !== null && s.twitchState !== 'conectado' && <ConnPill platform="twitch" state={s.twitchState} />}
+      {s.youtubeWaiting && <ConnPill platform="youtube" state="en espera" label={s.youtubeNotice || undefined} />}
     </div>
     <div className="d-theme-active" data-dock-active-theme><ThemeAvatar theme={active} look={look} /><span>Tema activo: <b>{active?.name || 'Cargando…'}</b></span></div>
   </header>;
-}
+});
 
 function ThemeChoices({ data }: { data: ReturnType<typeof useThemes> }) {
   return <div className="d-body d-themes" data-dock-theme-list>

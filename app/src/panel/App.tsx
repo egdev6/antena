@@ -1,45 +1,43 @@
 // Panel principal (ventana de la app de escritorio o http://localhost:4500/ en el navegador).
-import { useEffect, useState } from 'react';
+import { Component, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { live, useLive } from '../lib/live';
 import { flushAll } from '../lib/patch';
 import { holding } from '../lib/draft';
-import { toast, Toaster } from '../lib/ui';
+import { EmptyState, toast, Toaster } from '../lib/ui';
 import { useHash } from './router';
 import { Onboarding } from './Onboarding';
 import { PlatformWarning } from './PlatformWarning';
 import { Sidebar } from './Sidebar';
-import { Vistas } from './views/index';
-import { platformsText } from './views/Editor';
+import { platformsText } from './components/chat';
+import { Directo } from './views/Directo';
+import { getLazyRoute, type LazyRoute } from './views/index';
+
+class ViewBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    // A new document clears failed module imports and fetches the current entry point.
+    return <EmptyState action={<button type="button" className="eg-btn eg-btn--secondary eg-btn--sm" onClick={() => location.reload()}>Recargar panel</button>}>
+      <span role="alert">No se pudo cargar esta vista.</span>
+    </EmptyState>;
+  }
+}
+
+function LazyPage({ route, parts }: { route: LazyRoute; parts: string[] }) {
+  // Use a completed preload without suspending. Keep that choice across subroutes.
+  const [Page] = useState(() => route.loaded ?? route.Lazy);
+  return <Page parts={parts} />;
+}
 
 function View({ parts }: { parts: string[] }) {
-  const V = Vistas;
-  switch (parts[0]) {
-    case 'directo': return <V.Directo />;
-    case 'chat': return <V.Chat />;
-    case 'preguntas': return <V.Preguntas parts={parts} />;
-    case 'tierlist': return <V.TierList parts={parts} />;
-    case 'entrevista': return <V.Entrevista parts={parts} />;
-    case 'sorteo': return <V.Sorteo parts={parts} />;
-    case 'teleprompter': return <V.Teleprompter parts={parts} />;
-    case 'alertas': return <V.Alertas parts={parts} />;
-    case 'comandos': return <V.Comandos parts={parts} />;
-    case 'mensajes': return <V.Mensajes parts={parts} />;
-    case 'widgets': return <V.Widgets parts={parts} />;
-    case 'overlays': return <V.Overlays parts={parts} />;
-    case 'atajos': return <V.Atajos parts={parts} />;
-    case 'fuentes': return <V.Fuentes parts={parts} />;
-    case 'meld': return <V.Meld parts={parts} />;
-    case 'prompter': return <V.PrompterAjustes parts={parts} />;
-    case 'historial': return <V.Historial />;
-    case 'directos': return <V.Directos parts={parts} />;
-    case 'archivos': return <V.Archivos parts={parts} />;
-    case 'apariencia': return <V.Apariencia parts={parts} />;
-    case 'conexiones': return <V.Conexiones parts={parts} />;
-    case 'filtros': return <V.Filtros parts={parts} />;
-    case 'general': return <V.General parts={parts} />;
-    case 'acerca': return <V.AcercaDe />;
-    default: return <V.Directo />;
-  }
+  const route = getLazyRoute(parts[0]);
+  if (!route) return <Directo />;
+  return <ViewBoundary key={parts[0]}>
+    <Suspense fallback={<p className="hint" role="status">Cargando vista…</p>}>
+      <LazyPage route={route} parts={parts} />
+    </Suspense>
+  </ViewBoundary>;
 }
 
 const PERSIST_KIND: Record<string, string> = { config: 'la configuración', secrets: 'los secretos' };
