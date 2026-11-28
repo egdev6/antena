@@ -1,8 +1,7 @@
 # Rendimiento: renders por ráfaga de chat y tamaño del bundle
 
-Medir antes de optimizar (#360, hito M20). Este documento explica cómo se mide, cómo leer el resultado y
-recoge los números de partida. No optimiza nada y no hay umbrales de CI: ni el comando ni ningún workflow
-fallan por un número; los umbrales se decidirán con estas cifras.
+Medir antes de optimizar (#360, hito M20). Este documento explica cómo se mide y recoge los números de
+partida y sus comparaciones. No hay umbrales de CI: ni el comando ni ningún workflow fallan por un número.
 
 ## Cómo medirlo
 
@@ -121,6 +120,30 @@ CSS    127037   25175
 
 En total, 723,8 KiB de JS (216,8 KiB con gzip) y 124,1 KiB de CSS (24,6 KiB con gzip). Los nombres salen sin el
 hash de contenido; los dos `chunk.js` son los trozos compartidos entre el panel, el prompter y el dock.
+
+## Vistas del panel bajo demanda (#366)
+
+Directo y la barra lateral se cargan al arrancar. Las demás vistas se cargan al abrirlas o se precargan al
+pasar el cursor o enfocar su enlace en la barra lateral. Una descarga pendiente muestra «Cargando vista…»
+sin ocultar la barra lateral. Si falla, se puede abrir otra vista o elegir «Recargar panel» para volver a
+intentar la misma dirección, incluidos sus parámetros en el hash.
+
+Comparación de producción en bytes (`node scripts/perf.mjs --only size`, gzip nivel 9 por archivo), antes
+(`8f5c830`, con #360 y #361) y después:
+
+| JavaScript | Antes (bruto) | Después (bruto) | Antes (gzip) | Después (gzip) |
+| --- | ---: | ---: | ---: | ---: |
+| Entrada `panel.js` | 422373 | 34682 | 122133 | 11710 |
+| Arranque del panel (entrada e imports estáticos) | 692917 | 340027 | 207209 | 111678 |
+| Todos los archivos JS de `app/dist/assets` | 742981 | 752674 | 222730 | 244485 |
+
+El JS de arranque baja un 51 % en bruto y un 46 % con gzip, aunque pasa de 3 a 15 archivos. El total crece
+al dividir el código en más trozos; los estilos no cambian. Estas cifras miden tamaño, no tiempo de arranque.
+
+`node --test --test-timeout=300000 test/panel-lazy-routes-browser.test.mjs` comprueba las rutas y los
+chunks de producción servidos en `/assets/` por el servidor local, con HTTPS externo bloqueado en Chrome.
+Tauri empaqueta ese mismo `app/dist` para el sidecar; queda pendiente probar el instalador y WebView2 en
+Windows real.
 
 ## Límites
 

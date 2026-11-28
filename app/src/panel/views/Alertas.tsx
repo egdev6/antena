@@ -6,26 +6,8 @@ import { countRender } from '../../lib/render-count';
 import { EmptyState, guard, Icon, PfIcon, ScaledFrame } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { Card, CardGroup, CardSwitch, Dot, Kpis, PageHead, Tags, useListFilter } from '../../lib/layout';
-import type { AppState } from '../../lib/types';
+import { alertIssues } from '../alert-warnings';
 import { Editor } from './Editor';
-
-type AlertIssueSource = Pick<AppState, 'media' | 'lookDefaults'> & Pick<AppState['config'], 'alerts'>;
-
-/** Avisos de una alerta: archivo que ya no está en media/ (vídeo, imagen o sonido). */
-export function alertIssues(s: AlertIssueSource, type: string): string[] {
-  const a = { ...(s.lookDefaults || {}), ...(s.alerts?.[type] || {}) } as Record<string, any>;
-  const files = new Set((s.media || []).map(m => m.name));
-  const out: string[] = [];
-  if (['media', 'mixed'].includes(a.layout) && a.media && !files.has(a.media)) out.push(`falta ${a.media}`);
-  if (a.sound && !['default', 'none'].includes(a.sound) && !files.has(a.sound)) out.push(`falta ${a.sound}`);
-  for (const v of a.variations || []) {
-    const o = v.overrides || {};
-    if (o.media && !files.has(o.media)) out.push(`«${v.name}»: falta ${o.media}`);
-    if (o.sound && !['default', 'none'].includes(o.sound) && !files.has(o.sound)) out.push(`«${v.name}»: falta ${o.sound}`);
-  }
-  return out;
-}
-export const alertWarnings = (s: AlertIssueSource & Pick<AppState, 'types'>) => (s?.types ? Object.keys(s.types).filter(t => alertIssues(s, t).length) : []);
 
 const isVid = (f?: string) => /\.(webm|mp4|mov|m4v)$/i.test(f || '');
 const GROUPS: [string, string, string][] = [

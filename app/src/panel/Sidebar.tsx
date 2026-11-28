@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
 import { useLive } from '../lib/live';
 import { countRender } from '../lib/render-count';
-import { Icon, cx } from '../lib/ui';
+import { Icon, cx, guard } from '../lib/ui';
 import type { IconData } from '../lib/icons';
-import { alertWarnings } from './views/Alertas';
 import { activateTheme, ThemeAvatar, useThemes } from '../lib/themes';
-import { guard } from '../lib/ui';
+import { alertWarnings } from './alert-warnings';
+import { preloadView } from './views/index';
 
 const P = (d: string) => ['path', { d }] as const;
 // iconos del menú lateral del lienzo (v2 · jerarquía): uno por entrada
@@ -97,7 +97,9 @@ export function Sidebar({ current }: { current: string }) {
         <ul className="eg-menu eg-menu--nav" aria-labelledby={`nav-g-${id}`}>
           {items.map(it => {
             const key = it.href.slice(2) as keyof typeof ICONS;
-            return <li key={it.href}><a className={cx('eg-menu__item', active(it.href) && 'on')} href={it.href} aria-current={active(it.href) ? 'page' : undefined}>
+            const preload = () => preloadView(key);
+            return <li key={it.href}><a className={cx('eg-menu__item', active(it.href) && 'on')} href={it.href} aria-current={active(it.href) ? 'page' : undefined}
+              onMouseEnter={preload} onFocus={preload}>
               <Icon d={ICONS[key]} /><span className="eg-menu__label">{it.label}</span>{it.tail}</a></li>;
           })}
         </ul>

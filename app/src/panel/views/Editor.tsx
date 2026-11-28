@@ -9,6 +9,7 @@ import type { AlertConfig, AlertVariation, AppState, CommandConfig, Config, Send
 import { codeTab, confirmDelete, cx, EmptyState, guard, Icon, IconBtn, PLATFORM_NAMES, ScaledFrame, Seg, SegField, Switch, toast, fmtTime } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { go } from '../router';
+import { platformsText } from '../components/chat';
 import { useUploader, UploadBar } from './General';
 import { confirmLeave, isSaving, registerDraft, useDraftVersion, useManualSave } from '../../lib/draft';
 import { ListPanel, NameCell, SaveBar, Slide, Tags, type TabDef } from '../../lib/layout';
@@ -45,9 +46,6 @@ const CSS_SNIPPETS: [string, string][] = [
   ['Texto con contorno', '.alert-name { -webkit-text-stroke: 2px #000; paint-order: stroke fill; }'],
   ['Latido al entrar', '@keyframes latido { 50% { scale: 1.06; } }\n.alert.on .alert-name { animation: latido .6s 1s 2; }'],
 ];
-
-export const platformsText = (platforms: any = {}) => Object.entries<any>(platforms || {})
-  .map(([p, r]) => `${PLATFORM_NAMES[p] || p}: ${r.ok ? (r.kind === 'announcement' ? 'anuncio enviado' : 'enviado') : `no enviado (${r.error})`}`).join(' · ');
 
 function condSummary(c: any = {}) {
   const p: string[] = [];
