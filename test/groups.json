@@ -193,6 +193,7 @@
     "test/dock-live-control-browser.test.mjs",
     "test/dock-live-start-browser.test.mjs",
     "test/dock-obs-meters-browser.test.mjs",
+    "test/dock-prompter-render.test.mjs",
     "test/fuentes-prompter-dock-browser.test.mjs",
     "test/ghost-button-rest-browser.test.mjs",
     "test/giveaway-preview-browser.test.mjs",
