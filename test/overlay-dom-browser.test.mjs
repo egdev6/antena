@@ -1,6 +1,5 @@
-// #365: the viewers and credits widgets edit their DOM in place instead of rebuilding it with innerHTML.
-// The tests keep references to nodes, drive the real widget through the server's own events and check
-// that the same nodes are still on screen (and that their animations were not restarted).
+// #365: keep references to widget nodes, drive the real widgets through server events and check
+// that the same nodes are still on screen, without restarting unrelated animations.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -281,4 +280,118 @@ test('credits: play, stop, the idle line, the empty fallback and loop work as be
   await waitDom(c, `!!document.getElementById('roll')?.getAnimations()[0]`);
   await ev(`window.__scroll = document.getElementById('roll').getAnimations()[0]; true`);
   await waitDom(c, `(document.getElementById('roll')?.getAnimations()[0] ?? window.__scroll) !== window.__scroll`, { timeoutMs: 25000 });
+}));
+
+// ---------- tier list ----------
+const BARS = `[...document.querySelectorAll('#bars .bar')]`;
+const TIER_NODES = `[...document.querySelectorAll('#bars .bar, #bars .bar *, #rows .row, #rows .chip, #pool .chip, #how b')]`;
+const TIMER = `document.getElementById('timer').textContent`;
+
+test('tier list: a tick only writes the countdown and votes update bars in place', { timeout: 90000 }, t => withApp(t, async ({ call, c, ev, open }) => {
+  const item = 'Vote <em>item</em>', unplaced = 'Unplaced <em>item</em>', voteText = 'Best <em>choice</em>';
+  const { tierlist } = await call('POST', '/api/tierlists', { items: ['Placed', item, unplaced], tiers: [
+    { id: 's', label: 'S', color: '#ff0036', voteText }, { id: 'a', label: 'A', color: '#ff6a3d' },
+    { id: 'b', label: 'B', color: '#ffb547' },
+  ] });
+  const url = `/api/tierlists/${tierlist.id}`;
+  await call('POST', `${url}/place`, { item: 'Placed', tier: 's' });
+  await open('/widget/tierlist');
+  await call('POST', `${url}/vote`, { item, seconds: 60 });
+  const vote = (user, text) => call('POST', '/api/chat/simulate', { user, text });
+  await vote('Ana', 'S'); await vote('Ben', 'A');
+  const how = `document.getElementById('how').textContent`;
+  await waitDom(c, `${how}.endsWith('2 votos') && ${TIMER}.startsWith('· ')`);
+  const start = await ev(`(() => {
+    window.__tierNodes = ${TIER_NODES}; window.__tierWrites = [];
+    new MutationObserver(records => window.__tierWrites.push(...records.map(r => r.target.id || r.target.parentElement?.id || 'other')))
+      .observe(document.getElementById('board'), { subtree: true, childList: true, attributes: true, characterData: true });
+    return ${TIMER};
+  })()`);
+  const kept = () => ev(`(() => { const now = ${TIER_NODES}; return now.length === window.__tierNodes.length && now.every((node, i) => node === window.__tierNodes[i]); })()`);
+  await waitDom(c, `${TIMER} !== ${JSON.stringify(start)}`);
+  assert.match(await ev(TIMER), /^· \d+s$/);
+  assert.deepEqual(await ev(`[...new Set(window.__tierWrites)]`), ['timer']);
+  assert.equal(await kept(), true, 'the countdown leaves the rest of the board alone');
+
+  await vote('Cleo', 'A');
+  await waitDom(c, `${how}.endsWith('3 votos')`);
+  assert.equal(await kept(), true, 'a vote preserves the bars, chips and instruction nodes');
+  assert.deepEqual(await ev(`${BARS}.map(bar => [bar.firstElementChild.textContent, bar.querySelector('.n').textContent,
+    Number(bar.querySelector('i b').style.getPropertyValue('--p')), bar.classList.contains('win')])`), [
+    [voteText, '1', 0.5, false], ['A', '2', 1, true], ['B', '0', 0, false],
+  ]);
+  assert.equal(await ev(how), `Escribe S (${voteText}) A B o !tier S · 3 votos`);
+  assert.deepEqual(await ev(`['#vitem', '#rows .chip', '#pool .chip'].map(s => document.querySelector(s).textContent)`), [item, 'Placed', unplaced]);
+  assert.equal(await ev(`document.querySelectorAll('#board em').length`), 0);
+
+  // A second vote starts without a time limit and the first item's placement is unchanged.
+  await call('POST', '/api/vote/cancel');
+  await waitDom(c, `document.getElementById('vote').hidden && document.getElementById('hint').textContent === '1 / 3 colocados'`);
+  await call('POST', `${url}/vote`, { item: unplaced, seconds: 0 });
+  await waitDom(c, `!document.getElementById('vote').hidden && ${how}.endsWith('0 votos')`);
+  assert.equal(await ev(TIMER), '');
+  assert.deepEqual(await ev(`${BARS}.map(bar => bar.querySelector('.n').textContent)`), ['0', '0', '0']);
+
+  await call('POST', '/api/tierlists/hide');
+  await open(`/widget/tierlist?id=${encodeURIComponent(tierlist.id)}&nopool`);
+  await waitDom(c, `document.getElementById('board').classList.contains('on') && ${BARS}.length === 3`);
+  assert.deepEqual(await ev(`['#vitem', '#rows .chip', '#pool'].map(s => document.querySelector(s).textContent)`), [unplaced, 'Placed', '']);
+}));
+
+// ---------- latest ----------
+const LATEST_FLASH = id => `document.querySelector('.item-${id}').getAnimations({ subtree: true }).find(a => a.animationName === 'flash')`;
+const LATEST_SUMMARY = `${CARDS}.map(card => [(${ID})(card), card.querySelector('.big').textContent, card.querySelector('.extra')?.textContent ?? null])`;
+
+test('latest: events update cards in place and flash only changed supporters', { timeout: 90000 }, t => withApp(t, async ({ call, c, ev, open }) => {
+  const label = 'Apoyos <em>recientes</em>', name = 'Cleo <em>Demo</em>';
+  const simulate = (type, user, amount) => call('POST', '/api/simulate', { type, vars: { user, amount } });
+  // Keep a flash running long enough to observe overlapping widget updates.
+  await call('PUT', '/api/widgets', { latest: { label, items: ['follow', 'cheer'], css: '.item.flash::after{animation-duration:120s}' } });
+  await open('/widget/latest');
+  await waitDom(c, `${CARDS}.length === 2`);
+  assert.deepEqual(await ev(LATEST_SUMMARY), [['follow', '—', null], ['cheer', '—', null]]);
+  assert.deepEqual(await ev(`${CARDS}.map(card => card.classList.contains('empty'))`), [true, true]);
+
+  await simulate('follow', 'Ana'); await simulate('cheer', 'Ben', 20);
+  await waitDom(c, `${BIG('follow')} === 'Ana' && ${BIG('cheer')} === 'Ben'`);
+  assert.deepEqual(await ev(LATEST_SUMMARY), [['follow', 'Ana', null], ['cheer', 'Ben', '20 bits']]);
+  assert.equal(await ev(`!document.querySelector('#root .empty, #root .flash')`), true, 'first supporters do not flash');
+  await ev(`(() => {
+    window.__latestNodes = [...document.querySelectorAll('#root .label, #root .item, #root .item > p')]; window.__latestWrites = [];
+    new MutationObserver(records => window.__latestWrites.push(...records.map(r =>
+      (r.target.nodeType === 1 ? r.target : r.target.parentElement)?.closest('.item-cheer') ? 'cheer' : 'other')))
+      .observe(document.getElementById('root'), { subtree: true, childList: true, attributes: true, characterData: true });
+  })()`);
+  await simulate('cheer', name, 42);
+  await waitDom(c, `${BIG('cheer')} === ${JSON.stringify(name)}`);
+  assert.equal(await ev(`[...document.querySelectorAll('#root .label, #root .item, #root .item > p')].every((node, i) => node === window.__latestNodes[i])`), true,
+    'the label, both cards and their text elements keep their identity');
+  assert.deepEqual(await ev(`[...new Set(window.__latestWrites)]`), ['cheer']);
+  assert.deepEqual(await ev(LATEST_SUMMARY), [['follow', 'Ana', null], ['cheer', name, '42 bits']]);
+  assert.equal(await ev(`document.querySelector('#root .label').textContent`), label);
+  assert.equal(await ev(`document.querySelectorAll('#root em').length`), 0);
+  assert.equal(await ev(`!!(window.__cheerFlash = ${LATEST_FLASH('cheer')}) && !${LATEST_FLASH('follow')}`), true);
+
+  await simulate('follow', 'Dan');
+  await waitDom(c, `${BIG('follow')} === 'Dan'`);
+  assert.equal(await ev(`${LATEST_FLASH('cheer')} === window.__cheerFlash && !!${LATEST_FLASH('follow')}`), true, 'the cheer flash keeps running');
+  await simulate('cheer', 'Eli', 35);
+  await waitDom(c, `${BIG('cheer')} === 'Eli'`);
+  assert.equal(await ev(`!!${LATEST_FLASH('cheer')} && ${LATEST_FLASH('cheer')} !== window.__cheerFlash`), true, 'another cheer restarts the flash');
+  await ev(`document.getAnimations().filter(a => a.animationName === 'flash').forEach(a => a.finish())`);
+  await waitDom(c, `!document.querySelector('#root .flash')`);
+
+  await ev(`window.__followCard = document.querySelector('.item-follow'); true`);
+  await call('PUT', '/api/widgets', { latest: { label: '', items: ['sub', 'follow'] } });
+  await waitDom(c, `!!document.querySelector('.item-sub') && !document.querySelector('.item-cheer, #root .label')`);
+  assert.deepEqual(await ev(LATEST_SUMMARY), [['sub', '—', null], ['follow', 'Dan', null]]);
+  assert.equal(await ev(`document.querySelector('.item-follow') === window.__followCard`), true);
+}));
+
+test('latest: query items keep their order and repeated types, overriding config in column mode', { timeout: 90000 }, t => withApp(t, async ({ call, c, ev, open }) => {
+  await call('PUT', '/api/widgets', { latest: { items: ['sub'] } });
+  await open('/widget/latest?demo&layout=column&items=cheer,follow,cheer,unknown');
+  await waitDom(c, `${CARDS}.length === 3`);
+  assert.equal(await ev(`document.getElementById('root').classList.contains('col')`), true);
+  assert.deepEqual(await ev(LATEST_SUMMARY), [['cheer', 'reactivo', '500 bits'], ['follow', 'devconcafe', null], ['cheer', 'reactivo', '500 bits']]);
 }));
