@@ -21,6 +21,7 @@
     "mcp": "node src/mcp.mjs",
     "app:build": "node scripts/build-app.mjs",
     "app:dev": "node scripts/build-app.mjs --watch",
+    "perf": "node scripts/perf.mjs",
     "desktop:node": "node scripts/fetch-node.mjs",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",

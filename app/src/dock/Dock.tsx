@@ -4,6 +4,7 @@ import { normalizeDock, visibleDockZones } from '../../../src/dock-layout.mjs';
 import { post, withKey } from '../lib/api';
 import { IC } from '../lib/icons';
 import { live, useLive, useLiveVersion } from '../lib/live';
+import { countRender } from '../lib/render-count';
 import { groupMeldScenes } from '../lib/meld-scenes';
 import { ConnPill, cx, guard, Icon, mmss, PfIcon, toast, Toaster } from '../lib/ui';
 import { DockQuestions } from './DockQuestions';
@@ -53,6 +54,7 @@ function useMedia(query: string) {
 }
 
 function Status({ active, look }: { active?: SavedThemeSummary; look?: ThemeLook }) {
+  countRender('dock/Status');
   const s = useLive(x => x);
   const now = useNow();
   const tl = live.timeline;

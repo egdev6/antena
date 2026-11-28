@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { post } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
+import { countRender } from '../../lib/render-count';
 import { cx, EmptyState, fmtTime, guard, PfIcon, PLATFORM_NAMES, toast, ViewHead } from '../../lib/ui';
 import type { ChatSendResult } from '../../lib/types';
 
@@ -24,6 +25,7 @@ export function writePreviewPreference(key: string, value: string) {
 }
 
 export function Chat() {
+  countRender('panel/Chat');
   const chat = useLive(s => s.widgets?.chat || []);
   const cfg = useLive(s => s.config.chat);
   const [text, setText] = useState('');

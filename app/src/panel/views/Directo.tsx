@@ -3,6 +3,7 @@ import { get, post, put } from '../../lib/api';
 import { ViewerChart, type ViewerSeries } from '../../lib/charts';
 import { IC } from '../../lib/icons';
 import { live, useLive } from '../../lib/live';
+import { countRender } from '../../lib/render-count';
 import { goalMetricLabel } from '../../lib/goal';
 import { ConnPill, copy, cx, EmptyState, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, ScaledFrame, Sec, Status, toast, type Tone } from '../../lib/ui';
 import type { AlertType, AppState, ChatSendResult, Platform, SessionList, SessionSummary, TimelineItem, ViewerPlatform, ViewerSettings } from '../../lib/types';
@@ -202,6 +203,7 @@ function ThanksPreview() {
 }
 
 export function Directo() {
+  countRender('panel/Directo');
   const s = useLive(x => x), tl = live.timeline;
   const [ses, setSes] = useState<LiveSession | null>(null);
   const [endRetryId, setEndRetryId] = useState<string | null>(null);
