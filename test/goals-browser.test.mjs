@@ -67,7 +67,7 @@ test('overlay goal.html: caja con dos barras, progreso, visibilidad de caja/barr
     chrome = await openChromePage(bin, `${base}/widget/goal?id=mixta&debug`);
     await waitDom(chrome.cdp, `document.querySelectorAll('#bars .bar').length === 2`, { timeoutMs: 12000 });
     // progreso real: 4/10 = 40 % y 4/5 = 80 % — metas diferentes, anchos diferentes
-    const widths = await dom(chrome, `Array.from(document.querySelectorAll('#bars .fill')).map(f => Math.round(parseFloat(f.style.width)))`);
+    const widths = await dom(chrome, `Array.from(document.querySelectorAll('#bars .fill')).map(f => Math.round(parseFloat(f.style.getPropertyValue("--p")) * 100))`);
     assert2(widths, [40, 80]);
     // #129: logos legibles y valores reales, no porcentajes ni valores recortados.
     assert2(await dom(chrome, `Array.from(document.querySelectorAll('#bars .pct')).map(e => e.textContent)`), ['4/10', '4/5']);
@@ -189,7 +189,7 @@ test('#129: Directo agrupa cajas y respeta visibilidad; overlay conserva cero, n
     await chrome.cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 900, deviceScaleFactor: 1, mobile: false });
     await waitDom(chrome.cdp, `document.querySelectorAll('#bars .bar').length === 2`);
     assert2(await dom(chrome, `Array.from(document.querySelectorAll('.pct')).map(e => e.textContent)`), ['-2/20', '7/5']);
-    assert2(await dom(chrome, `Array.from(document.querySelectorAll('.fill')).map(e => e.style.width)`), ['0%', '100%']);
+    assert2(await dom(chrome, `Array.from(document.querySelectorAll('.fill')).map(e => e.style.getPropertyValue("--p"))`), ["0", "1"]);
     assert2(await dom(chrome, `document.querySelector('.goal').getBoundingClientRect().right <= innerWidth && document.querySelector('.goal').getBoundingClientRect().bottom <= innerHeight`), true);
     await shot(chrome, '129-overlay-estrecho-negativo-superado.png');
     await set('tw', 0);

@@ -7,11 +7,15 @@
 @layer egdev {
 .root{display:flex;flex-wrap:wrap;align-content:flex-start;gap:14px;padding:18px}
 .root.col{flex-direction:column}
-.item{min-width:260px;padding:16px 20px 18px;border-radius:18px}
+.item{position:relative;min-width:260px;padding:16px 20px 18px;border-radius:18px}
 .item .big{font-size:40px;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px}
 .item .extra{font:600 18px var(--f-body);color:var(--grey);margin-top:6px}
-.item.flash{animation:flash 1.2s ease-out}
-@keyframes flash{0%{box-shadow:0 0 0 1px color-mix(in srgb,var(--red-2) calc(90% * var(--glow,1)),transparent),0 0 60px var(--red)}100%{}}
+/* #364: the flash fades a layer that holds the glow instead of animating box-shadow. The old shadow lists (outer vs inset)
+   could not interpolate, so the glow stayed on for ~0.41 s and then snapped off; the layer keeps that timing. */
+.item::after{content:"";position:absolute;inset:calc(var(--line-w,2px) * -1);border-radius:inherit;pointer-events:none;opacity:0;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--red-2) calc(90% * var(--glow,1)),transparent),0 0 60px var(--red)}
+.item.flash::after{animation:flash .41s step-end}
+@keyframes flash{from{opacity:1}}
 .empty{opacity:.45}
 .root>.label{flex-basis:100%;margin:0;font:800 18px/1 var(--f-cond);letter-spacing:.14em;text-transform:uppercase;color:var(--red)}
 }

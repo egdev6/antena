@@ -68,9 +68,9 @@ test('O1 overlay: relleno recortado, color de plataforma, cabecera configurable 
     await set('ux-tw', 7);
     await waitDom(chrome.cdp, `document.querySelector('#bars .pct').textContent === '7/10'`, { timeoutMs: 12000 });
     eq(await dom(chrome, `(() => { const r = Array.from(document.querySelectorAll('#bars .bar')), f = Array.from(document.querySelectorAll('#bars .fill')); return [r[0] === __rows[0], f[0] === __fills[0], r[1] === __rows[1], f[1] === __fills[1]].join(); })()`), 'true,true,true,true');
-    eq(await dom(chrome, `__fills[0].style.width + ' ' + __fills[1].style.width`), '70% 20%');
-    eq(await dom(chrome, `__fills[0].getAnimations().some(a => a.transitionProperty === 'width')`), true);
-    eq(await dom(chrome, `__fills[1].getAnimations().some(a => a.transitionProperty === 'width')`), false);
+    eq(await dom(chrome, `__fills[0].style.getPropertyValue('--p') + ' ' + __fills[1].style.getPropertyValue('--p')`), '0.7 0.2');
+    eq(await dom(chrome, `__fills[0].getAnimations().some(a => a.transitionProperty === 'transform')`), true);
+    eq(await dom(chrome, `__fills[1].getAnimations().some(a => a.transitionProperty === 'transform')`), false);
     eq(await dom(chrome, `document.querySelectorAll('#bars .pct')[1].textContent`), '1/5');
 
     // barra nueva: se crea solo la nueva; barra quitada: se quita solo esa, el resto sigue siendo el mismo nodo
@@ -160,19 +160,19 @@ test('S2/S5/S7 overlay: total desconocido, etiqueta, demo y lecturas posteriores
     await waitDom(chrome.cdp, `!!document.querySelector('#bars .pct')`);
     eq(await dom(chrome, `document.querySelector('.pct').textContent`), '—/1000');
     eq(await dom(chrome, `document.querySelector('.bar').title`), '— / 1000');
-    eq(await dom(chrome, `document.querySelector('.fill').style.width`), '0%');
+    eq(await dom(chrome, `document.querySelector('.fill').style.getPropertyValue('--p')`), '0');
     eq(await dom(chrome, `document.querySelector('.metric').textContent`), 'Suscriptores');
     app.channelTotals.readers['subscribers@youtube'] = async () => 1234;
     await app.channelTotals.poll(['subscribers@youtube']);
     await waitDom(chrome.cdp, `document.querySelector('.pct').textContent === '1234/1000'`);
-    eq(await dom(chrome, `document.querySelector('.fill').style.width`), '100%');
+    eq(await dom(chrome, `document.querySelector('.fill').style.getPropertyValue('--p')`), '1');
     app.channelTotals.readers['subscribers@youtube'] = async () => 0;
     await app.channelTotals.poll(['subscribers@youtube']);
     await waitDom(chrome.cdp, `document.querySelector('.pct').textContent === '0/1000'`);
-    eq(await dom(chrome, `document.querySelector('.fill').style.width`), '0%');
+    eq(await dom(chrome, `document.querySelector('.fill').style.getPropertyValue('--p')`), '0');
     await chrome.cdp.send('Page.navigate', { url: `${base}/widget/goal?id=yt&debug&demo` });
     await waitDom(chrome.cdp, `document.querySelector('.pct')?.textContent === '700/1000'`);
-    eq(await dom(chrome, `document.querySelector('.fill').style.width`), '70%');
+    eq(await dom(chrome, `document.querySelector('.fill').style.getPropertyValue('--p')`), '0.7');
   } finally { await closeAll(() => chrome && closeChrome(chrome), close); }
 });
 
