@@ -8,7 +8,7 @@ import { goalMetricLabel } from '../../lib/goal';
 import { ConnPill, copy, cx, EmptyState, fmtDateTime, fmtTime, guard, Icon, LazyInput, mmss, PfIcon, Progress, ScaledFrame, Sec, Status, toast, type Tone } from '../../lib/ui';
 import type { AlertType, ChatSendResult, Platform, SessionList, SessionSummary, TimelineItem, ViewerPlatform, ViewerSettings } from '../../lib/types';
 import { Clock, ClockValue } from '../components/Clock';
-import { readPreviewPreference, SendTo, sendResultText, writePreviewPreference } from './Chat';
+import { SendTo, sendResultText } from '../components/chat';
 import { formatCoverage, formatNumber, platformNames, platforms, type ChatMetric, type Summary, type ViewerMetric } from './directos/model';
 
 const NOTE_LABEL: Record<string, string> = { marker: 'Marca de short', highlight: 'Destacado', saved: 'Guardado', question: 'Pregunta', winner: 'Ganador', queue: 'Cola del overlay' };
@@ -209,6 +209,13 @@ const ChatBox = memo(function ChatBox() {
 });
 
 const THANKS_PREVIEW_VISIBLE = 'egdev.panel.directo.thanks-preview.visible';
+
+function readPreviewPreference(key: string) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function writePreviewPreference(key: string, value: string) {
+  try { localStorage.setItem(key, value); } catch { /* The panel works without storage. */ }
+}
 
 /** The same saved, live widget shown in Meld; an empty selection stays empty. */
 function ThanksPreview() {

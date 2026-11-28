@@ -41,6 +41,26 @@ test('a real chat source plays the preview and restores its messages', { timeout
   }
 });
 
+function holdPreviewStartResponse() {
+  const fetch0 = window.fetch.bind(window);
+  const probe = window.previewStart = { initialStatus: null, startStatus: null, posts: [] };
+  const gate = new Promise(resolve => { probe.release = resolve; });
+  window.fetch = async (url, options) => {
+    if (new URL(url, location.href).pathname !== '/api/chat/preview') return fetch0(url, options);
+    if (options?.method === 'GET') {
+      const response = await fetch0(url, options);
+      probe.initialStatus = response.status;
+      return response;
+    }
+    const { on } = JSON.parse(options.body);
+    probe.posts.push(on);
+    const response = await fetch0(url, options);
+    // Hold the real response after the server has started the preview; the stream remains live.
+    if (on) { probe.startStatus = response.status; await gate; }
+    return response;
+  };
+}
+
 test('the panel button starts and stops the preview in the sources with a countdown', { timeout: 60000 }, async t => {
   const bin = await skipIfNoBrowserOrUi(t);
   if (!bin) return;
@@ -53,15 +73,23 @@ test('the panel button starts and stops the preview in the sources with a countd
   const button = `[...document.querySelectorAll('button')].find(b => /Simular mensajes en Meld|Parar simulación en Meld/.test(b.textContent))`;
   let chrome;
   try {
-    chrome = await openChromePage(bin, base + '/#/widgets/chat');
+    chrome = await openChromePage(bin, 'about:blank');
     const c = chrome.cdp;
-    await waitDom(c, `${button}?.textContent === 'Simular mensajes en Meld' && !${button}.disabled`, { timeoutMs: 15000 });
+    await c.send('Page.addScriptToEvaluateOnNewDocument', { source: `(${holdPreviewStartResponse.toString()})()` });
+    const navigation = await c.send('Page.navigate', { url: base + '/#/widgets/chat' });
+    assert.ok(!navigation.errorText, navigation.errorText);
+    const countdown = `/^Parar simulación en Meld · [12]:[0-5]\\d$/.test(${button}?.textContent)`;
+    await waitDom(c, `window.previewStart.initialStatus === 200 && ${button}?.textContent === 'Simular mensajes en Meld' && !${button}.disabled`, { timeoutMs: 15000 });
     await evaluateChrome(c, `${button}.click(); true`);
-    await waitDom(c, `/^Parar simulación en Meld · [12]:[0-5]\\d$/.test(${button}.textContent)`, { timeoutMs: 5000 });
+    await waitDom(c, `window.previewStart.startStatus === 200 && ${countdown}`, { timeoutMs: 5000 });
     assert.equal((await state()).on, true);
+    assert.equal(await evaluateChrome(c, `${button}.disabled`), true, 'the stream updates the label while the start response is held');
+    await evaluateChrome(c, 'window.previewStart.release()');
+    await waitDom(c, `${countdown} && !${button}.disabled`, { timeoutMs: 5000 });
     await evaluateChrome(c, `${button}.click(); true`);
     await waitDom(c, `${button}.textContent === 'Simular mensajes en Meld'`, { timeoutMs: 5000 });
     assert.deepEqual(await state(), { on: false, until: null });
+    assert.deepEqual(await evaluateChrome(c, 'window.previewStart.posts'), [true, false]);
   } finally {
     await closeAll(() => chrome && closeChrome(chrome), () => { app.viewers.stop(); app.meld.stop(); app.server.closeAllConnections(); app.server.close(); });
   }
