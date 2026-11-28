@@ -23,30 +23,66 @@ body.solid{background:radial-gradient(1200px 700px at 50% 0%,color-mix(in srgb,v
 </style></head>
 <body><div class="root" id="root"></div>
 <script type="module">
-import { connect, DEMO, demoState, qs, esc, setCss } from '/widgets/widget.js';
+import { connect, DEMO, demoState, qs, setCss } from '/widgets/widget.js';
 const root = document.getElementById('root');
 if (!qs.has('transparent')) document.body.classList.add('solid');
 let state = null, anim = null;
-function build(s) {
+// The roll is built once and edited in place (#365): playing again rewrites only the text that changed,
+// always through textContent, so titles and names stay text and never become markup.
+const make = (tag, cls, text) => {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
+const headTitle = make('p', 'big'), headSub = make('p', 'sub'), endSub = make('p', 'sub');
+const endBig = make('p', 'big', 'Nos vemos ');
+endBig.append(make('span', 'hl', 'el miércoles'));
+const head = make('div', 'head eg-card'), end = make('div', 'end eg-card'), roll = make('div', 'roll');
+head.append(make('p', 'kick', 'Créditos'), headTitle, headSub);
+end.append(endBig, endSub);
+roll.id = 'roll';
+roll.append(head, end);
+const idle = make('p', 'idle', 'Créditos en espera');
+let groups = [];   // { title, box, list } in screen order: one card per title, reused between plays
+function groupCard(title) {
+  const box = make('div', 'grp eg-card soft');
+  box.append(make('p', 'kick', title));
+  return { title, box, list: null };
+}
+function setNames(group, names) {
+  if (!names) { group.list?.remove(); group.list = null; return; }
+  group.list ||= group.box.appendChild(make('ul'));
+  names.forEach((name, i) => setText(group.list.children[i] || group.list.appendChild(make('li')), name));
+  while (group.list.children.length > names.length) group.list.lastElementChild.remove();
+}
+function sync(s) {
   const cfg = s.widgets?.credits || {};
   setCss(cfg.css);
-  const groups = s.credits || [];
-  return `<div class="roll" id="roll">
-    <div class="head eg-card"><p class="kick">Créditos</p><p class="big">${esc(cfg.title || 'Gracias por estar')}</p><p class="sub">${esc(s.session?.title || 'Directo')}</p></div>
-    ${groups.map(g => `<div class="grp eg-card soft"><p class="kick">${esc(g.title)}</p><ul>${g.names.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`).join('') || '<div class="grp eg-card soft"><p class="kick">Y a todo el chat</p></div>'}
-    <div class="end eg-card"><p class="big">Nos vemos <span class="hl">el miércoles</span></p><p class="sub">${esc(cfg.subtitle || '')}</p></div>
-  </div>`;
+  setText(headTitle, cfg.title || 'Gracias por estar');
+  setText(headSub, s.session?.title || 'Directo');
+  setText(endSub, cfg.subtitle || '');
+  const pool = new Map(groups.map(g => [g.title, g]));
+  groups = (s.credits?.length ? s.credits : [{ title: 'Y a todo el chat' }]).map(({ title, names }) => {
+    const group = pool.get(title) || groupCard(title);
+    pool.delete(title);
+    setNames(group, names);
+    return group;
+  });
+  for (const g of pool.values()) g.box.remove();
+  groups.forEach((g, i) => { if (roll.children[i + 1] !== g.box) roll.insertBefore(g.box, roll.children[i + 1]); });
 }
 function play() {
   if (!state) return;
-  root.innerHTML = build(state);
-  const roll = document.getElementById('roll');
-  const dist = roll.offsetHeight + innerHeight / (Number(qs.get('scale')) || 1);
+  sync(state);
+  if (!roll.isConnected) root.replaceChildren(roll);
   anim?.cancel();
+  const dist = roll.offsetHeight + innerHeight / (Number(qs.get('scale')) || 1);
   anim = roll.animate([{ transform: 'translateY(0)' }, { transform: `translateY(-${dist}px)` }], { duration: dist / (Number(state.widgets?.credits?.speed) || 60) * 1000, easing: 'linear', fill: 'forwards' });
   if (qs.has('loop') || DEMO) anim.onfinish = () => play();
 }
-function stop() { anim?.cancel(); root.innerHTML = qs.has('debug') ? '<p class="idle">Créditos en espera</p>' : ''; }
+function stop() { anim?.cancel(); root.replaceChildren(...(qs.has('debug') ? [idle] : [])); }
 connect({
   widgets: s => { state = DEMO ? { ...demoState(), widgets: s.widgets } : s; if (DEMO && !anim) play(); },
   credits: ({ action }) => action === 'stop' ? stop() : play(),

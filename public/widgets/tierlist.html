@@ -54,33 +54,143 @@
   <div class="pool" id="pool"></div>
 </div></div>
 <script type="module">
-import { connect, DEMO, demoInteractive, qs, esc, setCss } from '/widgets/widget.js';
+import { connect, DEMO, demoInteractive, qs, setCss } from '/widgets/widget.js';
 const $ = id => document.getElementById(id);
-let tick;
-const chip = it => `<span class="chip">${it.image ? `<img src="/media/${encodeURIComponent(it.image)}" alt="">` : ''}${esc(it.label)}</span>`;
+const make = (tag, cls) => {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  return node;
+};
+const setText = (node, text) => { const value = String(text ?? ''); if (node.textContent !== value) node.textContent = value; };
+const setStyle = (node, prop, value) => { node.style.removeProperty(prop); node.style.setProperty(prop, value); };
+
+// Match by id and occurrence, so even repeated tier ids keep their own nodes.
+function keyed(parent, create) {
+  let previous = new Map();
+  return (values, update) => {
+    const next = new Map();
+    const order = values.map(value => {
+      let group = next.get(value.id);
+      if (!group) next.set(value.id, group = []);
+      const cell = previous.get(value.id)?.[group.length] || create(value);
+      group.push(cell);
+      update(cell, value);
+      return cell.box;
+    });
+    for (const [id, group] of previous) {
+      for (let i = next.get(id)?.length || 0; i < group.length; i++) group[i].box.remove();
+    }
+    order.forEach((box, i) => { if (parent.children[i] !== box) parent.insertBefore(box, parent.children[i] || null); });
+    previous = next;
+  };
+}
+function makeChip() {
+  const box = make('span', 'chip'), label = document.createTextNode('');
+  box.append(label);
+  return { box, label, image: null };
+}
+function updateChip(chip, it) {
+  setText(chip.label, it.label);
+  if (it.image) {
+    const src = `/media/${encodeURIComponent(it.image)}`;
+    if (!chip.image) { chip.image = make('img'); chip.image.alt = ''; chip.box.prepend(chip.image); }
+    if (chip.image.getAttribute('src') !== src) chip.image.src = src;
+  } else if (chip.image) { chip.image.remove(); chip.image = null; }
+}
+const syncRows = keyed($('rows'), tier => {
+  const box = make('div', `row tier-${tier.id}`), label = make('div', 'tier'), items = make('div', 'items');
+  box.append(label, items);
+  return { box, label, syncItems: keyed(items, makeChip) };
+});
+const syncPool = keyed($('pool'), makeChip);
+const syncBars = keyed($('bars'), () => {
+  const box = make('div', 'bar'), label = make('span'), track = make('i'), fill = make('b'), count = make('span', 'n');
+  track.append(fill);
+  box.append(label, track, count);
+  return { box, label, fill, count };
+});
+
+const voteTotal = document.createTextNode('');
+let instructionsKey;
+function updateInstructions(tiers, cfg, total) {
+  const bare = cfg.acceptBare !== false, command = cfg.command || '!tier';
+  const labels = (bare ? tiers : tiers.filter(t => t.voteText)).map(t => [t.label, t.voteText]);
+  const key = JSON.stringify([bare, command, labels]);
+  if (key !== instructionsKey) {
+    const bold = text => { const b = make('b'); setText(b, text); return b; };
+    const parts = ['Escribe '];
+    if (bare) {
+      labels.forEach(([label, text], i) => {
+        if (i) parts.push(' ');
+        parts.push(bold(label));
+        if (text) parts.push(` (${text})`);
+      });
+      parts.push(' o ');
+    }
+    parts.push(bold(`${command} S`));
+    if (!bare) for (const [label, text] of labels) parts.push(' · ', bold(label), `: ${text}`);
+    $('how').replaceChildren(...parts, voteTotal);
+    instructionsKey = key;
+  }
+  setText(voteTotal, ` · ${total} ${total === 1 ? 'voto' : 'votos'}`);
+}
+
+let tick, voteEndsAt = null, css = '';
+function setCountdown(endsAt) {
+  if (endsAt === voteEndsAt) return;
+  clearInterval(tick);
+  voteEndsAt = endsAt;
+  if (!endsAt) return;
+  const end = new Date(endsAt).getTime(), timer = $('timer');
+  const update = () => setText(timer, `· ${Math.max(0, Math.ceil((end - Date.now()) / 1000))}s`);
+  update();
+  tick = setInterval(update, 500);
+}
+
 function apply(s) {
   const cfg = s.config?.tierlist || {};
-  setCss(cfg.css);
+  if ((cfg.css || '') !== css) setCss(css = cfg.css || '');
   const l = (s.tierlists || []).find(x => x.id === (qs.get('id') || s.shownTierlist));
-  if (!l) { $('board').classList.remove('on'); return; }
-  $('board').classList.add('on');
-  $('title').textContent = l.title;
-  $('rows').innerHTML = l.tiers.map(t => `<div class="row tier-${esc(t.id)}"><div class="tier" style="background:${esc(t.color)}">${esc(t.label)}</div>
-    <div class="items">${l.items.filter(it => l.placements[it.id] === t.id).map(chip).join('')}</div></div>`).join('');
-  const v = s.vote && s.vote.listId === l.id ? s.vote : null;
-  $('pool').innerHTML = qs.has('nopool') ? '' : l.items.filter(it => !l.placements[it.id] && it.id !== v?.item?.id).map(chip).join('');
-  $('vote').hidden = !v;
-  $('hint').textContent = v ? '' : `${Object.keys(l.placements).length} / ${l.items.length} colocados`;
-  clearInterval(tick);
+  $('board').classList.toggle('on', !!l);
+  if (!l) { setCountdown(null); return; }
+  setText($('title'), l.title);
+  const v = s.vote?.listId === l.id ? s.vote : null;
+  const placed = new Map(), pool = [];
+  for (const it of l.items) {
+    const tier = l.placements[it.id];
+    if (tier) {
+      if (!placed.has(tier)) placed.set(tier, []);
+      placed.get(tier).push(it);
+    } else if (it.id !== v?.item?.id) pool.push(it);
+  }
+  syncRows(l.tiers, (row, t) => {
+    setText(row.label, t.label);
+    if (row.color !== t.color) { setStyle(row.label, 'background', t.color); row.color = t.color; }
+    row.syncItems(placed.get(t.id) || [], updateChip);
+  });
+  syncPool(qs.has('nopool') ? [] : pool, updateChip);
+  $('vote').toggleAttribute('hidden', !v);
+  setText($('hint'), v ? '' : `${Object.keys(l.placements).length} / ${l.items.length} colocados`);
+  const endsAt = v?.endsAt || null;
+  setCountdown(endsAt);
+  if (!endsAt) setText($('timer'), '');
   if (!v) return;
-  $('vitem').textContent = v.item?.label || '';
-  const labels = l.tiers.map(t => `<b>${esc(t.label)}</b>${t.voteText ? ` (${esc(t.voteText)})` : ''}`).join(' ');
-  const descriptions = l.tiers.filter(t => t.voteText).map(t => `<b>${esc(t.label)}</b>: ${esc(t.voteText)}`).join(' · ');
-  $('how').innerHTML = `Escribe ${cfg.acceptBare !== false ? labels + ' o ' : ''}<b>${esc(cfg.command || '!tier')} S</b>${cfg.acceptBare === false && descriptions ? ' · ' + descriptions : ''} · ${v.total} ${v.total === 1 ? 'voto' : 'votos'}`;
+  setText($('vitem'), v.item?.label || '');
+  updateInstructions(l.tiers, cfg, v.total);
   const max = Math.max(1, ...Object.values(v.counts));
-  $('bars').innerHTML = l.tiers.map(t => `<div class="bar ${v.winner === t.id ? 'win' : ''}"><span style="color:${esc(t.color)}">${esc(t.voteText || t.label)}</span><i><b style="--p:${(v.counts[t.id] || 0) / max};background:${esc(t.color)};box-shadow:0 0 12px ${esc(t.color)}"></b></i><span class="n">${v.counts[t.id] || 0}</span></div>`).join('');
-  const upd = () => { if (!v.endsAt) { $('timer').textContent = ''; return; } const left = Math.max(0, Math.ceil((new Date(v.endsAt) - Date.now()) / 1000)); $('timer').textContent = `· ${left}s`; };
-  upd(); if (v.endsAt) tick = setInterval(upd, 500);
+  syncBars(l.tiers, (bar, t) => {
+    const count = v.counts[t.id] || 0, progress = String(count / max);
+    setText(bar.label, t.voteText || t.label);
+    setText(bar.count, count);
+    bar.box.classList.toggle('win', v.winner === t.id);
+    if (bar.fill.style.getPropertyValue('--p') !== progress) bar.fill.style.setProperty('--p', progress);
+    if (bar.color !== t.color) {
+      setStyle(bar.label, 'color', t.color);
+      setStyle(bar.fill, 'background', t.color);
+      setStyle(bar.fill, 'box-shadow', `0 0 12px ${t.color}`);
+      bar.color = t.color;
+    }
+  });
 }
 connect({ interactive: s => { if (!DEMO) apply(s); } });
 if (DEMO) apply(demoInteractive());

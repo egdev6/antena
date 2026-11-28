@@ -221,6 +221,7 @@
     "test/obs-panel-ux-browser.test.mjs",
     "test/onboarding-browser.test.mjs",
     "test/overlay-anims-browser.test.mjs",
+    "test/overlay-dom-browser.test.mjs",
     "test/overlay-theme.test.mjs",
     "test/panel-dock-editor-browser.test.mjs",
     "test/panel-lazy-routes-browser.test.mjs",
