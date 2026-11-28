@@ -2,15 +2,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { enc, put } from '../../lib/api';
 import { live, useLive } from '../../lib/live';
+import { countRender } from '../../lib/render-count';
 import { EmptyState, guard, Icon, PfIcon, ScaledFrame } from '../../lib/ui';
 import { IC } from '../../lib/icons';
 import { Card, CardGroup, CardSwitch, Dot, Kpis, PageHead, Tags, useListFilter } from '../../lib/layout';
 import type { AppState } from '../../lib/types';
 import { Editor } from './Editor';
 
+type AlertIssueSource = Pick<AppState, 'media' | 'lookDefaults'> & Pick<AppState['config'], 'alerts'>;
+
 /** Avisos de una alerta: archivo que ya no está en media/ (vídeo, imagen o sonido). */
-export function alertIssues(s: AppState, type: string): string[] {
-  const a = { ...(s.lookDefaults || {}), ...(s.config.alerts?.[type] || {}) } as Record<string, any>;
+export function alertIssues(s: AlertIssueSource, type: string): string[] {
+  const a = { ...(s.lookDefaults || {}), ...(s.alerts?.[type] || {}) } as Record<string, any>;
   const files = new Set((s.media || []).map(m => m.name));
   const out: string[] = [];
   if (['media', 'mixed'].includes(a.layout) && a.media && !files.has(a.media)) out.push(`falta ${a.media}`);
@@ -22,7 +25,7 @@ export function alertIssues(s: AppState, type: string): string[] {
   }
   return out;
 }
-export const alertWarnings = (s: AppState) => (s?.types ? Object.keys(s.types).filter(t => alertIssues(s, t).length) : []);
+export const alertWarnings = (s: AlertIssueSource & Pick<AppState, 'types'>) => (s?.types ? Object.keys(s.types).filter(t => alertIssues(s, t).length) : []);
 
 const isVid = (f?: string) => /\.(webm|mp4|mov|m4v)$/i.test(f || '');
 const GROUPS: [string, string, string][] = [
@@ -76,14 +79,17 @@ function AlertThumb({ type, label, issue, version, video, mixed, playing, origin
 const DESIGN: Record<string, string> = { card: 'tarjeta', media: 'vídeo con texto', mixed: 'vídeo + tarjeta' };
 
 export function Alertas({ parts }: { parts: string[] }) {
-  const s = useLive(x => x);
+  countRender('panel/Alertas');
+  const s = useLive(x => ({
+    alerts: x.config.alerts, lookDefaults: x.lookDefaults, types: x.types, media: x.media,
+    alertPreviews: x.alertPreviews, align: x.theme?.align, position: x.theme?.position,
+  }));
   const f = useListFilter();
   const [hover, setHover] = useState<string | null>(null);
   const [, open, sub, vid] = parts;
   const types = Object.entries(s.types || {});
-  const cfg = (t: string) => ({ ...(s.lookDefaults || {}), ...(s.config.alerts?.[t] || {}) }) as Record<string, any>;
-  const th = (s.theme || {}) as { position?: string; align?: string };
-  const origin = `${th.align === 'left' ? '0%' : th.align === 'right' ? '100%' : '50%'} ${th.position === 'top' ? '0%' : th.position === 'bottom' ? '100%' : '50%'}`;
+  const cfg = (t: string) => ({ ...(s.lookDefaults || {}), ...(s.alerts?.[t] || {}) }) as Record<string, any>;
+  const origin = `${s.align === 'left' ? '0%' : s.align === 'right' ? '100%' : '50%'} ${s.position === 'top' ? '0%' : s.position === 'bottom' ? '100%' : '50%'}`;
   const all = types.map(([type, meta]) => {
     const a = cfg(type), issues = alertIssues(s, type), vars = a.variations || [];
     return { type, meta, a, issues, vars };

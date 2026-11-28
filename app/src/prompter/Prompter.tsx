@@ -1,7 +1,7 @@
 // Vista del Elgato Prompter (1024×600): chat a la izquierda y, a la derecha, el panel de
 // Eventos (cronología y destacados) y Preguntas. Se lee a ~60 cm mirando a cámara y se maneja
 // con el ratón; lo de un solo botón va al Stream Deck.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, enc, get, post, put } from '../lib/api';
 import { live, makeChatLoader, useLive } from '../lib/live';
 import { countRender } from '../lib/render-count';
@@ -14,7 +14,6 @@ import type { ChatMessage, ChatSendResult, Question, TimelineItem } from '../lib
 // S7: dos pestañas. Eventos (cronología y destacados) es el id 'cronologia' por compatibilidad
 // con el contrato del servidor; las pestañas retiradas (tierlist, sorteo) caen en Eventos.
 const TABS: [string, string][] = [['cronologia', 'Eventos'], ['preguntas', 'Preguntas'], ['entrevista', 'Entrevista']];
-const P = () => live.state?.config?.prompter || {};
 
 // ---------- barra superior ----------
 function useNow(ms = 1000) {
@@ -22,30 +21,52 @@ function useNow(ms = 1000) {
   useEffect(() => { const h = setInterval(() => setNow(Date.now()), ms); return () => clearInterval(h); }, [ms]);
   return now;
 }
-function Top() {
-  countRender('prompter/Top');
-  const s = useLive(x => x);
-  const tl = live.timeline;
+
+function ElapsedClock() {
+  countRender('prompter/ElapsedClock');
+  const startedAt = useLive(() => live.timeline.startedAt);
   const now = useNow();
-  const st = s.status, meldOn = st.meld?.state === 'conectado', streaming = !!st.meld?.streaming;
-  const tracks = s.meld?.session?.tracks || [];
-  const want = (P().micTrack || '').toLowerCase();
-  const mic = want ? tracks.find(t => t.name.toLowerCase() === want || t.id === P().micTrack) : tracks.find(t => /mic/i.test(t.name));
-  const pause = st.pause || {};
+  return <b>{startedAt ? mmss((now - +new Date(startedAt)) / 1000) : ''}</b>;
+}
+
+function WallClock() {
+  countRender('prompter/WallClock');
+  const now = useNow();
+  return <span className="pr-clock clock">{fmtTime(now)}</span>;
+}
+
+const Top = memo(function Top() {
+  countRender('prompter/Top');
+  const s = useLive(({ status, meld, config }) => ({
+    meldState: status.meld?.state,
+    streaming: !!status.meld?.streaming,
+    showMeld: !!status.meld && !!config.meld?.enabled,
+    tracks: meld?.session?.tracks,
+    micTrack: config.prompter?.micTrack,
+    paused: status.pause?.paused,
+    held: status.pause?.held,
+    noOverlay: status.overlays === 0,
+    twitchState: status.twitch ? (status.twitch.state ?? 'desconectado') : null,
+    youtubeError: status.youtube?.state === 'error',
+  }));
+  const meldOn = s.meldState === 'conectado';
+  const tracks = s.tracks || [];
+  const want = (s.micTrack || '').toLowerCase();
+  const mic = want ? tracks.find(t => t.name.toLowerCase() === want || t.id === s.micTrack) : tracks.find(t => /mic/i.test(t.name));
   const w: ReactNode[] = [];
   if (mic?.muted) w.push(<span key="mic" className="eg-status eg-status--danger pr-mic"><Icon d={IC.micOff} />Micro silenciado</span>);
-  if (pause.paused) w.push(<span key="p" className="eg-status eg-status--warning"><Icon d={IC.pause} />Alertas en pausa{pause.held ? ' · ' + pause.held : ''}</span>);
-  if (st.twitch && st.twitch.state !== 'conectado') w.push(<ConnPill key="tw" platform="twitch" state={st.twitch.state} />);
-  if (st.youtube?.state === 'error') w.push(<ConnPill key="yt" platform="youtube" state="error" />);
-  if (st.meld && !meldOn && s.config.meld?.enabled) w.push(<ConnPill key="m" platform="meld" state={st.meld.state} />);
-  if (st.overlays === 0) w.push(<span key="o" className="eg-status eg-status--warning"><Icon d={IC.alert} />Sin overlay</span>);
+  if (s.paused) w.push(<span key="p" className="eg-status eg-status--warning"><Icon d={IC.pause} />Alertas en pausa{s.held ? ' · ' + s.held : ''}</span>);
+  if (s.twitchState !== null && s.twitchState !== 'conectado') w.push(<ConnPill key="tw" platform="twitch" state={s.twitchState} />);
+  if (s.youtubeError) w.push(<ConnPill key="yt" platform="youtube" state="error" />);
+  if (s.showMeld && !meldOn) w.push(<ConnPill key="m" platform="meld" state={s.meldState} />);
+  if (s.noOverlay) w.push(<span key="o" className="eg-status eg-status--warning"><Icon d={IC.alert} />Sin overlay</span>);
   return <header className="pr-top top">
-    <span className={cx('eg-live-label live', streaming && 'on')}>{streaming ? <span className="eg-live-dot is-active" aria-hidden="true" /> : <span className="pr-dot" aria-hidden="true" />}{streaming ? 'En directo' : meldOn ? 'Sin emitir' : 'Sesión'} <b>{tl.startedAt ? mmss((now - +new Date(tl.startedAt)) / 1000) : ''}</b></span>
+    <span className={cx('eg-live-label live', s.streaming && 'on')}>{s.streaming ? <span className="eg-live-dot is-active" aria-hidden="true" /> : <span className="pr-dot" aria-hidden="true" />}{s.streaming ? 'En directo' : meldOn ? 'Sin emitir' : 'Sesión'} <ElapsedClock /></span>
     <div className="pr-warns">{w}</div>
     <span className="pr-sp" />
-    <span className="pr-clock clock">{fmtTime(now)}</span>
+    <WallClock />
   </header>;
-}
+});
 
 // ---------- chat ----------
 function bright(c?: string) { // colores de Twitch demasiado oscuros para el cristal
@@ -88,7 +109,8 @@ function Chat() {
   }, []);
   const visible = list.filter(m => !(pr.hideCommands !== false && (m.command || m.used)) && !(pr.hideTimers && m.timer)).slice(-(Number(pr.chatLines) || 60));
   const lastId = visible.at(-1)?.id;
-  const scrollEnd = () => { const el = box.current; if (el) el.scrollTop = el.scrollHeight; setUnseen(0); };
+  const clearUnseen = () => { if (unseen > 0) setUnseen(0); };
+  const scrollEnd = () => { const el = box.current; if (el) el.scrollTop = el.scrollHeight; clearUnseen(); };
   useLayoutEffect(() => {
     if (stick.current && !hover.current) scrollEnd(); else if (lastId) setUnseen(n => n + 1);
   }, [lastId]);
@@ -112,7 +134,7 @@ function Chat() {
   });
   return <section className="pr-chat chat" aria-label="Chat de Twitch y YouTube">
     <ol className="eg-timeline eg-timeline--chat eg-timeline--lg msgs" ref={box as any} aria-live="polite"
-      onScroll={() => { const el = box.current!; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30; if (stick.current && !hover.current) setUnseen(0); }}
+      onScroll={() => { const el = box.current!; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30; if (stick.current && !hover.current) clearUnseen(); }}
       onMouseEnter={() => { hover.current = true; }}
       onMouseLeave={() => { hover.current = false; if (stick.current || unseen) { stick.current = true; scrollEnd(); } }}>
       {visible.length ? visible.map(m => <li key={m.id} className={cx('eg-timeline__item msg', m.highlighted && 'eg-timeline__item--hot hl', m.owner && 'is-own own')}>
@@ -243,14 +265,19 @@ function Destacados({ items, types }: { items: TimelineItem[]; types: Types }) {
 
 function Eventos() {
   countRender('prompter/Eventos');
-  useLive(s => s);   // tipos de alerta, cronología y gracias pendientes llegan por SSE
-  const types = (live.state?.types || {}) as Types;
-  const items = live.timeline.items || [];
-  const pending = live.timeline.pending || 0;
-  const cronologia = items.filter(i => !DESTACADOS.has(i.kind)).slice().reverse();
-  const destacados = items.filter(i => DESTACADOS.has(i.kind)).slice().reverse();
+  const { items, pending } = useLive(() => live.timeline);
+  const types = useLive(s => s.types) || {};
+  const [cronologia, destacados] = useMemo(() => {
+    const cronologia: TimelineItem[] = [], destacados: TimelineItem[] = [];
+    const rows = items || [];
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const item = rows[i];
+      (DESTACADOS.has(item.kind) ? destacados : cronologia).push(item);
+    }
+    return [cronologia, destacados];
+  }, [items]);
   return <div className="ev-pane pane" role="tabpanel" aria-label="Eventos">
-    <Cronologia items={cronologia} pending={pending} types={types} />
+    <Cronologia items={cronologia} pending={pending || 0} types={types} />
     <Destacados items={destacados} types={types} />
   </div>;
 }
