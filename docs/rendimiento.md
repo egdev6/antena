@@ -28,8 +28,9 @@ Necesita `pnpm install` hecho y Chrome (si no está en la ruta habitual, define 
 | `--ticks N` | Ticks del reloj de 1 s que se miden aparte (10 por defecto). |
 | `--json` | El mismo resultado como JSON, para comparar antes y después con un script. |
 
-Para comparar un cambio, corre `pnpm perf` en `main` y en tu rama y pega las dos tablas en la PR (o
-`pnpm perf --json > antes.json` y lo mismo después).
+Para comparar un cambio, corre `pnpm perf` en `main` y en tu rama con los mismos parámetros, equipo y
+versión de Chrome. Repite la medición y pega en la PR los valores observados (o el intervalo si varían),
+junto con el entorno. Para guardar los resultados: `pnpm perf --json > antes.json` y lo mismo después.
 
 ## Qué mide la ráfaga
 
@@ -47,10 +48,12 @@ que carga un build instrumentado (ver más abajo). Con la página estable:
   renders, y el escenario los dispara a mano N veces sin tráfico. La columna dice cuánto cuesta un tick
   (Directo, el `Status` del dock y el `Top` del prompter tienen cada uno el suyo).
 
-Un «render» es una ejecución de la función del componente; no se mide tiempo ni coste de DOM. El resultado es
-reproducible: con los mismos parámetros, varias ejecuciones seguidas dan exactamente los mismos números. Si a
-una página llegara algún evento ajeno a la ráfaga, la salida lo avisa (`aviso: …`) porque falsearía la
-comparación.
+Un «render» es una ejecución de la función del componente; no se mide tiempo ni coste de DOM. La prueba de
+navegador comprueba que, al repetir el escenario, llegan los mismos eventos y el chat muestra las mismas
+filas en el mismo orden. Los renders de la ráfaga pueden variar incluso entre dos ejecuciones en el mismo
+equipo: el navegador, el hardware y la carga influyen en cuándo llega el trabajo a React y en qué
+actualizaciones agrupa (*batching*). El comando muestra los valores medidos, no cifras esperadas. Si a una
+página llega algún evento ajeno a la ráfaga, la salida lo avisa (`aviso: …`).
 
 | Página | Componentes medidos | Fuente |
 | --- | --- | --- |
@@ -73,8 +76,9 @@ comparación.
 
 ## Línea base (28-11-2026)
 
-Medida sobre `main` en `02ec843`, con Node 24.22.2, Chrome 148, esbuild 0.28.2 y React 19.3.1 (las versiones
-de `pnpm-lock.yaml`), en Linux. Con 110 eventos, 110 renders significan un render por evento.
+Medición de referencia sobre `main` en `02ec843`, con Node 24.22.2, Chrome 148, esbuild 0.28.2 y React 19.3.1
+(en Linux). Estas cifras corresponden a ese entorno y esa ejecución; no son umbrales ni predicen cuántos
+renders habrá en otra ejecución.
 
 `pnpm perf --only renders` (100 mensajes de chat, 10 lecturas de espectadores, 10 ticks de reloj):
 
@@ -90,16 +94,14 @@ prompter       prompter/Eventos     110      0
 prompter       prompter/Chat        200      0
 ```
 
-Lo que dicen los números de hoy:
+En esa medición:
 
-- `Sidebar`, `Directo`, `Status`, `Top` y `Eventos` se renderizan con **todos** los eventos (110 de 110):
-  cada uno lee el estado entero (`useLive(x => x)`), así que cualquier evento los vuelve a renderizar aunque
-  ninguno pinte el chat (y solo `Directo` pinta las lecturas de espectadores).
-- `panel/Chat` se renderiza solo con los 100 mensajes; las lecturas de espectadores no le afectan.
-- `prompter/Chat` hace **dos renders por mensaje** (200 para 100): uno al recibirlo y otro porque su efecto de
-  scroll llama a `setUnseen(0)` aunque ya valga 0 y React vuelve a ejecutar el componente antes de descartar
-  el cambio (sin esa llamada, un experimento local lo dejó en algo más de un render por mensaje).
-- Un tick de reloj de 1 s renderiza entero `Directo`, `Status` y `Top` (10 de 10).
+- `Sidebar`, `Directo`, `Status`, `Top` y `Eventos` registraron 110 renders cada uno. En esa versión leen el
+  estado entero (`useLive(x => x)`), aunque ninguno pinte el chat y solo `Directo` pinte espectadores.
+- `panel/Chat` registró 100 renders; su selección del estado no incluye las lecturas de espectadores.
+- `prompter/Chat` registró 200 renders; en esa versión el efecto de scroll llama a `setUnseen(0)` incluso
+  cuando el contador ya vale 0.
+- `Directo`, `Status` y `Top` registraron 10 renders cada uno con los 10 ticks manuales.
 
 `pnpm perf --only size` (build de producción, bytes; gzip nivel 9):
 
@@ -124,10 +126,9 @@ hash de contenido; los dos `chunk.js` son los trozos compartidos entre el panel,
 
 ## Límites
 
-- La ráfaga está espaciada (5 ms entre mensajes) para que el flujo nunca se atasque; mide cuántos renders
-  provoca cada evento, no cuánto tarda el navegador en absorber una ráfaga real.
-- Los números de renders dependen del código, no de la máquina; los tamaños, de las versiones fijadas en
-  `pnpm-lock.yaml`. Con otras versiones de esbuild o React los tamaños cambian.
+- La ráfaga está espaciada (5 ms entre mensajes) para no saturar el flujo. Se cuentan las ejecuciones de cada
+  componente durante toda la ráfaga, no los renders atribuibles a cada evento ni cuánto tarda el navegador.
+- Los tamaños se midieron con las versiones de `pnpm-lock.yaml`; con otras versiones de esbuild o React pueden
+  cambiar.
 - El servidor de pruebas arranca con datos vacíos: el chat empieza sin historial y las vistas no tienen
-  alertas, objetivos ni directos archivados. Las vistas con más datos tendrán más trabajo por render, no más
-  renders por evento.
+  alertas, objetivos ni directos archivados. Los límites de filas de cada chat siguen vigentes.
