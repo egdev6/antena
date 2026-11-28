@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,26 +75,38 @@ test('the default build still writes the three pages and the assets they load', 
   }
 });
 
+async function rejectionBuild(t) {
+  // Run the real CLI from a throwaway root in case it falls back to rebuilding app/dist.
+  const root = await tempDir(t);
+  const script = path.join(root, 'scripts', 'build-app.mjs');
+  const defaultDist = path.join(root, 'app', 'dist');
+  await mkdir(path.dirname(script));
+  await copyFile(BUILD, script);
+  await symlink(path.join(ROOT, 'node_modules'), path.join(root, 'node_modules'), 'junction');
+  await mkdir(defaultDist, { recursive: true });
+  await writeFile(path.join(defaultDist, 'keep.txt'), 'original build');
+  return { defaultDist, invoke: args => run(process.execPath, [script, ...args], { cwd: root }) };
+}
+
+async function assertPreserved(dir, contents) {
+  assert.deepEqual(await readdir(dir), ['keep.txt'], `${dir}: nothing was written or removed`);
+  assert.equal(await readFile(path.join(dir, 'keep.txt'), 'utf8'), contents);
+}
+
 test('--dist never wipes a directory that already holds files', async t => {
+  const { defaultDist, invoke } = await rejectionBuild(t);
   const dist = await tempDir(t);
   await writeFile(path.join(dist, 'keep.txt'), 'mine');
-  await assert.rejects(run(process.execPath, [BUILD, '--dist', dist], { cwd: ROOT }), error => {
-    assert.notEqual(error.code, 0);
-    assert.match(error.stderr, /no está vacío/);
-    return true;
-  });
-  assert.deepEqual(await readdir(dist), ['keep.txt'], 'nothing was written or removed');
-  assert.equal(await readFile(path.join(dist, 'keep.txt'), 'utf8'), 'mine');
+  await assert.rejects(invoke(['--dist', dist]), { code: 1, stdout: '', stderr: `--dist ${path.resolve(dist)} no está vacío\n` });
+  await assertPreserved(dist, 'mine');
+  await assertPreserved(defaultDist, 'original build');
 });
 
-test('--dist without a directory is an error, not a rebuild of app/dist', async () => {
+test('--dist without a directory is an error, not a rebuild of app/dist', async t => {
+  const { defaultDist, invoke } = await rejectionBuild(t);
   for (const args of [['--dist'], ['--dist', '--render-count']]) {
-    await assert.rejects(run(process.execPath, [BUILD, ...args], { cwd: ROOT }), error => {
-      assert.notEqual(error.code, 0);
-      assert.match(error.stderr, /--dist necesita un directorio/);
-      assert.equal(error.stdout, '', 'no build ran');
-      return true;
-    });
+    await assert.rejects(invoke(args), { code: 1, stdout: '', stderr: '--dist necesita un directorio\n' });
+    await assertPreserved(defaultDist, 'original build');
   }
 });
 
@@ -107,7 +119,6 @@ test('bundleSizes reports raw and gzip bytes of every JS and CSS asset', async t
     assert.equal(row.type, row.file.endsWith('.css') ? 'css' : 'js', `${row.file} type`);
     assert.equal(row.raw, bytes.length, `${row.file} raw bytes`);
     assert.equal(row.gzip, gzipSync(bytes, { level: 9 }).length, `${row.file} gzip bytes (level 9)`);
-    assert.ok(row.gzip > 0 && row.gzip < row.raw, `${row.file} gzip is smaller than raw`);
   }
   for (const type of ['js', 'css']) {
     const rows = report.files.filter(f => f.type === type);

@@ -26,8 +26,7 @@ const PAGE_HOOKS = `(() => {
     return id;
   };
   window.clearInterval = id => { clocks.delete(id); clearInterval0(id); };
-  // One tick at a time: the next one waits until the render counts have stopped changing, so a loaded
-  // machine can never batch two ticks into a single render.
+  // Drive one clock tick at a time, waiting for the renders to settle before the next tick.
   const stable = async () => {
     let last = JSON.stringify(globalThis.__antenaRenderCounts || {}), quiet = 0;
     while (quiet < 3) {
@@ -57,6 +56,14 @@ const read = async cdp => JSON.parse(await evaluateChrome(cdp,
   'JSON.stringify({ renders: globalThis.__antenaRenderCounts || {}, frames: window.__antenaFrames || {} })'));
 const count = (counts, key) => counts[key] || 0;
 
+// Read every rendered row in order, excluding times and controls from message text. A row
+// without a synthetic message stays in the result as null so an extra row is still visible.
+const readChatRows = (cdp, selector) => evaluateChrome(cdp, `Array.from(
+  document.querySelectorAll(${JSON.stringify(`${selector} > li`)}), row =>
+    Array.from(row.querySelectorAll('span'), span => span.textContent)
+      .find(text => /^burst message \\d+$/.test(text)) ?? null
+)`);
+
 /** Waits until neither the render counts nor the received frames change for `quietMs` and `idle()` holds. */
 async function settle(cdp, quietMs, idle = () => true) {
   const deadline = Date.now() + 20000;
@@ -77,7 +84,7 @@ async function until(condition, what) {
   throw new Error(`timeout waiting for ${what}`);
 }
 
-async function measurePage(surface, { bin, dist, messages, viewersEvery, ticks, gapMs }) {
+async function measurePage(surface, { bin, dist, messages, viewersEvery, ticks, gapMs, captureChatRows }) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'antena-render-'));
   const app = await createApp({ dataDir, mediaDir: path.join(dataDir, 'media'), log: () => {}, appDist: dist });
   let chrome;
@@ -125,6 +132,7 @@ async function measurePage(surface, { bin, dist, messages, viewersEvery, ticks, 
     return {
       page: surface.page,
       events: Object.fromEntries(Object.keys(burst.frames).map(type => [type, count(burst.frames, type) - count(start.frames, type)]).filter(([, n]) => n)),
+      ...(captureChatRows && surface.shows ? { chatRows: await readChatRows(cdp, surface.shows) } : {}),
       components: Object.fromEntries(surface.components.map(label => [label, {
         burst: count(burst.renders, label) - count(start.renders, label),
         clock: count(clock.renders, label) - count(burst.renders, label),
@@ -143,15 +151,16 @@ async function measurePage(surface, { bin, dist, messages, viewersEvery, ticks, 
 /**
  * Renders per key component for one burst of `messages` chat messages (with a viewers read every
  * `viewersEvery`) and for `ticks` manual ticks of the 1 s clocks. Every page gets a fresh server.
+ * `captureChatRows` adds final DOM evidence for each chat page, only needed by the replay test.
  */
-export async function runRenderScenario({ messages = 100, viewersEvery = 10, ticks = 10, gapMs = 5, surfaces = SURFACES } = {}) {
+export async function runRenderScenario({ messages = 100, viewersEvery = 10, ticks = 10, gapMs = 5, surfaces = SURFACES, captureChatRows = false } = {}) {
   const bin = await findChrome();
   if (!bin) throw new Error('No se encontró Chrome: instálalo o define CHROME_PATH');
   const dist = await mkdtemp(path.join(tmpdir(), 'antena-render-dist-'));
   try {
     await buildInto(dist, { renderCount: true });
     const pages = [];
-    for (const surface of surfaces) pages.push(await measurePage(surface, { bin, dist, messages, viewersEvery, ticks, gapMs }));
+    for (const surface of surfaces) pages.push(await measurePage(surface, { bin, dist, messages, viewersEvery, ticks, gapMs, captureChatRows }));
     return { scenario: { messages, viewerReads: Math.floor(messages / viewersEvery), clockTicks: ticks }, pages };
   } finally { await rm(dist, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 }
