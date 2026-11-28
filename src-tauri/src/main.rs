@@ -544,6 +544,26 @@ fn page_url(app: &AppHandle, path: &str) -> Result<Url, String> {
     Url::parse(&format!("{}{}", base_url(app.state::<Server>().port), path)).map_err(|e| e.to_string())
 }
 
+/// Default (and minimum) logical size of the main window on screens that can hold it.
+const MAIN_W: u32 = 2560;
+const MAIN_H: u32 = 1440;
+
+#[derive(Debug, PartialEq)]
+enum MainWindowPlan {
+    /// The work area holds MAIN_W x MAIN_H: open at that size, centered, never smaller.
+    Sized,
+    /// Smaller (or unknown) screen: open maximized with the regular minimum.
+    Maximized,
+}
+
+/// Decides how the main window opens from the monitor work area in physical pixels and its scale.
+fn main_window_plan(work_area: Option<(u32, u32, f64)>) -> MainWindowPlan {
+    match work_area {
+        Some((w, h, scale)) if scale > 0.0 && w as f64 / scale >= MAIN_W as f64 && h as f64 / scale >= MAIN_H as f64 => MainWindowPlan::Sized,
+        _ => MainWindowPlan::Maximized,
+    }
+}
+
 /// Único punto donde se crean ventanas: así ninguna puede quedarse sin la guardia de navegación
 /// (mismo puerto del servidor y solo las rutas del panel, el prompter y el dock).
 fn window_builder<'a, M: tauri::Manager<tauri::Wry>>(app: &'a M, label: &str, url: WebviewUrl) -> WebviewWindowBuilder<'a, tauri::Wry, M> {
@@ -925,13 +945,21 @@ fn main() {
             app.manage(Server { port, managed: Mutex::new(false), child: Mutex::new(None), startup: Mutex::new(StartupState::default()), data, media });
             // la ventana principal se crea aquí (y no en tauri.conf.json) para poder limitar
             // su navegación al servidor local: window_builder pone la guardia a las tres ventanas
-            window_builder(app.handle(), "main", WebviewUrl::App("index.html".into()))
+            let work_area = app.primary_monitor().ok().flatten().map(|m| {
+                let area = m.work_area();
+                (area.size.width, area.size.height, m.scale_factor())
+            });
+            let main = window_builder(app.handle(), "main", WebviewUrl::App("index.html".into()))
                 .title("antena")
-                .inner_size(1360.0, 860.0)
-                .min_inner_size(960.0, 600.0)
-                .center()
-                .background_color(Color(0x12, 0x12, 0x14, 0xff))
-                .build()?;
+                .background_color(Color(0x12, 0x12, 0x14, 0xff));
+            match main_window_plan(work_area) {
+                MainWindowPlan::Sized => main
+                    .inner_size(MAIN_W as f64, MAIN_H as f64)
+                    .min_inner_size(MAIN_W as f64, MAIN_H as f64)
+                    .center(),
+                MainWindowPlan::Maximized => main.min_inner_size(960.0, 600.0).maximized(true),
+            }
+            .build()?;
             #[cfg(not(windows))]
             build_tray(app.handle())?;
             let handle = app.handle().clone();
@@ -973,6 +1001,23 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn main_window_opens_at_1440p_only_when_the_work_area_fits_it() {
+        // 4K at 100% and 125%: there is room for 2560x1440
+        assert_eq!(main_window_plan(Some((3840, 2112, 1.0))), MainWindowPlan::Sized);
+        assert_eq!(main_window_plan(Some((3840, 2112, 1.25))), MainWindowPlan::Sized);
+        // exact fit is enough
+        assert_eq!(main_window_plan(Some((2560, 1440, 1.0))), MainWindowPlan::Sized);
+        // 1440p monitor: the taskbar leaves less than 1440 px of height
+        assert_eq!(main_window_plan(Some((2560, 1392, 1.0))), MainWindowPlan::Maximized);
+        // 4K at 150% is 2560x1440 logical minus the taskbar
+        assert_eq!(main_window_plan(Some((3840, 2100, 1.5))), MainWindowPlan::Maximized);
+        // 1080p
+        assert_eq!(main_window_plan(Some((1920, 1032, 1.0))), MainWindowPlan::Maximized);
+        // unknown monitor: maximize, never open a window bigger than the screen
+        assert_eq!(main_window_plan(None), MainWindowPlan::Maximized);
+    }
 
     fn p(s: &str) -> PathBuf {
         PathBuf::from(s)
