@@ -40,13 +40,28 @@ test('pnpm perf reports renders per component for a chat burst and the bundle si
   assert.match(stdout, /^CSS\s+\d+\s+\d+$/m);
 });
 
-test('the burst scenario is reproducible: same parameters, same render counts', { timeout: 180000 }, async t => {
+test('replaying the burst preserves traffic, chat rows and manual clock renders', { timeout: 180000 }, async t => {
   if (!await findChrome()) return t.skip('sin Chrome local; define CHROME_PATH para medir los renders');
-  const options = { messages: 10, viewersEvery: 5, ticks: 2, surfaces: SURFACES.filter(s => ['dock', 'prompter'].includes(s.page)) };
+  const surfaces = SURFACES.filter(s => ['panel/chat', 'dock', 'prompter'].includes(s.page));
+  const options = { messages: 10, viewersEvery: 5, ticks: 2, surfaces, captureChatRows: true };
+  const expectedRows = Array.from({ length: 10 }, (_, i) => `burst message ${i + 1}`);
   const first = await runRenderScenario(options);
   const second = await runRenderScenario(options);
-  assert.deepEqual(first.pages.map(p => p.page), ['dock', 'prompter']);
-  assert.deepEqual(second, first);
-  // the traffic is exactly what the parameters say: 10 chat messages and 2 viewer reads
-  for (const page of first.pages) assert.deepEqual(page.events, { chat: 10, viewers: 2 }, `${page.page} saw only the scenario's events`);
+
+  for (const report of [first, second]) {
+    assert.deepEqual(report.scenario, { messages: 10, viewerReads: 2, clockTicks: 2 });
+    assert.deepEqual(report.pages.map(p => p.page), ['panel/chat', 'dock', 'prompter']);
+    for (const [i, page] of report.pages.entries()) {
+      assert.deepEqual(page.events, { chat: 10, viewers: 2 }, `${page.page} saw only the scenario's events`);
+      if (surfaces[i].shows) assert.deepEqual(page.chatRows, expectedRows, `${page.page} shows all 10 messages once, in order`);
+      assert.deepEqual(Object.keys(page.components), surfaces[i].components);
+      for (const [label, { burst, clock }] of Object.entries(page.components)) {
+        assert.ok(Number.isSafeInteger(burst) && burst >= 0, `${label} burst count: ${burst}`);
+        assert.ok(Number.isSafeInteger(clock) && clock >= 0, `${label} clock count: ${clock}`);
+      }
+    }
+  }
+  // React may batch the live burst differently. Only the separately driven clock counts must repeat.
+  const clocks = report => report.pages.map(p => Object.values(p.components).map(count => count.clock));
+  assert.deepEqual(clocks(second), clocks(first));
 });
